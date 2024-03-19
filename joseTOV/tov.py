@@ -1,12 +1,6 @@
 # this whole script is written in geometric unit
 import jax.numpy as jnp
-from diffrax import (
-    diffeqsolve,
-    ODETerm,
-    Dopri5,
-    SaveAt,
-    PIDController
-)
+from diffrax import diffeqsolve, ODETerm, Dopri5, SaveAt, PIDController
 
 
 def tov_ode(h, y, eos):
@@ -15,14 +9,16 @@ def tov_ode(h, y, eos):
     p = eos.pressure_from_pseudo_enthalpy(h)
     dedp = e / p * eos.dloge_dlogp_from_pseudo_enthalpy(h)
 
-    A = 1. / (1. - 2. * m / r)
-    C1 = 2. / r + A * (2. * m / (r * r) + 4. * jnp.pi * r * (p - e))
-    C0 = A * (- 6 / (r * r) + 4. * jnp.pi * (e + p) * dedp
-              + 4. * jnp.pi * (5. * e + 9. * p)) - \
-        jnp.power(2. * (m + 4. * jnp.pi * r * r * r * p) / (r * (r - 2. * m)), 2.)
+    A = 1.0 / (1.0 - 2.0 * m / r)
+    C1 = 2.0 / r + A * (2.0 * m / (r * r) + 4.0 * jnp.pi * r * (p - e))
+    C0 = A * (
+        -6 / (r * r)
+        + 4.0 * jnp.pi * (e + p) * dedp
+        + 4.0 * jnp.pi * (5.0 * e + 9.0 * p)
+    ) - jnp.power(2.0 * (m + 4.0 * jnp.pi * r * r * r * p) / (r * (r - 2.0 * m)), 2.0)
 
-    drdh = -r * (r - 2. * m) / (m + 4. * jnp.pi * r * r * r * p)
-    dmdh = 4. * jnp.pi * r * r * e * drdh
+    drdh = -r * (r - 2.0 * m) / (m + 4.0 * jnp.pi * r * r * r * p)
+    dmdh = 4.0 * jnp.pi * r * r * e * drdh
     dHdh = b * drdh
     dbdh = -(C0 * H + C1 * b) * drdh
 
@@ -36,12 +32,30 @@ def calc_k2(R, M, H, b):
     y = R * b / H
     C = M / R
 
-    num = (8. / 5.) * jnp.power(1 - 2 * C, 2.) * jnp.power(C, 5.) * \
-        (2 * C * (y - 1) - y + 2)
-    den = 2 * C * (4 * (y + 1) * jnp.power(C, 4) + (6 * y - 4) * jnp.power(C, 3) +
-                   (26 - 22 * y) * C * C + 3 * (5 * y - 8) * C - 3 * y + 6)
-    den -= 3 * jnp.power(1 - 2 * C, 2) * (2 * C * (y - 1) - y + 2) * \
-        jnp.log(1.0 / (1 - 2 * C))
+    num = (
+        (8.0 / 5.0)
+        * jnp.power(1 - 2 * C, 2.0)
+        * jnp.power(C, 5.0)
+        * (2 * C * (y - 1) - y + 2)
+    )
+    den = (
+        2
+        * C
+        * (
+            4 * (y + 1) * jnp.power(C, 4)
+            + (6 * y - 4) * jnp.power(C, 3)
+            + (26 - 22 * y) * C * C
+            + 3 * (5 * y - 8) * C
+            - 3 * y
+            + 6
+        )
+    )
+    den -= (
+        3
+        * jnp.power(1 - 2 * C, 2)
+        * (2 * C * (y - 1) - y + 2)
+        * jnp.log(1.0 / (1 - 2 * C))
+    )
 
     return num / den
 
@@ -52,18 +66,18 @@ def tov_solver(eos, pc):
     hc = eos.pseudo_enthalpy_from_pressure(pc)
     ec = eos.energy_density_from_pseudo_enthalpy(hc)
     dedp_c = ec / pc * eos.dloge_dlogp_from_pseudo_enthalpy(hc)
-    dhdp_c = 1. / (ec + pc)
+    dhdp_c = 1.0 / (ec + pc)
     dedh_c = dedp_c / dhdp_c
 
     # initial values
     dh = -1e-3 * hc
     h0 = hc + dh
-    r0 = jnp.sqrt(3. * (-dh) / 2. / jnp.pi / (ec + 3. * pc))
-    r0 *= 1. - 0.25 * (ec - 3. * pc - 0.6 * dedh_c) * (-dh) / (ec + 3. * pc)
-    m0 = 4. * jnp.pi * ec * jnp.power(r0, 3.) / 3.
-    m0 *= 1. - 0.6 * dedh_c * (-dh) / ec
+    r0 = jnp.sqrt(3.0 * (-dh) / 2.0 / jnp.pi / (ec + 3.0 * pc))
+    r0 *= 1.0 - 0.25 * (ec - 3.0 * pc - 0.6 * dedh_c) * (-dh) / (ec + 3.0 * pc)
+    m0 = 4.0 * jnp.pi * ec * jnp.power(r0, 3.0) / 3.0
+    m0 *= 1.0 - 0.6 * dedh_c * (-dh) / ec
     H0 = r0 * r0
-    b0 = 2. * r0
+    b0 = 2.0 * r0
 
     y0 = (r0, m0, H0, b0)
 
@@ -76,7 +90,7 @@ def tov_solver(eos, pc):
         y0=y0,
         args=eos,
         saveat=SaveAt(ts=[h0, 0]),
-        stepsize_controller=PIDController(rtol=1e-5, atol=1e-6)
+        stepsize_controller=PIDController(rtol=1e-5, atol=1e-6),
     )
 
     R = sol.ys[0][-1]
