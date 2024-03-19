@@ -15,7 +15,7 @@ number_density_to_geometric = 1
 fm_inv3_to_geometric = fm_inv3_to_SI * number_density_to_geometric
 
 # pressure and energy density
-MeV_fm_inv3_to_SI = MeV_to_J * fm_inv3_to_m_inv3 
+MeV_fm_inv3_to_SI = MeV_to_J * fm_inv3_to_SI 
 pressure_SI_to_geometric = G / c**4
 MeV_fm_inv3_to_geometric = MeV_fm_inv3_to_SI * pressure_SI_to_geometric  
 
@@ -45,6 +45,6 @@ def cumtrapz(y, x):
 
     # get the step size of x
     dx = jnp.diff(x)
-    res = np.cumsum(dx * (y[1::] + y[:-1:]) / 2.0)
+    res = jnp.cumsum(dx * (y[1::] + y[:-1:]) / 2.0)
 
     return res
