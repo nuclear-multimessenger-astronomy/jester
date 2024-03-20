@@ -6,11 +6,6 @@ Since it is based on JAX, JOSE makes use of hardware acceleration on GPUs and TP
 
 ## Installation
 
-You may install the latest released version of JOSE through pip by doing
-```
-pip install joseTOV
-```
-
 You may install the bleeding edge version by cloning this repo, or doing
 ```
 pip install git+https://github.com/tsunhopang/jose
