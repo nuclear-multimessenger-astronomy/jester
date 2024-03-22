@@ -1,13 +1,20 @@
 # this whole script is written in geometric unit
+from . import utils
 import jax.numpy as jnp
 from diffrax import diffeqsolve, ODETerm, Dopri5, SaveAt, PIDController
 
 
 def tov_ode(h, y, eos):
+    # fetch the eos arrays
+    ps = eos['p']
+    hs = eos['h']
+    es = eos['e']
+    dloge_dlogps = eos['dloge_dlogp']
+    # actual equations
     r, m, H, b = y
-    e = eos.energy_density_from_pseudo_enthalpy(h)
-    p = eos.pressure_from_pseudo_enthalpy(h)
-    dedp = e / p * eos.dloge_dlogp_from_pseudo_enthalpy(h)
+    e = utils.interp_in_logspace(h, hs, es)
+    p = utils.interp_in_logspace(h, hs, ps)
+    dedp = e / p * jnp.interp(h, hs, dloge_dlogps)
 
     A = 1.0 / (1.0 - 2.0 * m / r)
     C1 = 2.0 / r + A * (2.0 * m / (r * r) + 4.0 * jnp.pi * r * (p - e))
@@ -61,11 +68,15 @@ def calc_k2(R, M, H, b):
 
 
 def tov_solver(eos, pc):
-
+    # fetch the eos arrays
+    ps = eos['p']
+    hs = eos['h']
+    es = eos['e']
+    dloge_dlogps = eos['dloge_dlogp']
     # central values
-    hc = eos.pseudo_enthalpy_from_pressure(pc)
-    ec = eos.energy_density_from_pseudo_enthalpy(hc)
-    dedp_c = ec / pc * eos.dloge_dlogp_from_pseudo_enthalpy(hc)
+    hc = utils.interp_in_logspace(pc, ps, hs)
+    ec = utils.interp_in_logspace(hc, hs, es)
+    dedp_c = ec / pc * jnp.interp(hc, hs, dloge_dlogps)
     dhdp_c = 1.0 / (ec + pc)
     dedh_c = dedp_c / dhdp_c
 

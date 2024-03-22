@@ -61,3 +61,10 @@ def cumtrapz(y, x):
     res = jnp.cumsum(dx * (y[1::] + y[:-1:]) / 2.0)
 
     return res
+
+
+def interp_in_logspace(x, xs, ys):
+    logx = jnp.log(x)
+    logxs = jnp.log(xs)
+    logys = jnp.log(ys)
+    return jnp.exp(jnp.interp(logx, logxs, logys))

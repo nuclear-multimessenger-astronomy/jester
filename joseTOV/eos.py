@@ -160,12 +160,23 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
 
 
 def construct_family(eos, ndat=50):
-    # start at pc at 0.1nsat
-    pc_min = eos.pressure_from_number_density(
-        2 * 0.16 * utils.fm_inv3_to_geometric
+    # constrcut the dictionary
+    ns, ps, hs, es, dloge_dlogps = eos
+    # calculate the pc_min
+    pc_min = utils.interp_in_logspace(
+        2. * 0.16 * utils.fm_inv3_to_geometric,
+        ns,
+        ps
     )
+    eos_dict = dict(
+        p=ps,
+        h=hs,
+        e=es,
+        dloge_dlogp=dloge_dlogps
+    )
+
     # end at pc at pmax
-    pc_max = eos.p[-1]
+    pc_max = eos_dict['p'][-1]
 
     pcs = jnp.logspace(
         jnp.log10(pc_min),
@@ -178,7 +189,7 @@ def construct_family(eos, ndat=50):
         excluded=[
             0,
         ],
-    )(eos, pcs)
+    )(eos_dict, pcs)
 
     # calculate the compactness
     cs = ms / rs
