@@ -56,6 +56,16 @@ def cumtrapz(y, x):
     # get the step size of x
     dx = jnp.diff(x)
     res = jnp.cumsum(dx * (y[1::] + y[:-1:]) / 2.0)
+    res = jnp.concatenate(
+        (
+            jnp.array(
+                [
+                    1e-30,
+                ]
+            ),
+            res,
+        )
+    )
 
     return res
 
