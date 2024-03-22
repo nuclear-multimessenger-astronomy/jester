@@ -70,7 +70,7 @@ class Interpolate_EOS_model(object):
 
 
 class MetaModel_EOS_model(Interpolate_EOS_model):
-    def __init__(self, coefficient_sat, coefficient_sym, nsat=0.16):
+    def __init__(self, coefficient_sat, coefficient_sym, nsat=0.16, nmax=12):
         # add the first derivative coefficient in Esat to
         # make it work with jax.numpy.polyval
         coefficient_sat = jnp.insert(coefficient_sat, 1, 0.)
@@ -88,10 +88,10 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         coeff_sym_grad = coefficient_sym * index_sym / factorial(index_sym)
         self.coefficient_sat_grad = coeff_sat_grad[1:]
         self.coefficient_sym_grad = coeff_sym_grad[1:]
-
+        # number densities in unit of fm^-3
         ns = jnp.logspace(
             -1,
-            jnp.log10(12 * nsat),
+            jnp.log10(nmax * nsat),
             num=1500
         )
         ps = self.pressure_from_number_density_nuclear_unit(ns)
@@ -135,7 +135,6 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         idx = (ys.imag == 0.) * (ys.real >= 0.) * (ys.real <= 1.)
         physical_ys = ys.at[idx].get().real
         x = jnp.power(physical_ys, 1. / 3.)
-        import pdb; pdb.set_trace()
         return x
 
     def energy_per_particle_nuclear_unit(self, n):
