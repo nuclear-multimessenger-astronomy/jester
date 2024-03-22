@@ -109,13 +109,6 @@ def tov_solver(eos, pc):
     H = sol.ys[2][-1]
     b = sol.ys[3][-1]
 
-    # take one final Euler step to get to the surface
-    #    y1 = [R, M, H, b]
-    #    dydt1 = tov_ode(h1, y1, eos)
-    #    # take one extra step towards the surface
-    #    y1 = jnp.array(y1) + jnp.array(dydt1) * (0. - h1)
-    #
-    #    R, M, H, b = y1
     k2 = calc_k2(R, M, H, b)
 
     return M, R, k2
