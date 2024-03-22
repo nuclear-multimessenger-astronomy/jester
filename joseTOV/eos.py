@@ -100,11 +100,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         # number densities in unit of fm^-3
         ns = jnp.logspace(-1, jnp.log10(nmax), num=ndat)
         es = self.energy_density_from_number_density_nuclear_unit(ns)
-        ps = ns * ns * jnp.diagonal(
-            jax.jacfwd(
-                self.energy_per_particle_nuclear_unit
-            )(ns)
-        )
+        ps = self.pressure_from_number_density_nuclear_unit(ns)
 
         ns = jnp.concatenate((crust["n"], ns))
         ps = jnp.concatenate((crust["p"], ps))
@@ -160,6 +156,17 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         self, n: Float[Array, "n_points"]
     ):
         return n * self.energy_per_particle_nuclear_unit(n)
+
+    def pressure_from_number_density_nuclear_unit(
+        self, n: Float[Array, "n_points"]
+    ):
+        p = n * n * jnp.diagonal(
+            jax.jacfwd(
+                self.energy_per_particle_nuclear_unit
+            )(n)
+        )
+        return p
+
 
 
 class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
