@@ -1,13 +1,13 @@
-import jax
 import jax.numpy as jnp
 from jax.scipy.special import factorial
 
 from . import utils, tov
 
 import os
+
 # get the crust
 DEFAULT_DIR = os.path.join(os.path.dirname(__file__))
-crust = jnp.load(f'{DEFAULT_DIR}/crust/BPS.npz')
+crust = jnp.load(f"{DEFAULT_DIR}/crust/BPS.npz")
 
 
 class Interpolate_EOS_model(object):
@@ -73,7 +73,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
     def __init__(self, coefficient_sat, coefficient_sym, nsat=0.16, nmax=12):
         # add the first derivative coefficient in Esat to
         # make it work with jax.numpy.polyval
-        coefficient_sat = jnp.insert(coefficient_sat, 1, 0.)
+        coefficient_sat = jnp.insert(coefficient_sat, 1, 0.0)
         # get the coefficents index array
         index_sat = jnp.arange(len(coefficient_sat))
         index_sym = jnp.arange(len(coefficient_sym))
@@ -89,25 +89,21 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         self.coefficient_sat_grad = coeff_sat_grad[1:]
         self.coefficient_sym_grad = coeff_sym_grad[1:]
         # number densities in unit of fm^-3
-        ns = jnp.logspace(
-            -1,
-            jnp.log10(nmax * nsat),
-            num=1500
-        )
+        ns = jnp.logspace(-1, jnp.log10(nmax * nsat), num=1500)
         ps = self.pressure_from_number_density_nuclear_unit(ns)
         es = self.energy_density_from_number_density_nuclear_unit(ns)
-        ns = jnp.concatenate((crust['n'], ns))
-        ps = jnp.concatenate((crust['p'], ps))
-        es = jnp.concatenate((crust['e'], es))
+        ns = jnp.concatenate((crust["n"], ns))
+        ps = jnp.concatenate((crust["p"], ps))
+        es = jnp.concatenate((crust["e"], es))
 
         super().__init__(ns, ps, es)
 
     def esym(self, n):
-        x = (n - self.nsat) / (3. * self.nsat)
+        x = (n - self.nsat) / (3.0 * self.nsat)
         return jnp.polyval(self.coefficient_sym[::-1], x)
 
     def esat(self, n):
-        x = (n - self.nsat) / (3. * self.nsat)
+        x = (n - self.nsat) / (3.0 * self.nsat)
         return jnp.polyval(self.coefficient_sat[::-1], x)
 
     def proton_fraction(self, n):
@@ -124,32 +120,34 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         # p_2 = 0
         # p_3 = 8 * Esym
         Esym = self.esym(n)
-        coeffs = jnp.array([
-            8. * Esym,
-            jnp.zeros(shape=n.shape),
-            utils.hbarc * jnp.power(3. * jnp.pi**2 * n, 1. / 3.),
-            -4. * Esym - (utils.m_n - utils.m_p),
-        ]).T
+        coeffs = jnp.array(
+            [
+                8.0 * Esym,
+                jnp.zeros(shape=n.shape),
+                utils.hbarc * jnp.power(3.0 * jnp.pi**2 * n, 1.0 / 3.0),
+                -4.0 * Esym - (utils.m_n - utils.m_p),
+            ]
+        ).T
         ys = utils.roots_vmap(coeffs)
         # only take the ys in [0, 1] and real
-        idx = (ys.imag == 0.) * (ys.real >= 0.) * (ys.real <= 1.)
+        idx = (ys.imag == 0.0) * (ys.real >= 0.0) * (ys.real <= 1.0)
         physical_ys = ys.at[idx].get().real
-        x = jnp.power(physical_ys, 1. / 3.)
+        x = jnp.power(physical_ys, 1.0 / 3.0)
         return x
 
     def energy_per_particle_nuclear_unit(self, n):
         x = self.proton_fraction(n)
-        delta = 1. - 2. * x
-        dynamic_part = self.esat(n) + self.esym(n) * delta**2. 
-        static_part = x * utils.m_n + (1. - x) * utils.m_p
+        delta = 1.0 - 2.0 * x
+        dynamic_part = self.esat(n) + self.esym(n) * delta**2.0
+        static_part = x * utils.m_n + (1.0 - x) * utils.m_p
         return dynamic_part + static_part
 
     def energy_per_particle_grad_nuclear_unit(self, n):
-        delta = 1. - 2. * self.proton_fraction(n)
-        x = (n - self.nsat) / (3. * self.nsat)
+        delta = 1.0 - 2.0 * self.proton_fraction(n)
+        x = (n - self.nsat) / (3.0 * self.nsat)
         Esat_grad = jnp.polyval(self.coefficient_sat_grad[::-1], x)
         Esym_grad = jnp.polyval(self.coefficient_sym_grad[::-1], x)
-        return (Esat_grad + Esym_grad * delta**2) / 3. / self.nsat
+        return (Esat_grad + Esym_grad * delta**2) / 3.0 / self.nsat
 
     def energy_density_from_number_density_nuclear_unit(self, n):
         return n * self.energy_per_particle_nuclear_unit(n)
@@ -162,26 +160,13 @@ def construct_family(eos, ndat=50):
     # constrcut the dictionary
     ns, ps, hs, es, dloge_dlogps = eos
     # calculate the pc_min
-    pc_min = utils.interp_in_logspace(
-        2. * 0.16 * utils.fm_inv3_to_geometric,
-        ns,
-        ps
-    )
-    eos_dict = dict(
-        p=ps,
-        h=hs,
-        e=es,
-        dloge_dlogp=dloge_dlogps
-    )
+    pc_min = utils.interp_in_logspace(2.0 * 0.16 * utils.fm_inv3_to_geometric, ns, ps)
+    eos_dict = dict(p=ps, h=hs, e=es, dloge_dlogp=dloge_dlogps)
 
     # end at pc at pmax
-    pc_max = eos_dict['p'][-1]
+    pc_max = eos_dict["p"][-1]
 
-    pcs = jnp.logspace(
-        jnp.log10(pc_min),
-        jnp.log10(pc_max),
-        num=ndat
-    )
+    pcs = jnp.logspace(jnp.log10(pc_min), jnp.log10(pc_max), num=ndat)
 
     ms, rs, ks = jnp.vectorize(
         tov.tov_solver,

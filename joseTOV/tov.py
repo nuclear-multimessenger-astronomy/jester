@@ -6,10 +6,10 @@ from diffrax import diffeqsolve, ODETerm, Dopri5, SaveAt, PIDController
 
 def tov_ode(h, y, eos):
     # fetch the eos arrays
-    ps = eos['p']
-    hs = eos['h']
-    es = eos['e']
-    dloge_dlogps = eos['dloge_dlogp']
+    ps = eos["p"]
+    hs = eos["h"]
+    es = eos["e"]
+    dloge_dlogps = eos["dloge_dlogp"]
     # actual equations
     r, m, H, b = y
     e = utils.interp_in_logspace(h, hs, es)
@@ -69,10 +69,10 @@ def calc_k2(R, M, H, b):
 
 def tov_solver(eos, pc):
     # fetch the eos arrays
-    ps = eos['p']
-    hs = eos['h']
-    es = eos['e']
-    dloge_dlogps = eos['dloge_dlogp']
+    ps = eos["p"]
+    hs = eos["h"]
+    es = eos["e"]
+    dloge_dlogps = eos["dloge_dlogp"]
     # central values
     hc = utils.interp_in_logspace(pc, ps, hs)
     ec = utils.interp_in_logspace(hc, hs, es)

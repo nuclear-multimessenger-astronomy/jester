@@ -29,11 +29,8 @@ MeV_fm_inv3_to_geometric = MeV_fm_inv3_to_SI * pressure_SI_to_geometric
 solar_mass_in_meter = Msun * G / c / c
 
 # vmapped jnp.roots function
-roots_vmap = vmap(
-    partial(jnp.roots, strip_zeros=False),
-    in_axes=0,
-    out_axes=0
-)
+roots_vmap = vmap(partial(jnp.roots, strip_zeros=False), in_axes=0, out_axes=0)
+
 
 def cumtrapz(y, x):
     """
