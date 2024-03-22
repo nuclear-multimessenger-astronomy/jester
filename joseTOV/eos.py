@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 from jax.scipy.special import factorial
 from jaxtyping import Array, Float
@@ -96,15 +97,15 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         self.coefficient_sat = coeff_sat
         self.coefficient_sym = coeff_sym
         self.nsat = nsat
-        # calculate the coefficient for the derivative
-        coeff_sat_grad = coefficient_sat / factorial(index_sat - 1)
-        coeff_sym_grad = coefficient_sym / factorial(index_sym - 1)
-        self.coefficient_sat_grad = coeff_sat_grad[1:]
-        self.coefficient_sym_grad = coeff_sym_grad[1:]
         # number densities in unit of fm^-3
         ns = jnp.logspace(-1, jnp.log10(nmax), num=ndat)
-        ps = self.pressure_from_number_density_nuclear_unit(ns)
         es = self.energy_density_from_number_density_nuclear_unit(ns)
+        ps = ns * ns * jnp.diagonal(
+            jax.jacfwd(
+                self.energy_per_particle_nuclear_unit
+            )(ns)
+        )
+
         ns = jnp.concatenate((crust["n"], ns))
         ps = jnp.concatenate((crust["p"], ps))
         es = jnp.concatenate((crust["e"], es))
@@ -155,20 +156,10 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         static_part = x * utils.m_n + (1.0 - x) * utils.m_p
         return dynamic_part + static_part
 
-    def energy_per_particle_grad_nuclear_unit(self, n: Float[Array, "n_points"]):
-        delta = 1.0 - 2.0 * self.proton_fraction(n)
-        x = (n - self.nsat) / (3.0 * self.nsat)
-        Esat_grad = jnp.polyval(self.coefficient_sat_grad[::-1], x)
-        Esym_grad = jnp.polyval(self.coefficient_sym_grad[::-1], x)
-        return (Esat_grad + Esym_grad * delta**2) / 3.0 / self.nsat
-
     def energy_density_from_number_density_nuclear_unit(
         self, n: Float[Array, "n_points"]
     ):
         return n * self.energy_per_particle_nuclear_unit(n)
-
-    def pressure_from_number_density_nuclear_unit(self, n: Float[Array, "n_points"]):
-        return n**2 * self.energy_per_particle_grad_nuclear_unit(n)
 
 
 class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
