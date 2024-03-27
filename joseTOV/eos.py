@@ -27,17 +27,6 @@ class Interpolate_EOS_model(object):
 
         # calculate the pseudo enthalpy
         self.h = utils.cumtrapz(self.p / (self.e + self.p), jnp.log(self.p))
-        # just a random small number
-        # self.h = jnp.concatenate(
-        #    (
-        #        jnp.array(
-        #            [
-        #                1e-30,
-        #            ]
-        #        ),
-        #        h,
-        #    )
-        # )
         # pre-calculate quantities
         self.logp = jnp.log(self.p)
         self.loge = jnp.log(self.e)
@@ -140,8 +129,11 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         ).T
         ys = utils.roots_vmap(coeffs)
         # only take the ys in [0, 1] and real
-        idx = (ys.imag == 0.0) * (ys.real >= 0.0) * (ys.real <= 1.0)
-        physical_ys = ys.at[idx].get().real
+        physical_ys = jnp.where(
+            (ys.imag == 0.0) * (ys.real >= 0.0) * (ys.real <= 1.0),
+            ys.real,
+            jnp.zeros_like(ys.real)
+        ).sum(axis=1)
         x = jnp.power(physical_ys, 1.0 / 3.0)
         return x
 
@@ -166,7 +158,6 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             )(n)
         )
         return p
-
 
 
 class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
