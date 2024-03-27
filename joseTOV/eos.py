@@ -170,7 +170,11 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
 
         # initializate the MetaModel part
         self.metamodel = MetaModel_EOS_model(
-            coefficient_sat, coefficient_sym, nsat=nsat, nmax=n_break
+            coefficient_sat,
+            coefficient_sym,
+            nsat=nsat,
+            nmax=n_break,
+            ndat=50,
         )
         # calculate the chemical potential at the transition point
         self.n_break = n_break
