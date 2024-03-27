@@ -1,13 +1,14 @@
 from . import eos
 
+
 def MetaModel_with_CSE_parameters_to_family(
-        coefficient_sat,
-        coefficient_sym,
-        n_break,
-        ngrids,
-        cs2grids,
-        nsat,
-        nmax,
+    coefficient_sat,
+    coefficient_sym,
+    n_break,
+    ngrids,
+    cs2grids,
+    nsat,
+    nmax,
 ):
 
     eos_model = eos.MetaModel_with_CSE_EOS_model(
@@ -25,7 +26,7 @@ def MetaModel_with_CSE_parameters_to_family(
         eos_model.p,
         eos_model.h,
         eos_model.e,
-        eos_model.dloge_dlogp
+        eos_model.dloge_dlogp,
     )
     logpcs, ms, rs, Lambdas = eos.construct_family(eos_tuple)
 

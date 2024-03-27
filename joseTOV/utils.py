@@ -32,6 +32,29 @@ solar_mass_in_meter = Msun * G / c / c
 roots_vmap = vmap(partial(jnp.roots, strip_zeros=False), in_axes=0, out_axes=0)
 
 
+@vmap
+def cubic_root_for_proton_faction(coefficients):
+
+    a, b, c, d = coefficients
+
+    f = ((3.0 * c / a) - ((b**2.0) / (a**2.0))) / 3.0
+    g = (
+        ((2.0 * (b**3.0)) / (a**3.0)) - ((9.0 * b * c) / (a**2.0)) + (27.0 * d / a)
+    ) / 27.0
+    h = (g**2.0) / 4.0 + (f**3.0) / 27.0
+
+    R = -(g / 2.0) + jnp.sqrt(h)
+    S = jnp.where(R >= 0.0, jnp.power(R, 1.0 / 3.0), -jnp.power(-R, 1.0 / 3.0))
+    T = -(g / 2.0) - jnp.sqrt(h)
+    U = jnp.where(T >= 0.0, jnp.power(T, 1.0 / 3.0), -jnp.power(-T, 1.0 / 3.0))
+
+    x1 = (S + U) - (b / (3.0 * a))
+    x2 = -(S + U) / 2 - (b / (3.0 * a)) + (S - U) * jnp.sqrt(3.0) * 0.5j
+    x3 = -(S + U) / 2 - (b / (3.0 * a)) - (S - U) * jnp.sqrt(3.0) * 0.5j
+
+    return jnp.array([x1, x2, x3])
+
+
 def cumtrapz(y, x):
     """
     Cumulatively integrate y(x) using the composite trapezoidal rule.

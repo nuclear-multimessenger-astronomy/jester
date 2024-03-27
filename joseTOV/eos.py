@@ -127,12 +127,12 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
                 -4.0 * Esym - (utils.m_n - utils.m_p),
             ]
         ).T
-        ys = utils.roots_vmap(coeffs)
+        ys = utils.cubic_root_for_proton_faction(coeffs)
         # only take the ys in [0, 1] and real
         physical_ys = jnp.where(
             (ys.imag == 0.0) * (ys.real >= 0.0) * (ys.real <= 1.0),
             ys.real,
-            jnp.zeros_like(ys.real)
+            jnp.zeros_like(ys.real),
         ).sum(axis=1)
         x = jnp.power(physical_ys, 1.0 / 3.0)
         return x
@@ -149,14 +149,8 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
     ):
         return n * self.energy_per_particle_nuclear_unit(n)
 
-    def pressure_from_number_density_nuclear_unit(
-        self, n: Float[Array, "n_points"]
-    ):
-        p = n * n * jnp.diagonal(
-            jax.jacfwd(
-                self.energy_per_particle_nuclear_unit
-            )(n)
-        )
+    def pressure_from_number_density_nuclear_unit(self, n: Float[Array, "n_points"]):
+        p = n * n * jnp.diagonal(jax.jacfwd(self.energy_per_particle_nuclear_unit)(n))
         return p
 
 
