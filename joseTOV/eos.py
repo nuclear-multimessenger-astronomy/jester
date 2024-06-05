@@ -73,6 +73,8 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         nsat=0.16,
         nmax=12 * 0.16,
         ndat=1000,
+        fix_proton_fraction=False,
+        fix_proton_fraction_val=0.,
     ):
         # add the first derivative coefficient in Esat to
         # make it work with jax.numpy.polyval
@@ -86,6 +88,8 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         self.coefficient_sat = coeff_sat
         self.coefficient_sym = coeff_sym
         self.nsat = nsat
+        self.fix_proton_fraction = fix_proton_fraction
+        self.fix_proton_fraction_val = fix_proton_fraction_val
         # number densities in unit of fm^-3
         ns = jnp.logspace(-1, jnp.log10(nmax), num=ndat)
         es = self.energy_density_from_number_density_nuclear_unit(ns)
@@ -127,7 +131,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
                 -4.0 * Esym - (utils.m_n - utils.m_p),
             ]
         ).T
-        ys = utils.cubic_root_for_proton_faction(coeffs)
+        ys = utils.cubic_root_for_proton_fraction(coeffs)
         # only take the ys in [0, 1] and real
         physical_ys = jnp.where(
             (ys.imag == 0.0) * (ys.real >= 0.0) * (ys.real <= 1.0),
@@ -138,7 +142,13 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         return x
 
     def energy_per_particle_nuclear_unit(self, n: Float[Array, "n_points"]):
-        x = self.proton_fraction(n)
+        x = jax.lax.cond(
+            self.fix_proton_fraction,
+            lambda x: self.fix_proton_fraction_val * jnp.ones(n.shape),
+            self.proton_fraction,
+            n
+        )
+        self.proton_fraction(n)
         delta = 1.0 - 2.0 * x
         dynamic_part = self.esat(n) + self.esym(n) * delta**2.0
         static_part = x * utils.m_n + (1.0 - x) * utils.m_p
@@ -203,7 +213,7 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         self.mu_break = (self.p_break + self.e_break) / self.n_break
         self.cs2_break = (
             jnp.diff(self.metamodel.p).at[-1].get()
-            / jnp.diff(self.metamodel.p).at[-1].get()
+            / jnp.diff(self.metamodel.e).at[-1].get()
         )
         # define the speed-of-sound interpolation
         # of the extension portion
@@ -222,11 +232,11 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         super().__init__(ns, ps, es)
 
 
-def construct_family(eos, ndat=50):
+def construct_family(eos, ndat=50, min_nsat=2):
     # constrcut the dictionary
     ns, ps, hs, es, dloge_dlogps = eos
     # calculate the pc_min
-    pc_min = utils.interp_in_logspace(2.0 * 0.16 * utils.fm_inv3_to_geometric, ns, ps)
+    pc_min = utils.interp_in_logspace(min_nsat * 0.16 * utils.fm_inv3_to_geometric, ns, ps)
     eos_dict = dict(p=ps, h=hs, e=es, dloge_dlogp=dloge_dlogps)
 
     # end at pc at pmax

@@ -33,7 +33,7 @@ roots_vmap = vmap(partial(jnp.roots, strip_zeros=False), in_axes=0, out_axes=0)
 
 
 @vmap
-def cubic_root_for_proton_faction(coefficients):
+def cubic_root_for_proton_fraction(coefficients):
 
     a, b, c, d = coefficients
 
