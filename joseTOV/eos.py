@@ -1,36 +1,48 @@
+import os
 import jax
 import jax.numpy as jnp
 from jax.scipy.special import factorial
-from jaxtyping import Array, Float
+from jaxtyping import Array, Float, Int
 
 from . import utils, tov
 
-import os
-
 # get the crust
 DEFAULT_DIR = os.path.join(os.path.dirname(__file__))
-crust = jnp.load(f"{DEFAULT_DIR}/crust/BPS.npz")
+# TODO: do we want several crust files or do we always use this crust?
+CRUST = jnp.load(f"{DEFAULT_DIR}/crust/BPS.npz")
 
 
 class Interpolate_EOS_model(object):
+    """
+    Base class to interpolate EOS data. 
+    """
     def __init__(
         self,
         n: Float[Array, "n_points"],
         p: Float[Array, "n_points"],
         e: Float[Array, "n_points"],
     ):
-        # the expected units are
-        # n[fm^-3], p[MeV / m^3], e[MeV / fm^3]
+        """
+        Initialize the EOS model with the provided data and compute auxiliary data.
+
+        Args:
+            n (Float[Array, n_points]): Number densities. Expected units are n[fm^-3]
+            p (Float[Array, n_points]): Pressure values. Expected units are p[MeV / m^3]
+            e (Float[Array, n_points]): Energy densities. Expected units are e[MeV / fm^3]
+        """
+        
+        # Save the provided data as attributes, make conversions
+        self.n = jnp.array(n * utils.fm_inv3_to_geometric)
         self.p = jnp.array(p * utils.MeV_fm_inv3_to_geometric)
         self.e = jnp.array(e * utils.MeV_fm_inv3_to_geometric)
-        self.n = jnp.array(n * utils.fm_inv3_to_geometric)
 
-        # calculate the pseudo enthalpy
+        # Calculate the pseudo enthalpy
         self.h = utils.cumtrapz(self.p / (self.e + self.p), jnp.log(self.p))
-        # pre-calculate quantities
+        # Pre-calculate quantities
+        self.logn = jnp.log(self.n)
         self.logp = jnp.log(self.p)
         self.loge = jnp.log(self.e)
-        self.logn = jnp.log(self.n)
+        
         self.logh = jnp.log(self.h)
         dloge_dlogp = jnp.diff(self.loge) / jnp.diff(self.logp)
         dloge_dlogp = jnp.concatenate(
@@ -66,6 +78,12 @@ class Interpolate_EOS_model(object):
 
 
 class MetaModel_EOS_model(Interpolate_EOS_model):
+    """
+    MetaModel_EOS_model is a class to interpolate EOS data with a meta-model.
+
+    Args:
+        Interpolate_EOS_model (object): Base class of interpolation EOS data.
+    """
     def __init__(
         self,
         coefficient_sat: Float[Array, "n_sat_coeff"],
@@ -76,28 +94,43 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         fix_proton_fraction=False,
         fix_proton_fraction_val=0.,
     ):
+        """
+        Initialize the MetaModel_EOS_model with the provided coefficients and compute auxiliary data.
+        
+        Number densities are in unit of fm^-3. 
+        
+        Args:
+            coefficient_sat (Float[Array, n_sat_coeff]): _description_
+            coefficient_sym (Float[Array, n_sym_coeff]): _description_
+            nsat (float, optional): Value for the number saturation density. Defaults to 0.16, in [fm^-3].
+            nmax (float, optional): Maximum number density up to which EOS is constructed. Defaults to 12 * 0.16, i.e. 12 n_sat with n_sat = 0.16 fm^-3.
+            ndat (int, optional): Number of datapoints used for the curves (logarithmically spaced). Defaults to 1000.
+        """
+        
+        # Save as attributes
+        self.nsat = nsat
+        
         # add the first derivative coefficient in Esat to
         # make it work with jax.numpy.polyval
         coefficient_sat = jnp.insert(coefficient_sat, 1, 0.0)
-        # get the coefficents index array
+        
+        # Get the coefficents index array and get coefficients
         index_sat = jnp.arange(len(coefficient_sat))
         index_sym = jnp.arange(len(coefficient_sym))
 
-        coeff_sat = coefficient_sat / factorial(index_sat)
-        coeff_sym = coefficient_sym / factorial(index_sym)
-        self.coefficient_sat = coeff_sat
-        self.coefficient_sym = coeff_sym
+        self.coefficient_sat = coefficient_sat / factorial(index_sat)
+        self.coefficient_sym = coefficient_sym / factorial(index_sym)
         self.nsat = nsat
         self.fix_proton_fraction = fix_proton_fraction
         self.fix_proton_fraction_val = fix_proton_fraction_val
         # number densities in unit of fm^-3
         ns = jnp.logspace(-1, jnp.log10(nmax), num=ndat)
-        es = self.energy_density_from_number_density_nuclear_unit(ns)
         ps = self.pressure_from_number_density_nuclear_unit(ns)
+        es = self.energy_density_from_number_density_nuclear_unit(ns)
 
-        ns = jnp.concatenate((crust["n"], ns))
-        ps = jnp.concatenate((crust["p"], ps))
-        es = jnp.concatenate((crust["e"], es))
+        ns = jnp.concatenate((CRUST["n"], ns))
+        ps = jnp.concatenate((CRUST["p"], ps))
+        es = jnp.concatenate((CRUST["e"], es))
 
         super().__init__(ns, ps, es)
 
@@ -165,6 +198,12 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
 
 
 class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
+    """
+    MetaModel_with_CSE_EOS_model is a class to interpolate EOS data with a meta-model and using the CSE.
+
+    Args:
+        Interpolate_EOS_model (object): Base class of interpolation EOS data.
+    """
     def __init__(
         self,
         # parameters for the MetaModel
@@ -174,8 +213,8 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         # parameters for the CSE
         ngrids: Float[Array, "n_grid_point"],
         cs2grids: Float[Array, "n_grid_point"],
-        nsat=0.16,
-        nmax=25 * 0.16,
+        nsat: Float=0.16,
+        nmax: Float=25 * 0.16,
     ):
 
         # initializate the MetaModel part
@@ -188,6 +227,8 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         )
         # calculate the chemical potential at the transition point
         self.n_break = n_break
+        
+        # TODO: seems a bit cumbersome, can we simplify this?
         self.p_break = (
             self.metamodel.pressure_from_number_density_nuclear_unit(
                 jnp.array(
@@ -211,6 +252,7 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
             .get()
         )
         self.mu_break = (self.p_break + self.e_break) / self.n_break
+        # TODO: this could be a typo?
         self.cs2_break = (
             jnp.diff(self.metamodel.p).at[-1].get()
             / jnp.diff(self.metamodel.e).at[-1].get()
@@ -219,12 +261,16 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         # of the extension portion
         self.ngrids = ngrids
         self.cs2grids = cs2grids
-        self.cs2 = lambda n: jnp.interp(n, ngrids, cs2grids)
-        # number densities in unit of fm^-3
+        self.cs2_function = lambda n: jnp.interp(n, ngrids, cs2grids)
+        
+        # Compute n, p, e for CSE (number densities in unit of fm^-3)
         ns = jnp.logspace(jnp.log10(self.n_break), jnp.log10(nmax), num=1000)
-        mus = self.mu_break * jnp.exp(utils.cumtrapz(self.cs2(ns) / ns, ns))
-        ps = self.p_break + utils.cumtrapz(self.cs2(ns) * mus, ns)
+        mus = self.mu_break * jnp.exp(utils.cumtrapz(self.cs2_function(ns) / ns, ns))
+        ps = self.p_break + utils.cumtrapz(self.cs2_function(ns) * mus, ns)
         es = self.e_break + utils.cumtrapz(mus, ns)
+        
+        # Combine metamodel and CSE data
+        # TODO: converting units back and forth might be numerically unstable if conversion factors are large?
         ns = jnp.concatenate((self.metamodel.n / utils.fm_inv3_to_geometric, ns))
         ps = jnp.concatenate((self.metamodel.p / utils.MeV_fm_inv3_to_geometric, ps))
         es = jnp.concatenate((self.metamodel.e / utils.MeV_fm_inv3_to_geometric, es))
@@ -244,6 +290,7 @@ def construct_family(eos, ndat=50, min_nsat=2):
 
     pcs = jnp.logspace(jnp.log10(pc_min), jnp.log10(pc_max), num=ndat)
 
+    # TODO: why vectorize, and not jax.vmap?
     ms, rs, ks = jnp.vectorize(
         tov.tov_solver,
         excluded=[
