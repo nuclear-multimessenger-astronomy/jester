@@ -36,17 +36,21 @@ roots_vmap = vmap(partial(jnp.roots, strip_zeros=False), in_axes=0, out_axes=0)
 def cubic_root_for_proton_fraction(coefficients):
 
     a, b, c, d = coefficients
-
-    f = ((3.0 * c / a) - ((b**2.0) / (a**2.0))) / 3.0
+    
+    f = ((3.0 * c / a) - ((b ** 2) / (a ** 2))) / 3.0
     g = (
-        ((2.0 * (b**3.0)) / (a**3.0)) - ((9.0 * b * c) / (a**2.0)) + (27.0 * d / a)
+        ((2.0 * (b ** 3)) / (a ** 3)) - ((9.0 * b * c) / (a ** 2)) + (27.0 * d / a)
     ) / 27.0
-    h = (g**2.0) / 4.0 + (f**3.0) / 27.0
+    g_squared = g ** 2
+    f_cubed = f ** 3
+    h = g_squared / 4.0 + f_cubed / 27.0
 
     R = -(g / 2.0) + jnp.sqrt(h)
-    S = jnp.where(R >= 0.0, jnp.power(R, 1.0 / 3.0), -jnp.power(-R, 1.0 / 3.0))
+    # S = jnp.where(R >= 0.0, jnp.power(R, 1/3), -jnp.power(-R, 1/3)) # TODO: jnp.cbrt works fine?
+    S = jnp.cbrt(R)
     T = -(g / 2.0) - jnp.sqrt(h)
-    U = jnp.where(T >= 0.0, jnp.power(T, 1.0 / 3.0), -jnp.power(-T, 1.0 / 3.0))
+    # U = jnp.where(T >= 0.0, jnp.power(T, 1/3), -jnp.power(-T, 1/3))
+    U = jnp.cbrt(T)
 
     x1 = (S + U) - (b / (3.0 * a))
     x2 = -(S + U) / 2 - (b / (3.0 * a)) + (S - U) * jnp.sqrt(3.0) * 0.5j
