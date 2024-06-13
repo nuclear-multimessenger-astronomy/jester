@@ -9,7 +9,7 @@ from . import utils, tov
 # get the crust
 DEFAULT_DIR = os.path.join(os.path.dirname(__file__))
 # TODO: do we want several crust files or do we always use this crust?
-CRUST = jnp.load(f"{DEFAULT_DIR}/crust/BPS.npz")
+BPS_CRUST_FILENAME = f"{DEFAULT_DIR}/crust/BPS.npz"
 
 
 class Interpolate_EOS_model(object):
@@ -35,15 +35,14 @@ class Interpolate_EOS_model(object):
         self.n = jnp.array(n * utils.fm_inv3_to_geometric)
         self.p = jnp.array(p * utils.MeV_fm_inv3_to_geometric)
         self.e = jnp.array(e * utils.MeV_fm_inv3_to_geometric)
-
-        # Calculate the pseudo enthalpy
-        self.h = utils.cumtrapz(self.p / (self.e + self.p), jnp.log(self.p))
+        
         # Pre-calculate quantities
         self.logn = jnp.log(self.n)
         self.logp = jnp.log(self.p)
+        self.h = utils.cumtrapz(self.p / (self.e + self.p), jnp.log(self.p)) # enthalpy
         self.loge = jnp.log(self.e)
-        
         self.logh = jnp.log(self.h)
+        
         dloge_dlogp = jnp.diff(self.loge) / jnp.diff(self.logp)
         dloge_dlogp = jnp.concatenate(
             (
@@ -89,10 +88,12 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         coefficient_sat: Float[Array, "n_sat_coeff"],
         coefficient_sym: Float[Array, "n_sym_coeff"],
         nsat=0.16,
+        log_nmin=-1,
         nmax=12 * 0.16,
         ndat=1000,
         fix_proton_fraction=False,
         fix_proton_fraction_val=0.,
+        crust_filename = BPS_CRUST_FILENAME,
     ):
         """
         Initialize the MetaModel_EOS_model with the provided coefficients and compute auxiliary data.
@@ -100,15 +101,20 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         Number densities are in unit of fm^-3. 
         
         Args:
-            coefficient_sat (Float[Array, n_sat_coeff]): _description_
-            coefficient_sym (Float[Array, n_sym_coeff]): _description_
+            coefficient_sat (Float[Array, n_sat_coeff]): Array of coefficients for the saturation part of the EOS.
+            coefficient_sym (Float[Array, n_sym_coeff]): Array of coefficients for the symmetry part of the EOS.
             nsat (float, optional): Value for the number saturation density. Defaults to 0.16, in [fm^-3].
+            log_nmin (float, optional): Starting density from which the metamodel part of the EOS is constructed, in log space. Defaults to log10(nmin) = -1, with densities in fm^-3.
             nmax (float, optional): Maximum number density up to which EOS is constructed. Defaults to 12 * 0.16, i.e. 12 n_sat with n_sat = 0.16 fm^-3.
             ndat (int, optional): Number of datapoints used for the curves (logarithmically spaced). Defaults to 1000.
+            crust_filename (str, optional): Name of the crust file. Defaults to BPS_CRUST_FILENAME. Expected to be a .npz file with keys "n", "p", "e".
         """
         
-        # Save as attributes
-        self.nsat = nsat
+        # Get the crust part:
+        crust = jnp.load(crust_filename)
+        ns_crust = crust["n"]
+        ps_crust = crust["p"]
+        es_crust = crust["e"]
         
         # add the first derivative coefficient in Esat to
         # make it work with jax.numpy.polyval
@@ -118,20 +124,24 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         index_sat = jnp.arange(len(coefficient_sat))
         index_sym = jnp.arange(len(coefficient_sym))
 
+        # Save as attributes
         self.coefficient_sat = coefficient_sat / factorial(index_sat)
         self.coefficient_sym = coefficient_sym / factorial(index_sym)
         self.nsat = nsat
         self.fix_proton_fraction = fix_proton_fraction
         self.fix_proton_fraction_val = fix_proton_fraction_val
-        # number densities in unit of fm^-3
-        ns = jnp.logspace(-1, jnp.log10(nmax), num=ndat)
+        
+        # Compute n, p, e for the MetaModel (number densities in unit of fm^-3)
+        ns = jnp.logspace(log_nmin, jnp.log10(nmax), num=ndat)
         ps = self.pressure_from_number_density_nuclear_unit(ns)
         es = self.energy_density_from_number_density_nuclear_unit(ns)
 
-        ns = jnp.concatenate((CRUST["n"], ns))
-        ps = jnp.concatenate((CRUST["p"], ps))
-        es = jnp.concatenate((CRUST["e"], es))
-
+        # Append crust data to the MetaModel data
+        ns = jnp.concatenate((ns_crust, ns))
+        ps = jnp.concatenate((ps_crust, ps))
+        es = jnp.concatenate((es_crust, es))
+        
+        # Initialize with parent class
         super().__init__(ns, ps, es)
 
     def esym(self, n: Float[Array, "n_points"]):
@@ -156,35 +166,40 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         # p_2 = 0
         # p_3 = 8 * Esym
         Esym = self.esym(n)
+        
+        a = 8.0 * Esym
+        b = jnp.zeros(shape=n.shape)
+        c = utils.hbarc * jnp.power(3.0 * jnp.pi**2 * n, 1.0 / 3.0)
+        d = -4.0 * Esym - (utils.m_n - utils.m_p)
+        
         coeffs = jnp.array(
             [
-                8.0 * Esym,
-                jnp.zeros(shape=n.shape),
-                utils.hbarc * jnp.power(3.0 * jnp.pi**2 * n, 1.0 / 3.0),
-                -4.0 * Esym - (utils.m_n - utils.m_p),
+                a,
+                b,
+                c,
+                d,
             ]
         ).T
         ys = utils.cubic_root_for_proton_fraction(coeffs)
-        # only take the ys in [0, 1] and real
         physical_ys = jnp.where(
             (ys.imag == 0.0) * (ys.real >= 0.0) * (ys.real <= 1.0),
             ys.real,
             jnp.zeros_like(ys.real),
         ).sum(axis=1)
-        x = jnp.power(physical_ys, 1.0 / 3.0)
-        return x
+        proton_fraction = jnp.cbrt(physical_ys)
+        return proton_fraction
 
     def energy_per_particle_nuclear_unit(self, n: Float[Array, "n_points"]):
-        x = jax.lax.cond(
+        proton_fraction = jax.lax.cond(
             self.fix_proton_fraction,
             lambda x: self.fix_proton_fraction_val * jnp.ones(n.shape),
             self.proton_fraction,
             n
         )
-        self.proton_fraction(n)
-        delta = 1.0 - 2.0 * x
-        dynamic_part = self.esat(n) + self.esym(n) * delta**2.0
-        static_part = x * utils.m_n + (1.0 - x) * utils.m_p
+        delta = 1.0 - 2.0 * proton_fraction
+        dynamic_part = self.esat(n) + self.esym(n) * delta ** 2
+        static_part = proton_fraction * utils.m_p + (1.0 - proton_fraction) * utils.m_n
+        
         return dynamic_part + static_part
 
     def energy_density_from_number_density_nuclear_unit(
@@ -252,7 +267,6 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
             .get()
         )
         self.mu_break = (self.p_break + self.e_break) / self.n_break
-        # TODO: this could be a typo?
         self.cs2_break = (
             jnp.diff(self.metamodel.p).at[-1].get()
             / jnp.diff(self.metamodel.e).at[-1].get()
