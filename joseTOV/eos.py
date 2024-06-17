@@ -152,7 +152,33 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         x = (n - self.nsat) / (3.0 * self.nsat)
         return jnp.polyval(self.coefficient_sat[::-1], x)
 
-    def proton_fraction(self, n: Float[Array, "n_points"]):
+    def proton_fraction(self, n: Float[Array, "n_points"]) -> Float[Array, "n_points"]:
+        """
+        Get the proton fraction for a given number density. If proton fraction is fixed, return the fixed value.
+
+        Args:
+            n (Float[Array, "n_points"]): Number density in fm^-3.
+
+        Returns:
+            Float[Array, "n_points"]: Proton fraction as a function of the number density, either computed or the fixed value.
+        """
+        return jax.lax.cond(
+                self.fix_proton_fraction,
+                lambda x: self.fix_proton_fraction_val * jnp.ones(n.shape),
+                self.compute_proton_fraction,
+                n
+            )
+    
+    def compute_proton_fraction(self, n: Float[Array, "n_points"]) -> Float[Array, "n_points"]:
+        """
+        Computes the proton fraction for a given number density.
+
+        Args:
+            n (Float[Array, "n_points"]): Number density in fm^-3.
+
+        Returns:
+            Float[Array, "n_points"]: Proton fraction as a function of the number density.
+        """
         # chemical potential of electron
         # mu_e = hbarc * pow(3 * pi**2 * x * n, 1. / 3.)
         #      = hbarc * pow(3 * pi**2 * n, 1. / 3.) * y (y = x**1./3.)
@@ -190,12 +216,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         return proton_fraction
 
     def energy_per_particle_nuclear_unit(self, n: Float[Array, "n_points"]):
-        proton_fraction = jax.lax.cond(
-            self.fix_proton_fraction,
-            lambda x: self.fix_proton_fraction_val * jnp.ones(n.shape),
-            self.proton_fraction,
-            n
-        )
+        proton_fraction = self.proton_fraction(n)
         delta = 1.0 - 2.0 * proton_fraction
         dynamic_part = self.esat(n) + self.esym(n) * (delta ** 2)
         static_part = proton_fraction * utils.m_p + (1.0 - proton_fraction) * utils.m_n
@@ -208,7 +229,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         return n * self.energy_per_particle_nuclear_unit(n)
 
     def pressure_from_number_density_nuclear_unit(self, n: Float[Array, "n_points"]):
-        p = n * n * jnp.diagonal(jax.jacfwd(self.energy_density_from_number_density_nuclear_unit)(n))
+        p = n * n * jnp.diagonal(jax.jacfwd(self.energy_per_particle_nuclear_unit)(n))
         return p
 
 
@@ -293,11 +314,12 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
 
 
 def construct_family(eos, ndat=50, min_nsat=2):
-    # constrcut the dictionary
+    # Construct the dictionary
     ns, ps, hs, es, dloge_dlogps = eos
+    eos_dict = dict(p=ps, h=hs, e=es, dloge_dlogp=dloge_dlogps)
+    
     # calculate the pc_min
     pc_min = utils.interp_in_logspace(min_nsat * 0.16 * utils.fm_inv3_to_geometric, ns, ps)
-    eos_dict = dict(p=ps, h=hs, e=es, dloge_dlogp=dloge_dlogps)
 
     # end at pc at pmax
     pc_max = eos_dict["p"][-1]
