@@ -135,7 +135,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         ns = jnp.logspace(log_nmin, jnp.log10(nmax), num=ndat)
         ps = self.pressure_from_number_density_nuclear_unit(ns)
         es = self.energy_density_from_number_density_nuclear_unit(ns)
-
+        
         # Append crust data to the MetaModel data
         ns = jnp.concatenate((ns_crust, ns))
         ps = jnp.concatenate((ps_crust, ps))
@@ -197,7 +197,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             n
         )
         delta = 1.0 - 2.0 * proton_fraction
-        dynamic_part = self.esat(n) + self.esym(n) * delta ** 2
+        dynamic_part = self.esat(n) + self.esym(n) * (delta ** 2)
         static_part = proton_fraction * utils.m_p + (1.0 - proton_fraction) * utils.m_n
         
         return dynamic_part + static_part
@@ -208,7 +208,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         return n * self.energy_per_particle_nuclear_unit(n)
 
     def pressure_from_number_density_nuclear_unit(self, n: Float[Array, "n_points"]):
-        p = n * n * jnp.diagonal(jax.jacfwd(self.energy_per_particle_nuclear_unit)(n))
+        p = n * n * jnp.diagonal(jax.jacfwd(self.energy_density_from_number_density_nuclear_unit)(n))
         return p
 
 
