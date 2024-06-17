@@ -88,8 +88,8 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         coefficient_sat: Float[Array, "n_sat_coeff"],
         coefficient_sym: Float[Array, "n_sym_coeff"],
         nsat=0.16,
-        log_nmin=-1,
-        nmax=12 * 0.16,
+        nmin=0.1, # in fm^-3
+        nmax=12 * 0.16, # 12 nsat
         ndat=1000,
         fix_proton_fraction=False,
         fix_proton_fraction_val=0.,
@@ -104,7 +104,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             coefficient_sat (Float[Array, n_sat_coeff]): Array of coefficients for the saturation part of the EOS.
             coefficient_sym (Float[Array, n_sym_coeff]): Array of coefficients for the symmetry part of the EOS.
             nsat (float, optional): Value for the number saturation density. Defaults to 0.16, in [fm^-3].
-            log_nmin (float, optional): Starting density from which the metamodel part of the EOS is constructed, in log space. Defaults to log10(nmin) = -1, with densities in fm^-3.
+            nmin (float, optional): Starting density from which the metamodel part of the EOS is constructed. Defaults to 0.1 fm^-3.
             nmax (float, optional): Maximum number density up to which EOS is constructed. Defaults to 12 * 0.16, i.e. 12 n_sat with n_sat = 0.16 fm^-3.
             ndat (int, optional): Number of datapoints used for the curves (logarithmically spaced). Defaults to 1000.
             crust_filename (str, optional): Name of the crust file. Defaults to BPS_CRUST_FILENAME. Expected to be a .npz file with keys "n", "p", "e".
@@ -132,7 +132,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         self.fix_proton_fraction_val = fix_proton_fraction_val
         
         # Compute n, p, e for the MetaModel (number densities in unit of fm^-3)
-        ns = jnp.logspace(log_nmin, jnp.log10(nmax), num=ndat)
+        ns = jnp.logspace(jnp.log10(nmin), jnp.log10(nmax), num=ndat)
         ps = self.pressure_from_number_density_nuclear_unit(ns)
         es = self.energy_density_from_number_density_nuclear_unit(ns)
         
@@ -287,6 +287,8 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
             .at[0]
             .get()
         )
+        
+        # TODO: this has to be checked!
         self.mu_break = (self.p_break + self.e_break) / self.n_break
         self.cs2_break = (
             jnp.diff(self.metamodel.p).at[-1].get()
