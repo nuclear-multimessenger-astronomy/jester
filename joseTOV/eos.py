@@ -249,7 +249,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         p = self.pressure_from_number_density_nuclear_unit(n)
         e = self.energy_density_from_number_density_nuclear_unit(n)
         cs2 = jnp.diff(p) / jnp.diff(e)
-        cs2 = jnp.clip(cs2, 1e-3, 1.0)
+        cs2 = jnp.clip(cs2, cs2_min, 1.0)
         # TODO: diff method reduces array size by 1, make sure same array size -- is this the best option right now?
         cs2 = jnp.concatenate(
             (
