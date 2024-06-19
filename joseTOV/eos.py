@@ -275,31 +275,53 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         # parameters for the MetaModel
         coefficient_sat: Float[Array, "n_sat_coeff"],
         coefficient_sym: Float[Array, "n_sym_coeff"],
-        n_break: Float,
+        nbreak: Float,
         # parameters for the CSE
         ngrids: Float[Array, "n_grid_point"],
         cs2grids: Float[Array, "n_grid_point"],
         nsat: Float=0.16,
+        nmin: Float=0.1,
         nmax: Float=12 * 0.16,
+        ndat_metamodel: Int=1000,
+        ndat_CSE: Int=1000,
+        **metamodel_kwargs
     ):
+        """
+        Initialize the MetaModel_with_CSE_EOS_model with the provided coefficients and compute auxiliary data.
 
-        # initializate the MetaModel part
+        Args:
+            coefficient_sat (Float[Array, "n_sat_coeff"]): The coefficients for the saturation part of the metamodel part of the EOS.
+            coefficient_sym (Float[Array, "n_sym_coeff"]): The coefficients for the symmetry part of the metamodel part of the EOS.
+            nbreak (Float): The number density at the transition point between the metamodel and the CSE part of the EOS.
+            ngrids (Float[Array, "n_grid_point"]): The number densities for the CSE part of the EOS.
+            cs2grids (Float[Array, "n_grid_point"]): The speed of sound squared for the CSE part of the EOS.
+            nsat (Float, optional): Saturation density. Defaults to 0.16 fm^-3.
+            nmin (Float, optional): Starting point of densities. Defaults to 0.1 fm^-3.
+            nmax (Float, optional): End point of EOS. Defaults to 12*0.16 fm^-3, i.e. 12 nsat.
+            ndat_metamodel (Int, optional): Number of datapoints to be used for the metamodel part of the EOS. Defaults to 1000.
+            ndat_CSE (Int, optional): Number of datapoints to be used for the CSE part of the EOS. Defaults to 1000.
+        """
+
+        # Initializate the MetaModel part up to n_break
         self.metamodel = MetaModel_EOS_model(
             coefficient_sat,
             coefficient_sym,
             nsat=nsat,
-            nmax=n_break,
-            ndat=50,
+            nmin=nmin,
+            nmax=nbreak,
+            ndat=ndat_metamodel,
+            **metamodel_kwargs
         )
+        assert len(ngrids) == len(cs2grids), "ngrids and cs2grids must have the same length."
         # calculate the chemical potential at the transition point
-        self.n_break = n_break
+        self.nbreak = nbreak
         
         # TODO: seems a bit cumbersome, can we simplify this?
         self.p_break = (
             self.metamodel.pressure_from_number_density_nuclear_unit(
                 jnp.array(
                     [
-                        n_break,
+                        self.nbreak,
                     ]
                 )
             )
@@ -310,7 +332,7 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
             self.metamodel.energy_density_from_number_density_nuclear_unit(
                 jnp.array(
                     [
-                        n_break,
+                        self.nbreak,
                     ]
                 )
             )
@@ -319,19 +341,22 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         )
         
         # TODO: this has to be checked!
-        self.mu_break = (self.p_break + self.e_break) / self.n_break
+        self.mu_break = (self.p_break + self.e_break) / self.nbreak
         self.cs2_break = (
             jnp.diff(self.metamodel.p).at[-1].get()
             / jnp.diff(self.metamodel.e).at[-1].get()
         )
+        print("DEBUG: cs2_break", self.cs2_break)
         # define the speed-of-sound interpolation
         # of the extension portion
-        self.ngrids = ngrids
-        self.cs2grids = cs2grids
-        self.cs2_function = lambda n: jnp.interp(n, ngrids, cs2grids)
+        
+        # TODO: double check this
+        self.ngrids = jnp.concatenate((jnp.array([self.nbreak]), ngrids))
+        self.cs2grids = jnp.concatenate((jnp.array([self.cs2_break]), cs2grids))
+        self.cs2_function = lambda n: jnp.interp(n, self.ngrids, self.cs2grids)
         
         # Compute n, p, e for CSE (number densities in unit of fm^-3)
-        ns = jnp.logspace(jnp.log10(self.n_break), jnp.log10(nmax), num=1000)
+        ns = jnp.logspace(jnp.log10(self.nbreak), jnp.log10(nmax), num=ndat_CSE)
         mus = self.mu_break * jnp.exp(utils.cumtrapz(self.cs2_function(ns) / ns, ns))
         ps = self.p_break + utils.cumtrapz(self.cs2_function(ns) * mus, ns)
         es = self.e_break + utils.cumtrapz(mus, ns)
@@ -343,6 +368,21 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         es = jnp.concatenate((self.metamodel.e / utils.MeV_fm_inv3_to_geometric, es))
 
         super().__init__(ns, ps, es)
+        
+    def cs2_from_number_density_nuclear_unit(self, n: Float[Array, "n_points"], cs2_min: float = 1e-3) -> Float[Array, "n_points"]:
+        """
+        Compute the speed of sound squared from the number density in nuclear units. Uses the metamodel for densities below nbreak and the CSE for densities above nbreak.
+
+        Args:
+            n (Float[Array, "n_points"]): Number density in fm^-3.
+            cs2_min (float, optional): Minimal value to clip cs2 values computed. Defaults to 1e-3.
+
+        Returns:
+            Float[Array, "n_points"]: Speed of sound squared, clipped to be between [cs2_min, 1.0], and with the same size as the input n
+        """
+        cs2 = jnp.where(n < self.nbreak, self.metamodel.cs2_from_number_density_nuclear_unit(n), self.cs2_function(n))
+        cs2 = jnp.clip(cs2, cs2_min, 1.0)
+        return cs2
 
 
 def construct_family(eos, ndat=50, min_nsat=2):
