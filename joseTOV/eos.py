@@ -346,11 +346,9 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
             jnp.diff(self.metamodel.p).at[-1].get()
             / jnp.diff(self.metamodel.e).at[-1].get()
         )
-        print("DEBUG: cs2_break", self.cs2_break)
         # define the speed-of-sound interpolation
         # of the extension portion
         
-        # TODO: double check this
         self.ngrids = jnp.concatenate((jnp.array([self.nbreak]), ngrids))
         self.cs2grids = jnp.concatenate((jnp.array([self.cs2_break]), cs2grids))
         self.cs2_function = lambda n: jnp.interp(n, self.ngrids, self.cs2grids)
