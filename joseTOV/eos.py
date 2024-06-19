@@ -27,7 +27,7 @@ class Interpolate_EOS_model(object):
 
         Args:
             n (Float[Array, n_points]): Number densities. Expected units are n[fm^-3]
-            p (Float[Array, n_points]): Pressure values. Expected units are p[MeV / m^3]
+            p (Float[Array, n_points]): Pressure values. Expected units are p[MeV / fm^3]
             e (Float[Array, n_points]): Energy densities. Expected units are e[MeV / fm^3]
         """
         
@@ -143,6 +143,9 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         
         # Initialize with parent class
         super().__init__(ns, ps, es)
+        
+        # Use ns rather than self.n because of unit conversion in super init
+        self.cs2 = self.cs2_from_number_density_nuclear_unit(ns)
 
     def esym(self, n: Float[Array, "n_points"]):
         x = (n - self.nsat) / (3.0 * self.nsat)
@@ -231,7 +234,34 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
     def pressure_from_number_density_nuclear_unit(self, n: Float[Array, "n_points"]):
         p = n * n * jnp.diagonal(jax.jacfwd(self.energy_per_particle_nuclear_unit)(n))
         return p
+    
+    def cs2_from_number_density_nuclear_unit(self, n: Float[Array, "n_points"], cs2_min: float = 1e-3) -> Float[Array, "n_points"]:
+        """
+        Compute the speed of sound squared from the number density in nuclear units.
 
+        Args:
+            n (Float[Array, Float[Array, "n_points"]): Number density in fm^-3.
+            cs2_min (float, optional): Minimal value to clip cs2 values computed. Defaults to 1e-3.
+
+        Returns:
+            Float[Array, "n_points"]: Speed of sound squared, clipped to be between [cs2_min, 1.0], and with the same size as the input n
+        """
+        p = self.pressure_from_number_density_nuclear_unit(n)
+        e = self.energy_density_from_number_density_nuclear_unit(n)
+        cs2 = jnp.diff(p) / jnp.diff(e)
+        cs2 = jnp.clip(cs2, 1e-3, 1.0)
+        # TODO: diff method reduces array size by 1, make sure same array size -- is this the best option right now?
+        cs2 = jnp.concatenate(
+            (
+                jnp.array(
+                    [
+                        cs2.at[0].get(),
+                    ]
+                ),
+                cs2,
+            )
+        )
+        return cs2
 
 class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
     """
