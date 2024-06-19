@@ -280,7 +280,7 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         ngrids: Float[Array, "n_grid_point"],
         cs2grids: Float[Array, "n_grid_point"],
         nsat: Float=0.16,
-        nmax: Float=25 * 0.16,
+        nmax: Float=12 * 0.16,
     ):
 
         # initializate the MetaModel part
