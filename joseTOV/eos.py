@@ -8,7 +8,7 @@ from . import utils, tov
 
 # get the crust
 DEFAULT_DIR = os.path.join(os.path.dirname(__file__))
-# TODO: do we want several crust files or do we always use this crust?
+# TODO: do we want several crust files or do we always use this crust? Perhaps store some crust files with correct format and units in the data folder?
 BPS_CRUST_FILENAME = f"{DEFAULT_DIR}/crust/BPS.npz"
 
 
@@ -43,6 +43,7 @@ class Interpolate_EOS_model(object):
         self.loge = jnp.log(self.e)
         self.logh = jnp.log(self.h)
         
+        # TODO: might be better to use jnp.gradient?
         dloge_dlogp = jnp.diff(self.loge) / jnp.diff(self.logp)
         dloge_dlogp = jnp.concatenate(
             (
@@ -92,8 +93,9 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         nmax=12 * 0.16, # 12 nsat
         ndat=1000,
         fix_proton_fraction=False,
-        fix_proton_fraction_val=0.,
+        fix_proton_fraction_val=0.0,
         crust_filename = BPS_CRUST_FILENAME,
+        use_empty_crust: bool = False
     ):
         """
         Initialize the MetaModel_EOS_model with the provided coefficients and compute auxiliary data.
@@ -107,14 +109,22 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             nmin (float, optional): Starting density from which the metamodel part of the EOS is constructed. Defaults to 0.1 fm^-3.
             nmax (float, optional): Maximum number density up to which EOS is constructed. Defaults to 12 * 0.16, i.e. 12 n_sat with n_sat = 0.16 fm^-3.
             ndat (int, optional): Number of datapoints used for the curves (logarithmically spaced). Defaults to 1000.
+            fix_proton_fraction (bool, optional): If True, the proton fraction is fixed to a constant value. Defaults to False.
+            fix_proton_fraction_val (float, optional): Value to which the proton fraction is fixed. Defaults to 0.0.    
             crust_filename (str, optional): Name of the crust file. Defaults to BPS_CRUST_FILENAME. Expected to be a .npz file with keys "n", "p", "e".
+            use_empty_crust (bool, optional): If True, the crust data is not used. Defaults to False. TODO: check if useful or 
         """
         
         # Get the crust part:
-        crust = jnp.load(crust_filename)
-        ns_crust = crust["n"]
-        ps_crust = crust["p"]
-        es_crust = crust["e"]
+        if use_empty_crust:
+            ns_crust = jnp.array([])
+            ps_crust = jnp.array([])
+            es_crust = jnp.array([])
+        else:
+            crust = jnp.load(crust_filename)
+            ns_crust = crust["n"]
+            ps_crust = crust["p"]
+            es_crust = crust["e"]
         
         # add the first derivative coefficient in Esat to
         # make it work with jax.numpy.polyval
@@ -132,6 +142,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         self.fix_proton_fraction_val = fix_proton_fraction_val
         
         # Compute n, p, e for the MetaModel (number densities in unit of fm^-3)
+        # TODO: make sure we catch an accidental overlap between the metamodel and the crust
         ns = jnp.logspace(jnp.log10(nmin), jnp.log10(nmax), num=ndat)
         ps = self.pressure_from_number_density_nuclear_unit(ns)
         es = self.energy_density_from_number_density_nuclear_unit(ns)
@@ -246,11 +257,13 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         Returns:
             Float[Array, "n_points"]: Speed of sound squared, clipped to be between [cs2_min, 1.0], and with the same size as the input n
         """
+        
+        # TODO: is this correct?
         p = self.pressure_from_number_density_nuclear_unit(n)
         e = self.energy_density_from_number_density_nuclear_unit(n)
         cs2 = jnp.diff(p) / jnp.diff(e)
         cs2 = jnp.clip(cs2, cs2_min, 1.0)
-        # TODO: diff method reduces array size by 1, make sure same array size -- is this the best option right now?
+        # TODO: diff method reduces array size by 1, make sure same array size -- is this the best option right now? Perhaps use jnp.gradient?
         cs2 = jnp.concatenate(
             (
                 jnp.array(
@@ -261,6 +274,12 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
                 cs2,
             )
         )
+        
+        ### Other suggestion:
+        # dpdn = jnp.diagonal(jax.jacfwd(self.pressure_from_number_density_nuclear_unit)(n))
+        # dedn = jnp.diagonal(jax.jacfwd(self.energy_density_from_number_density_nuclear_unit)(n))
+        # cs2 = dpdn / dedn
+        # cs2 = jnp.clip(cs2, cs2_min, 1.0)
         return cs2
 
 class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
@@ -383,8 +402,22 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         return cs2
 
 
-def construct_family(eos, ndat=50, min_nsat=2):
+def construct_family(eos: tuple[Float[Array, "n_points"], Float[Array, "n_points"], Float[Array, "n_points"], Float[Array, "n_points"], Float[Array, "n_points"]], 
+                     ndat: Int=50, 
+                     min_nsat: Float=2) -> tuple[Float[Array, "ndat"], Float[Array, "ndat"], Float[Array, "ndat"], Float[Array, "ndat"]]:
+    """
+    Solve the TOV equations and generate the M, R and Lambda curves.
+
+    Args:
+        eos (tuple[Float[Array, "n_points"], Float[Array, "n_points"], Float[Array, "n_points"], Float[Array, "n_points"], Float[Array, "n_points"]]): Tuple containing n, p, h, e and dloge_dlogp.
+        ndat (int, optional): Number of datapoints used when constructing the central pressure grid. Defaults to 50.
+        min_nsat (int, optional): Starting density for central pressure in numbers of nsat (assumed to be 0.16 fm^-3). Defaults to 2.
+
+    Returns:
+        tuple[Float[Array, "ndat"], Float[Array, "ndat"], Float[Array, "ndat"], Float[Array, "ndat"]]: log(pcs), masses in solar masses, radii in km, and dimensionless tidal deformabilities
+    """
     # Construct the dictionary
+    # TODO: does this have to be a tuple? For typing and docs, might be better to give as separate arguments?
     ns, ps, hs, es, dloge_dlogps = eos
     eos_dict = dict(p=ps, h=hs, e=es, dloge_dlogp=dloge_dlogps)
     
