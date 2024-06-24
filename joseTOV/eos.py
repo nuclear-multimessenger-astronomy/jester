@@ -2,7 +2,7 @@ import os
 import jax
 import jax.numpy as jnp
 from jax.scipy.special import factorial
-from jaxtyping import Array, Float, Int
+from jaxtyping import Array, Float, Int, Bool
 
 from . import utils, tov
 
@@ -88,14 +88,16 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         self,
         coefficient_sat: Float[Array, "n_sat_coeff"],
         coefficient_sym: Float[Array, "n_sym_coeff"],
-        nsat=0.16,
-        nmin=0.1, # in fm^-3
-        nmax=12 * 0.16, # 12 nsat
-        ndat=1000,
-        fix_proton_fraction=False,
-        fix_proton_fraction_val=0.0,
-        crust_filename = BPS_CRUST_FILENAME,
-        use_empty_crust: bool = False
+        nsat: Float=0.16,
+        nmin: Float=0.1,
+        nmax: Float=12 * 0.16,
+        ndat_mm: Int=100,
+        fix_proton_fraction: Bool=False,
+        fix_proton_fraction_val: Float=0.0,
+        crust_filename: str=BPS_CRUST_FILENAME,
+        use_empty_crust: Bool=False,
+        nmax_crust: Float=0.08,
+        ndat_spline: Int=10,
     ):
         """
         Initialize the MetaModel_EOS_model with the provided coefficients and compute auxiliary data.
@@ -113,6 +115,8 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             fix_proton_fraction_val (float, optional): Value to which the proton fraction is fixed. Defaults to 0.0.    
             crust_filename (str, optional): Name of the crust file. Defaults to BPS_CRUST_FILENAME. Expected to be a .npz file with keys "n", "p", "e".
             use_empty_crust (bool, optional): If True, the crust data is not used. Defaults to False. TODO: check if useful or 
+            nmax_crust (float, optional): Maximum number density for the crust data. Defaults to 0.08 fm^-3. Will interpolate with a spline to connect crust and metamodel.
+            ndat_spline (float, optional): Number of datapoints used for the spline interpolation between the crust and the metamodel. Defaults to 10.
         """
         
         # Get the crust part:
@@ -120,12 +124,34 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             ns_crust = jnp.array([])
             ps_crust = jnp.array([])
             es_crust = jnp.array([])
+            
+            self.nmax_crust = 0.0
+            self.ns_crust = jnp.array([])
+            self.cs2_crust = jnp.array([])
         else:
             crust = jnp.load(crust_filename)
             ns_crust = crust["n"]
             ps_crust = crust["p"]
             es_crust = crust["e"]
-        
+            
+            # Make sure nmax_crust is not larger than the maximum number density in the crust data and below start of MM
+            nmax_crust = min([nmax_crust, ns_crust[-1]])
+            nmax_crust = min([nmax_crust, nmin])
+            
+            # Limit values to below nmax_crust
+            mask = ns_crust < nmax_crust
+            ns_crust = ns_crust[mask]
+            ps_crust = ps_crust[mask]
+            es_crust = es_crust[mask]
+            
+            # Compute the speed-of-sound (dp/de) for the crust:
+            self.nmax_crust = nmax_crust
+            cs2_crust = jnp.diff(ps_crust) / jnp.diff(es_crust)
+            cs2_crust = jnp.append(jnp.array([1e-5]), cs2_crust)
+            
+            self.ns_crust = ns_crust
+            self.cs2_crust = cs2_crust
+            
         # add the first derivative coefficient in Esat to
         # make it work with jax.numpy.polyval
         coefficient_sat = jnp.insert(coefficient_sat, 1, 0.0)
@@ -138,25 +164,35 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         self.coefficient_sat = coefficient_sat / factorial(index_sat)
         self.coefficient_sym = coefficient_sym / factorial(index_sym)
         self.nsat = nsat
+        self.nmin = nmin
         self.fix_proton_fraction = fix_proton_fraction
         self.fix_proton_fraction_val = fix_proton_fraction_val
         
         # Compute n, p, e for the MetaModel (number densities in unit of fm^-3)
-        # TODO: make sure we catch an accidental overlap between the metamodel and the crust
-        ns = jnp.logspace(jnp.log10(nmin), jnp.log10(nmax), num=ndat)
-        ps = self.pressure_from_number_density_nuclear_unit(ns)
-        es = self.energy_density_from_number_density_nuclear_unit(ns)
+        ns_mm = jnp.logspace(jnp.log10(nmin), jnp.log10(nmax), num=ndat_mm)
+        ps_mm = self.pressure_from_number_density_nuclear_unit(ns_mm)
+        es_mm = self.energy_density_from_number_density_nuclear_unit(ns_mm)
+        cs2_mm = self.cs2_from_number_density_nuclear_unit_metamodel(ns_mm)
         
-        # Append crust data to the MetaModel data
-        ns = jnp.concatenate((ns_crust, ns))
-        ps = jnp.concatenate((ps_crust, ps))
-        es = jnp.concatenate((es_crust, es))
+        # Compute the c2s and make a smooth connection between crust and MM
+        ns = jnp.concatenate((ns_crust, ns_mm))
+        cs2 = jnp.concatenate((self.cs2_crust, cs2_mm))
         
-        # Initialize with parent class
+        # Interpolate with a spline
+        ns_spline = jnp.linspace(self.nmax_crust, nmin, num=ndat_spline)
+        ps_spline = self.pressure_from_number_density_nuclear_unit(ns_spline)
+        es_spline = self.energy_density_from_number_density_nuclear_unit(ns_spline)
+        cs2_spline = utils.interpax_interp1d(ns_spline, ns, cs2)
+        
+        # Combine all:
+        ns = jnp.concatenate((ns_crust, ns_spline, ns_mm))
+        es = jnp.concatenate((es_crust, es_spline, es_mm))
+        ps = jnp.concatenate((ps_crust, ps_spline, ps_mm))
+        cs2 = jnp.concatenate((self.cs2_crust, cs2_spline, cs2_mm))
+        
+        # Initialize with parent class and save cs2
         super().__init__(ns, ps, es)
-        
-        # Use ns rather than self.n because of unit conversion in super init
-        self.cs2 = self.cs2_from_number_density_nuclear_unit(ns)
+        self.cs2 = cs2
 
     def esym(self, n: Float[Array, "n_points"]):
         x = (n - self.nsat) / (3.0 * self.nsat)
@@ -246,9 +282,9 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         p = n * n * jnp.diagonal(jax.jacfwd(self.energy_per_particle_nuclear_unit)(n))
         return p
     
-    def cs2_from_number_density_nuclear_unit(self, n: Float[Array, "n_points"], cs2_min: float = 1e-3) -> Float[Array, "n_points"]:
+    def cs2_from_number_density_nuclear_unit_metamodel(self, n: Float[Array, "n_points"], cs2_min: float = 1e-5) -> Float[Array, "n_points"]:
         """
-        Compute the speed of sound squared from the number density in nuclear units.
+        Compute the speed of sound squared from the number density in nuclear units in the metamodel part.
 
         Args:
             n (Float[Array, Float[Array, "n_points"]): Number density in fm^-3.
@@ -275,11 +311,28 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             )
         )
         
-        ### Other suggestion:
-        # dpdn = jnp.diagonal(jax.jacfwd(self.pressure_from_number_density_nuclear_unit)(n))
-        # dedn = jnp.diagonal(jax.jacfwd(self.energy_density_from_number_density_nuclear_unit)(n))
-        # cs2 = dpdn / dedn
-        # cs2 = jnp.clip(cs2, cs2_min, 1.0)
+        return cs2
+    
+    def cs2_from_number_density_nuclear_unit(self, n: Float[Array, "n_points"], cs2_min: float = 1e-5) -> Float[Array, "n_points"]:
+        """
+        Below nmin, i.e, the starting density of the MM, we return the evaluation of the cubic spline interpolator. Above nmin, we use the metamodel function. 
+        
+        Args:
+            n (Float[Array, "n_points"]): Number density in fm^-3.
+            cs2_min (float, optional): Minimal value to clip cs2 values computed. Defaults to 1e-3.
+
+        Returns:
+            _type_: _description_
+        """
+        # TODO: this is cumbersome... improve!
+        ns = self.n / utils.fm_inv3_to_geometric
+        
+        cs2 = jnp.where(
+            n <= self.nmin,
+            utils.interpax_interp1d(n, ns, self.cs2),
+            self.cs2_from_number_density_nuclear_unit_metamodel(n, cs2_min)
+        )
+        
         return cs2
 
 class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
@@ -386,7 +439,7 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
 
         super().__init__(ns, ps, es)
         
-    def cs2_from_number_density_nuclear_unit(self, n: Float[Array, "n_points"], cs2_min: float = 1e-3) -> Float[Array, "n_points"]:
+    def cs2_from_number_density_nuclear_unit(self, n: Float[Array, "n_points"], cs2_min: float = 1e-5) -> Float[Array, "n_points"]:
         """
         Compute the speed of sound squared from the number density in nuclear units. Uses the metamodel for densities below nbreak and the CSE for densities above nbreak.
 
