@@ -394,7 +394,11 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         return cs2
 
 
-def construct_family(eos: tuple[Float[Array, "n_points"], Float[Array, "n_points"], Float[Array, "n_points"], Float[Array, "n_points"], Float[Array, "n_points"]], 
+def construct_family(ns: Float[Array, "n_points"], 
+                     ps: Float[Array, "n_points"], 
+                     hs: Float[Array, "n_points"], 
+                     es: Float[Array, "n_points"], 
+                     dloge_dlogps: Float[Array, "n_points"],
                      ndat: Int=50, 
                      min_nsat: Float=2) -> tuple[Float[Array, "ndat"], Float[Array, "ndat"], Float[Array, "ndat"], Float[Array, "ndat"]]:
     """
@@ -409,8 +413,6 @@ def construct_family(eos: tuple[Float[Array, "n_points"], Float[Array, "n_points
         tuple[Float[Array, "ndat"], Float[Array, "ndat"], Float[Array, "ndat"], Float[Array, "ndat"]]: log(pcs), masses in solar masses, radii in km, and dimensionless tidal deformabilities
     """
     # Construct the dictionary
-    # TODO: does this have to be a tuple? For typing and docs, might be better to give as separate arguments?
-    ns, ps, hs, es, dloge_dlogps = eos
     eos_dict = dict(p=ps, h=hs, e=es, dloge_dlogp=dloge_dlogps)
     
     # calculate the pc_min
