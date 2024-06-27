@@ -258,12 +258,10 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             Float[Array, "n_points"]: Speed of sound squared, clipped to be between [cs2_min, 1.0], and with the same size as the input n
         """
         
-        # TODO: is this correct?
         p = self.pressure_from_number_density_nuclear_unit(n)
         e = self.energy_density_from_number_density_nuclear_unit(n)
         cs2 = jnp.diff(p) / jnp.diff(e)
         cs2 = jnp.clip(cs2, cs2_min, 1.0)
-        # TODO: diff method reduces array size by 1, make sure same array size -- is this the best option right now? Perhaps use jnp.gradient?
         cs2 = jnp.concatenate(
             (
                 jnp.array(
@@ -274,12 +272,6 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
                 cs2,
             )
         )
-        
-        ### Other suggestion:
-        # dpdn = jnp.diagonal(jax.jacfwd(self.pressure_from_number_density_nuclear_unit)(n))
-        # dedn = jnp.diagonal(jax.jacfwd(self.energy_density_from_number_density_nuclear_unit)(n))
-        # cs2 = dpdn / dedn
-        # cs2 = jnp.clip(cs2, cs2_min, 1.0)
         return cs2
 
 class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
