@@ -226,7 +226,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             ys.real,
             jnp.zeros_like(ys.real),
         ).sum(axis=1)
-        proton_fraction = jnp.cbrt(physical_ys)
+        proton_fraction = jnp.power(physical_ys, 3)
         return proton_fraction
 
     def energy_per_particle_nuclear_unit(self, n: Float[Array, "n_points"]):
