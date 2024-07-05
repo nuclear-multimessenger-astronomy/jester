@@ -394,18 +394,14 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         return cs2
 
 
-def construct_family(ns: Float[Array, "n_points"], 
-                     ps: Float[Array, "n_points"], 
-                     hs: Float[Array, "n_points"], 
-                     es: Float[Array, "n_points"], 
-                     dloge_dlogps: Float[Array, "n_points"],
+def construct_family(eos: tuple,
                      ndat: Int=50, 
                      min_nsat: Float=2) -> tuple[Float[Array, "ndat"], Float[Array, "ndat"], Float[Array, "ndat"], Float[Array, "ndat"]]:
     """
     Solve the TOV equations and generate the M, R and Lambda curves.
 
     Args:
-        eos (tuple[Float[Array, "n_points"], Float[Array, "n_points"], Float[Array, "n_points"], Float[Array, "n_points"], Float[Array, "n_points"]]): Tuple containing n, p, h, e and dloge_dlogp.
+        eos (tuple): Tuple of the EOS data (ns, ps, hs, es).
         ndat (int, optional): Number of datapoints used when constructing the central pressure grid. Defaults to 50.
         min_nsat (int, optional): Starting density for central pressure in numbers of nsat (assumed to be 0.16 fm^-3). Defaults to 2.
 
@@ -413,6 +409,7 @@ def construct_family(ns: Float[Array, "n_points"],
         tuple[Float[Array, "ndat"], Float[Array, "ndat"], Float[Array, "ndat"], Float[Array, "ndat"]]: log(pcs), masses in solar masses, radii in km, and dimensionless tidal deformabilities
     """
     # Construct the dictionary
+    ns, ps, hs, es, dloge_dlogps = eos
     eos_dict = dict(p=ps, h=hs, e=es, dloge_dlogp=dloge_dlogps)
     
     # calculate the pc_min
@@ -441,5 +438,16 @@ def construct_family(ns: Float[Array, "n_points"],
 
     # calculate the tidal deformability
     lambdas = 2.0 / 3.0 * ks * jnp.power(cs, -5.0)
+    
+    # TODO: this is working and is precisely what Rahul does as well, but will break if we jit the function... Remove?
+    
+    # if use_TOV_limit:
+    #     negative_diffs = jnp.where(jnp.diff(ms) < 0.0)
+    #     if len(negative_diffs) > 0:
+    #         idx = negative_diffs[0][0]
+    #         pcs = pcs[:idx]
+    #         ms = ms[:idx]
+    #         rs = rs[:idx]
+    #         lambdas = lambdas[:idx]
 
     return jnp.log(pcs), ms, rs, lambdas
