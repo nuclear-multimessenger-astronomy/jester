@@ -92,8 +92,8 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         nmin=0.1, # in fm^-3
         nmax=12 * 0.16, # 12 nsat
         ndat=1000,
-        fix_proton_fraction=False,
-        fix_proton_fraction_val=0.0,
+        fix_proton_fraction=True, # TODO: change to False, but seems broken now
+        fix_proton_fraction_val=0.02,
         crust_filename = BPS_CRUST_FILENAME,
         use_empty_crust: bool = False
     ):
@@ -439,15 +439,8 @@ def construct_family(eos: tuple,
     # calculate the tidal deformability
     lambdas = 2.0 / 3.0 * ks * jnp.power(cs, -5.0)
     
-    # TODO: this is working and is precisely what Rahul does as well, but will break if we jit the function... Remove?
-    
-    # if use_TOV_limit:
-    #     negative_diffs = jnp.where(jnp.diff(ms) < 0.0)
-    #     if len(negative_diffs) > 0:
-    #         idx = negative_diffs[0][0]
-    #         pcs = pcs[:idx]
-    #         ms = ms[:idx]
-    #         rs = rs[:idx]
-    #         lambdas = lambdas[:idx]
+    # TODO: perhaps put a boolean here to flag whether or not to do this, or do we always want to do this?
+    # Limit masses to be below MTOV
+    ms, rs, lambdas = utils.limit_by_MTOV(ms, rs, lambdas)
 
     return jnp.log(pcs), ms, rs, lambdas

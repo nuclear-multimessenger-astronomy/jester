@@ -110,5 +110,5 @@ def tov_solver(eos, pc):
     b = sol.ys[3][-1]
 
     k2 = calc_k2(R, M, H, b)
-
+    
     return M, R, k2

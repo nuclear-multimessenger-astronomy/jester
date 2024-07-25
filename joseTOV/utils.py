@@ -2,6 +2,7 @@
 from jax import vmap
 import jax.numpy as jnp
 from functools import partial
+from jaxtyping import Array, Float
 
 #################
 ### CONSTANTS ###
@@ -116,3 +117,55 @@ def interp_in_logspace(x, xs, ys):
     logxs = jnp.log(xs)
     logys = jnp.log(ys)
     return jnp.exp(jnp.interp(logx, logxs, logys))
+
+def limit_by_MTOV(m: Array, 
+                  r: Array, 
+                  l: Array) -> tuple[Array, Array, Array]:
+    """
+    Limits the M, R and Lambda curves to be below MTOV in a jit-friendly manner (i.e., static shape sizes).
+    The idea now is to feed this into some routine that creates an interpolation out of this, which then uses jnp.unique to get rid of these duplicates
+    NOTE: this assumes that the M curve increases up to a point and potentially decreases after that point. In case the EOS has some weird features and the M curve increases again, this function will return weird results.
+    TODO: generalize this for weird EOS or check if we do not have those weird EOS when sampling NEPs.
+    
+    Args:
+        m (Array["npoints"]): Original mass curve
+        r (Array["npoints"]): Original radius curve
+        l (Array["npoints"]): Original lambdas curve
+        
+    Returns:
+        tuple[Array["npoints"], Array["npoints"], Array["npoints"]]: Tuple of new mass, radius and lambdas curves, where the part of the curves where mass decreases is replaced with duplication of the first entry of the M, R and Lambda arrays.
+    """
+    
+    # Separate head and tail of m, r and l arrays    
+    m_first = m.at[0].get()
+    r_first = r.at[0].get()
+    l_first = l.at[0].get()
+    
+    m_first_array = jnp.array([m_first])
+    r_first_array = jnp.array([r_first])
+    l_first_array = jnp.array([l_first])
+    
+    m_remove_first = m[1:]
+    r_remove_first = r[1:]
+    l_remove_first = l[1:]
+    
+    # Where m is increasing, save array, otherwise repeat the first element (discard that part of the curve)
+    m_is_increasing = jnp.diff(m) > 0
+    
+    m_new = jnp.where(m_is_increasing, m_remove_first, m_first)
+    r_new = jnp.where(m_is_increasing, r_remove_first, r_first)
+    l_new = jnp.where(m_is_increasing, l_remove_first, l_first)
+    
+    # Because of diff dropping an element, add the first element back
+    m_new = jnp.concatenate([m_first_array, m_new])
+    r_new = jnp.concatenate([r_first_array, r_new])
+    l_new = jnp.concatenate([l_first_array, l_new])
+    
+    # Sort in increasing values of M for plotting etc
+    sort_idx = jnp.argsort(m_new)
+    
+    m_new = m_new[sort_idx]
+    r_new = r_new[sort_idx]
+    l_new = l_new[sort_idx]
+    
+    return m_new, r_new, l_new
