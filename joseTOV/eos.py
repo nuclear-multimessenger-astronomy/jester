@@ -6,11 +6,38 @@ from jaxtyping import Array, Float, Int
 
 from . import utils, tov
 
-# get the crust
-DEFAULT_DIR = os.path.join(os.path.dirname(__file__))
-# TODO: do we want several crust files or do we always use this crust? Perhaps store some crust files with correct format and units in the data folder?
-BPS_CRUST_FILENAME = f"{DEFAULT_DIR}/crust/BPS.npz"
+##############
+### CRUSTS ###
+##############
 
+DEFAULT_DIR = os.path.join(os.path.dirname(__file__))
+CRUST_DIR = f"{DEFAULT_DIR}/crust"
+
+def load_crust(name: str) -> tuple[Array, Array, Array]:
+    """
+    Load a crust file from the default directory.
+
+    Args:
+        name (str): Name of the crust to load, or a filename if a file outside of jose is supplied.
+
+    Returns:
+        tuple[Array, Array, Array]: Number densities [fm^-3], pressures [MeV / fm^-3], and energy densities [MeV / fm^-3] of the crust.
+    """
+    
+    # Get the available crust names
+    available_crust_names = [f.split(".")[0] for f in os.listdir(CRUST_DIR) if f.endswith(".npz")]
+    
+    # If a name is given, but it is not a filename, load the crust from the jose directory
+    if not name.endswith(".npz"):
+        if name in available_crust_names:
+            name = os.path.join(CRUST_DIR, f"{name}.npz")
+        else:
+            raise ValueError(f"Crust {name} not found in {CRUST_DIR}. Available crusts are {available_crust_names}")
+    
+    # Once the correct file is identified, load it
+    crust = jnp.load(name)
+    n, p, e = crust["n"], crust["p"], crust["e"]
+    return n, p, e
 
 class Interpolate_EOS_model(object):
     """
@@ -94,7 +121,8 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         ndat=1000,
         fix_proton_fraction=True, # TODO: change to False, but seems broken now
         fix_proton_fraction_val=0.02,
-        crust_filename = BPS_CRUST_FILENAME,
+        crust = "DH",
+        max_n_crust: Float = 0.08, # in fm^-3
         use_empty_crust: bool = False
     ):
         """
@@ -111,23 +139,21 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             ndat (int, optional): Number of datapoints used for the curves (logarithmically spaced). Defaults to 1000.
             fix_proton_fraction (bool, optional): If True, the proton fraction is fixed to a constant value. Defaults to False.
             fix_proton_fraction_val (float, optional): Value to which the proton fraction is fixed. Defaults to 0.0.    
-            crust_filename (str, optional): Name of the crust file. Defaults to BPS_CRUST_FILENAME. Expected to be a .npz file with keys "n", "p", "e".
+            crust (str, optional): Name of the crust to be used or a filename. If a name is given, we will load the crust that is under the jose directory. If a filename, expected to end with .npz and with keys "n", "p", "e" in the above units, is given, we will instead load it. Defaults to "DH".
+            max_n_crust (float, optional): Maximum number density up to which the crust data is used. Defaults to 0.1 fm^-3.
             use_empty_crust (bool, optional): If True, the crust data is not used. Defaults to False. TODO: check if useful or 
         """
         
         # Get the crust part:
         if use_empty_crust:
-            ns_crust = jnp.array([])
-            ps_crust = jnp.array([])
-            es_crust = jnp.array([])
+            ns_crust, ps_crust, es_crust = jnp.array([]), jnp.array([]), jnp.array([])
         else:
-            crust = jnp.load(crust_filename)
-            ns_crust = crust["n"]
-            ps_crust = crust["p"]
-            es_crust = crust["e"]
+            ns_crust, ps_crust, es_crust = load_crust(crust)
+            max_n_crust = min(ns_crust[-1], max_n_crust)
+            mask = ns_crust <= max_n_crust
+            ns_crust, ps_crust, es_crust = ns_crust[mask], ps_crust[mask], es_crust[mask]
         
-        # add the first derivative coefficient in Esat to
-        # make it work with jax.numpy.polyval
+        # Add the first derivative coefficient in Esat to make it work with jax.numpy.polyval
         coefficient_sat = jnp.insert(coefficient_sat, 1, 0.0)
         
         # Get the coefficents index array and get coefficients
