@@ -4,9 +4,9 @@ import jax.numpy as jnp
 from functools import partial
 from jaxtyping import Array, Float
 
-#################
-### CONSTANTS ###
-#################
+#################################
+### CONSTANTS AND CONVERSIONS ###
+#################################
 
 # to avoid additional dependecy on scipy
 eV = 1.602176634e-19
@@ -16,29 +16,33 @@ Msun = 1.988409870698051e30
 hbarc = 197.3269804593025  # in MeV fm
 m_p = 938.2720881604904  # in MeV
 m_n = 939.5654205203889  # in MeV
+solar_mass_in_meter = Msun * G / c / c # solar mass in geometric unit
 
+# simple conversions
 fm_to_m = 1e-15
 MeV_to_J = 1e6 * eV
+m_to_fm = 1.0 / fm_to_m
+J_to_MeV = 1.0 / MeV_to_J
 
 # number density
 fm_inv3_to_SI = 1.0 / fm_to_m**3
 number_density_to_geometric = 1
 fm_inv3_to_geometric = fm_inv3_to_SI * number_density_to_geometric
 
+SI_to_fm_inv3 = 1.0 / fm_inv3_to_SI
+geometric_to_fm_inv3 = 1.0 / fm_inv3_to_geometric
+
 # pressure and energy density
 MeV_fm_inv3_to_SI = MeV_to_J * fm_inv3_to_SI
+SI_to_MeV_fm_inv3 = 1.0 / MeV_fm_inv3_to_SI
 pressure_SI_to_geometric = G / c**4
 MeV_fm_inv3_to_geometric = MeV_fm_inv3_to_SI * pressure_SI_to_geometric
+dyn_cm2_to_MeV_fm_inv3 = 1e-1 * J_to_MeV / m_to_fm**3
+g_cm_inv3_to_MeV_fm_inv3 = 1e3 * c**2 * J_to_MeV / m_to_fm**3
 
-# Reverse conversions
 geometric_to_SI = 1.0 / pressure_SI_to_geometric
-geometric_to_fm_inv3 = 1.0 / fm_inv3_to_geometric
-SI_to_fm_inv3 = 1.0 / fm_inv3_to_SI
 SI_to_MeV_fm_inv3 = 1.0 / MeV_fm_inv3_to_SI
 geometric_to_MeV_fm_inv3 = 1.0 / MeV_fm_inv3_to_geometric
-
-# solar mass in geometric unit
-solar_mass_in_meter = Msun * G / c / c
 
 
 #########################
