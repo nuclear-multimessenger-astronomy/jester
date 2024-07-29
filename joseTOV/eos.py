@@ -121,10 +121,10 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         ndat=1000,
         fix_proton_fraction=True, # TODO: change to False, but seems broken now
         fix_proton_fraction_val=0.02,
-        crust = "DH",
+        crust = "BPS",
         max_n_crust: Float = 0.08, # in fm^-3
         use_empty_crust: bool = False,
-        construct_spline: bool = False,
+        use_spline: bool = False,
         ndat_spline: int = 50
     ):
         """
@@ -144,8 +144,15 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             crust (str, optional): Name of the crust to be used or a filename. If a name is given, we will load the crust that is under the jose directory. If a filename, expected to end with .npz and with keys "n", "p", "e" in the above units, is given, we will instead load it. Defaults to "DH".
             max_n_crust (float, optional): Maximum number density up to which the crust data is used. Defaults to 0.1 fm^-3.
             use_empty_crust (bool, optional): If True, the crust data is not used. Defaults to False. TODO: check if useful or 
+            use_spline (bool, optional): If True, a spline is used to connect the crust data with the metamodel data. Defaults to False.
             ndat_spline (int, optional): Number of datapoints used for the spline interpolation of the crust data. Defaults to 50.
         """
+        
+        # Save given attributes
+        self.nsat = nsat
+        self.fix_proton_fraction = fix_proton_fraction
+        self.fix_proton_fraction_val = fix_proton_fraction_val
+        self.max_n_crust = max_n_crust
         
         # Get the crust part:
         if use_empty_crust:
@@ -153,13 +160,8 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         else:
             ns_crust, ps_crust, es_crust = load_crust(crust)
             
-            # Make sure max n crust is not larger than the last value in the crust data, and is below given nmin
-            max_n_crust = min(ns_crust[-1], max_n_crust)
-            max_n_crust = min(max_n_crust, nmin)
             mask = ns_crust <= max_n_crust
             ns_crust, ps_crust, es_crust = ns_crust[mask], ps_crust[mask], es_crust[mask]
-        
-        self.max_n_crust = max_n_crust
         
         # Add the first derivative coefficient in Esat to make it work with jax.numpy.polyval
         coefficient_sat = jnp.insert(coefficient_sat, 1, 0.0)
@@ -171,21 +173,27 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         # Save as attributes
         self.coefficient_sat = coefficient_sat / factorial(index_sat)
         self.coefficient_sym = coefficient_sym / factorial(index_sym)
-        self.nsat = nsat
-        self.fix_proton_fraction = fix_proton_fraction
-        self.fix_proton_fraction_val = fix_proton_fraction_val
+        
+        # Make sure metamodel starts above crust n
+        nmin = max(nmin, ns_crust[-1] + 1e-3)
         
         # Compute n, p, e for the metamodel (MM) (note: number densities are in unit of fm^-3)
         ns_mm = jnp.logspace(jnp.log10(nmin), jnp.log10(nmax), num=ndat)
         ps_mm = self.pressure_from_number_density_nuclear_unit(ns_mm)
         es_mm = self.energy_density_from_number_density_nuclear_unit(ns_mm)
         
+        # Make sure pressure and energy of MM are larger than crust at starting point
+        mask = (ps_mm > ps_crust[-1]) * (es_mm > es_crust[-1])
+        ns_mm = ns_mm[mask]
+        ps_mm = ps_mm[mask]
+        es_mm = es_mm[mask]
+        
         # Append crust data to the MetaModel data to get intermediate EOS
         ns_tmp = jnp.concatenate((ns_crust, ns_mm))
         ps_tmp = jnp.concatenate((ps_crust, ps_mm))
         es_tmp = jnp.concatenate((es_crust, es_mm))
         
-        if construct_spline:
+        if use_spline:
             # Get a spline for connection part
             ns_spline = jnp.linspace(max_n_crust, nmin, num=ndat_spline)
             es_spline = utils.cubic_spline(ns_spline, ns_tmp, es_tmp)
@@ -468,7 +476,12 @@ def construct_family(eos: tuple,
 
     pcs = jnp.logspace(jnp.log10(pc_min), jnp.log10(pc_max), num=ndat)
 
-    # TODO: why vectorize, and not jax.vmap?
+    ### TODO: Check the timing with this vmap implementation, which also works
+    # def solve_single_pc(pc):
+    #     """Solve for single pc value"""
+    #     return tov.tov_solver(eos_dict, pc)
+    # ms, rs, ks = jax.vmap(solve_single_pc)(pcs)
+    
     ms, rs, ks = jnp.vectorize(
         tov.tov_solver,
         excluded=[
