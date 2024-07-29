@@ -3,6 +3,7 @@ from jax import vmap
 import jax.numpy as jnp
 from functools import partial
 from jaxtyping import Array, Float
+from interpax import interp1d as interpax_interp1d
 
 #################################
 ### CONSTANTS AND CONVERSIONS ###
@@ -173,3 +174,20 @@ def limit_by_MTOV(m: Array,
     l_new = l_new[sort_idx]
     
     return m_new, r_new, l_new
+
+
+###############
+### SPLINES ###
+###############
+
+def cubic_spline(xq: Float[Array, "n"],
+                 xp: Float[Array, "n"],
+                 fp: Float[Array, "n"]):
+    """
+    Create a cubic spline interpolating function through (xp, fp) with interpax (https://github.com/f0uriest/interpax)
+    Args:
+        xq (Float[Array, "n"]): x values at which we are going to evaluate the spline interpolator
+        xp (Float[Array, "n"]): x values of the data points
+        fp (Float[Array, "n"]): y values of the data points, i.e. fp = f(xp)
+    """
+    return interpax_interp1d(xq, xp, fp, method = "cubic")

@@ -123,7 +123,9 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         fix_proton_fraction_val=0.02,
         crust = "DH",
         max_n_crust: Float = 0.08, # in fm^-3
-        use_empty_crust: bool = False
+        use_empty_crust: bool = False,
+        construct_spline: bool = False,
+        ndat_spline: int = 50
     ):
         """
         Initialize the MetaModel_EOS_model with the provided coefficients and compute auxiliary data.
@@ -142,6 +144,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             crust (str, optional): Name of the crust to be used or a filename. If a name is given, we will load the crust that is under the jose directory. If a filename, expected to end with .npz and with keys "n", "p", "e" in the above units, is given, we will instead load it. Defaults to "DH".
             max_n_crust (float, optional): Maximum number density up to which the crust data is used. Defaults to 0.1 fm^-3.
             use_empty_crust (bool, optional): If True, the crust data is not used. Defaults to False. TODO: check if useful or 
+            ndat_spline (int, optional): Number of datapoints used for the spline interpolation of the crust data. Defaults to 50.
         """
         
         # Get the crust part:
@@ -149,9 +152,14 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             ns_crust, ps_crust, es_crust = jnp.array([]), jnp.array([]), jnp.array([])
         else:
             ns_crust, ps_crust, es_crust = load_crust(crust)
+            
+            # Make sure max n crust is not larger than the last value in the crust data, and is below given nmin
             max_n_crust = min(ns_crust[-1], max_n_crust)
+            max_n_crust = min(max_n_crust, nmin)
             mask = ns_crust <= max_n_crust
             ns_crust, ps_crust, es_crust = ns_crust[mask], ps_crust[mask], es_crust[mask]
+        
+        self.max_n_crust = max_n_crust
         
         # Add the first derivative coefficient in Esat to make it work with jax.numpy.polyval
         coefficient_sat = jnp.insert(coefficient_sat, 1, 0.0)
@@ -167,16 +175,30 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         self.fix_proton_fraction = fix_proton_fraction
         self.fix_proton_fraction_val = fix_proton_fraction_val
         
-        # Compute n, p, e for the MetaModel (number densities in unit of fm^-3)
-        # TODO: make sure we catch an accidental overlap between the metamodel and the crust
-        ns = jnp.logspace(jnp.log10(nmin), jnp.log10(nmax), num=ndat)
-        ps = self.pressure_from_number_density_nuclear_unit(ns)
-        es = self.energy_density_from_number_density_nuclear_unit(ns)
+        # Compute n, p, e for the metamodel (MM) (note: number densities are in unit of fm^-3)
+        ns_mm = jnp.logspace(jnp.log10(nmin), jnp.log10(nmax), num=ndat)
+        ps_mm = self.pressure_from_number_density_nuclear_unit(ns_mm)
+        es_mm = self.energy_density_from_number_density_nuclear_unit(ns_mm)
         
-        # Append crust data to the MetaModel data
-        ns = jnp.concatenate((ns_crust, ns))
-        ps = jnp.concatenate((ps_crust, ps))
-        es = jnp.concatenate((es_crust, es))
+        # Append crust data to the MetaModel data to get intermediate EOS
+        ns_tmp = jnp.concatenate((ns_crust, ns_mm))
+        ps_tmp = jnp.concatenate((ps_crust, ps_mm))
+        es_tmp = jnp.concatenate((es_crust, es_mm))
+        
+        if construct_spline:
+            # Get a spline for connection part
+            ns_spline = jnp.linspace(max_n_crust, nmin, num=ndat_spline)
+            es_spline = utils.cubic_spline(ns_spline, ns_tmp, es_tmp)
+            ps_spline = utils.cubic_spline(ns_spline, ns_tmp, ps_tmp)
+            
+            # Combine everything together
+            ns = jnp.concatenate((ns_crust, ns_spline, ns_mm))
+            es = jnp.concatenate((es_crust, es_spline, es_mm))
+            ps = jnp.concatenate((ps_crust, ps_spline, ps_mm))
+        else:
+            ns = ns_tmp
+            ps = ps_tmp
+            es = es_tmp
         
         # Initialize with parent class
         super().__init__(ns, ps, es)
