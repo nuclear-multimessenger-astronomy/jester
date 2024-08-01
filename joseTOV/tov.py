@@ -1,7 +1,7 @@
 # this whole script is written in geometric unit
 from . import utils
 import jax.numpy as jnp
-from diffrax import diffeqsolve, ODETerm, Dopri5, SaveAt, PIDController
+from diffrax import diffeqsolve, ODETerm, Dopri5, Dopri8, Tsit5, SaveAt, PIDController
 
 
 def tov_ode(h, y, eos):
@@ -100,7 +100,7 @@ def tov_solver(eos, pc):
         dt0=dh,
         y0=y0,
         args=eos,
-        saveat=SaveAt(ts=[h0, 0]),
+        saveat=SaveAt(t1=True),
         stepsize_controller=PIDController(rtol=1e-5, atol=1e-6),
     )
 
@@ -110,5 +110,5 @@ def tov_solver(eos, pc):
     b = sol.ys[3][-1]
 
     k2 = calc_k2(R, M, H, b)
-
+    
     return M, R, k2

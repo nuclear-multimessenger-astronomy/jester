@@ -2,10 +2,12 @@
 from jax import vmap
 import jax.numpy as jnp
 from functools import partial
+from jaxtyping import Array, Float
+from interpax import interp1d as interpax_interp1d
 
-#################
-### CONSTANTS ###
-#################
+#################################
+### CONSTANTS AND CONVERSIONS ###
+#################################
 
 # to avoid additional dependecy on scipy
 eV = 1.602176634e-19
@@ -15,29 +17,33 @@ Msun = 1.988409870698051e30
 hbarc = 197.3269804593025  # in MeV fm
 m_p = 938.2720881604904  # in MeV
 m_n = 939.5654205203889  # in MeV
+solar_mass_in_meter = Msun * G / c / c # solar mass in geometric unit
 
+# simple conversions
 fm_to_m = 1e-15
 MeV_to_J = 1e6 * eV
+m_to_fm = 1.0 / fm_to_m
+J_to_MeV = 1.0 / MeV_to_J
 
 # number density
 fm_inv3_to_SI = 1.0 / fm_to_m**3
 number_density_to_geometric = 1
 fm_inv3_to_geometric = fm_inv3_to_SI * number_density_to_geometric
 
+SI_to_fm_inv3 = 1.0 / fm_inv3_to_SI
+geometric_to_fm_inv3 = 1.0 / fm_inv3_to_geometric
+
 # pressure and energy density
 MeV_fm_inv3_to_SI = MeV_to_J * fm_inv3_to_SI
+SI_to_MeV_fm_inv3 = 1.0 / MeV_fm_inv3_to_SI
 pressure_SI_to_geometric = G / c**4
 MeV_fm_inv3_to_geometric = MeV_fm_inv3_to_SI * pressure_SI_to_geometric
+dyn_cm2_to_MeV_fm_inv3 = 1e-1 * J_to_MeV / m_to_fm**3
+g_cm_inv3_to_MeV_fm_inv3 = 1e3 * c**2 * J_to_MeV / m_to_fm**3
 
-# Reverse conversions
 geometric_to_SI = 1.0 / pressure_SI_to_geometric
-geometric_to_fm_inv3 = 1.0 / fm_inv3_to_geometric
-SI_to_fm_inv3 = 1.0 / fm_inv3_to_SI
 SI_to_MeV_fm_inv3 = 1.0 / MeV_fm_inv3_to_SI
 geometric_to_MeV_fm_inv3 = 1.0 / MeV_fm_inv3_to_geometric
-
-# solar mass in geometric unit
-solar_mass_in_meter = Msun * G / c / c
 
 
 #########################
@@ -116,3 +122,72 @@ def interp_in_logspace(x, xs, ys):
     logxs = jnp.log(xs)
     logys = jnp.log(ys)
     return jnp.exp(jnp.interp(logx, logxs, logys))
+
+def limit_by_MTOV(m: Array, 
+                  r: Array, 
+                  l: Array) -> tuple[Array, Array, Array]:
+    """
+    Limits the M, R and Lambda curves to be below MTOV in a jit-friendly manner (i.e., static shape sizes).
+    The idea now is to feed this into some routine that creates an interpolation out of this, which then uses jnp.unique to get rid of these duplicates
+    NOTE: this assumes that the M curve increases up to a point and potentially decreases after that point. In case the EOS has some weird features and the M curve increases again, this function will return weird results.
+    TODO: generalize this for weird EOS or check if we do not have those weird EOS when sampling NEPs.
+    
+    Args:
+        m (Array["npoints"]): Original mass curve
+        r (Array["npoints"]): Original radius curve
+        l (Array["npoints"]): Original lambdas curve
+        
+    Returns:
+        tuple[Array["npoints"], Array["npoints"], Array["npoints"]]: Tuple of new mass, radius and lambdas curves, where the part of the curves where mass decreases is replaced with duplication of the first entry of the M, R and Lambda arrays.
+    """
+    
+    # Separate head and tail of m, r and l arrays    
+    m_first = m.at[0].get()
+    r_first = r.at[0].get()
+    l_first = l.at[0].get()
+    
+    m_first_array = jnp.array([m_first])
+    r_first_array = jnp.array([r_first])
+    l_first_array = jnp.array([l_first])
+    
+    m_remove_first = m[1:]
+    r_remove_first = r[1:]
+    l_remove_first = l[1:]
+    
+    # Where m is increasing, save array, otherwise repeat the first element (discard that part of the curve)
+    m_is_increasing = jnp.diff(m) > 0
+    
+    m_new = jnp.where(m_is_increasing, m_remove_first, m_first)
+    r_new = jnp.where(m_is_increasing, r_remove_first, r_first)
+    l_new = jnp.where(m_is_increasing, l_remove_first, l_first)
+    
+    # Because of diff dropping an element, add the first element back
+    m_new = jnp.concatenate([m_first_array, m_new])
+    r_new = jnp.concatenate([r_first_array, r_new])
+    l_new = jnp.concatenate([l_first_array, l_new])
+    
+    # Sort in increasing values of M for plotting etc
+    sort_idx = jnp.argsort(m_new)
+    
+    m_new = m_new[sort_idx]
+    r_new = r_new[sort_idx]
+    l_new = l_new[sort_idx]
+    
+    return m_new, r_new, l_new
+
+
+###############
+### SPLINES ###
+###############
+
+def cubic_spline(xq: Float[Array, "n"],
+                 xp: Float[Array, "n"],
+                 fp: Float[Array, "n"]):
+    """
+    Create a cubic spline interpolating function through (xp, fp) with interpax (https://github.com/f0uriest/interpax)
+    Args:
+        xq (Float[Array, "n"]): x values at which we are going to evaluate the spline interpolator
+        xp (Float[Array, "n"]): x values of the data points
+        fp (Float[Array, "n"]): y values of the data points, i.e. fp = f(xp)
+    """
+    return interpax_interp1d(xq, xp, fp, method = "cubic")

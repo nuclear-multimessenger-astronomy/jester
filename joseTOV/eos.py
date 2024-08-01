@@ -6,11 +6,38 @@ from jaxtyping import Array, Float, Int
 
 from . import utils, tov
 
-# get the crust
-DEFAULT_DIR = os.path.join(os.path.dirname(__file__))
-# TODO: do we want several crust files or do we always use this crust? Perhaps store some crust files with correct format and units in the data folder?
-BPS_CRUST_FILENAME = f"{DEFAULT_DIR}/crust/BPS.npz"
+##############
+### CRUSTS ###
+##############
 
+DEFAULT_DIR = os.path.join(os.path.dirname(__file__))
+CRUST_DIR = f"{DEFAULT_DIR}/crust"
+
+def load_crust(name: str) -> tuple[Array, Array, Array]:
+    """
+    Load a crust file from the default directory.
+
+    Args:
+        name (str): Name of the crust to load, or a filename if a file outside of jose is supplied.
+
+    Returns:
+        tuple[Array, Array, Array]: Number densities [fm^-3], pressures [MeV / fm^-3], and energy densities [MeV / fm^-3] of the crust.
+    """
+    
+    # Get the available crust names
+    available_crust_names = [f.split(".")[0] for f in os.listdir(CRUST_DIR) if f.endswith(".npz")]
+    
+    # If a name is given, but it is not a filename, load the crust from the jose directory
+    if not name.endswith(".npz"):
+        if name in available_crust_names:
+            name = os.path.join(CRUST_DIR, f"{name}.npz")
+        else:
+            raise ValueError(f"Crust {name} not found in {CRUST_DIR}. Available crusts are {available_crust_names}")
+    
+    # Once the correct file is identified, load it
+    crust = jnp.load(name)
+    n, p, e = crust["n"], crust["p"], crust["e"]
+    return n, p, e
 
 class Interpolate_EOS_model(object):
     """
@@ -93,9 +120,12 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         nmax=12 * 0.16, # 12 nsat
         ndat=1000,
         fix_proton_fraction=False,
-        fix_proton_fraction_val=0.0,
-        crust_filename = BPS_CRUST_FILENAME,
-        use_empty_crust: bool = False
+        fix_proton_fraction_val=0.02,
+        crust = "BPS",
+        max_n_crust: Float = 0.08, # in fm^-3
+        use_empty_crust: bool = False,
+        use_spline: bool = False,
+        ndat_spline: int = 50
     ):
         """
         Initialize the MetaModel_EOS_model with the provided coefficients and compute auxiliary data.
@@ -111,23 +141,29 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             ndat (int, optional): Number of datapoints used for the curves (logarithmically spaced). Defaults to 1000.
             fix_proton_fraction (bool, optional): If True, the proton fraction is fixed to a constant value. Defaults to False.
             fix_proton_fraction_val (float, optional): Value to which the proton fraction is fixed. Defaults to 0.0.    
-            crust_filename (str, optional): Name of the crust file. Defaults to BPS_CRUST_FILENAME. Expected to be a .npz file with keys "n", "p", "e".
+            crust (str, optional): Name of the crust to be used or a filename. If a name is given, we will load the crust that is under the jose directory. If a filename, expected to end with .npz and with keys "n", "p", "e" in the above units, is given, we will instead load it. Defaults to "DH".
+            max_n_crust (float, optional): Maximum number density up to which the crust data is used. Defaults to 0.1 fm^-3.
             use_empty_crust (bool, optional): If True, the crust data is not used. Defaults to False. TODO: check if useful or 
+            use_spline (bool, optional): If True, a spline is used to connect the crust data with the metamodel data. Defaults to False.
+            ndat_spline (int, optional): Number of datapoints used for the spline interpolation of the crust data. Defaults to 50.
         """
+        
+        # Save given attributes
+        self.nsat = nsat
+        self.fix_proton_fraction = fix_proton_fraction
+        self.fix_proton_fraction_val = fix_proton_fraction_val
+        self.max_n_crust = max_n_crust
         
         # Get the crust part:
         if use_empty_crust:
-            ns_crust = jnp.array([])
-            ps_crust = jnp.array([])
-            es_crust = jnp.array([])
+            ns_crust, ps_crust, es_crust = jnp.array([]), jnp.array([]), jnp.array([])
         else:
-            crust = jnp.load(crust_filename)
-            ns_crust = crust["n"]
-            ps_crust = crust["p"]
-            es_crust = crust["e"]
+            ns_crust, ps_crust, es_crust = load_crust(crust)
+            
+            mask = ns_crust <= max_n_crust
+            ns_crust, ps_crust, es_crust = ns_crust[mask], ps_crust[mask], es_crust[mask]
         
-        # add the first derivative coefficient in Esat to
-        # make it work with jax.numpy.polyval
+        # Add the first derivative coefficient in Esat to make it work with jax.numpy.polyval
         coefficient_sat = jnp.insert(coefficient_sat, 1, 0.0)
         
         # Get the coefficents index array and get coefficients
@@ -137,20 +173,40 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         # Save as attributes
         self.coefficient_sat = coefficient_sat / factorial(index_sat)
         self.coefficient_sym = coefficient_sym / factorial(index_sym)
-        self.nsat = nsat
-        self.fix_proton_fraction = fix_proton_fraction
-        self.fix_proton_fraction_val = fix_proton_fraction_val
         
-        # Compute n, p, e for the MetaModel (number densities in unit of fm^-3)
-        # TODO: make sure we catch an accidental overlap between the metamodel and the crust
-        ns = jnp.logspace(jnp.log10(nmin), jnp.log10(nmax), num=ndat)
-        ps = self.pressure_from_number_density_nuclear_unit(ns)
-        es = self.energy_density_from_number_density_nuclear_unit(ns)
+        # Make sure metamodel starts above crust n
+        nmin = max(nmin, ns_crust[-1] + 1e-3)
         
-        # Append crust data to the MetaModel data
-        ns = jnp.concatenate((ns_crust, ns))
-        ps = jnp.concatenate((ps_crust, ps))
-        es = jnp.concatenate((es_crust, es))
+        # Compute n, p, e for the metamodel (MM) (note: number densities are in unit of fm^-3)
+        ns_mm = jnp.logspace(jnp.log10(nmin), jnp.log10(nmax), num=ndat)
+        ps_mm = self.pressure_from_number_density_nuclear_unit(ns_mm)
+        es_mm = self.energy_density_from_number_density_nuclear_unit(ns_mm)
+        
+        # Make sure pressure and energy of MM are larger than crust at starting point
+        mask = (ps_mm > ps_crust[-1]) * (es_mm > es_crust[-1])
+        ns_mm = ns_mm[mask]
+        ps_mm = ps_mm[mask]
+        es_mm = es_mm[mask]
+        
+        # Append crust data to the MetaModel data to get intermediate EOS
+        ns_tmp = jnp.concatenate((ns_crust, ns_mm))
+        ps_tmp = jnp.concatenate((ps_crust, ps_mm))
+        es_tmp = jnp.concatenate((es_crust, es_mm))
+        
+        if use_spline:
+            # Get a spline for connection part
+            ns_spline = jnp.linspace(max_n_crust, nmin, num=ndat_spline)
+            es_spline = utils.cubic_spline(ns_spline, ns_tmp, es_tmp)
+            ps_spline = utils.cubic_spline(ns_spline, ns_tmp, ps_tmp)
+            
+            # Combine everything together
+            ns = jnp.concatenate((ns_crust, ns_spline, ns_mm))
+            es = jnp.concatenate((es_crust, es_spline, es_mm))
+            ps = jnp.concatenate((ps_crust, ps_spline, ps_mm))
+        else:
+            ns = ns_tmp
+            ps = ps_tmp
+            es = es_tmp
         
         # Initialize with parent class
         super().__init__(ns, ps, es)
@@ -420,7 +476,12 @@ def construct_family(eos: tuple,
 
     pcs = jnp.logspace(jnp.log10(pc_min), jnp.log10(pc_max), num=ndat)
 
-    # TODO: why vectorize, and not jax.vmap?
+    ### TODO: Check the timing with this vmap implementation, which also works
+    # def solve_single_pc(pc):
+    #     """Solve for single pc value"""
+    #     return tov.tov_solver(eos_dict, pc)
+    # ms, rs, ks = jax.vmap(solve_single_pc)(pcs)
+    
     ms, rs, ks = jnp.vectorize(
         tov.tov_solver,
         excluded=[
@@ -439,15 +500,8 @@ def construct_family(eos: tuple,
     # calculate the tidal deformability
     lambdas = 2.0 / 3.0 * ks * jnp.power(cs, -5.0)
     
-    # TODO: this is working and is precisely what Rahul does as well, but will break if we jit the function... Remove?
-    
-    # if use_TOV_limit:
-    #     negative_diffs = jnp.where(jnp.diff(ms) < 0.0)
-    #     if len(negative_diffs) > 0:
-    #         idx = negative_diffs[0][0]
-    #         pcs = pcs[:idx]
-    #         ms = ms[:idx]
-    #         rs = rs[:idx]
-    #         lambdas = lambdas[:idx]
+    # TODO: perhaps put a boolean here to flag whether or not to do this, or do we always want to do this?
+    # Limit masses to be below MTOV
+    ms, rs, lambdas = utils.limit_by_MTOV(ms, rs, lambdas)
 
     return jnp.log(pcs), ms, rs, lambdas
