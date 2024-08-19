@@ -11,6 +11,7 @@ from jax.scipy.special import factorial
 from jaxtyping import Array, Float, Int
 
 from . import utils, tov
+from .eos import Interpolate_EOS_model
 
 ##############
 ### CRUSTS ###
@@ -46,32 +47,33 @@ def load_crust(name: str) -> tuple[Array, Array, Array]:
     return n, p, e
 
 
-# TODO: perhaps get some dependence on the
-class MetaModel_EOS:
+class MetaModel_EOS(Interpolate_EOS_model):
     """
     See Margueron:2017eqc, especially Section III for details
     """
     
     def __init__(self,
+                 # Metamodel parameters
                  coefficient_sat: Float[Array, "n_sat_coeff"],
                  coefficient_sym: Float[Array, "n_sym_coeff"],
                  kappas: tuple[Float, Float, Float, Float, Float, Float] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
                  v_nq: list[float] = [0.0, 0.0, 0.0, 0.0],
-                 b_sat: Float = 0.0, # TODO: change default value
-                 b_sym: Float = 0.0, # TODO: change default value
+                 b_sat: Float = 17.0, # TODO: change default value
+                 b_sym: Float = 25.0, # TODO: change default value
                  N: Int = 4,
                  which_ELF: str = "ELFc",
+                 # density parameters
                  nsat=0.16,
                  nmin=0.1, # in fm^-3
-                 nmax=12 * 0.16, # 12 nsat
+                 nmax_nsat=12, # in numbers of nsat nsat
                  ndat=1000,
+                 # proton fraction
                  fix_proton_fraction=False,
                  fix_proton_fraction_val=0.02,
+                 # crust
                  crust = "BPS",
                  max_n_crust: Float = 0.08, # in fm^-3
-                 use_empty_crust: bool = False,
-                 use_spline: bool = False,
-                 ndat_spline: int = 50):
+                 use_empty_crust: bool = False):
         """
         TODO: documentation
 
@@ -100,9 +102,9 @@ class MetaModel_EOS:
         self.fix_proton_fraction = fix_proton_fraction
         self.fix_proton_fraction_val = fix_proton_fraction_val
         self.max_n_crust = max_n_crust
-        self.v_nq = jnp.array(v_nq)
-        self.b_sat = b_sat
-        self.b_sym = b_sym
+        v_nq = jnp.array(v_nq)
+        b_sat = b_sat
+        b_sym = b_sym
         self.N = N
         
         # Preprocess the coefficients: make sure the length is fixed and if needed pad with zeros
@@ -144,6 +146,7 @@ class MetaModel_EOS:
             mask = ns_crust <= max_n_crust
             ns_crust, ps_crust, es_crust = ns_crust[mask], ps_crust[mask], es_crust[mask]
         nmin = max(nmin, ns_crust[-1] + 1e-3)
+        self.nmin = nmin
         
         # Kinetic energy: (t_sat is also called TFGsat in the margueron paper)
         self.t_sat = 3*utils.hbar**2/(10*utils.m) * (3*jnp.pi**2 *self.nsat/2)**(2/3)
@@ -168,250 +171,262 @@ class MetaModel_EOS:
         
         self.v_sym2 = jnp.array([v_sym2_0, v_sym2_1, v_sym2_2, v_sym2_3, v_sym2_4])
         
+        # Create the density array
+        self.nmax = nmax_nsat * self.nsat
+        self.ndat = ndat
+        
+        n_metamodel = jnp.linspace(nmin, self.nmax, ndat)
+        p_metamodel = self.pressure(n_metamodel)
+        e_metamodel = self.energy(n_metamodel)
+        
+        n = jnp.concatenate([ns_crust, n_metamodel])
+        p = jnp.concatenate([ps_crust, p_metamodel])
+        e = jnp.concatenate([es_crust, e_metamodel])
+        
+        super().__init__(n, p, e)
+        
+        
     #################
     ### AUXILIARY ###
     #################
         
-    def x(self, density):
-        return (density - self.nsat)/(3*self.nsat)
-    
     def u_ELFa(self, 
-               x: Array[Float], 
-               delta: Array[Float],
-               b: Float,
+               x,
+               b,
                alpha: Int):
         return 1
     
-    def u_ELFc(self, 
-               x: Array[Float], 
-               delta: Array[Float],
-               b: Float,
+    def u_ELFc(self,
+               x,
+               b,
                alpha: Int):
         return 1 - ((-3 * x) ** (self.N + 1 - alpha) * jnp.exp(- b * (1 + 3 * x))) 
         
+    def compute_x(self, 
+                  n: Array[Float]):
+        return (n - self.nsat) / (3 * self.nsat)
+    
+    def compute_delta(self,
+                      n: Array[Float]):
+        return 1 - 2 * self.proton_fraction(n)
+    
+    def compute_b(self,
+                  delta: Array[Float]):
+        return self.b_sat + self.b_sym * delta ** 2
+        
     @staticmethod
-    def f_1(delta: Array[Float]):
-        return (1+delta)**(5/3) + (1-delta)**(5/3)
+    def compute_f_1(delta: Array[Float]):
+        return (1 + delta) ** (5/3) + (1 - delta) ** (5/3)
     
-    def f_star(self, delta: Array[Float]):
-        return (self.kappa_sat + self.kappa_sym*delta ) * (1+delta)**(5/3) + (self.kappa_sat - self.kappa_sym*delta ) * (1-delta)**(5/3)
+    def compute_f_star(self, 
+                       delta: Array[Float]):
+        return (self.kappa_sat + self.kappa_sym * delta) * (1 + delta) ** (5/3) + (self.kappa_sat - self.kappa_sym * delta) * (1 - delta) ** (5/3)
     
-    def f_star2(self, delta: Array[Float]):
-        return (self.kappa_sat2 + self.kappa_sym2*delta ) * (1+delta)**(5/3) + (self.kappa_sat2 - self.kappa_sym2*delta ) * (1-delta)**(5/3)
+    def compute_f_star2(self, 
+                        delta: Array[Float]):
+        return (self.kappa_sat2 + self.kappa_sym2 * delta) * (1 + delta) ** (5/3) + (self.kappa_sat2 - self.kappa_sym2*delta) * (1 - delta) ** (5/3)
     
-    def f_star3(self, delta: Array[Float]):
-        return (self.kappa_sat3 + self.kappa_sym3*delta ) * (1+delta)**(5/3) + (self.kappa_sat3 - self.kappa_sym3*delta ) * (1-delta)**(5/3)
+    def compute_f_star3(self, 
+                        delta: Array[Float]):
+        return (self.kappa_sat3 + self.kappa_sym3 * delta) * (1 + delta) ** (5/3) + (self.kappa_sat3 - self.kappa_sym3 * delta) * (1 - delta) ** (5/3)
     
-    def v(self, 
-          delta: Array[Float]) -> Array[Float]:
+    def compute_v(self, 
+                  delta: Array[Float]) -> Array[Float]:
         # TODO: 5 is hardcoded?
         # TODO: Improve for jnp array
         return jnp.array([self.v_sat[alpha] + self.v_sym2[alpha] * delta ** 2 + self.v_nq[alpha] * delta ** 4 for alpha in range(5)])
     
-    ################
-    ### ENERGIES ###
-    ################
-    
-    def kinetic_energy(self, 
-                       density: Array[Float],
-                       delta: Array[Float]):
+    def energy(self,
+               n):
         
-        x = self.x(density)
-        f_1 = self.f_1(delta)
-        f_star = self.f_star(delta)
-        f_star2 = self.f_star2(delta)
-        f_star3 = self.f_star3(delta)
+        # Precompute some quantities
+        x = self.compute_x(n)
+        delta = self.compute_delta(n)
+        b = self.compute_b(delta)
+        v = self.compute_v(delta)
+        
+        # Kinetic energy
+        f_star = self.compute_f_star(delta)
+        f_star2 = self.compute_f_star2(delta)
+        f_star3 = self.compute_f_star3(delta)
         
         prefac = self.t_sat / 2 * (1 + 3 * x) ** (2/3)
         linear = (1 + 3 * x) * f_star
         quadratic = (1 + 3 * x) ** 2 * f_star2
         cubic = (1 + 3 * x) ** 3 * f_star3
         
-        return prefac * (f_1 + linear + quadratic + cubic)
-    
-    def potential_energy(self,
-                         density: Array[Float],
-                         delta: Array[Float]):
-        """
-        Potential energy. This is using ELFc as defined by Margueron et al
-        """
+        kinetic_energy = prefac * (self.f_1 + linear + quadratic + cubic)
         
+        # Potential energy
         # TODO: 5 is hardcoded, is this what we want?
-        x = self.x(density)
-        v = self.v(delta)
-        b = self.b_sat + self.b_sym * delta**2
-        
-        answer = 0
-        
-        # TODO: this won't work with jnp.array, find another way
+        # TODO: a bit cumbersome, find another way, jax tree map?
+        potential_energy = 0
         for alpha in range(5):
-            u = self.u(x, delta, b, alpha)
-            answer += v[alpha] / (factorial(alpha)) * x ** alpha * u
-        return answer
-    
-    def energy(self,
-               density: Array[Float],
-               delta: Array[Float]):
+            u = self.u(x, b, alpha)
+            potential_energy += v.at[alpha].get() / (factorial(alpha)) * x ** alpha * u
         
-        return self.kinetic_energy(density, delta) + self.potential_energy(density, delta)
+        return kinetic_energy + potential_energy
     
     def esym(self, n: Float[Array, "n_points"]):
-        x = self.x(n)
+        x = x(n)
         return jnp.polyval(self.coefficient_sym[::-1], x)
     
     def pressure(self,
-                 density: Array[Float],
-                 delta: Array[Float]):
+                 n: Array[Float]):
+        
+        x = self.compute_x(n)
+        delta = self.compute_delta(n)
+        
+        f_1 = self.compute_f_1(delta)
+        f_star = self.compute_f_star(delta)
+        f_star2 = self.compute_f_star2(delta)
+        f_star3 = self.compute_f_star3(delta)
+        v = self.compute_v(delta)
+        b = self.compute_b(delta)
         
         # TODO: currently only for ELFc!
-        
-        x = self.x(density)
-        f_1 = self.f_1(delta)
-        f_star = self.f_star(delta)
-        f_star2 = self.f_star2(delta)
-        f_star3 = self.f_star3(delta)
-    
         p_kin = 1/3 * self.nsat * self.t_sat * (1 + 3 * x) ** (5/3) *\
             (f_1 + 5/2 * (1 + 3 * x) * f_star + 4 * (1 + 3 * x) ** 2 * f_star2 \
              + 11/2 * (1 + 3 * x) ** 3 * f_star3)
     
-        v = self.v(delta)
-        b = self.b_sat + self.b_sym * delta ** 2
-        
-        # TODO: this won't work with jnp.array, find another way
+        # TODO: cumbersome with jnp.array, find another way
         for alpha in range(1, 5):
-            u = self.u(x, delta, b, alpha)
+            u = self.u(x, b, alpha)
             fac1 = alpha * u
             fac2 = (self.N + 1 - alpha - 3 * b * x) * (u - 1)
-            p_pot += v[alpha] / (factorial(alpha)) * x ** (alpha - 1) * (fac1 + fac2)
+            p_pot += v.at[alpha].get() / (factorial(alpha)) * x ** (alpha - 1) * (fac1 + fac2)
             
-        p_pot = p_pot - v[0] * (-3) ** (self.N + 1) * x ** self.N * (self.N + 1 - 3 * b * x) * jnp.exp(- b * (1 + 3 * x)) 
+        p_pot = p_pot - v.at[0].get() * (-3) ** (self.N + 1) * x ** self.N * (self.N + 1 - 3 * b * x) * jnp.exp(- b * (1 + 3 * x)) 
         p_pot = p_pot * (1/3) * self.nsat * (1 + 3 * x) ** 2
         
         return p_pot + p_kin
     
-    def incompressibility(self,
-                          density: Array[Float],
-                          delta: Array[Float]):
+    def compute_incompressibility(self,
+                                  n: Array[Float]):
+        
+        x = self.compute_x(n)
+        delta = self.compute_delta(n)
+        
+        f_1 = self.compute_f_1(delta)
+        f_star = self.compute_f_star(delta)
+        f_star2 = self.compute_f_star2(delta)
+        f_star3 = self.compute_f_star3(delta)
+        v = self.compute_v(delta)
+        b = self.compute_b(delta)
 
-        x = self.x(density)
-        f_1 = self.f_1(delta)
-        f_star = self.f_star(delta)
-        f_star2 = self.f_star2(delta)
-        f_star3 = self.f_star3(delta)
-    
-    
-        K_kin = self.t_sat * (1+3*x)**(2/3) *\
-            (-f_1 + 5 * (1+3*x) * f_star + 20 * (1+3*x)**2 * f_star2 \
-             + 44 * (1+3*x)**3 * f_star3)
+        K_kin = self.t_sat * (1 + 3 * x) ** (2/3) *\
+            (-self.f_1 + 5 * (1 + 3 * x) * f_star + 20 * (1 + 3 * x) ** 2 * f_star2 \
+             + 44 * (1 + 3 * x) ** 3 * f_star3)
 
-        v = self.v(delta)
-            
         K_pot = 0
-        # TODO: must also become a function/attribute
-        b = self.b_sat + self.b_sym * delta ** 2
-        
         for alpha in range(2, 5):
-            u = 1 -  ( (-3*x)**(self.N+1-alpha) * jnp.exp(-b*(1+3*x)) ) 
-            x_up = (self.N+1-alpha-3*b*x)*(u-1)
-            x2_upp = (-(self.N+1-alpha)*(self.N-alpha)+6*b*x*(self.N+1-alpha)-9*x**2*b**2) *(1-u)
+            u = 1 -  ( (-3 * x) ** (self.N + 1 - alpha) * jnp.exp(- self. b * (1 + 3 * x)))
+            x_up = (self.N + 1 - alpha - 3 * b * x) * (u - 1)
+            x2_upp = (-(self.N + 1 - alpha) * (self.N - alpha) + 6 * b * x * (self.N + 1 - alpha) - 9 * x ** 2 * b ** 2) * (1 - u)
             
-            K_pot = K_pot + v[alpha]/(factorial(alpha)) * x**(alpha-2) \
-                * (alpha*(alpha-1)*u+2*alpha*x_up+x2_upp)
+            K_pot = K_pot + v.at[alpha].get() / (factorial(alpha)) * x ** (alpha - 2) \
+                * (alpha * (alpha - 1) * u + 2 * alpha * x_up + x2_upp)
                 
-        K_pot += v[0] * (-(self.N+1)*(self.N)+6*b*x*(self.N+1)-9*x**2*b**2) *((-3)**(self.N+1) * x**(self.N-1) * jnp.exp(-b*(1+3*x)))
-        K_pot += 2*v[1]*(self.N-3*b*x)*(-(-3)**(self.N) *x**(self.N-1) * jnp.exp(-b*(1+3*x)) )
-        K_pot += v[1] *(-(self.N)*(self.N-1)+6*b*x*(self.N)-9*x**2*b**2) *((-3)**(self.N) * x**(self.N-1) * jnp.exp(-b*(1+3*x)))
-        K_pot *= (1+3*x)**2
+        K_pot += v.at[0].get() * (-(self.N + 1) * (self.N) + 6 * b * x * (self.N + 1) - 9 * x ** 2 * b ** 2) *((-3) ** (self.N + 1) * x ** (self.N - 1) * jnp.exp(- b * (1 + 3 * x)))
+        K_pot += 2 * v.at[1].get() * (self.N - 3 * b * x) * (-(-3) ** (self.N) * x ** (self.N - 1) * jnp.exp(- b * (1 + 3 * x)) )
+        K_pot += v.at[1].get() * (-(self.N) * (self.N - 1) + 6 * b * x * (self.N) - 9 * x ** 2 * b ** 2) * ((-3)** (self.N) * x ** (self.N - 1) * jnp.exp(- b * (1 + 3 * x)))
+        K_pot *= (1 + 3 * x) ** 2
         
-        K = K_kin + K_pot + 18/density * self.pressure(density, delta)
-        
+        K = K_kin + K_pot + 18 / n * self.pressure(n, delta)
         return K
     
     def c2_s(self, 
-             density: Array[Float],
-             delta: Array[Float]):
+             n: Array[Float]):
         
-        K = self.incompressibility(density,delta)
-        h = utils.m + self.energy(density, delta) + self.pressure(density, delta)/density
+        delta = self.compute_delta(n)
+        
+        K = self.compute_incompressibility(n, delta)
+        h = utils.m + self.energy() + self.pressure(n, delta) / n
         
         return K/9 /h
     
     def energy_density_electron(self,
-                                density: Array[Float],
-                                delta: Array[Float]):
+                                n: Array[Float]):
         
-        K_Fb = (3. * jnp.pi ** 2 /2. * density) ** (1./3.) * utils.hbarc
-        K_Fe = K_Fb * (1.- delta)**(1./3.)  
+        delta = self.compute_delta(n)
         
-        x = K_Fe/utils.m_e
+        K_Fb = (3. * jnp.pi ** 2 /2. * n) ** (1./3.) * utils.hbarc
+        K_Fe = K_Fb * (1.- delta) ** (1./3.)  
         
-        C = utils.m_e**4/(8.*jnp.pi**2) / utils.hbarc**3
-        f = x*(1+2*x**2) * jnp.sqrt(1+x**2) - jnp.arcsinh(x)
+        x = K_Fe / utils.m_e
+        
+        C = utils.m_e ** 4 / (8. * jnp.pi ** 2) / utils.hbarc ** 3
+        f = x * (1 + 2 * x ** 2) * jnp.sqrt(1 + x ** 2) - jnp.arcsinh(x)
         
         energy_density = C*f
         
         return energy_density
     
     def electron_pressure(self,
-                          density: Array[Float],
-                          delta: Array[Float]):
-        energy_density = self.energy_density_electron(density,delta)
+                          n: Array[Float]):
         
-        K_Fb = (3. * jnp.pi**2 /2. * density)**(1./3.) * utils.hbarc
-        K_Fe = K_Fb * (1.- delta)**(1./3.)  
-        C = utils.m_e**4/(8.* jnp.pi ** 2) / utils.hbarc**3
-        x = K_Fe/utils.m_e
+        delta = self.compute_delta(n)
         
-        pressure = -energy_density + 8./3. * C * x**3 * jnp.sqrt(1+x**2)
+        energy_density = self.energy_density_electron(n, delta)
+        
+        K_Fb = (3. * jnp.pi ** 2 / 2. * n) ** (1./3.) * utils.hbarc
+        K_Fe = K_Fb * (1. - delta) ** (1./3.)  
+        C = utils.m_e ** 4 / (8. * jnp.pi ** 2) / utils.hbarc ** 3
+        x = K_Fe / utils.m_e
+        
+        pressure = - energy_density + 8. / 3. * C * x ** 3 * jnp.sqrt(1 + x ** 2)
         
         return pressure
     
     
-    def incompressibility_electron(self,density,delta):
-        K_Fb = (3. * jnp.pi**2 /2. * density)**(1./3.) * utils.hbarc
-        K_Fe = K_Fb * (1.- delta)**(1./3.)  
-        C = utils.m_e**4/(8.*jnp.pi**2) /utils.hbarc**3
-        x = K_Fe/utils.m_e
+    def compute_incompressibility_electron(self,
+                                   n: Array[Float]):
         
-        energy_density = self.energy_density_electron(density,delta)
-        pressure = self.electron_pressure(density,delta)
+        delta = self.compute_delta(n)
         
-        K = 8*C/density * x**3*(3+4*x**2)/(jnp.sqrt(1+x**2)) - 9/density * (energy_density+pressure)
+        K_Fb = (3. * jnp.pi**2 /2. * n) ** (1./3.) * utils.hbarc
+        K_Fe = K_Fb * (1. - delta) ** (1./3.)  
+        C = utils.m_e ** 4 / (8. * jnp.pi ** 2) / utils.hbarc ** 3
+        x = K_Fe / utils.m_e
+        
+        energy_density = self.energy_density_electron(n, delta)
+        pressure = self.electron_pressure(n, delta)
+        
+        K = 8 * C / n * x ** 3 * (3 + 4 * x ** 2) / (jnp.sqrt(1 + x ** 2)) - 9 / n * (energy_density + pressure)
         return K
     
     def mu_e(self,
-             density,
-             delta):
-        K_Fb = (3. * jnp.pi**2 /2. * density)**(1./3.) * utils.hbarc
-        K_Fe = K_Fb * (1.- delta)**(1./3.)  
-    
-        ans = jnp.sqrt(utils.m_e**2 + K_Fe**2)
+             n: Array[Float]):
         
+        delta = self.compute_delta(n)
+        
+        K_Fb = (3. * jnp.pi ** 2 / 2. * n) ** (1./3.) * utils.hbarc
+        K_Fe = K_Fb * (1. - delta)**(1./3.)  
+    
+        ans = jnp.sqrt(utils.m_e ** 2 + K_Fe ** 2)
         return ans
     
     
     def c2_s_tot(self,
-                 density):
+                 n: Array[Float]):
         
         # Compute the value of delta for the given density
-        proton_fraction = self.proton_fraction(density)
-        delta = 1 - 2 * proton_fraction
+        delta = self.compute_delta(n)
         
-        K_tot = self.incompressibility(density, delta) + self.incompressibility_electron(density, delta)
+        K_tot = self.compute_incompressibility(n, delta) + self.compute_incompressibility_electron(n, delta)
         
         chi = K_tot/9. 
         
-        total_energy_density = (self.energy(density,delta) + utils.m) * density + self.energy_density_electron(density,delta)
-        total_pressure = self.pressure(density, delta) + self.electron_pressure(density, delta)
-        h_tot =  ( total_energy_density + total_pressure ) / density
+        total_energy_density = (self.energy(n, delta) + utils.m) * n + self.energy_density_electron(n, delta)
+        total_pressure = self.pressure(n, delta) + self.electron_pressure(n, delta)
+        h_tot =  (total_energy_density + total_pressure) / n
         
         c2s = chi/h_tot
         
         return c2s
     
     def proton_fraction(self, 
-                        n: Float[Array, "n_points"]) -> Float[Array, "n_points"]:
+                        n: Array[Float]) -> Float[Array, "n_points"]:
         """
         Get the proton fraction for a given number density. If proton fraction is fixed, return the fixed value.
 
@@ -425,7 +440,7 @@ class MetaModel_EOS:
                 self.fix_proton_fraction,
                 lambda x: self.fix_proton_fraction_val * jnp.ones(n.shape),
                 self.compute_proton_fraction,
-                n
+                self.n
             )
         
     def compute_proton_fraction(self, n: Float[Array, "n_points"]) -> Float[Array, "n_points"]:
