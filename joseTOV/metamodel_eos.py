@@ -57,7 +57,7 @@ class MetaModel_EOS(Interpolate_EOS_model):
                  coefficient_sat: Float[Array, "n_sat_coeff"],
                  coefficient_sym: Float[Array, "n_sym_coeff"],
                  kappas: tuple[Float, Float, Float, Float, Float, Float] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
-                 v_nq: list[float] = [0.0, 0.0, 0.0, 0.0],
+                 v_nq: list[float] = [0.0, 0.0, 0.0, 0.0, 0.0],
                  b_sat: Float = 17.0, # TODO: change default value
                  b_sym: Float = 25.0, # TODO: change default value
                  N: Int = 4,
@@ -65,15 +65,15 @@ class MetaModel_EOS(Interpolate_EOS_model):
                  # density parameters
                  nsat=0.16,
                  nmin=0.1, # in fm^-3
-                 nmax_nsat=12, # in numbers of nsat nsat
+                 nmax_nsat=12, # in numbers of nsat
                  ndat=1000,
                  # proton fraction
                  fix_proton_fraction=False,
                  fix_proton_fraction_val=0.02,
                  # crust
-                 crust = "BPS",
-                 max_n_crust: Float = 0.08, # in fm^-3
-                 use_empty_crust: bool = False):
+                 crust = "DH",
+                 max_n_crust: Float = 0.08, # in fm^-3,
+                 ndat_spline: Int = 10):
         """
         TODO: documentation
 
@@ -102,19 +102,14 @@ class MetaModel_EOS(Interpolate_EOS_model):
         self.fix_proton_fraction = fix_proton_fraction
         self.fix_proton_fraction_val = fix_proton_fraction_val
         self.max_n_crust = max_n_crust
-        v_nq = jnp.array(v_nq)
-        b_sat = b_sat
-        b_sym = b_sym
+        self.v_nq = jnp.array(v_nq)
+        self.b_sat = b_sat
+        self.b_sym = b_sym
         self.N = N
         
         # Preprocess the coefficients: make sure the length is fixed and if needed pad with zeros
-        print(f"coefficient_sat: {coefficient_sat}")
         coefficient_sat = jnp.pad(coefficient_sat, (0, 4 - len(coefficient_sat)), 'constant', constant_values=0)
-        print(f"coefficient_sat after pad: {coefficient_sat}")
-        
-        print(f"coefficient_sym: {coefficient_sym}")
         coefficient_sym = jnp.pad(coefficient_sym, (0, 5 - len(coefficient_sym)), 'constant', constant_values=0)
-        print(f"coefficient_sym after pad: {coefficient_sym}")
         
         self.E_sat,             self.K_sat, self.Q_sat, self.Z_sat = coefficient_sat
         self.E_sym, self.L_sym, self.K_sym, self.Q_sym, self.Z_sym = coefficient_sym
@@ -137,19 +132,8 @@ class MetaModel_EOS(Interpolate_EOS_model):
         self.kappa_sym2 = self.kappa_NM2 - self.kappa_sat2
         self.kappa_sym3 = self.kappa_NM3 - self.kappa_sat3
         
-        # Crust:
-        if use_empty_crust:
-            ns_crust, ps_crust, es_crust = jnp.array([]), jnp.array([]), jnp.array([])
-        else:
-            ns_crust, ps_crust, es_crust = load_crust(crust)
-            
-            mask = ns_crust <= max_n_crust
-            ns_crust, ps_crust, es_crust = ns_crust[mask], ps_crust[mask], es_crust[mask]
-        nmin = max(nmin, ns_crust[-1] + 1e-3)
-        self.nmin = nmin
-        
         # Kinetic energy: (t_sat is also called TFGsat in the margueron paper)
-        self.t_sat = 3*utils.hbar**2/(10*utils.m) * (3*jnp.pi**2 *self.nsat/2)**(2/3)
+        self.t_sat = 3 * utils.hbar ** 2 / (10 * utils.m) * (3 * jnp.pi ** 2 * self.nsat / 2) ** (2/3)
         
         # Potential energy 
         # v_sat is defined in equations (22) - (26) in the Margueron et al. paper
@@ -171,17 +155,63 @@ class MetaModel_EOS(Interpolate_EOS_model):
         
         self.v_sym2 = jnp.array([v_sym2_0, v_sym2_1, v_sym2_2, v_sym2_3, v_sym2_4])
         
+                
+        ### TODO: empty crust not used for now
+        # if use_empty_crust:
+        #     ns_crust, ps_crust, es_crust = jnp.array([]), jnp.array([]), jnp.array([])
+        # else:
+        
+        # Load and preprocess the crust
+        ns_crust, ps_crust, es_crust = load_crust(crust)
+        mask = ns_crust <= max_n_crust
+        ns_crust, ps_crust, es_crust = ns_crust[mask], ps_crust[mask], es_crust[mask]
+        mu_lowest = (es_crust[0] + ps_crust[0]) / ns_crust[0]
+        
+        print("WARNING OVERRIDING FOR DEBUGGING")
+        mu_lowest = 930.1193490245807
+        print("Mu lowest jose:", mu_lowest)
+        
+        cs2_crust = jnp.gradient(ps_crust, es_crust)
+
+        # Make sure the metamodel starts above the crust
+        max_n_crust = ns_crust[-1]
+        nmin = max(nmin, max_n_crust + 1e-3)
+        self.nmin = nmin
+        
         # Create the density array
         self.nmax = nmax_nsat * self.nsat
         self.ndat = ndat
-        
         n_metamodel = jnp.linspace(nmin, self.nmax, ndat)
-        p_metamodel = self.pressure(n_metamodel)
-        e_metamodel = self.energy(n_metamodel)
         
-        n = jnp.concatenate([ns_crust, n_metamodel])
-        p = jnp.concatenate([ps_crust, p_metamodel])
-        e = jnp.concatenate([es_crust, e_metamodel])
+        # Get cs2 for the metamodel
+        cs2_metamodel = self.cs2_tot(n_metamodel)
+        
+        # Spline for speed of sound for the connection region
+        ns_spline = jnp.append(ns_crust, n_metamodel)
+        cs2_spline = jnp.append(cs2_crust, cs2_metamodel)
+        
+        n_connection = jnp.linspace(max_n_crust, self.nmin, ndat_spline)
+        cs2_connection = utils.cubic_spline(n_connection, ns_spline, cs2_spline)
+        cs2_connection = jnp.clip(cs2_connection, 1e-5, 1.0)
+        
+        # Concatenate the arrays
+        n = jnp.concatenate([ns_crust, n_connection, n_metamodel])
+        cs2 = jnp.concatenate([cs2_crust, cs2_connection, cs2_metamodel])
+        
+        # Compute pressure and energy and initialize the parent class with it
+        # TODO: why here only mu lowest?
+        mu = jnp.ones(len(n)) * mu_lowest
+        p = utils.cumtrapz(cs2 * mu, n) + ps_crust[0]
+        e = mu * n - p
+        
+        # Remove repeated points
+        indices = jnp.where(jnp.diff(n) == 0.0)[0]
+        n = jnp.delete(n, indices)
+        p = jnp.delete(p, indices)
+        e = jnp.delete(e, indices)
+        cs2 = jnp.delete(cs2, indices)
+        
+        self.cs2 = cs2
         
         super().__init__(n, p, e)
         
@@ -203,35 +233,35 @@ class MetaModel_EOS(Interpolate_EOS_model):
         return 1 - ((-3 * x) ** (self.N + 1 - alpha) * jnp.exp(- b * (1 + 3 * x))) 
         
     def compute_x(self, 
-                  n: Array[Float]):
+                  n: Array):
         return (n - self.nsat) / (3 * self.nsat)
     
     def compute_delta(self,
-                      n: Array[Float]):
+                      n: Array):
         return 1 - 2 * self.proton_fraction(n)
     
     def compute_b(self,
-                  delta: Array[Float]):
+                  delta: Array):
         return self.b_sat + self.b_sym * delta ** 2
         
     @staticmethod
-    def compute_f_1(delta: Array[Float]):
+    def compute_f_1(delta: Array):
         return (1 + delta) ** (5/3) + (1 - delta) ** (5/3)
     
     def compute_f_star(self, 
-                       delta: Array[Float]):
+                       delta: Array):
         return (self.kappa_sat + self.kappa_sym * delta) * (1 + delta) ** (5/3) + (self.kappa_sat - self.kappa_sym * delta) * (1 - delta) ** (5/3)
     
     def compute_f_star2(self, 
-                        delta: Array[Float]):
+                        delta: Array):
         return (self.kappa_sat2 + self.kappa_sym2 * delta) * (1 + delta) ** (5/3) + (self.kappa_sat2 - self.kappa_sym2*delta) * (1 - delta) ** (5/3)
     
     def compute_f_star3(self, 
-                        delta: Array[Float]):
+                        delta: Array):
         return (self.kappa_sat3 + self.kappa_sym3 * delta) * (1 + delta) ** (5/3) + (self.kappa_sat3 - self.kappa_sym3 * delta) * (1 - delta) ** (5/3)
     
     def compute_v(self, 
-                  delta: Array[Float]) -> Array[Float]:
+                  delta: Array) -> Array:
         # TODO: 5 is hardcoded?
         # TODO: Improve for jnp array
         return jnp.array([self.v_sat[alpha] + self.v_sym2[alpha] * delta ** 2 + self.v_nq[alpha] * delta ** 4 for alpha in range(5)])
@@ -246,6 +276,7 @@ class MetaModel_EOS(Interpolate_EOS_model):
         v = self.compute_v(delta)
         
         # Kinetic energy
+        f_1 = self.compute_f_1(delta)
         f_star = self.compute_f_star(delta)
         f_star2 = self.compute_f_star2(delta)
         f_star3 = self.compute_f_star3(delta)
@@ -255,7 +286,7 @@ class MetaModel_EOS(Interpolate_EOS_model):
         quadratic = (1 + 3 * x) ** 2 * f_star2
         cubic = (1 + 3 * x) ** 3 * f_star3
         
-        kinetic_energy = prefac * (self.f_1 + linear + quadratic + cubic)
+        kinetic_energy = prefac * (f_1 + linear + quadratic + cubic)
         
         # Potential energy
         # TODO: 5 is hardcoded, is this what we want?
@@ -268,11 +299,11 @@ class MetaModel_EOS(Interpolate_EOS_model):
         return kinetic_energy + potential_energy
     
     def esym(self, n: Float[Array, "n_points"]):
-        x = x(n)
+        x = self.compute_x(n)
         return jnp.polyval(self.coefficient_sym[::-1], x)
     
     def pressure(self,
-                 n: Array[Float]):
+                 n: Array):
         
         x = self.compute_x(n)
         delta = self.compute_delta(n)
@@ -290,6 +321,7 @@ class MetaModel_EOS(Interpolate_EOS_model):
              + 11/2 * (1 + 3 * x) ** 3 * f_star3)
     
         # TODO: cumbersome with jnp.array, find another way
+        p_pot = 0
         for alpha in range(1, 5):
             u = self.u(x, b, alpha)
             fac1 = alpha * u
@@ -302,7 +334,7 @@ class MetaModel_EOS(Interpolate_EOS_model):
         return p_pot + p_kin
     
     def compute_incompressibility(self,
-                                  n: Array[Float]):
+                                  n: Array):
         
         x = self.compute_x(n)
         delta = self.compute_delta(n)
@@ -315,12 +347,12 @@ class MetaModel_EOS(Interpolate_EOS_model):
         b = self.compute_b(delta)
 
         K_kin = self.t_sat * (1 + 3 * x) ** (2/3) *\
-            (-self.f_1 + 5 * (1 + 3 * x) * f_star + 20 * (1 + 3 * x) ** 2 * f_star2 \
+            (-f_1 + 5 * (1 + 3 * x) * f_star + 20 * (1 + 3 * x) ** 2 * f_star2 \
              + 44 * (1 + 3 * x) ** 3 * f_star3)
 
         K_pot = 0
         for alpha in range(2, 5):
-            u = 1 -  ( (-3 * x) ** (self.N + 1 - alpha) * jnp.exp(- self. b * (1 + 3 * x)))
+            u = 1 -  ( (-3 * x) ** (self.N + 1 - alpha) * jnp.exp(- b * (1 + 3 * x)))
             x_up = (self.N + 1 - alpha - 3 * b * x) * (u - 1)
             x2_upp = (-(self.N + 1 - alpha) * (self.N - alpha) + 6 * b * x * (self.N + 1 - alpha) - 9 * x ** 2 * b ** 2) * (1 - u)
             
@@ -332,21 +364,21 @@ class MetaModel_EOS(Interpolate_EOS_model):
         K_pot += v.at[1].get() * (-(self.N) * (self.N - 1) + 6 * b * x * (self.N) - 9 * x ** 2 * b ** 2) * ((-3)** (self.N) * x ** (self.N - 1) * jnp.exp(- b * (1 + 3 * x)))
         K_pot *= (1 + 3 * x) ** 2
         
-        K = K_kin + K_pot + 18 / n * self.pressure(n, delta)
+        K = K_kin + K_pot + 18 / n * self.pressure(n)
         return K
     
     def c2_s(self, 
-             n: Array[Float]):
+             n: Array):
         
         delta = self.compute_delta(n)
         
-        K = self.compute_incompressibility(n, delta)
-        h = utils.m + self.energy() + self.pressure(n, delta) / n
+        K = self.compute_incompressibility(n)
+        h = utils.m + self.energy(n) + self.pressure(n) / n
         
         return K/9 /h
     
     def energy_density_electron(self,
-                                n: Array[Float]):
+                                n: Array):
         
         delta = self.compute_delta(n)
         
@@ -363,11 +395,11 @@ class MetaModel_EOS(Interpolate_EOS_model):
         return energy_density
     
     def electron_pressure(self,
-                          n: Array[Float]):
+                          n: Array):
         
         delta = self.compute_delta(n)
         
-        energy_density = self.energy_density_electron(n, delta)
+        energy_density = self.energy_density_electron(n)
         
         K_Fb = (3. * jnp.pi ** 2 / 2. * n) ** (1./3.) * utils.hbarc
         K_Fe = K_Fb * (1. - delta) ** (1./3.)  
@@ -378,9 +410,8 @@ class MetaModel_EOS(Interpolate_EOS_model):
         
         return pressure
     
-    
     def compute_incompressibility_electron(self,
-                                   n: Array[Float]):
+                                           n: Array):
         
         delta = self.compute_delta(n)
         
@@ -389,14 +420,14 @@ class MetaModel_EOS(Interpolate_EOS_model):
         C = utils.m_e ** 4 / (8. * jnp.pi ** 2) / utils.hbarc ** 3
         x = K_Fe / utils.m_e
         
-        energy_density = self.energy_density_electron(n, delta)
-        pressure = self.electron_pressure(n, delta)
+        energy_density = self.energy_density_electron(n)
+        pressure = self.electron_pressure(n)
         
         K = 8 * C / n * x ** 3 * (3 + 4 * x ** 2) / (jnp.sqrt(1 + x ** 2)) - 9 / n * (energy_density + pressure)
         return K
     
     def mu_e(self,
-             n: Array[Float]):
+             n: Array):
         
         delta = self.compute_delta(n)
         
@@ -407,26 +438,26 @@ class MetaModel_EOS(Interpolate_EOS_model):
         return ans
     
     
-    def c2_s_tot(self,
-                 n: Array[Float]):
+    def cs2_tot(self,
+                 n: Array):
         
         # Compute the value of delta for the given density
         delta = self.compute_delta(n)
         
-        K_tot = self.compute_incompressibility(n, delta) + self.compute_incompressibility_electron(n, delta)
+        K_tot = self.compute_incompressibility(n) + self.compute_incompressibility_electron(n)
         
         chi = K_tot/9. 
         
-        total_energy_density = (self.energy(n, delta) + utils.m) * n + self.energy_density_electron(n, delta)
-        total_pressure = self.pressure(n, delta) + self.electron_pressure(n, delta)
+        total_energy_density = (self.energy(n) + utils.m) * n + self.energy_density_electron(n)
+        total_pressure = self.pressure(n) + self.electron_pressure(n)
         h_tot =  (total_energy_density + total_pressure) / n
         
-        c2s = chi/h_tot
+        cs2 = chi/h_tot
         
-        return c2s
+        return cs2
     
     def proton_fraction(self, 
-                        n: Array[Float]) -> Float[Array, "n_points"]:
+                        n: Array) -> Float[Array, "n_points"]:
         """
         Get the proton fraction for a given number density. If proton fraction is fixed, return the fixed value.
 
@@ -440,7 +471,7 @@ class MetaModel_EOS(Interpolate_EOS_model):
                 self.fix_proton_fraction,
                 lambda x: self.fix_proton_fraction_val * jnp.ones(n.shape),
                 self.compute_proton_fraction,
-                self.n
+                n
             )
         
     def compute_proton_fraction(self, n: Float[Array, "n_points"]) -> Float[Array, "n_points"]:
