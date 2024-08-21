@@ -299,6 +299,7 @@ class MetaModel_EOS(Interpolate_EOS_model):
         return kinetic_energy + potential_energy
     
     def esym(self, n: Float[Array, "n_points"]):
+        # TODO: change this to be self-consistent: see Rahul's approach for that.
         x = self.compute_x(n)
         return jnp.polyval(self.coefficient_sym[::-1], x)
     
