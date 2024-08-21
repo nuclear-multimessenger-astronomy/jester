@@ -3,6 +3,7 @@ import jax
 import jax.numpy as jnp
 from jax.scipy.special import factorial
 from jaxtyping import Array, Float, Int
+# from functools import partial
 
 from . import utils, tov
 
@@ -111,6 +112,11 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
     Args:
         Interpolate_EOS_model (object): Base class of interpolation EOS data.
     """
+    
+    # TODO: decide whether these have to be attributes of Interpolate_EOS_model or MetaModel_EOS_model
+    cs2: Array
+    mu: Array
+    
     def __init__(
         self,
         # Metamodel parameters
@@ -222,23 +228,14 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         ns_crust, ps_crust, es_crust = load_crust(crust)
         mask = ns_crust <= max_n_crust
         ns_crust, ps_crust, es_crust = ns_crust[mask], ps_crust[mask], es_crust[mask]
+        
         mu_lowest = (es_crust[0] + ps_crust[0]) / ns_crust[0]
         
-        # # FIXME: remove this once we discussed about this with Rahul
-        # print("WARNING OVERRIDING FOR DEBUGGING")
-        # mu_lowest = 930.1193490245807
-        # print("Mu lowest jose:", mu_lowest)
+        # FIXME: remove this once we discussed about this with Rahul
+        mu_lowest = 930.1193490245807
         
         cs2_crust = jnp.gradient(ps_crust, es_crust)
         
-        print("For debugging: check the shape")
-        
-        print("len(ns_crust)")
-        print(len(ns_crust))
-        
-        print("len(cs2_crust)")
-        print(len(cs2_crust))
-
         # Make sure the metamodel starts above the crust
         max_n_crust = ns_crust[-1]
         nmin = max(nmin, max_n_crust + 1e-3)
@@ -288,6 +285,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         p = utils.cumtrapz(cs2 * mu, n) + ps_crust[0]
         e = mu * n - p
         
+        # TODO: this is perhaps best put in the top class but then how to do this for cs2 and mu?
         indices = jnp.where(jnp.diff(n) == 0.0)[0]
         n = jnp.delete(n, indices)
         p = jnp.delete(p, indices)
@@ -532,17 +530,16 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
     def __init__(
         self,
         # parameters for the MetaModel
-        coefficient_sat: Float[Array, "n_sat_coeff"],
-        coefficient_sym: Float[Array, "n_sym_coeff"],
+        NEP_dict: dict,
         nbreak: Float,
         # parameters for the CSE
         ngrids: Float[Array, "n_grid_point"],
         cs2grids: Float[Array, "n_grid_point"],
         nsat: Float=0.16,
         nmin: Float=0.1,
-        nmax: Float=12 * 0.16,
-        ndat_metamodel: Int=1000,
-        ndat_CSE: Int=1000,
+        nmax_nsat: Float=12,
+        ndat_metamodel: Int=100,
+        ndat_CSE: Int=100,
         **metamodel_kwargs
     ):
         """
@@ -561,13 +558,15 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
             ndat_CSE (Int, optional): Number of datapoints to be used for the CSE part of the EOS. Defaults to 1000.
         """
 
+        # TODO: align with new metamodel code
+        nmax = nmax_nsat * nsat
+
         # Initializate the MetaModel part up to n_break
         self.metamodel = MetaModel_EOS_model(
-            coefficient_sat,
-            coefficient_sym,
+            NEP_dict,
             nsat=nsat,
             nmin=nmin,
-            nmax=nbreak,
+            nmax_nsat=nbreak/nsat,
             ndat=ndat_metamodel,
             **metamodel_kwargs
         )
@@ -575,72 +574,59 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         # calculate the chemical potential at the transition point
         self.nbreak = nbreak
         
-        # TODO: seems a bit cumbersome, can we simplify this?
-        self.p_break = (
-            self.metamodel.pressure_from_number_density_nuclear_unit(
-                jnp.array(
-                    [
-                        self.nbreak,
-                    ]
-                )
-            )
-            .at[0]
-            .get()
-        )
-        self.e_break = (
-            self.metamodel.energy_density_from_number_density_nuclear_unit(
-                jnp.array(
-                    [
-                        self.nbreak,
-                    ]
-                )
-            )
-            .at[0]
-            .get()
-        )
+        # Convert units back
+        n_metamodel = self.metamodel.n / utils.fm_inv3_to_geometric
+        p_metamodel = self.metamodel.p / utils.MeV_fm_inv3_to_geometric
+        e_metamodel = self.metamodel.e / utils.MeV_fm_inv3_to_geometric
         
-        # TODO: this has to be checked!
-        self.mu_break = (self.p_break + self.e_break) / self.nbreak
-        self.cs2_break = (
-            jnp.diff(self.metamodel.p).at[-1].get()
-            / jnp.diff(self.metamodel.e).at[-1].get()
-        )
-        # define the speed-of-sound interpolation
-        # of the extension portion
+        # Get values at break density
+        self.p_break   = jnp.interp(self.nbreak, n_metamodel, p_metamodel)
+        self.e_break   = jnp.interp(self.nbreak, n_metamodel, e_metamodel)
+        self.mu_break  = jnp.interp(self.nbreak, n_metamodel, self.metamodel.mu)
+        self.cs2_break = jnp.interp(self.nbreak, n_metamodel, self.metamodel.cs2)
         
+        # Define the speed-of-sound interpolation of the extension portion
         self.ngrids = jnp.concatenate((jnp.array([self.nbreak]), ngrids))
         self.cs2grids = jnp.concatenate((jnp.array([self.cs2_break]), cs2grids))
-        self.cs2_function = lambda n: jnp.interp(n, self.ngrids, self.cs2grids)
+        self.cs2_extension_function = lambda n: jnp.interp(n, self.ngrids, self.cs2grids)
         
         # Compute n, p, e for CSE (number densities in unit of fm^-3)
-        ns = jnp.logspace(jnp.log10(self.nbreak), jnp.log10(nmax), num=ndat_CSE)
-        mus = self.mu_break * jnp.exp(utils.cumtrapz(self.cs2_function(ns) / ns, ns))
-        ps = self.p_break + utils.cumtrapz(self.cs2_function(ns) * mus, ns)
-        es = self.e_break + utils.cumtrapz(mus, ns)
+        n_CSE = jnp.logspace(jnp.log10(self.nbreak), jnp.log10(nmax), num=ndat_CSE)
+        cs2_CSE = self.cs2_extension_function(n_CSE)
+        mu_CSE = self.mu_break * jnp.exp(utils.cumtrapz(cs2_CSE / n_CSE, n_CSE))
+        p_CSE = self.p_break + utils.cumtrapz(cs2_CSE * mu_CSE, n_CSE)
+        e_CSE = self.e_break + utils.cumtrapz(mu_CSE, n_CSE)
+        
+        # TODO: remove this, this is just for comparison against Rahul:
+        self.n_CSE = n_CSE
+        self.cs2_CSE = cs2_CSE
         
         # Combine metamodel and CSE data
         # TODO: converting units back and forth might be numerically unstable if conversion factors are large?
-        ns = jnp.concatenate((self.metamodel.n / utils.fm_inv3_to_geometric, ns))
-        ps = jnp.concatenate((self.metamodel.p / utils.MeV_fm_inv3_to_geometric, ps))
-        es = jnp.concatenate((self.metamodel.e / utils.MeV_fm_inv3_to_geometric, es))
-
-        super().__init__(ns, ps, es)
+        n = jnp.concatenate((n_metamodel, n_CSE))
+        p = jnp.concatenate((p_metamodel, p_CSE))
+        e = jnp.concatenate((e_metamodel, e_CSE))
         
-    def cs2_from_number_density_nuclear_unit(self, n: Float[Array, "n_points"], cs2_min: float = 1e-3) -> Float[Array, "n_points"]:
-        """
-        Compute the speed of sound squared from the number density in nuclear units. Uses the metamodel for densities below nbreak and the CSE for densities above nbreak.
+        cs2 = jnp.concatenate((self.metamodel.cs2, cs2_CSE))
+        mu = jnp.concatenate((self.metamodel.mu, mu_CSE))
+        
+        # TODO: make less cumbersome, but this is needed since at this point p and e for sure have duplicate at nbreak due to cumtrapz first element being constant
+        # TODO: perhaps it is bets to also make cs2 and mu as part of the init. Then the base class can handle this as well
+        for array_to_check in [n, p, e]:
+            indices = jnp.where(jnp.diff(array_to_check) == 0.0)[0]
+            
+            n = jnp.delete(n, indices)
+            p = jnp.delete(p, indices)
+            e = jnp.delete(e, indices)
+        
+            cs2 = jnp.delete(cs2, indices)
+            mu = jnp.delete(mu, indices)
+            
+        self.cs2 = cs2
+        self.mu = mu
 
-        Args:
-            n (Float[Array, "n_points"]): Number density in fm^-3.
-            cs2_min (float, optional): Minimal value to clip cs2 values computed. Defaults to 1e-3.
-
-        Returns:
-            Float[Array, "n_points"]: Speed of sound squared, clipped to be between [cs2_min, 1.0], and with the same size as the input n
-        """
-        cs2 = jnp.where(n < self.nbreak, self.metamodel.cs2_from_number_density_nuclear_unit(n), self.cs2_function(n))
-        cs2 = jnp.clip(cs2, cs2_min, 1.0)
-        return cs2
-
+        super().__init__(n, p, e)
+        
 
 def construct_family(eos: tuple,
                      ndat: Int=50, 
