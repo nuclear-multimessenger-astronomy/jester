@@ -3,7 +3,7 @@ import jax
 import jax.numpy as jnp
 from jax.scipy.special import factorial
 from jaxtyping import Array, Float, Int
-# from functools import partial
+from functools import partial
 
 from . import utils, tov
 
@@ -85,21 +85,26 @@ class Interpolate_EOS_model(object):
         )
         self.dloge_dlogp = dloge_dlogp
 
+    @partial(jax.jit, static_argnums=(0,))
     def energy_density_from_pseudo_enthalpy(self, h: Float):
         loge_of_h = jnp.interp(jnp.log(h), self.logh, self.loge)
         return jnp.exp(loge_of_h)
 
+    @partial(jax.jit, static_argnums=(0,))
     def pressure_from_pseudo_enthalpy(self, h: Float):
         logp_of_h = jnp.interp(jnp.log(h), self.logh, self.logp)
         return jnp.exp(logp_of_h)
 
+    @partial(jax.jit, static_argnums=(0,))
     def dloge_dlogp_from_pseudo_enthalpy(self, h: Float):
         return jnp.interp(h, self.h, self.dloge_dlogp)
 
+    @partial(jax.jit, static_argnums=(0,))
     def pseudo_enthalpy_from_pressure(self, p: Float):
         logh_of_p = jnp.interp(jnp.log(p), self.logp, self.logh)
         return jnp.exp(logh_of_p)
 
+    @partial(jax.jit, static_argnums=(0,))
     def pressure_from_number_density(self, n: Float):
         logp_of_n = jnp.interp(n, self.n, self.logp)
         return jnp.exp(logp_of_n)
@@ -123,21 +128,16 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         NEP_dict: dict,
         kappas: tuple[Float, Float, Float, Float, Float, Float] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
         v_nq: list[float] = [0.0, 0.0, 0.0, 0.0, 0.0],
-        b_sat: Float = 17.0, # TODO: change default value
-        b_sym: Float = 25.0, # TODO: change default value
-        N: Int = 4, # TODO: I think in the current implementation this is fixed so pointless to give as user.
-        which_ELF: str = "ELFc",
+        b_sat: Float = 17.0,
+        b_sym: Float = 25.0,
         # density parameters
-        nsat=0.16,
-        nmin=0.1, # in fm^-3
-        nmax_nsat=12, # in numbers of nsat
-        ndat=1000,
-        # # proton fraction
-        # fix_proton_fraction=False,
-        # fix_proton_fraction_val=0.02,
-        # crust
-        crust = "BPS",
-        max_n_crust: Float = 0.08, # in fm^-3,
+        nsat: Float = 0.16,
+        nmin_nsat: Float = 0.1,
+        nmax_nsat: Float = 12,
+        ndat: Int = 200,
+        # crust parameters
+        crust: bool = "BPS",
+        max_n_crust_nsat: Float = 0.5,
         ndat_spline: Int = 10
     ):
         """
@@ -146,23 +146,12 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         TODO: add documentation
         """
         
-        # TODO: make sure this is used properly everywhere
-        assert which_ELF in ["ELFa", "ELFc"], "which_ELF must be either ELFa or ELFc"
-        
-        if which_ELF == "ELFa":
-            self.u = self.u_ELFa
-        else:
-            self.u = self.u_ELFc
-        
         # Save given attributes
         self.nsat = nsat
-        # self.fix_proton_fraction = fix_proton_fraction
-        # self.fix_proton_fraction_val = fix_proton_fraction_val
-        self.max_n_crust = max_n_crust
         self.v_nq = jnp.array(v_nq)
         self.b_sat = b_sat
         self.b_sym = b_sym
-        self.N = 4 # TODO: check if this is needed as input, but I don't think so
+        self.N = 4 # TODO: this is fixed in the metamodeling papers, but we might want to extend this in the future
         
         # Set all the NEPs for the metamodel
         self.NEP_dict = NEP_dict
@@ -226,19 +215,20 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         
         # Load and preprocess the crust
         ns_crust, ps_crust, es_crust = load_crust(crust)
+        max_n_crust = max_n_crust_nsat * nsat
         mask = ns_crust <= max_n_crust
         ns_crust, ps_crust, es_crust = ns_crust[mask], ps_crust[mask], es_crust[mask]
         
-        mu_lowest = (es_crust[0] + ps_crust[0]) / ns_crust[0]
-        
         # FIXME: remove this once we discussed about this with Rahul
+        # mu_lowest = (es_crust[0] + ps_crust[0]) / ns_crust[0]
         mu_lowest = 930.1193490245807
         
         cs2_crust = jnp.gradient(ps_crust, es_crust)
         
         # Make sure the metamodel starts above the crust
         max_n_crust = ns_crust[-1]
-        nmin = max(nmin, max_n_crust + 1e-3)
+        nmin = nmin_nsat * self.nsat
+        nmin = jnp.max(jnp.array([nmin, max_n_crust + 1e-3]))
         self.nmin = nmin
         
         # Create the density array
@@ -246,29 +236,29 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         self.ndat = ndat
         
         # We first set the metamodel n array to self.n, to compute all auxiliary quantities
-        self.n = jnp.linspace(nmin, self.nmax, ndat)
+        n_metamodel = jnp.linspace(self.nmin, self.nmax, ndat)
         
         # Auxiliaries first
-        self.x = self.compute_x()
-        self.proton_fraction = self.compute_proton_fraction()
-        self.delta = self.compute_delta()
+        x = self.compute_x(n_metamodel)
+        proton_fraction = self.compute_proton_fraction(n_metamodel)
+        delta = 1 - 2 * proton_fraction
         
-        self.f_1 = self.compute_f_1()
-        self.f_star = self.compute_f_star()
-        self.f_star2 = self.compute_f_star2()
-        self.f_star3 = self.compute_f_star3()
-        self.v = self.compute_v()
-        self.b = self.compute_b()
+        f_1 = self.compute_f_1(delta)
+        f_star = self.compute_f_star(delta)
+        f_star2 = self.compute_f_star2(delta)
+        f_star3 = self.compute_f_star3(delta)
+        v = self.compute_v(delta)
+        b = self.compute_b(delta)
         
         # Other quantities
-        self.pressure = self.compute_pressure()
-        self.energy = self.compute_energy()
+        p_metamodel = self.compute_pressure(x, f_1, f_star, f_star2, f_star3, b, v)
+        e_metamodel = self.compute_energy(x, f_1, f_star, f_star2, f_star3, b, v)
         
         # Get cs2 for the metamodel
-        cs2_metamodel = self.compute_cs2()
+        cs2_metamodel = self.compute_cs2(n_metamodel, p_metamodel, e_metamodel, x, delta, f_1, f_star, f_star2, f_star3, b, v)
         
         # Spline for speed of sound for the connection region
-        ns_spline = jnp.append(ns_crust, self.n)
+        ns_spline = jnp.append(ns_crust, n_metamodel)
         cs2_spline = jnp.append(cs2_crust, cs2_metamodel)
         
         n_connection = jnp.linspace(max_n_crust, self.nmin, ndat_spline)
@@ -276,7 +266,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         cs2_connection = jnp.clip(cs2_connection, 1e-5, 1.0)
         
         # Concatenate the arrays
-        n = jnp.concatenate([ns_crust, n_connection, self.n])
+        n = jnp.concatenate([ns_crust, n_connection, n_metamodel])
         cs2 = jnp.concatenate([cs2_crust, cs2_connection, cs2_metamodel])
         
         # Compute pressure and energy from chemical potential and initialize the parent class with it
@@ -303,177 +293,174 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
     ### AUXILIARY ###
     #################
         
-    def u_ELFa(self, 
-               alpha: Int):
-        return 1
-    
-    def u_ELFc(self,
-               alpha: Int):
-        return 1 - ((-3 * self.x) ** (self.N + 1 - alpha) * jnp.exp(- self.b * (1 + 3 * self.x))) 
+    def u(self,
+          x: Array,
+          b: Array,
+          alpha: Int):
+        # TODO: documentation
+        return 1 - ((-3 * x) ** (self.N + 1 - alpha) * jnp.exp(- b * (1 + 3 * x)))
         
-    def compute_x(self):
-        return (self.n - self.nsat) / (3 * self.nsat)
+    @partial(jax.jit, static_argnums=(0,))
+    def compute_x(self,
+                  n: Array):
+        return (n - self.nsat) / (3 * self.nsat)
     
-    def compute_delta(self):
-        return 1 - 2 * self.proton_fraction
-    
-    def compute_b(self):
-        return self.b_sat + self.b_sym * self.delta ** 2
+    @partial(jax.jit, static_argnums=(0,))
+    def compute_b(self,
+                  delta: Array):
+        return self.b_sat + self.b_sym * delta ** 2
         
-    def compute_f_1(self):
-        return (1 + self.delta) ** (5/3) + (1 - self.delta) ** (5/3)
+    @partial(jax.jit, static_argnums=(0,))
+    def compute_f_1(self,
+                    delta: Array):
+        return (1 + delta) ** (5/3) + (1 - delta) ** (5/3)
     
-    def compute_f_star(self):
-        return (self.kappa_sat + self.kappa_sym * self.delta) * (1 + self.delta) ** (5/3) + (self.kappa_sat - self.kappa_sym * self.delta) * (1 - self.delta) ** (5/3)
+    @partial(jax.jit, static_argnums=(0,))
+    def compute_f_star(self,
+                       delta: Array):
+        return (self.kappa_sat + self.kappa_sym * delta) * (1 + delta) ** (5/3) + (self.kappa_sat - self.kappa_sym * delta) * (1 - delta) ** (5/3)
     
-    def compute_f_star2(self):
-        return (self.kappa_sat2 + self.kappa_sym2 * self.delta) * (1 + self.delta) ** (5/3) + (self.kappa_sat2 - self.kappa_sym2 * self.delta) * (1 - self.delta) ** (5/3)
+    @partial(jax.jit, static_argnums=(0,))
+    def compute_f_star2(self,
+                        delta: Array):
+        return (self.kappa_sat2 + self.kappa_sym2 * delta) * (1 + delta) ** (5/3) + (self.kappa_sat2 - self.kappa_sym2 * delta) * (1 - delta) ** (5/3)
     
-    def compute_f_star3(self):
-        return (self.kappa_sat3 + self.kappa_sym3 * self.delta) * (1 + self.delta) ** (5/3) + (self.kappa_sat3 - self.kappa_sym3 * self.delta) * (1 - self.delta) ** (5/3)
+    @partial(jax.jit, static_argnums=(0,))
+    def compute_f_star3(self,
+                        delta: Array):
+        return (self.kappa_sat3 + self.kappa_sym3 * delta) * (1 + delta) ** (5/3) + (self.kappa_sat3 - self.kappa_sym3 * delta) * (1 - delta) ** (5/3)
     
-    def compute_v(self) -> Array:
-        return jnp.array([self.v_sat[alpha] + self.v_sym2[alpha] * self.delta ** 2 + self.v_nq[alpha] * self.delta ** 4 for alpha in range(self.N + 1)])
+    @partial(jax.jit, static_argnums=(0,))
+    def compute_v(self,
+                  delta: Array) -> Array:
+        return jnp.array([self.v_sat[alpha] + self.v_sym2[alpha] * delta ** 2 + self.v_nq[alpha] * delta ** 4 for alpha in range(self.N + 1)])
     
-    def compute_energy(self):
+    @partial(jax.jit, static_argnums=(0,))
+    def compute_energy(self,
+                       x: Array,
+                       f_1: Array,
+                       f_star: Array,
+                       f_star2: Array,
+                       f_star3: Array,
+                       b: Array,
+                       v: Array) -> Array:
         
-        prefac = self.t_sat / 2 * (1 + 3 * self.x) ** (2/3)
-        linear = (1 + 3 * self.x) * self.f_star
-        quadratic = (1 + 3 * self.x) ** 2 * self.f_star2
-        cubic = (1 + 3 * self.x) ** 3 * self.f_star3
+        prefac = self.t_sat / 2 * (1 + 3 * x) ** (2/3)
+        linear = (1 + 3 * x) * f_star
+        quadratic = (1 + 3 * x) ** 2 * f_star2
+        cubic = (1 + 3 * x) ** 3 * f_star3
         
-        kinetic_energy = prefac * (self.f_1 + linear + quadratic + cubic)
+        kinetic_energy = prefac * (f_1 + linear + quadratic + cubic)
         
         # Potential energy
         # TODO: a bit cumbersome, find another way, jax tree map?
         potential_energy = 0
         for alpha in range(5):
-            u = self.u(alpha)
-            potential_energy += self.v.at[alpha].get() / (factorial(alpha)) * self.x ** alpha * u
+            u = self.u(x, b, alpha)
+            potential_energy += v.at[alpha].get() / (factorial(alpha)) * x ** alpha * u
         
         return kinetic_energy + potential_energy
     
-    def esym(self):
+    @partial(jax.jit, static_argnums=(0,))
+    def esym(self,
+             x: Array):
         # TODO: change this to be self-consistent: see Rahul's approach for that.
-        return jnp.polyval(self.coefficient_sym[::-1], self.x)
+        return jnp.polyval(self.coefficient_sym[::-1], x)
     
-    def compute_pressure(self):
+    @partial(jax.jit, static_argnums=(0,))
+    def compute_pressure(self,
+                         x: Array,
+                         f_1: Array,
+                         f_star: Array,
+                         f_star2: Array,
+                         f_star3: Array,
+                         b: Array,
+                         v: Array) -> Array:
         
         # TODO: currently only for ELFc!
-        p_kin = 1/3 * self.nsat * self.t_sat * (1 + 3 * self.x) ** (5/3) *\
-            (self.f_1 + 5/2 * (1 + 3 * self.x) * self.f_star + 4 * (1 + 3 * self.x) ** 2 * self.f_star2 \
-             + 11/2 * (1 + 3 * self.x) ** 3 * self.f_star3)
+        p_kin = 1/3 * self.nsat * self.t_sat * (1 + 3 * x) ** (5/3) *\
+            (f_1 + 5/2 * (1 + 3 * x) * f_star + 4 * (1 + 3 * x) ** 2 * f_star2 \
+             + 11/2 * (1 + 3 * x) ** 3 * f_star3)
     
         # TODO: cumbersome with jnp.array, find another way
         p_pot = 0
         for alpha in range(1, 5):
-            u = self.u(alpha)
+            u = self.u(x, b, alpha)
             fac1 = alpha * u
-            fac2 = (self.N + 1 - alpha - 3 * self.b * self.x) * (u - 1)
-            p_pot += self.v.at[alpha].get() / (factorial(alpha)) * self.x ** (alpha - 1) * (fac1 + fac2)
+            fac2 = (self.N + 1 - alpha - 3 * b * x) * (u - 1)
+            p_pot += v.at[alpha].get() / (factorial(alpha)) * x ** (alpha - 1) * (fac1 + fac2)
             
-        p_pot = p_pot - self.v.at[0].get() * (-3) ** (self.N + 1) * self.x ** self.N * (self.N + 1 - 3 * self.b * self.x) * jnp.exp(- self.b * (1 + 3 * self.x)) 
-        p_pot = p_pot * (1/3) * self.nsat * (1 + 3 * self.x) ** 2
+        p_pot = p_pot - v.at[0].get() * (-3) ** (self.N + 1) * x ** self.N * (self.N + 1 - 3 * b * x) * jnp.exp(- b * (1 + 3 * x)) 
+        p_pot = p_pot * (1/3) * self.nsat * (1 + 3 * x) ** 2
         
         return p_pot + p_kin
     
-    def compute_incompressibility(self):
+    @partial(jax.jit, static_argnums=(0,))
+    def compute_cs2(self,
+                    n: Array,
+                    p: Array,
+                    e: Array,
+                    x: Array,
+                    delta: Array,
+                    f_1: Array,
+                    f_star: Array,
+                    f_star2: Array,
+                    f_star3: Array,
+                    b: Array,
+                    v: Array):
+        
+        ### Compute incompressibility
+        
         # Kinetic part
-        K_kin = self.t_sat * (1 + 3 * self.x) ** (2/3) *\
-            (-self.f_1 + 5 * (1 + 3 * self.x) * self.f_star + 20 * (1 + 3 * self.x) ** 2 * self.f_star2 \
-             + 44 * (1 + 3 * self.x) ** 3 * self.f_star3)
+        K_kin = self.t_sat * (1 + 3 * x) ** (2/3) *\
+            (-f_1 + 5 * (1 + 3 * x) * f_star + 20 * (1 + 3 * x) ** 2 * f_star2 \
+             + 44 * (1 + 3 * x) ** 3 * f_star3)
 
         # Potential part
         K_pot = 0
         for alpha in range(2, self.N + 1):
-            u = 1 -  ( (-3 * self.x) ** (self.N + 1 - alpha) * jnp.exp(- self.b * (1 + 3 * self.x)))
-            x_up = (self.N + 1 - alpha - 3 * self.b * self.x) * (u - 1)
-            x2_upp = (-(self.N + 1 - alpha) * (self.N - alpha) + 6 * self.b * self.x * (self.N + 1 - alpha) - 9 * self.x ** 2 * self.b ** 2) * (1 - u)
+            u = 1 -  ( (-3 * x) ** (self.N + 1 - alpha) * jnp.exp(- b * (1 + 3 * x)))
+            x_up = (self.N + 1 - alpha - 3 * b * x) * (u - 1)
+            x2_upp = (-(self.N + 1 - alpha) * (self.N - alpha) + 6 * b * x * (self.N + 1 - alpha) - 9 * x ** 2 * b ** 2) * (1 - u)
             
-            K_pot = K_pot + self.v.at[alpha].get() / (factorial(alpha)) * self.x ** (alpha - 2) \
+            K_pot = K_pot + v.at[alpha].get() / (factorial(alpha)) * x ** (alpha - 2) \
                 * (alpha * (alpha - 1) * u + 2 * alpha * x_up + x2_upp)
                 
-        K_pot += self.v.at[0].get() * (-(self.N + 1) * (self.N) + 6 * self.b * self.x * (self.N + 1) - 9 * self.x ** 2 * self.b ** 2) *((-3) ** (self.N + 1) * self.x ** (self.N - 1) * jnp.exp(- self.b * (1 + 3 * self.x)))
-        K_pot += 2 * self.v.at[1].get() * (self.N - 3 * self.b * self.x) * (-(-3) ** (self.N) * self.x ** (self.N - 1) * jnp.exp(- self.b * (1 + 3 * self.x)) )
-        K_pot += self.v.at[1].get() * (-(self.N) * (self.N - 1) + 6 * self.b * self.x * (self.N) - 9 * self.x ** 2 * self.b ** 2) * ((-3)** (self.N) * self.x ** (self.N - 1) * jnp.exp(- self.b * (1 + 3 * self.x)))
-        K_pot *= (1 + 3 * self.x) ** 2
+        K_pot += v.at[0].get() * (-(self.N + 1) * (self.N) + 6 * b * x * (self.N + 1) - 9 * x ** 2 * b ** 2) *((-3) ** (self.N + 1) * x ** (self.N - 1) * jnp.exp(- b * (1 + 3 * x)))
+        K_pot += 2 * v.at[1].get() * (self.N - 3 * b * x) * (-(-3) ** (self.N) * x ** (self.N - 1) * jnp.exp(- b * (1 + 3 * x)) )
+        K_pot += v.at[1].get() * (-(self.N) * (self.N - 1) + 6 * b * x * (self.N) - 9 * x ** 2 * b ** 2) * ((-3)** (self.N) * x ** (self.N - 1) * jnp.exp(- b * (1 + 3 * x)))
+        K_pot *= (1 + 3 * x) ** 2
         
-        K = K_kin + K_pot + 18 / self.n * self.pressure
-        return K
-    
-    def compute_c2_s(self):
+        K = K_kin + K_pot + 18 / n * p
         
-        K = self.compute_incompressibility()
-        h = utils.m + self.energy + self.pressure / self.n
+        # For electron
         
-        return K/9 /h
-    
-    def energy_density_electron(self):
-        
-        K_Fb = (3. * jnp.pi ** 2 /2. * self.n) ** (1./3.) * utils.hbarc
-        K_Fe = K_Fb * (1.- self.delta) ** (1./3.)  
-        
-        x = K_Fe / utils.m_e
-        
+        K_Fb = (3. * jnp.pi**2 /2. * n) ** (1./3.) * utils.hbarc
+        K_Fe = K_Fb * (1. - delta) ** (1./3.)  
         C = utils.m_e ** 4 / (8. * jnp.pi ** 2) / utils.hbarc ** 3
+        x = K_Fe / utils.m_e
         f = x * (1 + 2 * x ** 2) * jnp.sqrt(1 + x ** 2) - jnp.arcsinh(x)
         
-        energy_density = C*f
+        e_electron = C*f
+        p_electron = - e_electron + 8. / 3. * C * x ** 3 * jnp.sqrt(1 + x ** 2)
+        K_electron = 8 * C / n * x ** 3 * (3 + 4 * x ** 2) / (jnp.sqrt(1 + x ** 2)) - 9 / n * (e_electron + p_electron)
         
-        return energy_density
-    
-    def electron_pressure(self):
+        # Sum together:
+        K_tot = K + K_electron
         
-        energy_density = self.energy_density_electron()
-        
-        K_Fb = (3. * jnp.pi ** 2 / 2. * self.n) ** (1./3.) * utils.hbarc
-        K_Fe = K_Fb * (1. - self.delta) ** (1./3.)  
-        C = utils.m_e ** 4 / (8. * jnp.pi ** 2) / utils.hbarc ** 3
-        x = K_Fe / utils.m_e
-        
-        pressure = - energy_density + 8. / 3. * C * x ** 3 * jnp.sqrt(1 + x ** 2)
-        
-        return pressure
-    
-    def compute_incompressibility_electron(self):
-        
-        K_Fb = (3. * jnp.pi**2 /2. * self.n) ** (1./3.) * utils.hbarc
-        K_Fe = K_Fb * (1. - self.delta) ** (1./3.)  
-        C = utils.m_e ** 4 / (8. * jnp.pi ** 2) / utils.hbarc ** 3
-        x = K_Fe / utils.m_e
-        
-        energy_density = self.energy_density_electron()
-        pressure = self.electron_pressure()
-        
-        K = 8 * C / self.n * x ** 3 * (3 + 4 * x ** 2) / (jnp.sqrt(1 + x ** 2)) - 9 / self.n * (energy_density + pressure)
-        return K
-    
-    def mu_e(self,
-             n: Array):
-        
-        delta = self.compute_delta(n)
-        
-        K_Fb = (3. * jnp.pi ** 2 / 2. * n) ** (1./3.) * utils.hbarc
-        K_Fe = K_Fb * (1. - delta)**(1./3.)  
-    
-        ans = jnp.sqrt(utils.m_e ** 2 + K_Fe ** 2)
-        return ans
-    
-    
-    def compute_cs2(self):
-        K_tot = self.compute_incompressibility() + self.compute_incompressibility_electron()
-        
+        # Finally, get cs2:
         chi = K_tot/9. 
         
-        total_energy_density = (self.energy + utils.m) * self.n + self.energy_density_electron()
-        total_pressure = self.pressure + self.electron_pressure()
-        h_tot =  (total_energy_density + total_pressure) / self.n
+        total_energy_density = (e + utils.m) * n + e_electron
+        total_pressure = p + p_electron
+        h_tot = (total_energy_density + total_pressure) / n
         
         cs2 = chi/h_tot
         
         return cs2
     
-    def compute_proton_fraction(self) -> Float[Array, "n_points"]:
+    def compute_proton_fraction(self,
+                                n: Array) -> Float[Array, "n_points"]:
         """
         Computes the proton fraction for a given number density.
 
@@ -496,11 +483,11 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         # p_2 = 0
         # p_3 = 8 * Esym
         # TODO: change this
-        Esym = self.esym()
+        Esym = self.esym(n)
         
         a = 8.0 * Esym
-        b = jnp.zeros(shape=self.n.shape)
-        c = utils.hbarc * jnp.power(3.0 * jnp.pi**2 * self.n, 1.0 / 3.0)
+        b = jnp.zeros(shape=n.shape)
+        c = utils.hbarc * jnp.power(3.0 * jnp.pi**2 * n, 1.0 / 3.0)
         d = -4.0 * Esym - (utils.m_n - utils.m_p)
         
         coeffs = jnp.array(
@@ -531,15 +518,16 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         self,
         # parameters for the MetaModel
         NEP_dict: dict,
-        nbreak: Float,
+        nbreak_nsat: Float,
         # parameters for the CSE
         ngrids: Float[Array, "n_grid_point"],
         cs2grids: Float[Array, "n_grid_point"],
-        nsat: Float=0.16,
-        nmin: Float=0.1,
-        nmax_nsat: Float=12,
-        ndat_metamodel: Int=100,
-        ndat_CSE: Int=100,
+        # density parameters
+        nsat: Float=  0.16,
+        nmin_nsat: Float = 0.1,
+        nmax_nsat: Float = 12,
+        ndat_metamodel: Int = 100,
+        ndat_CSE: Int = 100,
         **metamodel_kwargs
     ):
         """
@@ -564,17 +552,17 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         # Initializate the MetaModel part up to n_break
         self.metamodel = MetaModel_EOS_model(
             NEP_dict,
-            nsat=nsat,
-            nmin=nmin,
-            nmax_nsat=nbreak/nsat,
-            ndat=ndat_metamodel,
+            nsat = nsat,
+            nmin_nsat = nmin_nsat,
+            nmax_nsat = nbreak_nsat,
+            ndat = ndat_metamodel,
             **metamodel_kwargs
         )
         assert len(ngrids) == len(cs2grids), "ngrids and cs2grids must have the same length."
         # calculate the chemical potential at the transition point
-        self.nbreak = nbreak
+        self.nbreak = nbreak_nsat * nsat
         
-        # Convert units back
+        # Convert units back for CSE initialization
         n_metamodel = self.metamodel.n / utils.fm_inv3_to_geometric
         p_metamodel = self.metamodel.p / utils.MeV_fm_inv3_to_geometric
         e_metamodel = self.metamodel.e / utils.MeV_fm_inv3_to_geometric
@@ -597,7 +585,7 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         p_CSE = self.p_break + utils.cumtrapz(cs2_CSE * mu_CSE, n_CSE)
         e_CSE = self.e_break + utils.cumtrapz(mu_CSE, n_CSE)
         
-        # TODO: remove this, this is just for comparison against Rahul:
+        # TODO: remove this, this is only saved to give to Rahul's TOV solver for cross-checking:
         self.n_CSE = n_CSE
         self.cs2_CSE = cs2_CSE
         
@@ -611,7 +599,7 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         mu = jnp.concatenate((self.metamodel.mu, mu_CSE))
         
         # TODO: make less cumbersome, but this is needed since at this point p and e for sure have duplicate at nbreak due to cumtrapz first element being constant
-        # TODO: perhaps it is bets to also make cs2 and mu as part of the init. Then the base class can handle this as well
+        # TODO: perhaps it is best to also make cs2 and mu as part of the init. Then the base class can handle this kind of removal of duplicates
         for array_to_check in [n, p, e]:
             indices = jnp.where(jnp.diff(array_to_check) == 0.0)[0]
             
