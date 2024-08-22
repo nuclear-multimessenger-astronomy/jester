@@ -215,20 +215,21 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         
         # Load and preprocess the crust
         ns_crust, ps_crust, es_crust = load_crust(crust)
+        
         max_n_crust = max_n_crust_nsat * nsat
         mask = ns_crust <= max_n_crust
         ns_crust, ps_crust, es_crust = ns_crust[mask], ps_crust[mask], es_crust[mask]
         
         # FIXME: remove this once we discussed about this with Rahul
-        # mu_lowest = (es_crust[0] + ps_crust[0]) / ns_crust[0]
-        mu_lowest = 930.1193490245807
+        mu_lowest = (es_crust[0] + ps_crust[0]) / ns_crust[0]
+        # mu_lowest = 930.1193490245807
         
         cs2_crust = jnp.gradient(ps_crust, es_crust)
         
         # Make sure the metamodel starts above the crust
         max_n_crust = ns_crust[-1]
         nmin = nmin_nsat * self.nsat
-        nmin = jnp.max(jnp.array([nmin, max_n_crust + 1e-3]))
+        nmin = jnp.max(jnp.array([nmin, max_n_crust]))
         self.nmin = nmin
         
         # Create the density array
@@ -236,7 +237,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         self.ndat = ndat
         
         # We first set the metamodel n array to self.n, to compute all auxiliary quantities
-        n_metamodel = jnp.linspace(self.nmin, self.nmax, ndat)
+        n_metamodel = jnp.linspace(self.nmin, self.nmax, ndat, endpoint = False)
         
         # Auxiliaries first
         x = self.compute_x(n_metamodel)
@@ -261,7 +262,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         ns_spline = jnp.append(ns_crust, n_metamodel)
         cs2_spline = jnp.append(cs2_crust, cs2_metamodel)
         
-        n_connection = jnp.linspace(max_n_crust, self.nmin, ndat_spline)
+        n_connection = jnp.linspace(max_n_crust + 1e-5, self.nmin, ndat_spline, endpoint = False)
         cs2_connection = utils.cubic_spline(n_connection, ns_spline, cs2_spline)
         cs2_connection = jnp.clip(cs2_connection, 1e-5, 1.0)
         
@@ -274,14 +275,6 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         mu = jnp.exp(log_mu)
         p = utils.cumtrapz(cs2 * mu, n) + ps_crust[0]
         e = mu * n - p
-        
-        # TODO: this is perhaps best put in the top class but then how to do this for cs2 and mu?
-        indices = jnp.where(jnp.diff(n) == 0.0)[0]
-        n = jnp.delete(n, indices)
-        p = jnp.delete(p, indices)
-        e = jnp.delete(e, indices)
-        cs2 = jnp.delete(cs2, indices)
-        mu = jnp.delete(mu, indices)
         
         self.cs2 = cs2
         self.mu = mu
@@ -581,37 +574,36 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         # Compute n, p, e for CSE (number densities in unit of fm^-3)
         n_CSE = jnp.logspace(jnp.log10(self.nbreak), jnp.log10(nmax), num=ndat_CSE)
         cs2_CSE = self.cs2_extension_function(n_CSE)
-        mu_CSE = self.mu_break * jnp.exp(utils.cumtrapz(cs2_CSE / n_CSE, n_CSE))
-        p_CSE = self.p_break + utils.cumtrapz(cs2_CSE * mu_CSE, n_CSE)
-        e_CSE = self.e_break + utils.cumtrapz(mu_CSE, n_CSE)
+        
+        # We add a very small number to avoid problems with duplicates below
+        mu_CSE = self.mu_break * jnp.exp(utils.cumtrapz(cs2_CSE / n_CSE, n_CSE)) + 1e-6
+        p_CSE = self.p_break + utils.cumtrapz(cs2_CSE * mu_CSE, n_CSE) + 1e-6
+        e_CSE = self.e_break + utils.cumtrapz(mu_CSE, n_CSE) + 1e-6
         
         # TODO: remove this, this is only saved to give to Rahul's TOV solver for cross-checking:
         self.n_CSE = n_CSE
         self.cs2_CSE = cs2_CSE
         
         # Combine metamodel and CSE data
-        # TODO: converting units back and forth might be numerically unstable if conversion factors are large?
         n = jnp.concatenate((n_metamodel, n_CSE))
         p = jnp.concatenate((p_metamodel, p_CSE))
         e = jnp.concatenate((e_metamodel, e_CSE))
         
-        cs2 = jnp.concatenate((self.metamodel.cs2, cs2_CSE))
-        mu = jnp.concatenate((self.metamodel.mu, mu_CSE))
+        # TODO: let's decide whether we want to save cs2 and mu or just use them for computation and then discard them.
+        # cs2 = jnp.concatenate((self.metamodel.cs2, cs2_CSE))
+        # mu = jnp.concatenate((self.metamodel.mu, mu_CSE))
         
-        # TODO: make less cumbersome, but this is needed since at this point p and e for sure have duplicate at nbreak due to cumtrapz first element being constant
-        # TODO: perhaps it is best to also make cs2 and mu as part of the init. Then the base class can handle this kind of removal of duplicates
-        for array_to_check in [n, p, e]:
-            indices = jnp.where(jnp.diff(array_to_check) == 0.0)[0]
-            
-            n = jnp.delete(n, indices)
-            p = jnp.delete(p, indices)
-            e = jnp.delete(e, indices)
         
-            cs2 = jnp.delete(cs2, indices)
-            mu = jnp.delete(mu, indices)
+        # # FIXME: this is pretty experimental, but we have duplicates which will break TOV solver but are hard to remove in a JIT-compatible manner. Note that we should perhaps do something similar in the metamodel EOS. 
+        
+        # for array_to_check in [n, p, e]:
+        #     indices = jnp.where(jnp.diff(array_to_check) <= 0.0)[0][0]
+        #     print(indices)
             
-        self.cs2 = cs2
-        self.mu = mu
+        #     print(f"n at duplicates +/- 1: {n[indices-1:indices+1] /0.16} nsat")
+        # n = jnp.unique(n)
+        # e = jnp.unique(e)
+        # p = jnp.unique(p)
 
         super().__init__(n, p, e)
         
