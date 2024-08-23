@@ -85,26 +85,21 @@ class Interpolate_EOS_model(object):
         )
         self.dloge_dlogp = dloge_dlogp
 
-    @partial(jax.jit, static_argnums=(0,))
     def energy_density_from_pseudo_enthalpy(self, h: Float):
         loge_of_h = jnp.interp(jnp.log(h), self.logh, self.loge)
         return jnp.exp(loge_of_h)
 
-    @partial(jax.jit, static_argnums=(0,))
     def pressure_from_pseudo_enthalpy(self, h: Float):
         logp_of_h = jnp.interp(jnp.log(h), self.logh, self.logp)
         return jnp.exp(logp_of_h)
 
-    @partial(jax.jit, static_argnums=(0,))
     def dloge_dlogp_from_pseudo_enthalpy(self, h: Float):
         return jnp.interp(h, self.h, self.dloge_dlogp)
 
-    @partial(jax.jit, static_argnums=(0,))
     def pseudo_enthalpy_from_pressure(self, p: Float):
         logh_of_p = jnp.interp(jnp.log(p), self.logp, self.logh)
         return jnp.exp(logh_of_p)
 
-    @partial(jax.jit, static_argnums=(0,))
     def pressure_from_number_density(self, n: Float):
         logp_of_n = jnp.interp(n, self.n, self.logp)
         return jnp.exp(logp_of_n)
@@ -293,42 +288,34 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         # TODO: documentation
         return 1 - ((-3 * x) ** (self.N + 1 - alpha) * jnp.exp(- b * (1 + 3 * x)))
         
-    @partial(jax.jit, static_argnums=(0,))
     def compute_x(self,
                   n: Array):
         return (n - self.nsat) / (3 * self.nsat)
     
-    @partial(jax.jit, static_argnums=(0,))
     def compute_b(self,
                   delta: Array):
         return self.b_sat + self.b_sym * delta ** 2
         
-    @partial(jax.jit, static_argnums=(0,))
     def compute_f_1(self,
                     delta: Array):
         return (1 + delta) ** (5/3) + (1 - delta) ** (5/3)
     
-    @partial(jax.jit, static_argnums=(0,))
     def compute_f_star(self,
                        delta: Array):
         return (self.kappa_sat + self.kappa_sym * delta) * (1 + delta) ** (5/3) + (self.kappa_sat - self.kappa_sym * delta) * (1 - delta) ** (5/3)
     
-    @partial(jax.jit, static_argnums=(0,))
     def compute_f_star2(self,
                         delta: Array):
         return (self.kappa_sat2 + self.kappa_sym2 * delta) * (1 + delta) ** (5/3) + (self.kappa_sat2 - self.kappa_sym2 * delta) * (1 - delta) ** (5/3)
     
-    @partial(jax.jit, static_argnums=(0,))
     def compute_f_star3(self,
                         delta: Array):
         return (self.kappa_sat3 + self.kappa_sym3 * delta) * (1 + delta) ** (5/3) + (self.kappa_sat3 - self.kappa_sym3 * delta) * (1 - delta) ** (5/3)
     
-    @partial(jax.jit, static_argnums=(0,))
     def compute_v(self,
                   delta: Array) -> Array:
         return jnp.array([self.v_sat[alpha] + self.v_sym2[alpha] * delta ** 2 + self.v_nq[alpha] * delta ** 4 for alpha in range(self.N + 1)])
     
-    @partial(jax.jit, static_argnums=(0,))
     def compute_energy(self,
                        x: Array,
                        f_1: Array,
@@ -354,13 +341,11 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         
         return kinetic_energy + potential_energy
     
-    @partial(jax.jit, static_argnums=(0,))
     def esym(self,
              x: Array):
         # TODO: change this to be self-consistent: see Rahul's approach for that.
         return jnp.polyval(self.coefficient_sym[::-1], x)
     
-    @partial(jax.jit, static_argnums=(0,))
     def compute_pressure(self,
                          x: Array,
                          f_1: Array,
@@ -388,7 +373,6 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         
         return p_pot + p_kin
     
-    @partial(jax.jit, static_argnums=(0,))
     def compute_cs2(self,
                     n: Array,
                     p: Array,
