@@ -3,7 +3,6 @@ import jax
 import jax.numpy as jnp
 from jax.scipy.special import factorial
 from jaxtyping import Array, Float, Int
-from functools import partial
 
 from . import utils, tov
 
@@ -44,14 +43,15 @@ class Interpolate_EOS_model(object):
     """
     Base class to interpolate EOS data. 
     """
-    def __init__(
-        self,
-        n: Float[Array, "n_points"],
-        p: Float[Array, "n_points"],
-        e: Float[Array, "n_points"],
-    ):
+    def __init__(self):
+        pass
+    
+    def interpolate_eos(self,
+                        n: Float[Array, "n_points"],
+                        p: Float[Array, "n_points"],
+                        e: Float[Array, "n_points"]):
         """
-        Initialize the EOS model with the provided data and compute auxiliary data.
+        Given n, p and e, interpolate to obtain necessary auxiliary quantities. 
 
         Args:
             n (Float[Array, n_points]): Number densities. Expected units are n[fm^-3]
@@ -119,8 +119,6 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
     
     def __init__(
         self,
-        # Metamodel parameters
-        NEP_dict: dict,
         kappas: tuple[Float, Float, Float, Float, Float, Float] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
         v_nq: list[float] = [0.0, 0.0, 0.0, 0.0, 0.0],
         b_sat: Float = 17.0,
@@ -131,7 +129,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         nmax_nsat: Float = 12,
         ndat: Int = 200,
         # crust parameters
-        crust: bool = "BPS",
+        crust_name: bool = "BPS",
         max_n_crust_nsat: Float = 0.5,
         ndat_spline: Int = 10
     ):
@@ -141,44 +139,20 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         TODO: add documentation
         """
         
-        # Save given attributes
+        # Save as attributes
         self.nsat = nsat
         self.v_nq = jnp.array(v_nq)
         self.b_sat = b_sat
         self.b_sym = b_sym
         self.N = 4 # TODO: this is fixed in the metamodeling papers, but we might want to extend this in the future
         
-        # Set all the NEPs for the metamodel
-        self.NEP_dict = NEP_dict
+        self.min_nsat = nmin_nsat
+        self.nmax_nsat = nmax_nsat
+        self.ndat = ndat
+        self.max_n_crust_nsat = max_n_crust_nsat
+        self.ndat_spline = ndat_spline
         
-        self.E_sat = NEP_dict.get("E_sat", 0.0)
-        self.K_sat = NEP_dict.get("K_sat", 0.0)
-        self.Q_sat = NEP_dict.get("Q_sat", 0.0)
-        self.Z_sat = NEP_dict.get("Z_sat", 0.0)
-
-        self.E_sym = NEP_dict.get("E_sym", 0.0)
-        self.L_sym = NEP_dict.get("L_sym", 0.0)
-        self.K_sym = NEP_dict.get("K_sym", 0.0)
-        self.Q_sym = NEP_dict.get("Q_sym", 0.0)
-        self.Z_sym = NEP_dict.get("Z_sym", 0.0)
-
-        # TODO: perhaps a bit cleaner but a bit less clear
-        # for key in ["E_sat", "K_sat", "Q_sat", "Z_sat", "E_sym", "L_sym", "K_sym", "Q_sym", "Z_sym"]:
-        #     setattr(self, key, NEP_dict.get(key, 0.0))
-        
-        # TODO: clean up, not used so much?
-        # Add the first derivative coefficient in Esat to make it work with jax.numpy.polyval
-        coefficient_sat = jnp.array([self.E_sat,        0.0, self.K_sat, self.Q_sat, self.Z_sat])
-        coefficient_sym = jnp.array([self.E_sym, self.L_sym, self.K_sym, self.Q_sym, self.Z_sym])
-        
-        # Get the coefficents index array and get coefficients
-        index_sat = jnp.arange(len(coefficient_sat))
-        index_sym = jnp.arange(len(coefficient_sym))
-
-        self.coefficient_sat = coefficient_sat / factorial(index_sat)
-        self.coefficient_sym = coefficient_sym / factorial(index_sym)
-        
-        # Preprocess the kappas
+        # Constructions
         assert len(kappas) == 6, "kappas must be a tuple of 6 values: kappa_sat, kappa_sat2, kappa_sat3, kappa_NM, kappa_NM2, kappa_NM3"
         self.kappa_sat, self.kappa_sat2, self.kappa_sat3, self.kappa_NM, self.kappa_NM2, self.kappa_NM3 = kappas
         self.kappa_sym = self.kappa_NM - self.kappa_sat
@@ -188,41 +162,30 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         # t_sat or TFGsat is the kinetic energy per nucleons in SM and at saturation, see just after eq (13) in the margueron paper
         self.t_sat = 3 * utils.hbar ** 2 / (10 * utils.m) * (3 * jnp.pi ** 2 * self.nsat / 2) ** (2/3)
         
-        # Potential energy 
         # v_sat is defined in equations (22) - (26) in the Margueron et al. paper
-        # TODO: there are more terms here, perhaps check the other reference that Rahul shared?
-        v_sat_0 = self.E_sat -     self.t_sat * ( 1 +   self.kappa_sat +   self.kappa_sat2 +     self.kappa_sat3)
-        v_sat_1 =            -     self.t_sat * ( 2 + 5*self.kappa_sat + 8 * self.kappa_sat2 + 11* self.kappa_sat3)
-        v_sat_2 = self.K_sat - 2 * self.t_sat * (-1 + 5*self.kappa_sat + 20*self.kappa_sat2 + 44* self.kappa_sat3)
-        v_sat_3 = self.Q_sat - 2 * self.t_sat * ( 4 - 5*self.kappa_sat + 40*self.kappa_sat2 + 220* self.kappa_sat3)
-        v_sat_4 = self.Z_sat - 8 * self.t_sat * (-7 + 5*self.kappa_sat - 10*self.kappa_sat2 + 110* self.kappa_sat3) 
+        self.v_sat_0_no_NEP = -self.t_sat * (1 + self.kappa_sat + self.kappa_sat2 + self.kappa_sat3)
+        self.v_sat_1_no_NEP = -self.t_sat * (2 + 5 * self.kappa_sat + 8 * self.kappa_sat2 + 11 * self.kappa_sat3)
+        self.v_sat_2_no_NEP = - 2 * self.t_sat * (-1 + 5 * self.kappa_sat + 20 * self.kappa_sat2 + 44 * self.kappa_sat3)
+        self.v_sat_3_no_NEP = - 2 * self.t_sat * ( 4 - 5 * self.kappa_sat + 40 * self.kappa_sat2 + 220 * self.kappa_sat3)
+        self.v_sat_4_no_NEP = - 8 * self.t_sat * (-7 + 5*self.kappa_sat - 10*self.kappa_sat2 + 110* self.kappa_sat3) 
         
-        self.v_sat = jnp.array([v_sat_0, v_sat_1, v_sat_2, v_sat_3, v_sat_4])
-        
-        # v_sym2 is defined in equations (27) to (31) in the Margueron et al. paper
-        v_sym2_0 = self.E_sym -     self.t_sat * ( 2**(2/3)*( 1+  self.kappa_NM+   self.kappa_NM2+    self.kappa_NM3) - ( 1+  self.kappa_sat+   self.kappa_sat2+   self.kappa_sat3)  ) - v_nq[0]
-        v_sym2_1 = self.L_sym -     self.t_sat * ( 2**(2/3)*( 2+5*self.kappa_NM+8* self.kappa_NM2+ 11*self.kappa_NM3) - ( 2+5*self.kappa_sat+8* self.kappa_sat2+11*self.kappa_sat3)  ) - v_nq[1]
-        v_sym2_2 = self.K_sym - 2 * self.t_sat * ( 2**(2/3)*(-1+5*self.kappa_NM+20*self.kappa_NM2+ 44*self.kappa_NM3) - (-1+5*self.kappa_sat+20*self.kappa_sat2+44*self.kappa_sat3)  ) - v_nq[2]
-        v_sym2_3 = self.Q_sym - 2 * self.t_sat * ( 2**(2/3)*( 4-5*self.kappa_NM+40*self.kappa_NM2+ 220*self.kappa_NM3) - ( 4-5*self.kappa_sat+40*self.kappa_sat2+220*self.kappa_sat3) ) - v_nq[3]
-        v_sym2_4 = self.Z_sym - 8 * self.t_sat * ( 2**(2/3)*(-7+5*self.kappa_NM-10*self.kappa_NM2+ 110*self.kappa_NM3) - (-7+5*self.kappa_sat-10*self.kappa_sat2+110*self.kappa_sat3) ) - v_nq[4]
-        
-        self.v_sym2 = jnp.array([v_sym2_0, v_sym2_1, v_sym2_2, v_sym2_3, v_sym2_4])
+        self.v_sym2_0_no_NEP = - self.t_sat * (2 ** (2/3) * (1 + self.kappa_NM + self.kappa_NM2 + self.kappa_NM3) - (1 + self.kappa_sat + self.kappa_sat2 + self.kappa_sat3)) - self.v_nq[0]
+        self.v_sym2_1_no_NEP = - self.t_sat * (2 ** (2/3) * (2 + 5 * self.kappa_NM + 8 * self.kappa_NM2 + 11 * self.kappa_NM3) - (2 + 5 * self.kappa_sat + 8 * self.kappa_sat2 + 11 * self.kappa_sat3)) - self.v_nq[1]
+        self.v_sym2_2_no_NEP = - 2 * self.t_sat * (2 ** (2/3) * (-1 + 5 * self.kappa_NM + 20 * self.kappa_NM2 + 44 * self.kappa_NM3) - (-1 + 5 * self.kappa_sat + 20 * self.kappa_sat2 + 44 * self.kappa_sat3)) - self.v_nq[2]
+        self.v_sym2_3_no_NEP = - 2 * self.t_sat * (2 ** (2/3) * (4 - 5 * self.kappa_NM + 40 * self.kappa_NM2 + 220 * self.kappa_NM3) - ( 4 - 5 * self.kappa_sat + 40 * self.kappa_sat2 + 220 * self.kappa_sat3)) - self.v_nq[3]
+        self.v_sym2_4_no_NEP = - 8 * self.t_sat * (2 ** (2/3) * (-7 + 5 * self.kappa_NM - 10 * self.kappa_NM2 + 110 * self.kappa_NM3) - (-7 + 5 * self.kappa_sat - 10 * self.kappa_sat2 + 110 * self.kappa_sat3)) - self.v_nq[4]
         
         # Load and preprocess the crust
-        ns_crust, ps_crust, es_crust = load_crust(crust)
-        
+        ns_crust, ps_crust, es_crust = load_crust(crust_name)
         max_n_crust = max_n_crust_nsat * nsat
         mask = ns_crust <= max_n_crust
-        ns_crust, ps_crust, es_crust = ns_crust[mask], ps_crust[mask], es_crust[mask]
+        self.ns_crust, self.ps_crust, self.es_crust = ns_crust[mask], ps_crust[mask], es_crust[mask]
         
-        # FIXME: remove this once we discussed about this with Rahul
-        mu_lowest = (es_crust[0] + ps_crust[0]) / ns_crust[0]
-        # mu_lowest = 930.1193490245807
-        
-        cs2_crust = jnp.gradient(ps_crust, es_crust)
+        self.mu_lowest = (es_crust[0] + ps_crust[0]) / ns_crust[0]
+        self.cs2_crust = jnp.gradient(ps_crust, es_crust)
         
         # Make sure the metamodel starts above the crust
-        max_n_crust = ns_crust[-1]
+        self.max_n_crust = ns_crust[-1]
         nmin = nmin_nsat * self.nsat
         nmin = jnp.max(jnp.array([nmin, max_n_crust]))
         self.nmin = nmin
@@ -231,8 +194,50 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         self.nmax = nmax_nsat * self.nsat
         self.ndat = ndat
         
+    def construct_eos(self, 
+                      NEP_dict: dict):
+        
+        E_sat = NEP_dict.get("E_sat", 0.0)
+        K_sat = NEP_dict.get("K_sat", 0.0)
+        Q_sat = NEP_dict.get("Q_sat", 0.0)
+        Z_sat = NEP_dict.get("Z_sat", 0.0)
+
+        E_sym = NEP_dict.get("E_sym", 0.0)
+        L_sym = NEP_dict.get("L_sym", 0.0)
+        K_sym = NEP_dict.get("K_sym", 0.0)
+        Q_sym = NEP_dict.get("Q_sym", 0.0)
+        Z_sym = NEP_dict.get("Z_sym", 0.0)
+
+        # TODO: clean up, not used so much?
+        # Add the first derivative coefficient in Esat to make it work with jax.numpy.polyval
+        coefficient_sat = jnp.array([E_sat,   0.0, K_sat, Q_sat, Z_sat])
+        coefficient_sym = jnp.array([E_sym, L_sym, K_sym, Q_sym, Z_sym])
+        
+        # Get the coefficents index array and get coefficients
+        index_sat = jnp.arange(len(coefficient_sat))
+        index_sym = jnp.arange(len(coefficient_sym))
+
+        self.coefficient_sat = coefficient_sat / factorial(index_sat)
+        self.coefficient_sym = coefficient_sym / factorial(index_sym)
+        
+        # Potential energy 
+        # v_sat is defined in equations (22) - (26) in the Margueron et al. paper
+        # TODO: there are more terms here, perhaps check the other reference that Rahul shared?
+        self.v_sat = jnp.array([E_sat + self.v_sat_0_no_NEP, 
+                                0.0   + self.v_sat_1_no_NEP,
+                                K_sat + self.v_sat_2_no_NEP,
+                                Q_sat + self.v_sat_3_no_NEP,
+                                Z_sat + self.v_sat_4_no_NEP])
+        
+        # v_sym2 is defined in equations (27) to (31) in the Margueron et al. paper
+        self.v_sym2 = jnp.array([E_sym + self.v_sym2_0_no_NEP, 
+                                 L_sym + self.v_sym2_1_no_NEP,
+                                 K_sym + self.v_sym2_2_no_NEP,
+                                 Q_sym + self.v_sym2_3_no_NEP,
+                                 Z_sym + self.v_sym2_4_no_NEP])
+        
         # We first set the metamodel n array to self.n, to compute all auxiliary quantities
-        n_metamodel = jnp.linspace(self.nmin, self.nmax, ndat, endpoint = False)
+        n_metamodel = jnp.linspace(self.nmin, self.nmax, self.ndat, endpoint = False)
         
         # Auxiliaries first
         x = self.compute_x(n_metamodel)
@@ -254,27 +259,27 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         cs2_metamodel = self.compute_cs2(n_metamodel, p_metamodel, e_metamodel, x, delta, f_1, f_star, f_star2, f_star3, b, v)
         
         # Spline for speed of sound for the connection region
-        ns_spline = jnp.append(ns_crust, n_metamodel)
-        cs2_spline = jnp.append(cs2_crust, cs2_metamodel)
+        ns_spline = jnp.append(self.ns_crust, n_metamodel)
+        cs2_spline = jnp.append(self.cs2_crust, cs2_metamodel)
         
-        n_connection = jnp.linspace(max_n_crust + 1e-5, self.nmin, ndat_spline, endpoint = False)
+        n_connection = jnp.linspace(self.max_n_crust + 1e-5, self.nmin, self.ndat_spline, endpoint = False)
         cs2_connection = utils.cubic_spline(n_connection, ns_spline, cs2_spline)
         cs2_connection = jnp.clip(cs2_connection, 1e-5, 1.0)
         
         # Concatenate the arrays
-        n = jnp.concatenate([ns_crust, n_connection, n_metamodel])
-        cs2 = jnp.concatenate([cs2_crust, cs2_connection, cs2_metamodel])
+        n = jnp.concatenate([self.ns_crust, n_connection, n_metamodel])
+        cs2 = jnp.concatenate([self.cs2_crust, cs2_connection, cs2_metamodel])
         
         # Compute pressure and energy from chemical potential and initialize the parent class with it
-        log_mu = utils.cumtrapz(cs2, jnp.log(n)) + jnp.log(mu_lowest)
+        log_mu = utils.cumtrapz(cs2, jnp.log(n)) + jnp.log(self.mu_lowest)
         mu = jnp.exp(log_mu)
-        p = utils.cumtrapz(cs2 * mu, n) + ps_crust[0]
+        p = utils.cumtrapz(cs2 * mu, n) + self.ps_crust[0]
         e = mu * n - p
         
-        self.cs2 = cs2
         self.mu = mu
+        self.cs2 = cs2
         
-        super().__init__(n, p, e)
+        self.interpolate_eos(n, p, e)
         
         
     #################
@@ -493,14 +498,8 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
     """
     def __init__(
         self,
-        # parameters for the MetaModel
-        NEP_dict: dict,
-        nbreak_nsat: Float,
-        # parameters for the CSE
-        ngrids: Float[Array, "n_grid_point"],
-        cs2grids: Float[Array, "n_grid_point"],
-        # density parameters
-        nsat: Float=  0.16,
+        nbreak_nsat: Float = 12,
+        nsat: Float =  0.16,
         nmin_nsat: Float = 0.1,
         nmax_nsat: Float = 12,
         ndat_metamodel: Int = 100,
@@ -524,20 +523,26 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         """
 
         # TODO: align with new metamodel code
-        nmax = nmax_nsat * nsat
+        self.nmax = nmax_nsat * nsat
+        self.nbreak_nsat = nbreak_nsat
+        self.nbreak = nbreak_nsat * nsat
+        self.ndat_CSE = ndat_CSE
 
         # Initializate the MetaModel part up to n_break
-        self.metamodel = MetaModel_EOS_model(
-            NEP_dict,
-            nsat = nsat,
-            nmin_nsat = nmin_nsat,
-            nmax_nsat = nbreak_nsat,
-            ndat = ndat_metamodel,
-            **metamodel_kwargs
+        self.metamodel = MetaModel_EOS_model(nsat = nsat,
+                                             nmin_nsat = nmin_nsat,
+                                             nmax_nsat = nbreak_nsat,
+                                             ndat = ndat_metamodel,
+                                             **metamodel_kwargs
         )
-        assert len(ngrids) == len(cs2grids), "ngrids and cs2grids must have the same length."
-        # calculate the chemical potential at the transition point
-        self.nbreak = nbreak_nsat * nsat
+        
+    def construct_eos(self,
+                      NEP_dict: dict,
+                      ngrids: Float[Array, "n_grid_point"],
+                      cs2grids: Float[Array, "n_grid_point"]):
+        
+        # Construct the metamodel part:
+        self.metamodel.construct_eos(NEP_dict)
         
         # Convert units back for CSE initialization
         n_metamodel = self.metamodel.n / utils.fm_inv3_to_geometric
@@ -556,7 +561,7 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         self.cs2_extension_function = lambda n: jnp.interp(n, self.ngrids, self.cs2grids)
         
         # Compute n, p, e for CSE (number densities in unit of fm^-3)
-        n_CSE = jnp.logspace(jnp.log10(self.nbreak), jnp.log10(nmax), num=ndat_CSE)
+        n_CSE = jnp.logspace(jnp.log10(self.nbreak), jnp.log10(self.nmax), num=self.ndat_CSE)
         cs2_CSE = self.cs2_extension_function(n_CSE)
         
         # We add a very small number to avoid problems with duplicates below
@@ -589,9 +594,9 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         # e = jnp.unique(e)
         # p = jnp.unique(p)
 
-        super().__init__(n, p, e)
+        self.interpolate_eos(n, p, e)
         
-
+        
 def construct_family(eos: tuple,
                      ndat: Int=50, 
                      min_nsat: Float=2) -> tuple[Float[Array, "ndat"], Float[Array, "ndat"], Float[Array, "ndat"], Float[Array, "ndat"]]:
