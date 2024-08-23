@@ -239,7 +239,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         f_star = self.compute_f_star(delta)
         f_star2 = self.compute_f_star2(delta)
         f_star3 = self.compute_f_star3(delta)
-        v = self.compute_v(delta)
+        v = self.compute_v(v_sat, v_sym2, delta)
         b = self.compute_b(delta)
         
         # Other quantities
@@ -307,8 +307,10 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         return (self.kappa_sat3 + self.kappa_sym3 * delta) * (1 + delta) ** (5/3) + (self.kappa_sat3 - self.kappa_sym3 * delta) * (1 - delta) ** (5/3)
     
     def compute_v(self,
+                  v_sat: Array,
+                  v_sym2: Array,
                   delta: Array) -> Array:
-        return jnp.array([self.v_sat[alpha] + self.v_sym2[alpha] * delta ** 2 + self.v_nq[alpha] * delta ** 4 for alpha in range(self.N + 1)])
+        return jnp.array([v_sat[alpha] + v_sym2[alpha] * delta ** 2 + self.v_nq[alpha] * delta ** 4 for alpha in range(self.N + 1)])
     
     def compute_energy(self,
                        x: Array,
