@@ -43,14 +43,15 @@ class Interpolate_EOS_model(object):
     """
     Base class to interpolate EOS data. 
     """
-    def __init__(
-        self,
-        n: Float[Array, "n_points"],
-        p: Float[Array, "n_points"],
-        e: Float[Array, "n_points"],
-    ):
+    def __init__(self):
+        pass
+    
+    def interpolate_eos(self,
+                        n: Float[Array, "n_points"],
+                        p: Float[Array, "n_points"],
+                        e: Float[Array, "n_points"]):
         """
-        Initialize the EOS model with the provided data and compute auxiliary data.
+        Given n, p and e, interpolate to obtain necessary auxiliary quantities. 
 
         Args:
             n (Float[Array, n_points]): Number densities. Expected units are n[fm^-3]
@@ -59,49 +60,44 @@ class Interpolate_EOS_model(object):
         """
         
         # Save the provided data as attributes, make conversions
-        self.n = jnp.array(n * utils.fm_inv3_to_geometric)
-        self.p = jnp.array(p * utils.MeV_fm_inv3_to_geometric)
-        self.e = jnp.array(e * utils.MeV_fm_inv3_to_geometric)
+        ns = jnp.array(n * utils.fm_inv3_to_geometric)
+        ps = jnp.array(p * utils.MeV_fm_inv3_to_geometric)
+        es = jnp.array(e * utils.MeV_fm_inv3_to_geometric)
         
-        # Pre-calculate quantities
-        self.logn = jnp.log(self.n)
-        self.logp = jnp.log(self.p)
-        self.h = utils.cumtrapz(self.p / (self.e + self.p), jnp.log(self.p)) # enthalpy
-        self.loge = jnp.log(self.e)
-        self.logh = jnp.log(self.h)
-        
+        hs = utils.cumtrapz(ps / (es + ps), jnp.log(ps)) # enthalpy
         # TODO: might be better to use jnp.gradient?
-        dloge_dlogp = jnp.diff(self.loge) / jnp.diff(self.logp)
-        dloge_dlogp = jnp.concatenate(
+        dloge_dlogps = jnp.diff(jnp.log(e)) / jnp.diff(jnp.log(p))
+        dloge_dlogps = jnp.concatenate(
             (
                 jnp.array(
                     [
-                        dloge_dlogp.at[0].get(),
+                        dloge_dlogps.at[0].get(),
                     ]
                 ),
-                dloge_dlogp,
+                dloge_dlogps,
             )
         )
-        self.dloge_dlogp = dloge_dlogp
+        return ns, ps, hs, es, dloge_dlogps
 
-    def energy_density_from_pseudo_enthalpy(self, h: Float):
-        loge_of_h = jnp.interp(jnp.log(h), self.logh, self.loge)
-        return jnp.exp(loge_of_h)
+    # TODO: remove?
+    # def energy_density_from_pseudo_enthalpy(self, h: Float):
+    #     loge_of_h = jnp.interp(jnp.log(h), self.logh, self.loge)
+    #     return jnp.exp(loge_of_h)
 
-    def pressure_from_pseudo_enthalpy(self, h: Float):
-        logp_of_h = jnp.interp(jnp.log(h), self.logh, self.logp)
-        return jnp.exp(logp_of_h)
+    # def pressure_from_pseudo_enthalpy(self, h: Float):
+    #     logp_of_h = jnp.interp(jnp.log(h), self.logh, self.logp)
+    #     return jnp.exp(logp_of_h)
 
-    def dloge_dlogp_from_pseudo_enthalpy(self, h: Float):
-        return jnp.interp(h, self.h, self.dloge_dlogp)
+    # def dloge_dlogp_from_pseudo_enthalpy(self, h: Float):
+    #     return jnp.interp(h, self.h, self.dloge_dlogp)
 
-    def pseudo_enthalpy_from_pressure(self, p: Float):
-        logh_of_p = jnp.interp(jnp.log(p), self.logp, self.logh)
-        return jnp.exp(logh_of_p)
+    # def pseudo_enthalpy_from_pressure(self, p: Float):
+    #     logh_of_p = jnp.interp(jnp.log(p), self.logp, self.logh)
+    #     return jnp.exp(logh_of_p)
 
-    def pressure_from_number_density(self, n: Float):
-        logp_of_n = jnp.interp(n, self.n, self.logp)
-        return jnp.exp(logp_of_n)
+    # def pressure_from_number_density(self, n: Float):
+    #     logp_of_n = jnp.interp(n, self.n, self.logp)
+    #     return jnp.exp(logp_of_n)
 
 
 class MetaModel_EOS_model(Interpolate_EOS_model):
@@ -111,135 +107,335 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
     Args:
         Interpolate_EOS_model (object): Base class of interpolation EOS data.
     """
+    
     def __init__(
         self,
-        coefficient_sat: Float[Array, "n_sat_coeff"],
-        coefficient_sym: Float[Array, "n_sym_coeff"],
-        nsat=0.16,
-        nmin=0.1, # in fm^-3
-        nmax=12 * 0.16, # 12 nsat
-        ndat=1000,
-        fix_proton_fraction=False,
-        fix_proton_fraction_val=0.02,
-        crust = "BPS",
-        max_n_crust: Float = 0.08, # in fm^-3
-        use_empty_crust: bool = False,
-        use_spline: bool = False,
-        ndat_spline: int = 50
+        kappas: tuple[Float, Float, Float, Float, Float, Float] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+        v_nq: list[float] = [0.0, 0.0, 0.0, 0.0, 0.0],
+        b_sat: Float = 17.0,
+        b_sym: Float = 25.0,
+        # density parameters
+        nsat: Float = 0.16,
+        nmin_nsat: Float = 0.1,
+        nmax_nsat: Float = 12,
+        ndat: Int = 200,
+        # crust parameters
+        crust_name: bool = "BPS",
+        max_n_crust_nsat: Float = 0.5,
+        ndat_spline: Int = 10
     ):
         """
         Initialize the MetaModel_EOS_model with the provided coefficients and compute auxiliary data.
         
-        Number densities are in unit of fm^-3. 
-        
-        Args:
-            coefficient_sat (Float[Array, n_sat_coeff]): Array of coefficients for the saturation part of the EOS.
-            coefficient_sym (Float[Array, n_sym_coeff]): Array of coefficients for the symmetry part of the EOS.
-            nsat (float, optional): Value for the number saturation density. Defaults to 0.16, in [fm^-3].
-            nmin (float, optional): Starting density from which the metamodel part of the EOS is constructed. Defaults to 0.1 fm^-3.
-            nmax (float, optional): Maximum number density up to which EOS is constructed. Defaults to 12 * 0.16, i.e. 12 n_sat with n_sat = 0.16 fm^-3.
-            ndat (int, optional): Number of datapoints used for the curves (logarithmically spaced). Defaults to 1000.
-            fix_proton_fraction (bool, optional): If True, the proton fraction is fixed to a constant value. Defaults to False.
-            fix_proton_fraction_val (float, optional): Value to which the proton fraction is fixed. Defaults to 0.0.    
-            crust (str, optional): Name of the crust to be used or a filename. If a name is given, we will load the crust that is under the jose directory. If a filename, expected to end with .npz and with keys "n", "p", "e" in the above units, is given, we will instead load it. Defaults to "DH".
-            max_n_crust (float, optional): Maximum number density up to which the crust data is used. Defaults to 0.1 fm^-3.
-            use_empty_crust (bool, optional): If True, the crust data is not used. Defaults to False. TODO: check if useful or 
-            use_spline (bool, optional): If True, a spline is used to connect the crust data with the metamodel data. Defaults to False.
-            ndat_spline (int, optional): Number of datapoints used for the spline interpolation of the crust data. Defaults to 50.
+        TODO: add documentation
         """
         
-        # Save given attributes
+        # Save as attributes
         self.nsat = nsat
-        self.fix_proton_fraction = fix_proton_fraction
-        self.fix_proton_fraction_val = fix_proton_fraction_val
-        self.max_n_crust = max_n_crust
+        self.v_nq = jnp.array(v_nq)
+        self.b_sat = b_sat
+        self.b_sym = b_sym
+        self.N = 4 # TODO: this is fixed in the metamodeling papers, but we might want to extend this in the future
         
-        # Get the crust part:
-        if use_empty_crust:
-            ns_crust, ps_crust, es_crust = jnp.array([]), jnp.array([]), jnp.array([])
-        else:
-            ns_crust, ps_crust, es_crust = load_crust(crust)
-            
-            mask = ns_crust <= max_n_crust
-            ns_crust, ps_crust, es_crust = ns_crust[mask], ps_crust[mask], es_crust[mask]
+        self.min_nsat = nmin_nsat
+        self.nmax_nsat = nmax_nsat
+        self.ndat = ndat
+        self.max_n_crust_nsat = max_n_crust_nsat
+        self.ndat_spline = ndat_spline
         
+        # Constructions
+        assert len(kappas) == 6, "kappas must be a tuple of 6 values: kappa_sat, kappa_sat2, kappa_sat3, kappa_NM, kappa_NM2, kappa_NM3"
+        self.kappa_sat, self.kappa_sat2, self.kappa_sat3, self.kappa_NM, self.kappa_NM2, self.kappa_NM3 = kappas
+        self.kappa_sym = self.kappa_NM - self.kappa_sat
+        self.kappa_sym2 = self.kappa_NM2 - self.kappa_sat2
+        self.kappa_sym3 = self.kappa_NM3 - self.kappa_sat3
+        
+        # t_sat or TFGsat is the kinetic energy per nucleons in SM and at saturation, see just after eq (13) in the margueron paper
+        self.t_sat = 3 * utils.hbar ** 2 / (10 * utils.m) * (3 * jnp.pi ** 2 * self.nsat / 2) ** (2/3)
+        
+        # v_sat is defined in equations (22) - (26) in the Margueron et al. paper
+        self.v_sat_0_no_NEP = -self.t_sat * (1 + self.kappa_sat + self.kappa_sat2 + self.kappa_sat3)
+        self.v_sat_1_no_NEP = -self.t_sat * (2 + 5 * self.kappa_sat + 8 * self.kappa_sat2 + 11 * self.kappa_sat3)
+        self.v_sat_2_no_NEP = - 2 * self.t_sat * (-1 + 5 * self.kappa_sat + 20 * self.kappa_sat2 + 44 * self.kappa_sat3)
+        self.v_sat_3_no_NEP = - 2 * self.t_sat * ( 4 - 5 * self.kappa_sat + 40 * self.kappa_sat2 + 220 * self.kappa_sat3)
+        self.v_sat_4_no_NEP = - 8 * self.t_sat * (-7 + 5*self.kappa_sat - 10*self.kappa_sat2 + 110* self.kappa_sat3) 
+        
+        self.v_sym2_0_no_NEP = - self.t_sat * (2 ** (2/3) * (1 + self.kappa_NM + self.kappa_NM2 + self.kappa_NM3) - (1 + self.kappa_sat + self.kappa_sat2 + self.kappa_sat3)) - self.v_nq[0]
+        self.v_sym2_1_no_NEP = - self.t_sat * (2 ** (2/3) * (2 + 5 * self.kappa_NM + 8 * self.kappa_NM2 + 11 * self.kappa_NM3) - (2 + 5 * self.kappa_sat + 8 * self.kappa_sat2 + 11 * self.kappa_sat3)) - self.v_nq[1]
+        self.v_sym2_2_no_NEP = - 2 * self.t_sat * (2 ** (2/3) * (-1 + 5 * self.kappa_NM + 20 * self.kappa_NM2 + 44 * self.kappa_NM3) - (-1 + 5 * self.kappa_sat + 20 * self.kappa_sat2 + 44 * self.kappa_sat3)) - self.v_nq[2]
+        self.v_sym2_3_no_NEP = - 2 * self.t_sat * (2 ** (2/3) * (4 - 5 * self.kappa_NM + 40 * self.kappa_NM2 + 220 * self.kappa_NM3) - ( 4 - 5 * self.kappa_sat + 40 * self.kappa_sat2 + 220 * self.kappa_sat3)) - self.v_nq[3]
+        self.v_sym2_4_no_NEP = - 8 * self.t_sat * (2 ** (2/3) * (-7 + 5 * self.kappa_NM - 10 * self.kappa_NM2 + 110 * self.kappa_NM3) - (-7 + 5 * self.kappa_sat - 10 * self.kappa_sat2 + 110 * self.kappa_sat3)) - self.v_nq[4]
+        
+        # Load and preprocess the crust
+        ns_crust, ps_crust, es_crust = load_crust(crust_name)
+        max_n_crust = max_n_crust_nsat * nsat
+        mask = ns_crust <= max_n_crust
+        self.ns_crust, self.ps_crust, self.es_crust = ns_crust[mask], ps_crust[mask], es_crust[mask]
+        
+        self.mu_lowest = (es_crust[0] + ps_crust[0]) / ns_crust[0]
+        self.cs2_crust = jnp.gradient(ps_crust, es_crust)
+        
+        # Make sure the metamodel starts above the crust
+        self.max_n_crust = ns_crust[-1]
+        nmin = nmin_nsat * self.nsat
+        nmin = jnp.max(jnp.array([nmin, max_n_crust]))
+        self.nmin = nmin
+        
+        # Create density arrays
+        self.nmax = nmax_nsat * self.nsat
+        self.ndat = ndat
+        self.n_metamodel = jnp.linspace(self.nmin, self.nmax, self.ndat, endpoint = False)
+        self.ns_spline = jnp.append(self.ns_crust, self.n_metamodel)
+        self.n_connection = jnp.linspace(self.max_n_crust + 1e-5, self.nmin, self.ndat_spline, endpoint = False)
+        
+    def construct_eos(self, 
+                      NEP_dict: dict):
+        
+        E_sat = NEP_dict.get("E_sat", 0.0)
+        K_sat = NEP_dict.get("K_sat", 0.0)
+        Q_sat = NEP_dict.get("Q_sat", 0.0)
+        Z_sat = NEP_dict.get("Z_sat", 0.0)
+
+        E_sym = NEP_dict.get("E_sym", 0.0)
+        L_sym = NEP_dict.get("L_sym", 0.0)
+        K_sym = NEP_dict.get("K_sym", 0.0)
+        Q_sym = NEP_dict.get("Q_sym", 0.0)
+        Z_sym = NEP_dict.get("Z_sym", 0.0)
+
+        # TODO: clean up, not used so much?
         # Add the first derivative coefficient in Esat to make it work with jax.numpy.polyval
-        coefficient_sat = jnp.insert(coefficient_sat, 1, 0.0)
+        coefficient_sat = jnp.array([E_sat,   0.0, K_sat, Q_sat, Z_sat])
+        coefficient_sym = jnp.array([E_sym, L_sym, K_sym, Q_sym, Z_sym])
         
         # Get the coefficents index array and get coefficients
         index_sat = jnp.arange(len(coefficient_sat))
         index_sym = jnp.arange(len(coefficient_sym))
 
-        # Save as attributes
-        self.coefficient_sat = coefficient_sat / factorial(index_sat)
-        self.coefficient_sym = coefficient_sym / factorial(index_sym)
+        coefficient_sat = coefficient_sat / factorial(index_sat)
+        coefficient_sym = coefficient_sym / factorial(index_sym)
         
-        # Make sure metamodel starts above crust n
-        nmin = max(nmin, ns_crust[-1] + 1e-3)
+        # Potential energy 
+        # v_sat is defined in equations (22) - (26) in the Margueron et al. paper
+        # TODO: there are more terms here, perhaps check the other reference that Rahul shared?
+        v_sat = jnp.array([E_sat + self.v_sat_0_no_NEP, 
+                           0.0   + self.v_sat_1_no_NEP,
+                           K_sat + self.v_sat_2_no_NEP,
+                           Q_sat + self.v_sat_3_no_NEP,
+                           Z_sat + self.v_sat_4_no_NEP])
         
-        # Compute n, p, e for the metamodel (MM) (note: number densities are in unit of fm^-3)
-        ns_mm = jnp.logspace(jnp.log10(nmin), jnp.log10(nmax), num=ndat)
-        ps_mm = self.pressure_from_number_density_nuclear_unit(ns_mm)
-        es_mm = self.energy_density_from_number_density_nuclear_unit(ns_mm)
+        # v_sym2 is defined in equations (27) to (31) in the Margueron et al. paper
+        v_sym2 = jnp.array([E_sym + self.v_sym2_0_no_NEP, 
+                            L_sym + self.v_sym2_1_no_NEP,
+                            K_sym + self.v_sym2_2_no_NEP,
+                            Q_sym + self.v_sym2_3_no_NEP,
+                            Z_sym + self.v_sym2_4_no_NEP])
         
-        # Make sure pressure and energy of MM are larger than crust at starting point
-        mask = (ps_mm > ps_crust[-1]) * (es_mm > es_crust[-1])
-        ns_mm = ns_mm[mask]
-        ps_mm = ps_mm[mask]
-        es_mm = es_mm[mask]
+        # Auxiliaries first
+        x = self.compute_x(self.n_metamodel)
+        proton_fraction = self.compute_proton_fraction(coefficient_sym, self.n_metamodel)
+        delta = 1 - 2 * proton_fraction
         
-        # Append crust data to the MetaModel data to get intermediate EOS
-        ns_tmp = jnp.concatenate((ns_crust, ns_mm))
-        ps_tmp = jnp.concatenate((ps_crust, ps_mm))
-        es_tmp = jnp.concatenate((es_crust, es_mm))
+        f_1 = self.compute_f_1(delta)
+        f_star = self.compute_f_star(delta)
+        f_star2 = self.compute_f_star2(delta)
+        f_star3 = self.compute_f_star3(delta)
+        v = self.compute_v(v_sat, v_sym2, delta)
+        b = self.compute_b(delta)
         
-        if use_spline:
-            # Get a spline for connection part
-            ns_spline = jnp.linspace(max_n_crust, nmin, num=ndat_spline)
-            es_spline = utils.cubic_spline(ns_spline, ns_tmp, es_tmp)
-            ps_spline = utils.cubic_spline(ns_spline, ns_tmp, ps_tmp)
-            
-            # Combine everything together
-            ns = jnp.concatenate((ns_crust, ns_spline, ns_mm))
-            es = jnp.concatenate((es_crust, es_spline, es_mm))
-            ps = jnp.concatenate((ps_crust, ps_spline, ps_mm))
-        else:
-            ns = ns_tmp
-            ps = ps_tmp
-            es = es_tmp
+        # Other quantities
+        p_metamodel = self.compute_pressure(x, f_1, f_star, f_star2, f_star3, b, v)
+        e_metamodel = self.compute_energy(x, f_1, f_star, f_star2, f_star3, b, v)
         
-        # Initialize with parent class
-        super().__init__(ns, ps, es)
+        # Get cs2 for the metamodel
+        cs2_metamodel = self.compute_cs2(self.n_metamodel, p_metamodel, e_metamodel, x, delta, f_1, f_star, f_star2, f_star3, b, v)
         
-        # Use ns rather than self.n because of unit conversion in super init
-        self.cs2 = self.cs2_from_number_density_nuclear_unit(ns)
-
-    def esym(self, n: Float[Array, "n_points"]):
-        x = (n - self.nsat) / (3.0 * self.nsat)
-        return jnp.polyval(self.coefficient_sym[::-1], x)
-
-    def esat(self, n: Float[Array, "n_points"]):
-        x = (n - self.nsat) / (3.0 * self.nsat)
-        return jnp.polyval(self.coefficient_sat[::-1], x)
-
-    def proton_fraction(self, n: Float[Array, "n_points"]) -> Float[Array, "n_points"]:
-        """
-        Get the proton fraction for a given number density. If proton fraction is fixed, return the fixed value.
-
-        Args:
-            n (Float[Array, "n_points"]): Number density in fm^-3.
-
-        Returns:
-            Float[Array, "n_points"]: Proton fraction as a function of the number density, either computed or the fixed value.
-        """
-        return jax.lax.cond(
-                self.fix_proton_fraction,
-                lambda x: self.fix_proton_fraction_val * jnp.ones(n.shape),
-                self.compute_proton_fraction,
-                n
-            )
+        # Spline for speed of sound for the connection region
+        
+        cs2_spline = jnp.append(self.cs2_crust, cs2_metamodel)
+        
+        cs2_connection = utils.cubic_spline(self.n_connection, self.ns_spline, cs2_spline)
+        cs2_connection = jnp.clip(cs2_connection, 1e-5, 1.0)
+        
+        # Concatenate the arrays
+        n = jnp.concatenate([self.ns_crust, self.n_connection, self.n_metamodel])
+        cs2 = jnp.concatenate([self.cs2_crust, cs2_connection, cs2_metamodel])
+        
+        # Compute pressure and energy from chemical potential and initialize the parent class with it
+        log_mu = utils.cumtrapz(cs2, jnp.log(n)) + jnp.log(self.mu_lowest)
+        mu = jnp.exp(log_mu)
+        p = utils.cumtrapz(cs2 * mu, n) + self.ps_crust[0]
+        e = mu * n - p
+        
+        ns, ps, hs, es, dloge_dlogps = self.interpolate_eos(n, p, e)
+        
+        return ns, ps, hs, es, dloge_dlogps, mu, cs2
+        
+        
+    #################
+    ### AUXILIARY ###
+    #################
+        
+    def u(self,
+          x: Array,
+          b: Array,
+          alpha: Int):
+        # TODO: documentation
+        return 1 - ((-3 * x) ** (self.N + 1 - alpha) * jnp.exp(- b * (1 + 3 * x)))
+        
+    def compute_x(self,
+                  n: Array):
+        return (n - self.nsat) / (3 * self.nsat)
     
-    def compute_proton_fraction(self, n: Float[Array, "n_points"]) -> Float[Array, "n_points"]:
+    def compute_b(self,
+                  delta: Array):
+        return self.b_sat + self.b_sym * delta ** 2
+        
+    def compute_f_1(self,
+                    delta: Array):
+        return (1 + delta) ** (5/3) + (1 - delta) ** (5/3)
+    
+    def compute_f_star(self,
+                       delta: Array):
+        return (self.kappa_sat + self.kappa_sym * delta) * (1 + delta) ** (5/3) + (self.kappa_sat - self.kappa_sym * delta) * (1 - delta) ** (5/3)
+    
+    def compute_f_star2(self,
+                        delta: Array):
+        return (self.kappa_sat2 + self.kappa_sym2 * delta) * (1 + delta) ** (5/3) + (self.kappa_sat2 - self.kappa_sym2 * delta) * (1 - delta) ** (5/3)
+    
+    def compute_f_star3(self,
+                        delta: Array):
+        return (self.kappa_sat3 + self.kappa_sym3 * delta) * (1 + delta) ** (5/3) + (self.kappa_sat3 - self.kappa_sym3 * delta) * (1 - delta) ** (5/3)
+    
+    def compute_v(self,
+                  v_sat: Array,
+                  v_sym2: Array,
+                  delta: Array) -> Array:
+        return jnp.array([v_sat[alpha] + v_sym2[alpha] * delta ** 2 + self.v_nq[alpha] * delta ** 4 for alpha in range(self.N + 1)])
+    
+    def compute_energy(self,
+                       x: Array,
+                       f_1: Array,
+                       f_star: Array,
+                       f_star2: Array,
+                       f_star3: Array,
+                       b: Array,
+                       v: Array) -> Array:
+        
+        prefac = self.t_sat / 2 * (1 + 3 * x) ** (2/3)
+        linear = (1 + 3 * x) * f_star
+        quadratic = (1 + 3 * x) ** 2 * f_star2
+        cubic = (1 + 3 * x) ** 3 * f_star3
+        
+        kinetic_energy = prefac * (f_1 + linear + quadratic + cubic)
+        
+        # Potential energy
+        # TODO: a bit cumbersome, find another way, jax tree map?
+        potential_energy = 0
+        for alpha in range(5):
+            u = self.u(x, b, alpha)
+            potential_energy += v.at[alpha].get() / (factorial(alpha)) * x ** alpha * u
+        
+        return kinetic_energy + potential_energy
+    
+    def esym(self,
+             coefficient_sym: list,
+             x: Array):
+        # TODO: change this to be self-consistent: see Rahul's approach for that.
+        return jnp.polyval(coefficient_sym[::-1], x)
+    
+    def compute_pressure(self,
+                         x: Array,
+                         f_1: Array,
+                         f_star: Array,
+                         f_star2: Array,
+                         f_star3: Array,
+                         b: Array,
+                         v: Array) -> Array:
+        
+        # TODO: currently only for ELFc!
+        p_kin = 1/3 * self.nsat * self.t_sat * (1 + 3 * x) ** (5/3) *\
+            (f_1 + 5/2 * (1 + 3 * x) * f_star + 4 * (1 + 3 * x) ** 2 * f_star2 \
+             + 11/2 * (1 + 3 * x) ** 3 * f_star3)
+    
+        # TODO: cumbersome with jnp.array, find another way
+        p_pot = 0
+        for alpha in range(1, 5):
+            u = self.u(x, b, alpha)
+            fac1 = alpha * u
+            fac2 = (self.N + 1 - alpha - 3 * b * x) * (u - 1)
+            p_pot += v.at[alpha].get() / (factorial(alpha)) * x ** (alpha - 1) * (fac1 + fac2)
+            
+        p_pot = p_pot - v.at[0].get() * (-3) ** (self.N + 1) * x ** self.N * (self.N + 1 - 3 * b * x) * jnp.exp(- b * (1 + 3 * x)) 
+        p_pot = p_pot * (1/3) * self.nsat * (1 + 3 * x) ** 2
+        
+        return p_pot + p_kin
+    
+    def compute_cs2(self,
+                    n: Array,
+                    p: Array,
+                    e: Array,
+                    x: Array,
+                    delta: Array,
+                    f_1: Array,
+                    f_star: Array,
+                    f_star2: Array,
+                    f_star3: Array,
+                    b: Array,
+                    v: Array):
+        
+        ### Compute incompressibility
+        
+        # Kinetic part
+        K_kin = self.t_sat * (1 + 3 * x) ** (2/3) *\
+            (-f_1 + 5 * (1 + 3 * x) * f_star + 20 * (1 + 3 * x) ** 2 * f_star2 \
+             + 44 * (1 + 3 * x) ** 3 * f_star3)
+
+        # Potential part
+        K_pot = 0
+        for alpha in range(2, self.N + 1):
+            u = 1 -  ( (-3 * x) ** (self.N + 1 - alpha) * jnp.exp(- b * (1 + 3 * x)))
+            x_up = (self.N + 1 - alpha - 3 * b * x) * (u - 1)
+            x2_upp = (-(self.N + 1 - alpha) * (self.N - alpha) + 6 * b * x * (self.N + 1 - alpha) - 9 * x ** 2 * b ** 2) * (1 - u)
+            
+            K_pot = K_pot + v.at[alpha].get() / (factorial(alpha)) * x ** (alpha - 2) \
+                * (alpha * (alpha - 1) * u + 2 * alpha * x_up + x2_upp)
+                
+        K_pot += v.at[0].get() * (-(self.N + 1) * (self.N) + 6 * b * x * (self.N + 1) - 9 * x ** 2 * b ** 2) *((-3) ** (self.N + 1) * x ** (self.N - 1) * jnp.exp(- b * (1 + 3 * x)))
+        K_pot += 2 * v.at[1].get() * (self.N - 3 * b * x) * (-(-3) ** (self.N) * x ** (self.N - 1) * jnp.exp(- b * (1 + 3 * x)) )
+        K_pot += v.at[1].get() * (-(self.N) * (self.N - 1) + 6 * b * x * (self.N) - 9 * x ** 2 * b ** 2) * ((-3)** (self.N) * x ** (self.N - 1) * jnp.exp(- b * (1 + 3 * x)))
+        K_pot *= (1 + 3 * x) ** 2
+        
+        K = K_kin + K_pot + 18 / n * p
+        
+        # For electron
+        
+        K_Fb = (3. * jnp.pi**2 /2. * n) ** (1./3.) * utils.hbarc
+        K_Fe = K_Fb * (1. - delta) ** (1./3.)  
+        C = utils.m_e ** 4 / (8. * jnp.pi ** 2) / utils.hbarc ** 3
+        x = K_Fe / utils.m_e
+        f = x * (1 + 2 * x ** 2) * jnp.sqrt(1 + x ** 2) - jnp.arcsinh(x)
+        
+        e_electron = C*f
+        p_electron = - e_electron + 8. / 3. * C * x ** 3 * jnp.sqrt(1 + x ** 2)
+        K_electron = 8 * C / n * x ** 3 * (3 + 4 * x ** 2) / (jnp.sqrt(1 + x ** 2)) - 9 / n * (e_electron + p_electron)
+        
+        # Sum together:
+        K_tot = K + K_electron
+        
+        # Finally, get cs2:
+        chi = K_tot/9. 
+        
+        total_energy_density = (e + utils.m) * n + e_electron
+        total_pressure = p + p_electron
+        h_tot = (total_energy_density + total_pressure) / n
+        
+        cs2 = chi/h_tot
+        
+        return cs2
+    
+    def compute_proton_fraction(self,
+                                coefficient_sym: list,
+                                n: Array) -> Float[Array, "n_points"]:
         """
         Computes the proton fraction for a given number density.
 
@@ -261,7 +457,8 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         # p_1 = hbarc * pow(3 * pi**2 * n, 1. / 3.)
         # p_2 = 0
         # p_3 = 8 * Esym
-        Esym = self.esym(n)
+        # TODO: change this
+        Esym = self.esym(coefficient_sym, n)
         
         a = 8.0 * Esym
         b = jnp.zeros(shape=n.shape)
@@ -285,51 +482,6 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         proton_fraction = jnp.power(physical_ys, 3)
         return proton_fraction
 
-    def energy_per_particle_nuclear_unit(self, n: Float[Array, "n_points"]):
-        proton_fraction = self.proton_fraction(n)
-        delta = 1.0 - 2.0 * proton_fraction
-        dynamic_part = self.esat(n) + self.esym(n) * (delta ** 2)
-        static_part = proton_fraction * utils.m_p + (1.0 - proton_fraction) * utils.m_n
-        
-        return dynamic_part + static_part
-
-    def energy_density_from_number_density_nuclear_unit(
-        self, n: Float[Array, "n_points"]
-    ):
-        return n * self.energy_per_particle_nuclear_unit(n)
-
-    def pressure_from_number_density_nuclear_unit(self, n: Float[Array, "n_points"]):
-        p = n * n * jnp.diagonal(jax.jacfwd(self.energy_per_particle_nuclear_unit)(n))
-        return p
-    
-    def cs2_from_number_density_nuclear_unit(self, n: Float[Array, "n_points"], cs2_min: float = 1e-3) -> Float[Array, "n_points"]:
-        """
-        Compute the speed of sound squared from the number density in nuclear units.
-
-        Args:
-            n (Float[Array, Float[Array, "n_points"]): Number density in fm^-3.
-            cs2_min (float, optional): Minimal value to clip cs2 values computed. Defaults to 1e-3.
-
-        Returns:
-            Float[Array, "n_points"]: Speed of sound squared, clipped to be between [cs2_min, 1.0], and with the same size as the input n
-        """
-        
-        p = self.pressure_from_number_density_nuclear_unit(n)
-        e = self.energy_density_from_number_density_nuclear_unit(n)
-        cs2 = jnp.diff(p) / jnp.diff(e)
-        cs2 = jnp.clip(cs2, cs2_min, 1.0)
-        cs2 = jnp.concatenate(
-            (
-                jnp.array(
-                    [
-                        cs2.at[0].get(),
-                    ]
-                ),
-                cs2,
-            )
-        )
-        return cs2
-
 class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
     """
     MetaModel_with_CSE_EOS_model is a class to interpolate EOS data with a meta-model and using the CSE.
@@ -339,18 +491,12 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
     """
     def __init__(
         self,
-        # parameters for the MetaModel
-        coefficient_sat: Float[Array, "n_sat_coeff"],
-        coefficient_sym: Float[Array, "n_sym_coeff"],
-        nbreak: Float,
-        # parameters for the CSE
-        ngrids: Float[Array, "n_grid_point"],
-        cs2grids: Float[Array, "n_grid_point"],
-        nsat: Float=0.16,
-        nmin: Float=0.1,
-        nmax: Float=12 * 0.16,
-        ndat_metamodel: Int=1000,
-        ndat_CSE: Int=1000,
+        nbreak_nsat: Float = 12,
+        nsat: Float =  0.16,
+        nmin_nsat: Float = 0.1,
+        nmax_nsat: Float = 12,
+        ndat_metamodel: Int = 100,
+        ndat_CSE: Int = 100,
         **metamodel_kwargs
     ):
         """
@@ -369,87 +515,79 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
             ndat_CSE (Int, optional): Number of datapoints to be used for the CSE part of the EOS. Defaults to 1000.
         """
 
+        # TODO: align with new metamodel code
+        self.nmax = nmax_nsat * nsat
+        self.nbreak_nsat = nbreak_nsat
+        self.nbreak = nbreak_nsat * nsat
+        self.ndat_CSE = ndat_CSE
+
         # Initializate the MetaModel part up to n_break
-        self.metamodel = MetaModel_EOS_model(
-            coefficient_sat,
-            coefficient_sym,
-            nsat=nsat,
-            nmin=nmin,
-            nmax=nbreak,
-            ndat=ndat_metamodel,
-            **metamodel_kwargs
-        )
-        assert len(ngrids) == len(cs2grids), "ngrids and cs2grids must have the same length."
-        # calculate the chemical potential at the transition point
-        self.nbreak = nbreak
-        
-        # TODO: seems a bit cumbersome, can we simplify this?
-        self.p_break = (
-            self.metamodel.pressure_from_number_density_nuclear_unit(
-                jnp.array(
-                    [
-                        self.nbreak,
-                    ]
-                )
-            )
-            .at[0]
-            .get()
-        )
-        self.e_break = (
-            self.metamodel.energy_density_from_number_density_nuclear_unit(
-                jnp.array(
-                    [
-                        self.nbreak,
-                    ]
-                )
-            )
-            .at[0]
-            .get()
+        self.metamodel = MetaModel_EOS_model(nsat = nsat,
+                                             nmin_nsat = nmin_nsat,
+                                             nmax_nsat = nbreak_nsat,
+                                             ndat = ndat_metamodel,
+                                             **metamodel_kwargs
         )
         
-        # TODO: this has to be checked!
-        self.mu_break = (self.p_break + self.e_break) / self.nbreak
-        self.cs2_break = (
-            jnp.diff(self.metamodel.p).at[-1].get()
-            / jnp.diff(self.metamodel.e).at[-1].get()
-        )
-        # define the speed-of-sound interpolation
-        # of the extension portion
+    def construct_eos(self,
+                      NEP_dict: dict,
+                      ngrids: Float[Array, "n_grid_point"],
+                      cs2grids: Float[Array, "n_grid_point"]):
         
-        self.ngrids = jnp.concatenate((jnp.array([self.nbreak]), ngrids))
-        self.cs2grids = jnp.concatenate((jnp.array([self.cs2_break]), cs2grids))
-        self.cs2_function = lambda n: jnp.interp(n, self.ngrids, self.cs2grids)
+        # Construct the metamodel part:
+        mm_output = self.metamodel.construct_eos(NEP_dict)
+        n_metamodel, p_metamodel, _, e_metamodel, _, mu_metamodel, cs2_metamodel = mm_output
+        
+        # Convert units back for CSE initialization
+        n_metamodel = n_metamodel / utils.fm_inv3_to_geometric
+        p_metamodel = p_metamodel / utils.MeV_fm_inv3_to_geometric
+        e_metamodel = e_metamodel / utils.MeV_fm_inv3_to_geometric
+        
+        # Get values at break density
+        p_break   = jnp.interp(self.nbreak, n_metamodel, p_metamodel)
+        e_break   = jnp.interp(self.nbreak, n_metamodel, e_metamodel)
+        mu_break  = jnp.interp(self.nbreak, n_metamodel, mu_metamodel)
+        cs2_break = jnp.interp(self.nbreak, n_metamodel, cs2_metamodel)
+        
+        # Define the speed-of-sound interpolation of the extension portion
+        ngrids = jnp.concatenate((jnp.array([self.nbreak]), ngrids))
+        cs2grids = jnp.concatenate((jnp.array([cs2_break]), cs2grids))
+        cs2_extension_function = lambda n: jnp.interp(n, ngrids, cs2grids)
         
         # Compute n, p, e for CSE (number densities in unit of fm^-3)
-        ns = jnp.logspace(jnp.log10(self.nbreak), jnp.log10(nmax), num=ndat_CSE)
-        mus = self.mu_break * jnp.exp(utils.cumtrapz(self.cs2_function(ns) / ns, ns))
-        ps = self.p_break + utils.cumtrapz(self.cs2_function(ns) * mus, ns)
-        es = self.e_break + utils.cumtrapz(mus, ns)
+        n_CSE = jnp.logspace(jnp.log10(self.nbreak), jnp.log10(self.nmax), num=self.ndat_CSE)
+        cs2_CSE = cs2_extension_function(n_CSE)
+        
+        # We add a very small number to avoid problems with duplicates below
+        mu_CSE = mu_break * jnp.exp(utils.cumtrapz(cs2_CSE / n_CSE, n_CSE)) + 1e-6
+        p_CSE = p_break + utils.cumtrapz(cs2_CSE * mu_CSE, n_CSE) + 1e-6
+        e_CSE = e_break + utils.cumtrapz(mu_CSE, n_CSE) + 1e-6
         
         # Combine metamodel and CSE data
-        # TODO: converting units back and forth might be numerically unstable if conversion factors are large?
-        ns = jnp.concatenate((self.metamodel.n / utils.fm_inv3_to_geometric, ns))
-        ps = jnp.concatenate((self.metamodel.p / utils.MeV_fm_inv3_to_geometric, ps))
-        es = jnp.concatenate((self.metamodel.e / utils.MeV_fm_inv3_to_geometric, es))
-
-        super().__init__(ns, ps, es)
+        n = jnp.concatenate((n_metamodel, n_CSE))
+        p = jnp.concatenate((p_metamodel, p_CSE))
+        e = jnp.concatenate((e_metamodel, e_CSE))
         
-    def cs2_from_number_density_nuclear_unit(self, n: Float[Array, "n_points"], cs2_min: float = 1e-3) -> Float[Array, "n_points"]:
-        """
-        Compute the speed of sound squared from the number density in nuclear units. Uses the metamodel for densities below nbreak and the CSE for densities above nbreak.
+        # TODO: let's decide whether we want to save cs2 and mu or just use them for computation and then discard them.
+        mu = jnp.concatenate((mu_metamodel, mu_CSE))
+        cs2 = jnp.concatenate((cs2_metamodel, cs2_CSE))
+        
+        # # FIXME: this is pretty experimental, but we have duplicates which will break TOV solver but are hard to remove in a JIT-compatible manner. Note that we should perhaps do something similar in the metamodel EOS. 
+        
+        # for array_to_check in [n, p, e]:
+        #     indices = jnp.where(jnp.diff(array_to_check) <= 0.0)[0][0]
+        #     print(indices)
+            
+        #     print(f"n at duplicates +/- 1: {n[indices-1:indices+1] /0.16} nsat")
+        # n = jnp.unique(n)
+        # e = jnp.unique(e)
+        # p = jnp.unique(p)
 
-        Args:
-            n (Float[Array, "n_points"]): Number density in fm^-3.
-            cs2_min (float, optional): Minimal value to clip cs2 values computed. Defaults to 1e-3.
-
-        Returns:
-            Float[Array, "n_points"]: Speed of sound squared, clipped to be between [cs2_min, 1.0], and with the same size as the input n
-        """
-        cs2 = jnp.where(n < self.nbreak, self.metamodel.cs2_from_number_density_nuclear_unit(n), self.cs2_function(n))
-        cs2 = jnp.clip(cs2, cs2_min, 1.0)
-        return cs2
-
-
+        ns, ps, hs, es, dloge_dlogps = self.interpolate_eos(n, p, e)
+        
+        return ns, ps, hs, es, dloge_dlogps, mu, cs2
+        
+        
 def construct_family(eos: tuple,
                      ndat: Int=50, 
                      min_nsat: Float=2) -> tuple[Float[Array, "ndat"], Float[Array, "ndat"], Float[Array, "ndat"], Float[Array, "ndat"]]:

@@ -15,8 +15,11 @@ c = 299792458.0
 G = 6.6743e-11
 Msun = 1.988409870698051e30
 hbarc = 197.3269804593025  # in MeV fm
+hbar = hbarc # TODO: check if must be updated, this is just taken from Rahul's code
 m_p = 938.2720881604904  # in MeV
 m_n = 939.5654205203889  # in MeV
+m = (m_p + m_n) / 2.0  # in MeV, average nucleonic mass defined by Margueron et al
+m_e = 0.510998 # mass electron in MeV
 solar_mass_in_meter = Msun * G / c / c # solar mass in geometric unit
 
 # simple conversions
