@@ -191,7 +191,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
     def construct_eos(self, 
                       NEP_dict: dict):
         
-        E_sat = NEP_dict.get("E_sat", 0.0)
+        E_sat = NEP_dict.get("E_sat", -16.0)
         K_sat = NEP_dict.get("K_sat", 0.0)
         Q_sat = NEP_dict.get("Q_sat", 0.0)
         Z_sat = NEP_dict.get("Z_sat", 0.0)
@@ -491,7 +491,6 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
     """
     def __init__(
         self,
-        nbreak_nsat: Float = 12,
         nsat: Float =  0.16,
         nmin_nsat: Float = 0.1,
         nmax_nsat: Float = 12,
@@ -517,25 +516,27 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
 
         # TODO: align with new metamodel code
         self.nmax = nmax_nsat * nsat
-        self.nbreak_nsat = nbreak_nsat
-        self.nbreak = nbreak_nsat * nsat
         self.ndat_CSE = ndat_CSE
+        self.nsat = nsat
+        self.nmin_nsat = nmin_nsat
+        self.ndat_metamodel = ndat_metamodel
+        self.metamodel_kwargs = metamodel_kwargs
 
-        # Initializate the MetaModel part up to n_break
-        self.metamodel = MetaModel_EOS_model(nsat = nsat,
-                                             nmin_nsat = nmin_nsat,
-                                             nmax_nsat = nbreak_nsat,
-                                             ndat = ndat_metamodel,
-                                             **metamodel_kwargs
-        )
-        
     def construct_eos(self,
                       NEP_dict: dict,
                       ngrids: Float[Array, "n_grid_point"],
                       cs2grids: Float[Array, "n_grid_point"]):
         
+        # Initializate the MetaModel part up to n_break
+        metamodel = MetaModel_EOS_model(nsat = self.nsat,
+                                        nmin_nsat = self.nmin_nsat,
+                                        nmax_nsat = NEP_dict["nbreak"] / self.nsat,
+                                        ndat = self.ndat_metamodel,
+                                        **self.metamodel_kwargs
+        )
+        
         # Construct the metamodel part:
-        mm_output = self.metamodel.construct_eos(NEP_dict)
+        mm_output = metamodel.construct_eos(NEP_dict)
         n_metamodel, p_metamodel, _, e_metamodel, _, mu_metamodel, cs2_metamodel = mm_output
         
         # Convert units back for CSE initialization
@@ -544,18 +545,18 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         e_metamodel = e_metamodel / utils.MeV_fm_inv3_to_geometric
         
         # Get values at break density
-        p_break   = jnp.interp(self.nbreak, n_metamodel, p_metamodel)
-        e_break   = jnp.interp(self.nbreak, n_metamodel, e_metamodel)
-        mu_break  = jnp.interp(self.nbreak, n_metamodel, mu_metamodel)
-        cs2_break = jnp.interp(self.nbreak, n_metamodel, cs2_metamodel)
+        p_break   = jnp.interp(NEP_dict["nbreak"], n_metamodel, p_metamodel)
+        e_break   = jnp.interp(NEP_dict["nbreak"], n_metamodel, e_metamodel)
+        mu_break  = jnp.interp(NEP_dict["nbreak"], n_metamodel, mu_metamodel)
+        cs2_break = jnp.interp(NEP_dict["nbreak"], n_metamodel, cs2_metamodel)
         
         # Define the speed-of-sound interpolation of the extension portion
-        ngrids = jnp.concatenate((jnp.array([self.nbreak]), ngrids))
+        ngrids = jnp.concatenate((jnp.array([NEP_dict["nbreak"]]), ngrids))
         cs2grids = jnp.concatenate((jnp.array([cs2_break]), cs2grids))
         cs2_extension_function = lambda n: jnp.interp(n, ngrids, cs2grids)
         
         # Compute n, p, e for CSE (number densities in unit of fm^-3)
-        n_CSE = jnp.logspace(jnp.log10(self.nbreak), jnp.log10(self.nmax), num=self.ndat_CSE)
+        n_CSE = jnp.logspace(jnp.log10(NEP_dict["nbreak"]), jnp.log10(self.nmax), num=self.ndat_CSE)
         cs2_CSE = cs2_extension_function(n_CSE)
         
         # We add a very small number to avoid problems with duplicates below
