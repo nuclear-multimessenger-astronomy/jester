@@ -116,7 +116,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         b_sym: Float = 25.0,
         # density parameters
         nsat: Float = 0.16,
-        nmin_nsat: Float = 0.1,
+        nmin_MM_nsat: Float = 0.12 / 0.16, 
         nmax_nsat: Float = 12,
         ndat: Int = 200,
         # crust parameters
@@ -137,7 +137,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         self.b_sym = b_sym
         self.N = 4 # TODO: this is fixed in the metamodeling papers, but we might want to extend this in the future
         
-        self.min_nsat = nmin_nsat
+        self.nmin_MM_nsat = nmin_MM_nsat
         self.nmax_nsat = nmax_nsat
         self.ndat = ndat
         self.max_n_crust_nsat = max_n_crust_nsat
@@ -177,16 +177,14 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         
         # Make sure the metamodel starts above the crust
         self.max_n_crust = ns_crust[-1]
-        nmin = nmin_nsat * self.nsat
-        nmin = jnp.max(jnp.array([nmin, max_n_crust]))
-        self.nmin = nmin
         
         # Create density arrays
         self.nmax = nmax_nsat * self.nsat
         self.ndat = ndat
-        self.n_metamodel = jnp.linspace(self.nmin, self.nmax, self.ndat, endpoint = False)
+        self.nmin_MM = self.nmin_MM_nsat * self.nsat
+        self.n_metamodel = jnp.linspace(self.nmin_MM, self.nmax, self.ndat, endpoint = False)
         self.ns_spline = jnp.append(self.ns_crust, self.n_metamodel)
-        self.n_connection = jnp.linspace(self.max_n_crust + 1e-5, self.nmin, self.ndat_spline, endpoint = False)
+        self.n_connection = jnp.linspace(self.max_n_crust + 1e-5, self.nmin_MM, self.ndat_spline, endpoint = False)
         
     def construct_eos(self, 
                       NEP_dict: dict):
@@ -492,7 +490,7 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
     def __init__(
         self,
         nsat: Float =  0.16,
-        nmin_nsat: Float = 0.1,
+        nmin_MM_nsat: Float = 0.12 / 0.16,
         nmax_nsat: Float = 12,
         ndat_metamodel: Int = 100,
         ndat_CSE: Int = 100,
@@ -518,7 +516,7 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         self.nmax = nmax_nsat * nsat
         self.ndat_CSE = ndat_CSE
         self.nsat = nsat
-        self.nmin_nsat = nmin_nsat
+        self.nmin_MM_nsat = nmin_MM_nsat
         self.ndat_metamodel = ndat_metamodel
         self.metamodel_kwargs = metamodel_kwargs
 
@@ -529,7 +527,7 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         
         # Initializate the MetaModel part up to n_break
         metamodel = MetaModel_EOS_model(nsat = self.nsat,
-                                        nmin_nsat = self.nmin_nsat,
+                                        nmin_MM_nsat = self.nmin_MM_nsat,
                                         nmax_nsat = NEP_dict["nbreak"] / self.nsat,
                                         ndat = self.ndat_metamodel,
                                         **self.metamodel_kwargs
