@@ -258,6 +258,9 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         n = jnp.concatenate([self.ns_crust, self.n_connection, self.n_metamodel])
         cs2 = jnp.concatenate([self.cs2_crust, cs2_connection, cs2_metamodel])
         
+        # Make sure the cs2 stays within the physical limits
+        cs2 = jnp.clip(cs2, 1e-5, 1.0)
+        
         # Compute pressure and energy from chemical potential and initialize the parent class with it
         log_mu = utils.cumtrapz(cs2, jnp.log(n)) + jnp.log(self.mu_lowest)
         mu = jnp.exp(log_mu)
@@ -639,6 +642,6 @@ def construct_family(eos: tuple,
     
     # TODO: perhaps put a boolean here to flag whether or not to do this, or do we always want to do this?
     # Limit masses to be below MTOV
-    ms, rs, lambdas = utils.limit_by_MTOV(ms, rs, lambdas)
+    pcs, ms, rs, lambdas = utils.limit_by_MTOV(pcs, ms, rs, lambdas)
 
     return jnp.log(pcs), ms, rs, lambdas

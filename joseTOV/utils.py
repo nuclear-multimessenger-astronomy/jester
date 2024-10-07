@@ -126,7 +126,8 @@ def interp_in_logspace(x, xs, ys):
     logys = jnp.log(ys)
     return jnp.exp(jnp.interp(logx, logxs, logys))
 
-def limit_by_MTOV(m: Array, 
+def limit_by_MTOV(pc: Array,
+                  m: Array, 
                   r: Array, 
                   l: Array) -> tuple[Array, Array, Array]:
     """
@@ -136,6 +137,7 @@ def limit_by_MTOV(m: Array,
     TODO: generalize this for weird EOS or check if we do not have those weird EOS when sampling NEPs.
     
     Args:
+        pcs (Array["npoints"]): Original pressure
         m (Array["npoints"]): Original mass curve
         r (Array["npoints"]): Original radius curve
         l (Array["npoints"]): Original lambdas curve
@@ -145,38 +147,44 @@ def limit_by_MTOV(m: Array,
     """
     
     # Separate head and tail of m, r and l arrays    
-    m_first = m.at[0].get()
-    r_first = r.at[0].get()
-    l_first = l.at[0].get()
+    pc_first = pc.at[0].get()
+    m_first  = m.at[0].get()
+    r_first  = r.at[0].get()
+    l_first  = l.at[0].get()
     
-    m_first_array = jnp.array([m_first])
-    r_first_array = jnp.array([r_first])
-    l_first_array = jnp.array([l_first])
+    pc_first_array = jnp.array([pc_first])
+    m_first_array  = jnp.array([m_first])
+    r_first_array  = jnp.array([r_first])
+    l_first_array  = jnp.array([l_first])
     
-    m_remove_first = m[1:]
-    r_remove_first = r[1:]
-    l_remove_first = l[1:]
+    pc_remove_first = pc[1:]
+    m_remove_first  = m[1:]
+    r_remove_first  = r[1:]
+    l_remove_first  = l[1:]
     
     # Where m is increasing, save array, otherwise repeat the first element (discard that part of the curve)
     m_is_increasing = jnp.diff(m) > 0
     
-    m_new = jnp.where(m_is_increasing, m_remove_first, m_first)
-    r_new = jnp.where(m_is_increasing, r_remove_first, r_first)
-    l_new = jnp.where(m_is_increasing, l_remove_first, l_first)
+    pc_new = jnp.where(m_is_increasing, pc_remove_first, pc_first)
+    m_new  = jnp.where(m_is_increasing, m_remove_first, m_first)
+    r_new  = jnp.where(m_is_increasing, r_remove_first, r_first)
+    l_new  = jnp.where(m_is_increasing, l_remove_first, l_first)
     
     # Because of diff dropping an element, add the first element back
-    m_new = jnp.concatenate([m_first_array, m_new])
-    r_new = jnp.concatenate([r_first_array, r_new])
-    l_new = jnp.concatenate([l_first_array, l_new])
+    pc_new = jnp.concatenate([m_first_array, pc_new])
+    m_new  = jnp.concatenate([m_first_array, m_new])
+    r_new  = jnp.concatenate([r_first_array, r_new])
+    l_new  = jnp.concatenate([l_first_array, l_new])
     
     # Sort in increasing values of M for plotting etc
     sort_idx = jnp.argsort(m_new)
     
-    m_new = m_new[sort_idx]
-    r_new = r_new[sort_idx]
-    l_new = l_new[sort_idx]
+    pc_new = pc_new[sort_idx]
+    m_new  = m_new[sort_idx]
+    r_new  = r_new[sort_idx]
+    l_new  = l_new[sort_idx]
     
-    return m_new, r_new, l_new
+    return pc_new, m_new, r_new, l_new
 
 ###############
 ### SPLINES ###
