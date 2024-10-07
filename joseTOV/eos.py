@@ -646,13 +646,15 @@ class MetaModel_with_NN_EOS_model(Interpolate_EOS_model):
         self.preprocess_min = preprocess_min
         self.preprocess_max = nmax_nsat * nsat
         
+        self.state = self.initialize_nn_state()
+        
     def initialize_nn_state(self, key: int = jax.random.PRNGKey(42)) -> TrainState:
         state = neuralnet.create_train_state(self.nn, jnp.ones(self.ndat_CSE), key, self.nn_config)
         return state
 
     def construct_eos(self,
                       NEP_dict: dict,
-                      state: TrainState):
+                      state_params: dict):
         
         # Initializate the MetaModel part up to n_break
         metamodel = MetaModel_EOS_model(nsat = self.nsat,
@@ -682,7 +684,7 @@ class MetaModel_with_NN_EOS_model(Interpolate_EOS_model):
         start_nn = 1.05 * NEP_dict["nbreak"]
         n_CSE = jnp.linspace(start_nn, self.nmax, num=self.ndat_CSE)
         n_CSE_nn = (n_CSE - self.preprocess_min) / (self.preprocess_max - self.preprocess_min)
-        cs2_CSE = state.apply_fn({'params': state.params}, n_CSE_nn)
+        cs2_CSE = self.state.apply_fn({'params': state_params}, n_CSE_nn)
         
         # Spline in between:
         ns_spline = jnp.append(n_metamodel, n_CSE.at[0].get())
