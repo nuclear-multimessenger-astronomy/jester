@@ -186,9 +186,9 @@ def limit_by_MTOV(pc: Array,
     
     return pc_new, m_new, r_new, l_new
 
-###############
-### SPLINES ###
-###############
+###################
+### SPLINES etc ###
+###################
 
 def cubic_spline(xq: Float[Array, "n"],
                  xp: Float[Array, "n"],
@@ -201,3 +201,6 @@ def cubic_spline(xq: Float[Array, "n"],
         fp (Float[Array, "n"]): y values of the data points, i.e. fp = f(xp)
     """
     return interpax_interp1d(xq, xp, fp, method = "cubic")
+
+def sigmoid(x: Array) -> Array:
+    return 1.0 / (1.0 + jnp.exp(-x))
