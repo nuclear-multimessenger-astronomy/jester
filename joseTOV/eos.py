@@ -646,11 +646,11 @@ class MetaModel_with_NN_EOS_model(Interpolate_EOS_model):
         self.preprocess_min = preprocess_min
         self.preprocess_max = nmax_nsat * nsat
         
-        self.state = self.initialize_nn_state()
-        
-    def initialize_nn_state(self, key: int = jax.random.PRNGKey(42)) -> TrainState:
-        state = neuralnet.create_train_state(self.nn, jnp.ones(self.ndat_CSE), key, self.nn_config)
-        return state
+        self.state: TrainState = None # TODO: when to set this, how to set this?
+    
+    # def initialize_nn_state(self, key: int = jax.random.PRNGKey(42)) -> TrainState:
+    #     state = neuralnet.create_train_state(self.nn, jnp.ones(self.ndat_CSE), key, self.nn_config)
+    #     return state
 
     def construct_eos(self,
                       NEP_dict: dict,
