@@ -3,10 +3,10 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build]
-include = ["joseTOV/*"]
+include = ["jesterTOV/*"]
 
 [project]
-name = "joseTOV"
+name = "jesterTOV"
 authors = [
   {name = "Peter T. H. Pang", email = "tsunhopang@gmail.com"}
 ]
@@ -15,7 +15,7 @@ description = "JAX-based Tolman–Oppenheimer–Volkoff equation solver with equ
 readme = "README.md"
 requires-python = ">=3.9, <=3.11"
 license = {file = "LICENSE"}
-urls = {repository = "https://github.com/tsunhopang/jose" }
+urls = {repository = "https://github.com/tsunhopang/jester" }
 dependencies = ["jax>=0.4.23", "jaxtyping>=0.2.24", "typing_extensions>=4.5.0", "diffrax>=0.5.0"]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -45,7 +45,7 @@ order-by-type = false
 
 [tool.pyright]
 reportIncompatibleMethodOverride = true
-include = ["joseTOV"]
+include = ["jesterTOV"]
 
 # pyproject.toml
 [tool.pytest.ini_options]
