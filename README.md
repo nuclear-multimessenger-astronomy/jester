@@ -8,5 +8,5 @@ Since it is based on JAX, JESTER makes use of hardware acceleration on GPUs and 
 
 You may install the bleeding edge version by cloning this repo, or doing
 ```
-pip install git+https://github.com/tsunhopang/jose
+pip install git+https://github.com/tsunhopang/jester
 ```
