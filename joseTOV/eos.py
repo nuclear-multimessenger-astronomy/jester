@@ -515,7 +515,7 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
             ndat_metamodel (Int, optional): Number of datapoints to be used for the metamodel part of the EOS. Defaults to 1000.
             ndat_CSE (Int, optional): Number of datapoints to be used for the CSE part of the EOS. Defaults to 1000.
         """
-
+        
         # TODO: align with new metamodel code
         self.nmax = nmax_nsat * nsat
         self.ndat_CSE = ndat_CSE
@@ -627,6 +627,7 @@ class MetaModel_with_NN_EOS_model(Interpolate_EOS_model):
             ndat_metamodel (Int, optional): Number of datapoints to be used for the metamodel part of the EOS. Defaults to 1000.
             ndat_CSE (Int, optional): Number of datapoints to be used for the CSE part of the EOS. Defaults to 1000.
         """
+        print(f"DEBUG: ndat_CSE = {ndat_CSE}")
 
         # TODO: align with new metamodel code
         self.nmax = nmax_nsat * nsat
