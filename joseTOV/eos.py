@@ -121,7 +121,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         nmax_nsat: Float = 12,
         ndat: Int = 200,
         # crust parameters
-        crust_name: bool = "BPS",
+        crust_name: bool = "DH",
         max_n_crust_nsat: Float = 0.5,
         ndat_spline: Int = 10
     ):
