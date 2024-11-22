@@ -3,9 +3,8 @@ import jax
 import jax.numpy as jnp
 from jax.scipy.special import factorial
 from jaxtyping import Array, Float, Int
-from flax.training.train_state import TrainState
 
-from . import utils, tov, neuralnet
+from . import utils, tov
 
 ##############
 ### CRUSTS ###
@@ -590,145 +589,6 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         
         return ns, ps, hs, es, dloge_dlogps, mu, cs2
     
-class MetaModel_with_NN_EOS_model(Interpolate_EOS_model):
-    """
-    TODO: for now, a lot of code duplication with MetaModel_with_CSE_EOS_model. Later on, if we are satisfied with this model, let's change code structure in order to minimize code duplication.
-    MetaModel_with_CSE_EOS_model is a class to interpolate EOS data with a meta-model and using a neural network for the speed of sound extension scheme.
-
-    Args:
-        Interpolate_EOS_model (object): Base class of interpolation EOS data.
-    """
-    def __init__(
-        self,
-        nsat: Float =  0.16,
-        nmin_MM_nsat: Float = 0.12 / 0.16,
-        nmax_nsat: Float = 12,
-        ndat_metamodel: Int = 100,
-        ndat_CSE: Int = 100,
-        # neural network hyperparameters:
-        hidden_layer_sizes: list[int] = [64, 128, 64],
-        learning_rate: Float = 1e-3,
-        preprocess_min: Float = 1.0 * 0.16,
-        ndat_spline: Int = 10,
-        **metamodel_kwargs
-    ):
-        """
-        Initialize the MetaModel_with_CSE_EOS_model with the provided coefficients and compute auxiliary data.
-
-        Args:
-            coefficient_sat (Float[Array, "n_sat_coeff"]): The coefficients for the saturation part of the metamodel part of the EOS.
-            coefficient_sym (Float[Array, "n_sym_coeff"]): The coefficients for the symmetry part of the metamodel part of the EOS.
-            nbreak (Float): The number density at the transition point between the metamodel and the CSE part of the EOS.
-            ngrids (Float[Array, "n_grid_point"]): The number densities for the CSE part of the EOS.
-            cs2grids (Float[Array, "n_grid_point"]): The speed of sound squared for the CSE part of the EOS.
-            nsat (Float, optional): Saturation density. Defaults to 0.16 fm^-3.
-            nmin (Float, optional): Starting point of densities. Defaults to 0.1 fm^-3.
-            nmax (Float, optional): End point of EOS. Defaults to 12*0.16 fm^-3, i.e. 12 nsat.
-            ndat_metamodel (Int, optional): Number of datapoints to be used for the metamodel part of the EOS. Defaults to 1000.
-            ndat_CSE (Int, optional): Number of datapoints to be used for the CSE part of the EOS. Defaults to 1000.
-        """
-        print(f"DEBUG: ndat_CSE = {ndat_CSE}")
-
-        # TODO: align with new metamodel code
-        self.nmax = nmax_nsat * nsat
-        self.ndat_CSE = ndat_CSE
-        self.nsat = nsat
-        self.nmin_MM_nsat = nmin_MM_nsat
-        self.ndat_metamodel = ndat_metamodel
-        self.metamodel_kwargs = metamodel_kwargs
-        
-        self.ndat_spline = ndat_spline
-        
-        # Get a base neural network configuration
-        self.nn_config = neuralnet.NeuralnetConfig(output_size = ndat_CSE, hidden_layer_sizes = hidden_layer_sizes, learning_rate = learning_rate)
-        self.nn = neuralnet.CS2_MLP(layer_sizes=self.nn_config.layer_sizes)
-        
-        # Preprocessing: 
-        self.preprocess_min = preprocess_min
-        self.preprocess_max = nmax_nsat * nsat
-        
-        self.state: TrainState = None # TODO: when to set this, how to set this?
-    
-    # def initialize_nn_state(self, key: int = jax.random.PRNGKey(42)) -> TrainState:
-    #     state = neuralnet.create_train_state(self.nn, jnp.ones(self.ndat_CSE), key, self.nn_config)
-    #     return state
-
-    def construct_eos(self,
-                      NEP_dict: dict,
-                      state_params: dict):
-        
-        # Initializate the MetaModel part up to n_break
-        metamodel = MetaModel_EOS_model(nsat = self.nsat,
-                                        nmin_MM_nsat = self.nmin_MM_nsat,
-                                        nmax_nsat = NEP_dict["nbreak"] / self.nsat,
-                                        ndat = self.ndat_metamodel,
-                                        **self.metamodel_kwargs
-        )
-        
-        # Construct the metamodel part:
-        mm_output = metamodel.construct_eos(NEP_dict)
-        n_metamodel, p_metamodel, _, e_metamodel, _, mu_metamodel, cs2_metamodel = mm_output
-        
-        # Convert units back for CSE initialization
-        n_metamodel = n_metamodel / utils.fm_inv3_to_geometric
-        p_metamodel = p_metamodel / utils.MeV_fm_inv3_to_geometric
-        e_metamodel = e_metamodel / utils.MeV_fm_inv3_to_geometric
-        
-        # Get values at break density
-        p_break   = jnp.interp(NEP_dict["nbreak"], n_metamodel, p_metamodel)
-        e_break   = jnp.interp(NEP_dict["nbreak"], n_metamodel, e_metamodel)
-        mu_break  = jnp.interp(NEP_dict["nbreak"], n_metamodel, mu_metamodel)
-        
-        # Compute n, p, e for CSE with the neural network (number densities in unit of fm^-3)
-        # FIXME: hardcoded the starting point, but this needs to change! Also, do we require anything on the smoothness on this part? Splines?
-        
-        start_nn = 1.05 * NEP_dict["nbreak"]
-        n_CSE = jnp.linspace(start_nn, self.nmax, num=self.ndat_CSE)
-        n_CSE_nn = (n_CSE - self.preprocess_min) / (self.preprocess_max - self.preprocess_min)
-        cs2_CSE = self.state.apply_fn({'params': state_params}, n_CSE_nn)
-        
-        # Spline in between:
-        ns_spline = jnp.append(n_metamodel, n_CSE.at[0].get())
-        n_connection = jnp.linspace(NEP_dict["nbreak"] + 1e-5, start_nn, self.ndat_spline, endpoint = False)
-        
-        cs2_spline = jnp.append(cs2_metamodel, cs2_CSE.at[0].get())
-        
-        cs2_connection = utils.cubic_spline(n_connection, ns_spline, cs2_spline)
-        cs2_connection = jnp.clip(cs2_connection, 1e-5, 1.0)
-        
-        # Append it here:
-        n_CSE = jnp.concatenate((n_connection, n_CSE))
-        cs2_CSE = jnp.concatenate((cs2_connection, cs2_CSE))
-        
-        # We add a very small number to avoid problems with duplicates below
-        mu_CSE = mu_break * jnp.exp(utils.cumtrapz(cs2_CSE / n_CSE, n_CSE)) + 1e-6
-        p_CSE = p_break + utils.cumtrapz(cs2_CSE * mu_CSE, n_CSE) + 1e-6
-        e_CSE = e_break + utils.cumtrapz(mu_CSE, n_CSE) + 1e-6
-        
-        # Combine metamodel and CSE data
-        n = jnp.concatenate((n_metamodel, n_CSE))
-        p = jnp.concatenate((p_metamodel, p_CSE))
-        e = jnp.concatenate((e_metamodel, e_CSE))
-        
-        # TODO: let's decide whether we want to save cs2 and mu or just use them for computation and then discard them.
-        mu = jnp.concatenate((mu_metamodel, mu_CSE))
-        cs2 = jnp.concatenate((cs2_metamodel, cs2_CSE))
-        
-        # # FIXME: this is pretty experimental, but we have duplicates which will break TOV solver but are hard to remove in a JIT-compatible manner. Note that we should perhaps do something similar in the metamodel EOS. 
-        
-        # for array_to_check in [n, p, e]:
-        #     indices = jnp.where(jnp.diff(array_to_check) <= 0.0)[0][0]
-        #     print(indices)
-            
-        #     print(f"n at duplicates +/- 1: {n[indices-1:indices+1] /0.16} nsat")
-        # n = jnp.unique(n)
-        # e = jnp.unique(e)
-        # p = jnp.unique(p)
-
-        ns, ps, hs, es, dloge_dlogps = self.interpolate_eos(n, p, e)
-        
-        return ns, ps, hs, es, dloge_dlogps, mu, cs2
-        
         
 def construct_family(eos: tuple,
                      ndat: Int=50, 
