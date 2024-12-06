@@ -756,25 +756,24 @@ def construct_family(eos: tuple,
 
     pcs = jnp.logspace(jnp.log10(pc_min), jnp.log10(pc_max), num=ndat)
 
-    ### TODO: Check the timing with this vmap implementation, which also works
-    # def solve_single_pc(pc):
-    #     """Solve for single pc value"""
-    #     return tov.tov_solver(eos_dict, pc)
-    # ms, rs, ks = jax.vmap(solve_single_pc)(pcs)
+    def solve_single_pc(pc):
+        """Solve for single pc value"""
+        return tov.tov_solver(eos_dict, pc)
+    ms, rs, ks = jax.vmap(solve_single_pc)(pcs)
     
-    ms, rs, ks = jnp.vectorize(
-        tov.tov_solver,
-        excluded=[
-            0,
-        ],
-    )(eos_dict, pcs)
+    ### TODO: Check the timing with respect to this implementation
+    # ms, rs, ks = jnp.vectorize(
+    #     tov.tov_solver,
+    #     excluded=[
+    #         0,
+    #     ],
+    # )(eos_dict, pcs)
 
     # calculate the compactness
     cs = ms / rs
 
-    # convert the mass to solar mass
+    # convert the mass to solar mass and the radius to km
     ms /= utils.solar_mass_in_meter
-    # convert the radius to km
     rs /= 1e3
 
     # calculate the tidal deformability
@@ -783,5 +782,14 @@ def construct_family(eos: tuple,
     # TODO: perhaps put a boolean here to flag whether or not to do this, or do we always want to do this?
     # Limit masses to be below MTOV
     pcs, ms, rs, lambdas = utils.limit_by_MTOV(pcs, ms, rs, lambdas)
+    
+    # Get a mass grid and interpolate, since we might have dropped provided some duplicate points
+    mass_grid = jnp.linspace(jnp.min(ms), jnp.max(ms), ndat)
+    rs = jnp.interp(mass_grid, ms, rs)
+    lambdas = jnp.interp(mass_grid, ms, lambdas)
+    pcs = jnp.interp(mass_grid, ms, pcs)
+    
+    # Rename the mass grid
+    ms = mass_grid
 
     return jnp.log(pcs), ms, rs, lambdas

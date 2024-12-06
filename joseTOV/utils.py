@@ -146,35 +146,22 @@ def limit_by_MTOV(pc: Array,
         tuple[Array["npoints"], Array["npoints"], Array["npoints"]]: Tuple of new mass, radius and lambdas curves, where the part of the curves where mass decreases is replaced with duplication of the first entry of the M, R and Lambda arrays.
     """
     
-    # Separate head and tail of m, r and l arrays    
-    pc_first = pc.at[0].get()
-    m_first  = m.at[0].get()
-    r_first  = r.at[0].get()
-    l_first  = l.at[0].get()
+    # Fetch the MTOV, we will use it to dump duplicates of it wherever the NS family is unphysical
+    m_at_TOV = jnp.max(m)
+    idx_TOV = jnp.argmax(m)
     
-    pc_first_array = jnp.array([pc_first])
-    m_first_array  = jnp.array([m_first])
-    r_first_array  = jnp.array([r_first])
-    l_first_array  = jnp.array([l_first])
+    pc_at_TOV = pc[idx_TOV]
+    r_at_TOV = r[idx_TOV]
+    l_at_TOV = l[idx_TOV]
     
-    pc_remove_first = pc[1:]
-    m_remove_first  = m[1:]
-    r_remove_first  = r[1:]
-    l_remove_first  = l[1:]
-    
-    # Where m is increasing, save array, otherwise repeat the first element (discard that part of the curve)
+    # Find out where the mass array is increasing, and insert True at the TOV index to pad length of the array correctly
     m_is_increasing = jnp.diff(m) > 0
+    m_is_increasing = jnp.insert(m_is_increasing, idx_TOV, True)
     
-    pc_new = jnp.where(m_is_increasing, pc_remove_first, pc_first)
-    m_new  = jnp.where(m_is_increasing, m_remove_first, m_first)
-    r_new  = jnp.where(m_is_increasing, r_remove_first, r_first)
-    l_new  = jnp.where(m_is_increasing, l_remove_first, l_first)
-    
-    # Because of diff dropping an element, add the first element back
-    pc_new = jnp.concatenate([m_first_array, pc_new])
-    m_new  = jnp.concatenate([m_first_array, m_new])
-    r_new  = jnp.concatenate([r_first_array, r_new])
-    l_new  = jnp.concatenate([l_first_array, l_new])
+    pc_new = jnp.where(m_is_increasing, pc, pc_at_TOV)
+    m_new  = jnp.where(m_is_increasing, m, m_at_TOV)
+    r_new  = jnp.where(m_is_increasing, r, r_at_TOV)
+    l_new  = jnp.where(m_is_increasing, l, l_at_TOV)
     
     # Sort in increasing values of M for plotting etc
     sort_idx = jnp.argsort(m_new)
