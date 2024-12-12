@@ -158,6 +158,9 @@ def limit_by_MTOV(pc: Array,
     m_is_increasing = jnp.diff(m) > 0
     m_is_increasing = jnp.insert(m_is_increasing, idx_TOV, True)
     
+    # All indices after MTOV index should be set to False
+    m_is_increasing = jnp.where(jnp.arange(len(m)) > idx_TOV, False, m_is_increasing)
+    
     pc_new = jnp.where(m_is_increasing, pc, pc_at_TOV)
     m_new  = jnp.where(m_is_increasing, m, m_at_TOV)
     r_new  = jnp.where(m_is_increasing, r, r_at_TOV)

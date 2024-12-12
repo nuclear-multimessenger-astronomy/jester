@@ -649,7 +649,6 @@ def construct_family(eos: tuple,
     lambdas = jnp.interp(mass_grid, ms, lambdas)
     pcs = jnp.interp(mass_grid, ms, pcs)
     
-    # Rename the mass grid
     ms = mass_grid
 
     return jnp.log(pcs), ms, rs, lambdas
