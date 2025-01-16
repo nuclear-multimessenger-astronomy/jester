@@ -116,11 +116,11 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         b_sym: Float = 25.0,
         # density parameters
         nsat: Float = 0.16,
-        nmin_nsat: Float = 0.1,
+        nmin_MM_nsat: Float = 0.12 / 0.16, 
         nmax_nsat: Float = 12,
         ndat: Int = 200,
         # crust parameters
-        crust_name: bool = "BPS",
+        crust_name: bool = "DH",
         max_n_crust_nsat: Float = 0.5,
         ndat_spline: Int = 10
     ):
@@ -137,7 +137,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         self.b_sym = b_sym
         self.N = 4 # TODO: this is fixed in the metamodeling papers, but we might want to extend this in the future
         
-        self.min_nsat = nmin_nsat
+        self.nmin_MM_nsat = nmin_MM_nsat
         self.nmax_nsat = nmax_nsat
         self.ndat = ndat
         self.max_n_crust_nsat = max_n_crust_nsat
@@ -177,16 +177,14 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         
         # Make sure the metamodel starts above the crust
         self.max_n_crust = ns_crust[-1]
-        nmin = nmin_nsat * self.nsat
-        nmin = jnp.max(jnp.array([nmin, max_n_crust]))
-        self.nmin = nmin
         
         # Create density arrays
         self.nmax = nmax_nsat * self.nsat
         self.ndat = ndat
-        self.n_metamodel = jnp.linspace(self.nmin, self.nmax, self.ndat, endpoint = False)
+        self.nmin_MM = self.nmin_MM_nsat * self.nsat
+        self.n_metamodel = jnp.linspace(self.nmin_MM, self.nmax, self.ndat, endpoint = False)
         self.ns_spline = jnp.append(self.ns_crust, self.n_metamodel)
-        self.n_connection = jnp.linspace(self.max_n_crust + 1e-5, self.nmin, self.ndat_spline, endpoint = False)
+        self.n_connection = jnp.linspace(self.max_n_crust + 1e-5, self.nmin_MM, self.ndat_spline, endpoint = False)
         
     def construct_eos(self, 
                       NEP_dict: dict):
@@ -259,6 +257,9 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         # Concatenate the arrays
         n = jnp.concatenate([self.ns_crust, self.n_connection, self.n_metamodel])
         cs2 = jnp.concatenate([self.cs2_crust, cs2_connection, cs2_metamodel])
+        
+        # Make sure the cs2 stays within the physical limits
+        cs2 = jnp.clip(cs2, 1e-5, 1.0)
         
         # Compute pressure and energy from chemical potential and initialize the parent class with it
         log_mu = utils.cumtrapz(cs2, jnp.log(n)) + jnp.log(self.mu_lowest)
@@ -492,7 +493,7 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
     def __init__(
         self,
         nsat: Float =  0.16,
-        nmin_nsat: Float = 0.1,
+        nmin_MM_nsat: Float = 0.12 / 0.16,
         nmax_nsat: Float = 12,
         ndat_metamodel: Int = 100,
         ndat_CSE: Int = 100,
@@ -513,12 +514,12 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
             ndat_metamodel (Int, optional): Number of datapoints to be used for the metamodel part of the EOS. Defaults to 1000.
             ndat_CSE (Int, optional): Number of datapoints to be used for the CSE part of the EOS. Defaults to 1000.
         """
-
+        
         # TODO: align with new metamodel code
         self.nmax = nmax_nsat * nsat
         self.ndat_CSE = ndat_CSE
         self.nsat = nsat
-        self.nmin_nsat = nmin_nsat
+        self.nmin_MM_nsat = nmin_MM_nsat
         self.ndat_metamodel = ndat_metamodel
         self.metamodel_kwargs = metamodel_kwargs
 
@@ -529,7 +530,7 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         
         # Initializate the MetaModel part up to n_break
         metamodel = MetaModel_EOS_model(nsat = self.nsat,
-                                        nmin_nsat = self.nmin_nsat,
+                                        nmin_MM_nsat = self.nmin_MM_nsat,
                                         nmax_nsat = NEP_dict["nbreak"] / self.nsat,
                                         ndat = self.ndat_metamodel,
                                         **self.metamodel_kwargs
@@ -587,7 +588,7 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         ns, ps, hs, es, dloge_dlogps = self.interpolate_eos(n, p, e)
         
         return ns, ps, hs, es, dloge_dlogps, mu, cs2
-        
+    
         
 def construct_family(eos: tuple,
                      ndat: Int=50, 
@@ -615,25 +616,24 @@ def construct_family(eos: tuple,
 
     pcs = jnp.logspace(jnp.log10(pc_min), jnp.log10(pc_max), num=ndat)
 
-    ### TODO: Check the timing with this vmap implementation, which also works
-    # def solve_single_pc(pc):
-    #     """Solve for single pc value"""
-    #     return tov.tov_solver(eos_dict, pc)
-    # ms, rs, ks = jax.vmap(solve_single_pc)(pcs)
+    def solve_single_pc(pc):
+        """Solve for single pc value"""
+        return tov.tov_solver(eos_dict, pc)
+    ms, rs, ks = jax.vmap(solve_single_pc)(pcs)
     
-    ms, rs, ks = jnp.vectorize(
-        tov.tov_solver,
-        excluded=[
-            0,
-        ],
-    )(eos_dict, pcs)
+    ### TODO: Check the timing with respect to this implementation
+    # ms, rs, ks = jnp.vectorize(
+    #     tov.tov_solver,
+    #     excluded=[
+    #         0,
+    #     ],
+    # )(eos_dict, pcs)
 
     # calculate the compactness
     cs = ms / rs
 
-    # convert the mass to solar mass
+    # convert the mass to solar mass and the radius to km
     ms /= utils.solar_mass_in_meter
-    # convert the radius to km
     rs /= 1e3
 
     # calculate the tidal deformability
@@ -641,6 +641,14 @@ def construct_family(eos: tuple,
     
     # TODO: perhaps put a boolean here to flag whether or not to do this, or do we always want to do this?
     # Limit masses to be below MTOV
-    ms, rs, lambdas = utils.limit_by_MTOV(ms, rs, lambdas)
+    pcs, ms, rs, lambdas = utils.limit_by_MTOV(pcs, ms, rs, lambdas)
+    
+    # Get a mass grid and interpolate, since we might have dropped provided some duplicate points
+    mass_grid = jnp.linspace(jnp.min(ms), jnp.max(ms), ndat)
+    rs = jnp.interp(mass_grid, ms, rs)
+    lambdas = jnp.interp(mass_grid, ms, lambdas)
+    pcs = jnp.interp(mass_grid, ms, pcs)
+    
+    ms = mass_grid
 
     return jnp.log(pcs), ms, rs, lambdas

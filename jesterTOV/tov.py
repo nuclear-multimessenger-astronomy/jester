@@ -94,7 +94,7 @@ def tov_solver(eos, pc):
 
     sol = diffeqsolve(
         ODETerm(tov_ode),
-        Dopri5(),
+        Dopri5(scan_kind = "bounded"),
         t0=h0,
         t1=0,
         dt0=dh,

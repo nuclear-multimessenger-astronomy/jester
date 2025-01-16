@@ -126,7 +126,8 @@ def interp_in_logspace(x, xs, ys):
     logys = jnp.log(ys)
     return jnp.exp(jnp.interp(logx, logxs, logys))
 
-def limit_by_MTOV(m: Array, 
+def limit_by_MTOV(pc: Array,
+                  m: Array, 
                   r: Array, 
                   l: Array) -> tuple[Array, Array, Array]:
     """
@@ -136,6 +137,7 @@ def limit_by_MTOV(m: Array,
     TODO: generalize this for weird EOS or check if we do not have those weird EOS when sampling NEPs.
     
     Args:
+        pcs (Array["npoints"]): Original pressure
         m (Array["npoints"]): Original mass curve
         r (Array["npoints"]): Original radius curve
         l (Array["npoints"]): Original lambdas curve
@@ -144,44 +146,39 @@ def limit_by_MTOV(m: Array,
         tuple[Array["npoints"], Array["npoints"], Array["npoints"]]: Tuple of new mass, radius and lambdas curves, where the part of the curves where mass decreases is replaced with duplication of the first entry of the M, R and Lambda arrays.
     """
     
-    # Separate head and tail of m, r and l arrays    
-    m_first = m.at[0].get()
-    r_first = r.at[0].get()
-    l_first = l.at[0].get()
+    # Fetch the MTOV, we will use it to dump duplicates of it wherever the NS family is unphysical
+    m_at_TOV = jnp.max(m)
+    idx_TOV = jnp.argmax(m)
     
-    m_first_array = jnp.array([m_first])
-    r_first_array = jnp.array([r_first])
-    l_first_array = jnp.array([l_first])
+    pc_at_TOV = pc[idx_TOV]
+    r_at_TOV = r[idx_TOV]
+    l_at_TOV = l[idx_TOV]
     
-    m_remove_first = m[1:]
-    r_remove_first = r[1:]
-    l_remove_first = l[1:]
-    
-    # Where m is increasing, save array, otherwise repeat the first element (discard that part of the curve)
+    # Find out where the mass array is increasing, and insert True at the TOV index to pad length of the array correctly
     m_is_increasing = jnp.diff(m) > 0
+    m_is_increasing = jnp.insert(m_is_increasing, idx_TOV, True)
     
-    m_new = jnp.where(m_is_increasing, m_remove_first, m_first)
-    r_new = jnp.where(m_is_increasing, r_remove_first, r_first)
-    l_new = jnp.where(m_is_increasing, l_remove_first, l_first)
+    # All indices after MTOV index should be set to False
+    m_is_increasing = jnp.where(jnp.arange(len(m)) > idx_TOV, False, m_is_increasing)
     
-    # Because of diff dropping an element, add the first element back
-    m_new = jnp.concatenate([m_first_array, m_new])
-    r_new = jnp.concatenate([r_first_array, r_new])
-    l_new = jnp.concatenate([l_first_array, l_new])
+    pc_new = jnp.where(m_is_increasing, pc, pc_at_TOV)
+    m_new  = jnp.where(m_is_increasing, m, m_at_TOV)
+    r_new  = jnp.where(m_is_increasing, r, r_at_TOV)
+    l_new  = jnp.where(m_is_increasing, l, l_at_TOV)
     
     # Sort in increasing values of M for plotting etc
     sort_idx = jnp.argsort(m_new)
     
-    m_new = m_new[sort_idx]
-    r_new = r_new[sort_idx]
-    l_new = l_new[sort_idx]
+    pc_new = pc_new[sort_idx]
+    m_new  = m_new[sort_idx]
+    r_new  = r_new[sort_idx]
+    l_new  = l_new[sort_idx]
     
-    return m_new, r_new, l_new
+    return pc_new, m_new, r_new, l_new
 
-
-###############
-### SPLINES ###
-###############
+###################
+### SPLINES etc ###
+###################
 
 def cubic_spline(xq: Float[Array, "n"],
                  xp: Float[Array, "n"],
@@ -194,3 +191,6 @@ def cubic_spline(xq: Float[Array, "n"],
         fp (Float[Array, "n"]): y values of the data points, i.e. fp = f(xp)
     """
     return interpax_interp1d(xq, xp, fp, method = "cubic")
+
+def sigmoid(x: Array) -> Array:
+    return 1.0 / (1.0 + jnp.exp(-x))
