@@ -4,7 +4,7 @@ import jax.numpy as jnp
 from jax.scipy.special import factorial
 from jaxtyping import Array, Float, Int
 
-from . import utils, tov
+from . import utils, tov, ptov
 
 ##############
 ### CRUSTS ###
@@ -63,6 +63,8 @@ class Interpolate_EOS_model(object):
         ns = jnp.array(n * utils.fm_inv3_to_geometric)
         ps = jnp.array(p * utils.MeV_fm_inv3_to_geometric)
         es = jnp.array(e * utils.MeV_fm_inv3_to_geometric)
+
+        #rhos = utils.calculate_rest_mass_density(es, ps)
         
         hs = utils.cumtrapz(ps / (es + ps), jnp.log(ps)) # enthalpy
         # TODO: might be better to use jnp.gradient?
@@ -619,6 +621,71 @@ def construct_family(eos: tuple,
     def solve_single_pc(pc):
         """Solve for single pc value"""
         return tov.tov_solver(eos_dict, pc)
+    ms, rs, ks = jax.vmap(solve_single_pc)(pcs)
+    
+    ### TODO: Check the timing with respect to this implementation
+    # ms, rs, ks = jnp.vectorize(
+    #     tov.tov_solver,
+    #     excluded=[
+    #         0,
+    #     ],
+    # )(eos_dict, pcs)
+
+    # calculate the compactness
+    cs = ms / rs
+
+    # convert the mass to solar mass and the radius to km
+    ms /= utils.solar_mass_in_meter
+    rs /= 1e3
+
+    # calculate the tidal deformability
+    lambdas = 2.0 / 3.0 * ks * jnp.power(cs, -5.0)
+    
+    # TODO: perhaps put a boolean here to flag whether or not to do this, or do we always want to do this?
+    # Limit masses to be below MTOV
+    pcs, ms, rs, lambdas = utils.limit_by_MTOV(pcs, ms, rs, lambdas)
+    
+    # Get a mass grid and interpolate, since we might have dropped provided some duplicate points
+    mass_grid = jnp.linspace(jnp.min(ms), jnp.max(ms), ndat)
+    rs = jnp.interp(mass_grid, ms, rs)
+    lambdas = jnp.interp(mass_grid, ms, lambdas)
+    pcs = jnp.interp(mass_grid, ms, pcs)
+    
+    ms = mass_grid
+
+    return jnp.log(pcs), ms, rs, lambdas
+
+
+def construct_family_nonGR(
+    eos: tuple,
+    ndat: Int=50, 
+    min_nsat: Float=2) -> tuple[Float[Array, "ndat"], Float[Array, "ndat"], Float[Array, "ndat"], Float[Array, "ndat"]]:
+    """
+    Solve the post-TOV equations and generate the M, R and Lambda curves.
+
+    Args:
+        eos (tuple): Tuple of the EOS data (ns, ps, hs, es).
+        ndat (int, optional): Number of datapoints used when constructing the central pressure grid. Defaults to 50.
+        min_nsat (int, optional): Starting density for central pressure in numbers of nsat (assumed to be 0.16 fm^-3). Defaults to 2.
+
+    Returns:
+        tuple[Float[Array, "ndat"], Float[Array, "ndat"], Float[Array, "ndat"], Float[Array, "ndat"]]: log(pcs), masses in solar masses, radii in km, and dimensionless tidal deformabilities
+    """
+    # Construct the dictionary
+    ns, ps, hs, es, dloge_dlogps, alpha, beta, gamma = eos
+    eos_dict = dict(p=ps, h=hs, e=es, dloge_dlogp=dloge_dlogps, alpha=alpha, beta=beta, gamma=gamma)
+    
+    # calculate the pc_min
+    pc_min = utils.interp_in_logspace(min_nsat * 0.16 * utils.fm_inv3_to_geometric, ns, ps)
+
+    # end at pc at pmax
+    pc_max = eos_dict["p"][-1]
+
+    pcs = jnp.logspace(jnp.log10(pc_min), jnp.log10(pc_max), num=ndat)
+
+    def solve_single_pc(pc):
+        """Solve for single pc value"""
+        return ptov.tov_solver(eos_dict, pc)
     ms, rs, ks = jax.vmap(solve_single_pc)(pcs)
     
     ### TODO: Check the timing with respect to this implementation

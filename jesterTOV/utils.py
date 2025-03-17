@@ -5,6 +5,8 @@ from functools import partial
 from jaxtyping import Array, Float
 from interpax import interp1d as interpax_interp1d
 
+from diffrax import diffeqsolve, ODETerm, Tsit5, SaveAt, PIDController
+
 #################################
 ### CONSTANTS AND CONVERSIONS ###
 #################################
@@ -194,3 +196,47 @@ def cubic_spline(xq: Float[Array, "n"],
 
 def sigmoid(x: Array) -> Array:
     return 1.0 / (1.0 + jnp.exp(-x))
+
+
+def calculate_rest_mass_density(e: Float[Array, "n"],
+                                p: Float[Array, "n"]):
+    """
+    Compute rest-mass density given arrays of energy density and pressure.
+
+    Parameters:
+    - e (jax.numpy array): Array of specific energy values.
+    - p (jax.numpy array): Array of pressure values.
+
+    Returns:
+    - rho (jax.numpy array): Array of density values.
+    """
+    # Define a linear interpolation for p(e)
+    def p_interp(e_val):
+        return jnp.interp(e_val, e, p)
+
+    # Define the ODE: drho/de = rho / (p + e)
+    def rhs(t, rho):
+        p_val = p_interp(t)
+        return rho / (p_val + t)
+
+    # Initial condition: rho[0] = e[0]
+    rho0 = e[0]
+
+    # Define the term for the ODE
+    term = ODETerm(rhs)
+
+    # Solve the ODE using diffrax
+    solver = Tsit5()
+    solution = diffeqsolve(
+        term,
+        solver,
+        t0=e[0],       # Initial value of e
+        t1=e[-1],      # Final value of e
+        dt0=1e-8,      # Initial step size
+        y0=rho0,       # Initial value of rho
+        saveat=SaveAt(ts=e),
+        stepsize_controller=PIDController(rtol=1e-5, atol=1e-6),
+    )
+
+    # Return the rho values at specified e points
+    return solution.ys

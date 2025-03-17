@@ -5,13 +5,17 @@ import jax.numpy as jnp
 from diffrax import diffeqsolve, ODETerm, Dopri5, SaveAt, PIDController
 
 
-def sigma_func(lambda_BL, lambda_DY, lambda_HB, p, e, m, r):
+def sigma_func(p, e, m, r, lambda_BL, lambda_DY, lambda_HB, gamma, alpha, beta):
     A = 1.0 / (1.0 - 2.0 * m / r)
     dpdr = -(e + p) * (m + 4.0 * jnp.pi * r * r * r * p) / r / r * A
     sigma = 0.0
+    # models reviewed in https://doi.org/10.1140/epjc/s10052-020-8361-4
+    # in Eq. 12, the power of epsilon should be 2
     sigma += -lambda_BL * r * r / 3.0 * (e + 3.0 * p) * (e + p) * A
     sigma += lambda_DY * 2.0 * m / r * p
     sigma += -(1.0 / lambda_HB - 1.0) * r / 2.0 * dpdr
+    # post-Newtonian modification
+    sigma += gamma * 2.0 * m / r * p * jnp.tanh(alpha * (m / r - beta))
     return sigma
 
 
@@ -29,16 +33,34 @@ def tov_ode(h, y, eos):
 
     # evalute the sigma and dsigmadp
     sigma = sigma_func(
+        p, e, m, r,
         eos["lambda_BL"],
         eos["lambda_DY"],
         eos["lambda_HB"],
-        p, e, m, r)
-    dsigmadp_fn = jax.grad(sigma_func, argnums=3)  # Gradient w.r.t. p
+        eos["gamma"],
+        eos["alpha"],
+        eos["beta"],
+    )
+    dsigmadp_fn = jax.grad(sigma_func, argnums=0)  # Gradient w.r.t. p
+    dsigmade_fn = jax.grad(sigma_func, argnums=1)  # Gradient w.r.t. p
     dsigmadp = dsigmadp_fn(
+        p, e, m, r,
         eos["lambda_BL"],
         eos["lambda_DY"],
         eos["lambda_HB"],
-        p, e, m, r)
+        eos["gamma"],
+        eos["alpha"],
+        eos["beta"],
+    )
+    dsigmadp += dedp * dsigmade_fn(
+        p, e, m, r,
+        eos["lambda_BL"],
+        eos["lambda_DY"],
+        eos["lambda_HB"],
+        eos["gamma"],
+        eos["alpha"],
+        eos["beta"],
+    )
 
     A = 1.0 / (1.0 - 2.0 * m / r)
     # terms for radius and mass
