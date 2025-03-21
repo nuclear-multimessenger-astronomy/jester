@@ -590,7 +590,26 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         ns, ps, hs, es, dloge_dlogps = self.interpolate_eos(n, p, e)
         
         return ns, ps, hs, es, dloge_dlogps, mu, cs2
-    
+  
+
+def locate_lowest_non_causal_point(cs2):
+        # Create a boolean mask where the value equals 1
+        mask = cs2 >= 1.
+
+        # If no element equals 1, we want to return -1 or some indicator
+        # First, check if any element equals 1
+        any_ones = jnp.any(mask)
+
+        # Find the index of the first True value in the mask
+        # argmax returns the first index of the maximum value
+        # Since our mask is boolean, the first True will be the first 1
+        indices = jnp.arange(len(cs2))
+        masked_indices = jnp.where(mask, indices, len(cs2))
+        first_index = jnp.min(masked_indices)
+
+        # Return -1 if no element equals 1, otherwise return the found index
+        return jnp.where(any_ones, first_index, -1)
+
         
 def construct_family(eos: tuple,
                      ndat: Int=50, 
@@ -613,8 +632,9 @@ def construct_family(eos: tuple,
     # calculate the pc_min
     pc_min = utils.interp_in_logspace(min_nsat * 0.16 * utils.fm_inv3_to_geometric, ns, ps)
 
-    # end at pc at pmax
-    pc_max = eos_dict["p"][-1]
+    # end at pc at pmax at which it is causal
+    cs2 = ps / es / dloge_dlogps
+    pc_max = eos_dict["p"][locate_lowest_non_causal_point(cs2)]
 
     pcs = jnp.logspace(jnp.log10(pc_min), jnp.log10(pc_max), num=ndat)
 
@@ -678,8 +698,9 @@ def construct_family_nonGR(
     # calculate the pc_min
     pc_min = utils.interp_in_logspace(min_nsat * 0.16 * utils.fm_inv3_to_geometric, ns, ps)
 
-    # end at pc at pmax
-    pc_max = eos_dict["p"][-1]
+    # end at pc at pmax at which it is causal
+    cs2 = ps / es / dloge_dlogps
+    pc_max = eos_dict["p"][locate_lowest_non_causal_point(cs2)]
 
     pcs = jnp.logspace(jnp.log10(pc_min), jnp.log10(pc_max), num=ndat)
 
