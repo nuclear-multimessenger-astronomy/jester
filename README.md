@@ -4,9 +4,13 @@
 
 Since it is based on JAX, JESTER makes use of hardware acceleration on GPUs and TPUs. It can also be easily used together with other JAX-based software, e.g., [Jim](https://github.com/kazewong/jim).
 
+## Current EoS parameterizations supported
+- MetaModel
+- MetaModel with speed-of-sound extension
+
 ## Installation
 
 You may install the bleeding edge version by cloning this repo, or doing
 ```
-pip install git+https://github.com/tsunhopang/jester
+pip install git+https://github.com/nuclear-multimessenger-astronomy/jester
 ```
