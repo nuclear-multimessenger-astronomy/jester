@@ -577,17 +577,6 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         mu = jnp.concatenate((mu_metamodel, mu_CSE))
         cs2 = jnp.concatenate((cs2_metamodel, cs2_CSE))
         
-        # # FIXME: this is pretty experimental, but we have duplicates which will break TOV solver but are hard to remove in a JIT-compatible manner. Note that we should perhaps do something similar in the metamodel EOS. 
-        
-        # for array_to_check in [n, p, e]:
-        #     indices = jnp.where(jnp.diff(array_to_check) <= 0.0)[0][0]
-        #     print(indices)
-            
-        #     print(f"n at duplicates +/- 1: {n[indices-1:indices+1] /0.16} nsat")
-        # n = jnp.unique(n)
-        # e = jnp.unique(e)
-        # p = jnp.unique(p)
-
         ns, ps, hs, es, dloge_dlogps = self.interpolate_eos(n, p, e)
         
         return ns, ps, hs, es, dloge_dlogps, mu, cs2

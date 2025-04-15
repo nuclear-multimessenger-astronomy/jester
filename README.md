@@ -11,6 +11,14 @@ Since it is based on JAX, JESTER makes use of hardware acceleration on GPUs and 
 ## Installation
 
 You may install the bleeding edge version by cloning this repo, or doing
-```
+```bash
 pip install git+https://github.com/nuclear-multimessenger-astronomy/jester
 ```
+Note: in order to use GPUs, you need to install a `jaxlib` version with CUDA support by running
+```bash
+pip install "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+```
+
+## Acknowledgements
+
+We'll put a link to the arXiv paper once it's up.
