@@ -1,8 +1,11 @@
-# this whole script is written in geometric unit
+"""
+Functions for solving the TOV equations. Main source of inspiration: NMMA code https://github.com/nuclear-multimessenger-astronomy/nmma/blob/f03ea14fcd6cafc9b189c7a1dd088ddd5b7fe898/nmma/eos/tov.py
+This script assumes geometric units.
+"""
+
 from . import utils
 import jax.numpy as jnp
-from diffrax import diffeqsolve, ODETerm, Dopri5, Dopri8, Tsit5, SaveAt, PIDController
-
+from diffrax import diffeqsolve, ODETerm, Dopri5, SaveAt, PIDController
 
 def tov_ode(h, y, eos):
     # fetch the eos arrays
