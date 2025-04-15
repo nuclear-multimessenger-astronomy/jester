@@ -1,4 +1,6 @@
-"""Small example/utility file to convert existing crust files with other units to the appropriate file format used by jose"""
+"""
+Small example/utility file to convert existing crust files with other units to the appropriate file format used by jester
+"""
 import numpy as np
 from joseTOV import utils
 from scipy.interpolate import interp1d
@@ -11,8 +13,8 @@ def convert_DH_crust(interpolate: bool = True,
 
     Args:
         interpolate (bool, optional): Whether to interpolate to smoothen. Defaults to True.
-        interpolation_ndat (int, optional): _description_. Defaults to 100.
-        max_n_crust (float, optional): _description_. Defaults to 0.09.
+        interpolation_ndat (int, optional): Number of interpolation points. Defaults to 100.
+        max_n_crust (float, optional): Maximal density of the crust. Defaults to 0.09.
     """
     crust_filename = "./DH_crust.dat"
     crust = np.genfromtxt(crust_filename).T

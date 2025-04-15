@@ -57,6 +57,9 @@ class Interpolate_EOS_model(object):
             n (Float[Array, n_points]): Number densities. Expected units are n[fm^-3]
             p (Float[Array, n_points]): Pressure values. Expected units are p[MeV / fm^3]
             e (Float[Array, n_points]): Energy densities. Expected units are e[MeV / fm^3]
+            
+        Returns:
+            tuple: Interpolated values of n, p, hs (enthalpy) e, and dloge_dlogps.
         """
         
         # Save the provided data as attributes, make conversions
@@ -65,7 +68,6 @@ class Interpolate_EOS_model(object):
         es = jnp.array(e * utils.MeV_fm_inv3_to_geometric)
         
         hs = utils.cumtrapz(ps / (es + ps), jnp.log(ps)) # enthalpy
-        # TODO: might be better to use jnp.gradient?
         dloge_dlogps = jnp.diff(jnp.log(e)) / jnp.diff(jnp.log(p))
         dloge_dlogps = jnp.concatenate(
             (
@@ -78,26 +80,6 @@ class Interpolate_EOS_model(object):
             )
         )
         return ns, ps, hs, es, dloge_dlogps
-
-    # TODO: remove?
-    # def energy_density_from_pseudo_enthalpy(self, h: Float):
-    #     loge_of_h = jnp.interp(jnp.log(h), self.logh, self.loge)
-    #     return jnp.exp(loge_of_h)
-
-    # def pressure_from_pseudo_enthalpy(self, h: Float):
-    #     logp_of_h = jnp.interp(jnp.log(h), self.logh, self.logp)
-    #     return jnp.exp(logp_of_h)
-
-    # def dloge_dlogp_from_pseudo_enthalpy(self, h: Float):
-    #     return jnp.interp(h, self.h, self.dloge_dlogp)
-
-    # def pseudo_enthalpy_from_pressure(self, p: Float):
-    #     logh_of_p = jnp.interp(jnp.log(p), self.logp, self.logh)
-    #     return jnp.exp(logh_of_p)
-
-    # def pressure_from_number_density(self, n: Float):
-    #     logp_of_n = jnp.interp(n, self.n, self.logp)
-    #     return jnp.exp(logp_of_n)
 
 
 class MetaModel_EOS_model(Interpolate_EOS_model):
@@ -120,14 +102,26 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         nmax_nsat: Float = 12,
         ndat: Int = 200,
         # crust parameters
-        crust_name: bool = "DH",
+        crust_name: str = "DH",
         max_n_crust_nsat: Float = 0.5,
         ndat_spline: Int = 10
     ):
         """
         Initialize the MetaModel_EOS_model with the provided coefficients and compute auxiliary data.
+        Main reference for coefficients: PHYSICAL REVIEW C 103, 045803 (2021)
         
-        TODO: add documentation
+        Args:
+            kappas (tuple[Float, Float, Float, Float, Float, Float], optional): The coefficients for the saturation part of the metamodel part of the EOS. Defaults to (0.0, 0.0, 0.0, 0.0, 0.0, 0.0).
+            v_nq (list[float], optional): The coefficients for the symmetry part of the metamodel part of the EOS. Defaults to [0.0, 0.0, 0.0, 0.0, 0.0].
+            b_sat (Float, optional): The saturation coefficient for the metamodel part of the EOS. Defaults to 17.0.
+            b_sym (Float, optional): The symmetry coefficient for the metamodel part of the EOS. Defaults to 25.0.
+            nsat (Float, optional): Saturation density. Defaults to 0.16 fm^-3.
+            nmin_MM_nsat (Float, optional): Starting point of densities in units of nsat for the metamodel part of the EOS. Defaults to 0.12 / 0.16.
+            nmax_nsat (Float, optional): End point of densities in units of nsat for the metamodel part of the EOS. Defaults to 12.
+            ndat (Int, optional): Number of datapoints to be used for the metamodel part of the EOS. Defaults to 200.
+            crust_name (str, optional): Name of the crust file to load from crust directory or a filename if a file outside of jester is supplied.
+            max_n_crust_nsat (Float, optional): Maximum number density in units of nsat for crust data loading and interpolation. Defaults to 0.5.
+            ndat_spline (Int, optional): Number of points for cubic spline interpolation in connection region between crust and metamodel parts of the EOS. Defaults to 10.
         """
         
         # Save as attributes
@@ -150,7 +144,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         self.kappa_sym2 = self.kappa_NM2 - self.kappa_sat2
         self.kappa_sym3 = self.kappa_NM3 - self.kappa_sat3
         
-        # t_sat or TFGsat is the kinetic energy per nucleons in SM and at saturation, see just after eq (13) in the margueron paper
+        # t_sat or TFGsat is the kinetic energy per nucleons in SM and at saturation, see just after eq (13) in the Margueron paper
         self.t_sat = 3 * utils.hbar ** 2 / (10 * utils.m) * (3 * jnp.pi ** 2 * self.nsat / 2) ** (2/3)
         
         # v_sat is defined in equations (22) - (26) in the Margueron et al. paper
@@ -186,10 +180,18 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         self.ns_spline = jnp.append(self.ns_crust, self.n_metamodel)
         self.n_connection = jnp.linspace(self.max_n_crust + 1e-5, self.nmin_MM, self.ndat_spline, endpoint = False)
         
-    def construct_eos(self, 
-                      NEP_dict: dict):
+    def construct_eos(self, NEP_dict: dict) -> tuple:
+        """
+        Construct the EOS.
+
+        Args:
+            NEP_dict (dict): Dictionary with the NEP keys to be passed to the metamodel EOS class.
+
+        Returns:
+            tuple: EOS quantities (see Interpolate_EOS_model), as well as the chemical potential and speed of sound.
+        """
         
-        E_sat = NEP_dict.get("E_sat", -16.0)
+        E_sat = NEP_dict.get("E_sat", -16.0) # NOTE: this is a commong default value, therefore not zero!
         K_sat = NEP_dict.get("K_sat", 0.0)
         Q_sat = NEP_dict.get("Q_sat", 0.0)
         Z_sat = NEP_dict.get("Z_sat", 0.0)
@@ -200,7 +202,6 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         Q_sym = NEP_dict.get("Q_sym", 0.0)
         Z_sym = NEP_dict.get("Z_sym", 0.0)
 
-        # TODO: clean up, not used so much?
         # Add the first derivative coefficient in Esat to make it work with jax.numpy.polyval
         coefficient_sat = jnp.array([E_sat,   0.0, K_sat, Q_sat, Z_sat])
         coefficient_sym = jnp.array([E_sym, L_sym, K_sym, Q_sym, Z_sym])
@@ -212,9 +213,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         coefficient_sat = coefficient_sat / factorial(index_sat)
         coefficient_sym = coefficient_sym / factorial(index_sym)
         
-        # Potential energy 
-        # v_sat is defined in equations (22) - (26) in the Margueron et al. paper
-        # TODO: there are more terms here, perhaps check the other reference that Rahul shared?
+        # Potential energy (v_sat is defined in equations (22) - (26) in the Margueron et al. paper)
         v_sat = jnp.array([E_sat + self.v_sat_0_no_NEP, 
                            0.0   + self.v_sat_1_no_NEP,
                            K_sat + self.v_sat_2_no_NEP,
@@ -248,7 +247,6 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         cs2_metamodel = self.compute_cs2(self.n_metamodel, p_metamodel, e_metamodel, x, delta, f_1, f_star, f_star2, f_star3, b, v)
         
         # Spline for speed of sound for the connection region
-        
         cs2_spline = jnp.append(self.cs2_crust, cs2_metamodel)
         
         cs2_connection = utils.cubic_spline(self.n_connection, self.ns_spline, cs2_spline)
@@ -280,7 +278,6 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
           x: Array,
           b: Array,
           alpha: Int):
-        # TODO: documentation
         return 1 - ((-3 * x) ** (self.N + 1 - alpha) * jnp.exp(- b * (1 + 3 * x)))
         
     def compute_x(self,
@@ -329,8 +326,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         
         kinetic_energy = prefac * (f_1 + linear + quadratic + cubic)
         
-        # Potential energy
-        # TODO: a bit cumbersome, find another way, jax tree map?
+        # Potential energy # TODO: a bit cumbersome, find another way, like jax tree map?
         potential_energy = 0
         for alpha in range(5):
             u = self.u(x, b, alpha)
@@ -446,7 +442,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         Returns:
             Float[Array, "n_points"]: Proton fraction as a function of the number density.
         """
-        # chemical potential of electron
+        # # chemical potential of electron -- derivation
         # mu_e = hbarc * pow(3 * pi**2 * x * n, 1. / 3.)
         #      = hbarc * pow(3 * pi**2 * n, 1. / 3.) * y (y = x**1./3.)
         # mu_p - mu_n = dEdx
@@ -458,7 +454,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         # p_1 = hbarc * pow(3 * pi**2 * n, 1. / 3.)
         # p_2 = 0
         # p_3 = 8 * Esym
-        # TODO: change this
+        
         Esym = self.esym(coefficient_sym, n)
         
         a = 8.0 * Esym
@@ -486,9 +482,6 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
 class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
     """
     MetaModel_with_CSE_EOS_model is a class to interpolate EOS data with a meta-model and using the CSE.
-
-    Args:
-        Interpolate_EOS_model (object): Base class of interpolation EOS data.
     """
     def __init__(
         self,
@@ -515,7 +508,6 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
             ndat_CSE (Int, optional): Number of datapoints to be used for the CSE part of the EOS. Defaults to 1000.
         """
         
-        # TODO: align with new metamodel code
         self.nmax = nmax_nsat * nsat
         self.ndat_CSE = ndat_CSE
         self.nsat = nsat
@@ -526,7 +518,18 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
     def construct_eos(self,
                       NEP_dict: dict,
                       ngrids: Float[Array, "n_grid_point"],
-                      cs2grids: Float[Array, "n_grid_point"]):
+                      cs2grids: Float[Array, "n_grid_point"]) -> tuple:
+        """
+        Construct the EOS
+
+        Args:
+            NEP_dict (dict): Dictionary with the NEP keys to be passed to the metamodel EOS class. 
+            ngrids (Float[Array, `n_grid_point`]): Density grid points of densities for the CSE part of the EOS.
+            cs2grids (Float[Array, `n_grid_point`]): Speed-of-sound squared grid points of densities for the CSE part of the EOS.
+
+        Returns:
+            tuple: EOS quantities (see Interpolate_EOS_model), as well as the chemical potential and speed of sound.
+        """
         
         # Initializate the MetaModel part up to n_break
         metamodel = MetaModel_EOS_model(nsat = self.nsat,
@@ -574,17 +577,6 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         mu = jnp.concatenate((mu_metamodel, mu_CSE))
         cs2 = jnp.concatenate((cs2_metamodel, cs2_CSE))
         
-        # # FIXME: this is pretty experimental, but we have duplicates which will break TOV solver but are hard to remove in a JIT-compatible manner. Note that we should perhaps do something similar in the metamodel EOS. 
-        
-        # for array_to_check in [n, p, e]:
-        #     indices = jnp.where(jnp.diff(array_to_check) <= 0.0)[0][0]
-        #     print(indices)
-            
-        #     print(f"n at duplicates +/- 1: {n[indices-1:indices+1] /0.16} nsat")
-        # n = jnp.unique(n)
-        # e = jnp.unique(e)
-        # p = jnp.unique(p)
-
         ns, ps, hs, es, dloge_dlogps = self.interpolate_eos(n, p, e)
         
         return ns, ps, hs, es, dloge_dlogps, mu, cs2
@@ -594,7 +586,7 @@ def construct_family(eos: tuple,
                      ndat: Int=50, 
                      min_nsat: Float=2) -> tuple[Float[Array, "ndat"], Float[Array, "ndat"], Float[Array, "ndat"], Float[Array, "ndat"]]:
     """
-    Solve the TOV equations and generate the M, R and Lambda curves.
+    Solve the TOV equations and generate the M, R and Lambda curves for the given EOS.
 
     Args:
         eos (tuple): Tuple of the EOS data (ns, ps, hs, es).
@@ -621,14 +613,6 @@ def construct_family(eos: tuple,
         return tov.tov_solver(eos_dict, pc)
     ms, rs, ks = jax.vmap(solve_single_pc)(pcs)
     
-    ### TODO: Check the timing with respect to this implementation
-    # ms, rs, ks = jnp.vectorize(
-    #     tov.tov_solver,
-    #     excluded=[
-    #         0,
-    #     ],
-    # )(eos_dict, pcs)
-
     # calculate the compactness
     cs = ms / rs
 
@@ -639,7 +623,6 @@ def construct_family(eos: tuple,
     # calculate the tidal deformability
     lambdas = 2.0 / 3.0 * ks * jnp.power(cs, -5.0)
     
-    # TODO: perhaps put a boolean here to flag whether or not to do this, or do we always want to do this?
     # Limit masses to be below MTOV
     pcs, ms, rs, lambdas = utils.limit_by_MTOV(pcs, ms, rs, lambdas)
     

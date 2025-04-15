@@ -8,15 +8,16 @@ include = ["jesterTOV/*"]
 [project]
 name = "jesterTOV"
 authors = [
-  {name = "Peter T. H. Pang", email = "tsunhopang@gmail.com"}
+  {name = "Peter T. H. Pang", email = "tsunhopang@gmail.com"},
+  {name = "Thibeau Wouters", email = "thibeauwouters@gmail.com"}
 ]
 version = "0.0.1"
-description = "JAX-based Tolman–Oppenheimer–Volkoff equation solver with equation-of-state generaion capability"
+description = "Jax-based EOS and TOV solver"
 readme = "README.md"
 requires-python = ">=3.9, <=3.11"
 license = {file = "LICENSE"}
-urls = {repository = "https://github.com/tsunhopang/jester" }
-dependencies = ["jax>=0.4.23", "jaxtyping>=0.2.24", "typing_extensions>=4.5.0", "diffrax>=0.5.0"]
+urls = {repository = "https://github.com/nuclear-multimessenger-astronomy/jester"}
+dependencies = ["jax>=0.4.23", "jaxtyping>=0.2.24", "typing_extensions>=4.5.0", "diffrax>=0.5.0", "interpax"]
 classifiers = [
     "Programming Language :: Python :: 3",
     'Programming Language :: Python :: 3.9',

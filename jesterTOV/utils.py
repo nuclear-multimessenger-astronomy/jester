@@ -1,4 +1,7 @@
-# this script contain utility functions
+"""
+Utilities
+"""
+
 from jax import vmap
 import jax.numpy as jnp
 from functools import partial
@@ -9,13 +12,12 @@ from interpax import interp1d as interpax_interp1d
 ### CONSTANTS AND CONVERSIONS ###
 #################################
 
-# to avoid additional dependecy on scipy
 eV = 1.602176634e-19
 c = 299792458.0
 G = 6.6743e-11
 Msun = 1.988409870698051e30
 hbarc = 197.3269804593025  # in MeV fm
-hbar = hbarc # TODO: check if must be updated, this is just taken from Rahul's code
+hbar = hbarc # conventions from Rahul's code
 m_p = 938.2720881604904  # in MeV
 m_n = 939.5654205203889  # in MeV
 m = (m_p + m_n) / 2.0  # in MeV, average nucleonic mass defined by Margueron et al
@@ -133,8 +135,6 @@ def limit_by_MTOV(pc: Array,
     """
     Limits the M, R and Lambda curves to be below MTOV in a jit-friendly manner (i.e., static shape sizes).
     The idea now is to feed this into some routine that creates an interpolation out of this, which then uses jnp.unique to get rid of these duplicates
-    NOTE: this assumes that the M curve increases up to a point and potentially decreases after that point. In case the EOS has some weird features and the M curve increases again, this function will return weird results.
-    TODO: generalize this for weird EOS or check if we do not have those weird EOS when sampling NEPs.
     
     Args:
         pcs (Array["npoints"]): Original pressure
