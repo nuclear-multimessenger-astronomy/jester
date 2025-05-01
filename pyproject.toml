@@ -13,7 +13,7 @@ authors = [
 version = "0.0.1"
 description = "JAX-based Tolman–Oppenheimer–Volkoff equation solver with equation-of-state generaion capability"
 readme = "README.md"
-requires-python = ">=3.9, <=3.11"
+requires-python = ">=3.9, <=3.12"
 license = {file = "LICENSE"}
 urls = {repository = "https://github.com/tsunhopang/jester" }
 dependencies = ["jax>=0.4.23", "jaxtyping>=0.2.24", "typing_extensions>=4.5.0", "diffrax>=0.5.0"]
