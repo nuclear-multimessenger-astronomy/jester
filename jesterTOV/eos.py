@@ -124,7 +124,9 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         # crust parameters
         crust_name: bool = "DH",
         max_n_crust_nsat: Float = 0.5,
-        ndat_spline: Int = 10
+        ndat_spline: Int = 10,
+        # proton fraction
+        proton_fraction: bool | float = None
     ):
         """
         Initialize the MetaModel_EOS_model with the provided coefficients and compute auxiliary data.
@@ -144,6 +146,13 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         self.ndat = ndat
         self.max_n_crust_nsat = max_n_crust_nsat
         self.ndat_spline = ndat_spline
+
+        if isinstance(proton_fraction, float):
+            self.proton_fraction_val = proton_fraction
+            self.proton_fraction = lambda x, y: self.proton_fraction_val
+            print(f"Proton fraction fixed to {self.proton_fraction_val}")
+        else:
+            self.proton_fraction = lambda x, y: self.compute_proton_fraction(x, y)
         
         # Constructions
         assert len(kappas) == 6, "kappas must be a tuple of 6 values: kappa_sat, kappa_sat2, kappa_sat3, kappa_NM, kappa_NM2, kappa_NM3"
@@ -232,7 +241,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         
         # Auxiliaries first
         x = self.compute_x(self.n_metamodel)
-        proton_fraction = self.compute_proton_fraction(coefficient_sym, self.n_metamodel)
+        proton_fraction = self.proton_fraction(coefficient_sym, self.n_metamodel)
         delta = 1 - 2 * proton_fraction
         
         f_1 = self.compute_f_1(delta)
@@ -692,8 +701,14 @@ def construct_family_nonGR(
         tuple[Float[Array, "ndat"], Float[Array, "ndat"], Float[Array, "ndat"], Float[Array, "ndat"]]: log(pcs), masses in solar masses, radii in km, and dimensionless tidal deformabilities
     """
     # Construct the dictionary
-    ns, ps, hs, es, dloge_dlogps, alpha, beta, gamma = eos
-    eos_dict = dict(p=ps, h=hs, e=es, dloge_dlogp=dloge_dlogps, alpha=alpha, beta=beta, gamma=gamma)
+    ns, ps, hs, es, dloge_dlogps, \
+    alpha, beta, gamma, \
+    lambda_BL, lambda_DY, lambda_HB = eos
+    eos_dict = dict(
+        p=ps, h=hs, e=es, dloge_dlogp=dloge_dlogps,
+        alpha=alpha, beta=beta, gamma=gamma,
+        lambda_BL=lambda_BL, lambda_DY=lambda_DY, lambda_HB=lambda_HB
+    )
     
     # calculate the pc_min
     pc_min = utils.interp_in_logspace(min_nsat * 0.16 * utils.fm_inv3_to_geometric, ns, ps)
