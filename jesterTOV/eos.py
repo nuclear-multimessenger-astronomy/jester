@@ -675,7 +675,7 @@ class MetaModel_with_peakCSE_EOS_model(Interpolate_EOS_model):
             peakCSE_dict['gaussian_peak'] * jnp.exp(
                 -0.5 * (
                     (x - peakCSE_dict['gaussian_mu']) ** 2
-                    / peakCSE_dict['gaussian_sigm'] ** 2
+                    / peakCSE_dict['gaussian_sigma'] ** 2
                 )
             )
             + cs2_break
