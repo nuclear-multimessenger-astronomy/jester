@@ -599,6 +599,131 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         ns, ps, hs, es, dloge_dlogps = self.interpolate_eos(n, p, e)
         
         return ns, ps, hs, es, dloge_dlogps, mu, cs2
+
+
+class MetaModel_with_peakCSE_EOS_model(Interpolate_EOS_model):
+    """
+    MetaModel_with_peakCSE_EOS_model is a class to interpolate EOS data with a meta-model and using the CSE.
+
+    Args:
+        Interpolate_EOS_model (object): Base class of interpolation EOS data.
+    """
+    def __init__(
+        self,
+        nsat: Float =  0.16,
+        nmin_MM_nsat: Float = 0.12 / 0.16,
+        nmax_nsat: Float = 12,
+        ndat_metamodel: Int = 100,
+        ndat_CSE: Int = 100,
+        **metamodel_kwargs
+    ):
+        """
+        Initialize the MetaModel_with_CSE_EOS_model with the provided coefficients and compute auxiliary data.
+
+        Args:
+            coefficient_sat (Float[Array, "n_sat_coeff"]): The coefficients for the saturation part of the metamodel part of the EOS.
+            coefficient_sym (Float[Array, "n_sym_coeff"]): The coefficients for the symmetry part of the metamodel part of the EOS.
+            nbreak (Float): The number density at the transition point between the metamodel and the CSE part of the EOS.
+            ngrids (Float[Array, "n_grid_point"]): The number densities for the CSE part of the EOS.
+            cs2grids (Float[Array, "n_grid_point"]): The speed of sound squared for the CSE part of the EOS.
+            nsat (Float, optional): Saturation density. Defaults to 0.16 fm^-3.
+            nmin (Float, optional): Starting point of densities. Defaults to 0.1 fm^-3.
+            nmax (Float, optional): End point of EOS. Defaults to 12*0.16 fm^-3, i.e. 12 nsat.
+            ndat_metamodel (Int, optional): Number of datapoints to be used for the metamodel part of the EOS. Defaults to 1000.
+            ndat_CSE (Int, optional): Number of datapoints to be used for the CSE part of the EOS. Defaults to 1000.
+        """
+        
+        # TODO: align with new metamodel code
+        self.nmax = nmax_nsat * nsat
+        self.ndat_CSE = ndat_CSE
+        self.nsat = nsat
+        self.nmin_MM_nsat = nmin_MM_nsat
+        self.ndat_metamodel = ndat_metamodel
+        self.metamodel_kwargs = metamodel_kwargs
+
+    def construct_eos(self,
+                      NEP_dict: dict,
+                      peakCSE_dict: dict):
+        
+        # Initializate the MetaModel part up to n_break
+        metamodel = MetaModel_EOS_model(nsat = self.nsat,
+                                        nmin_MM_nsat = self.nmin_MM_nsat,
+                                        nmax_nsat = NEP_dict["nbreak"] / self.nsat,
+                                        ndat = self.ndat_metamodel,
+                                        **self.metamodel_kwargs
+        )
+        
+        # Construct the metamodel part:
+        mm_output = metamodel.construct_eos(NEP_dict)
+        n_metamodel, p_metamodel, _, e_metamodel, _, mu_metamodel, cs2_metamodel = mm_output
+        
+        # Convert units back for CSE initialization
+        n_metamodel = n_metamodel / utils.fm_inv3_to_geometric
+        p_metamodel = p_metamodel / utils.MeV_fm_inv3_to_geometric
+        e_metamodel = e_metamodel / utils.MeV_fm_inv3_to_geometric
+        
+        # Get values at break density
+        p_break   = jnp.interp(NEP_dict["nbreak"], n_metamodel, p_metamodel)
+        e_break   = jnp.interp(NEP_dict["nbreak"], n_metamodel, e_metamodel)
+        mu_break  = jnp.interp(NEP_dict["nbreak"], n_metamodel, mu_metamodel)
+        cs2_break = jnp.interp(NEP_dict["nbreak"], n_metamodel, cs2_metamodel)
+        
+        # Define the speed-of-sound of the extension portion
+        # the model is taken from arXiv:1812.08188
+        # but instead of energy density, I am using density as the input
+        cs2_extension_function = lambda x: (
+            peakCSE_dict['gaussian_peak'] * jnp.exp(
+                -0.5 * (
+                    (x - peakCSE_dict['gaussian_mu']) ** 2
+                    / peakCSE_dict['gaussian_sigm'] ** 2
+                )
+            )
+            + cs2_break
+            + (
+                (1. / 3. - cs2_break)
+                / (
+                    1. + jnp.exp(
+                        -peakCSE_dict['logit_growth_rate']
+                        * (x - peakCSE_dict['logit_midpoint'])
+                    )
+                )
+            )
+        )
+        # Compute n, p, e for peakCSE (number densities in unit of fm^-3)
+        n_CSE = jnp.logspace(
+            jnp.log10(NEP_dict["nbreak"]), jnp.log10(self.nmax),
+            num=self.ndat_CSE
+        )
+        cs2_CSE = cs2_extension_function(n_CSE)
+        
+        # We add a very small number to avoid problems with duplicates below
+        mu_CSE = mu_break * jnp.exp(utils.cumtrapz(cs2_CSE / n_CSE, n_CSE)) + 1e-6
+        p_CSE = p_break + utils.cumtrapz(cs2_CSE * mu_CSE, n_CSE) + 1e-6
+        e_CSE = e_break + utils.cumtrapz(mu_CSE, n_CSE) + 1e-6
+        
+        # Combine metamodel and CSE data
+        n = jnp.concatenate((n_metamodel, n_CSE))
+        p = jnp.concatenate((p_metamodel, p_CSE))
+        e = jnp.concatenate((e_metamodel, e_CSE))
+        
+        # TODO: let's decide whether we want to save cs2 and mu or just use them for computation and then discard them.
+        mu = jnp.concatenate((mu_metamodel, mu_CSE))
+        cs2 = jnp.concatenate((cs2_metamodel, cs2_CSE))
+        
+        # # FIXME: this is pretty experimental, but we have duplicates which will break TOV solver but are hard to remove in a JIT-compatible manner. Note that we should perhaps do something similar in the metamodel EOS. 
+        
+        # for array_to_check in [n, p, e]:
+        #     indices = jnp.where(jnp.diff(array_to_check) <= 0.0)[0][0]
+        #     print(indices)
+            
+        #     print(f"n at duplicates +/- 1: {n[indices-1:indices+1] /0.16} nsat")
+        # n = jnp.unique(n)
+        # e = jnp.unique(e)
+        # p = jnp.unique(p)
+
+        ns, ps, hs, es, dloge_dlogps = self.interpolate_eos(n, p, e)
+        
+        return ns, ps, hs, es, dloge_dlogps, mu, cs2
   
 
 def locate_lowest_non_causal_point(cs2):
