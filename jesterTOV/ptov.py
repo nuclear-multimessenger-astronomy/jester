@@ -70,8 +70,8 @@ def tov_ode(h, y, eos):
     C1 = 2.0 / r + A * (2.0 * m / (r * r) + 4.0 * jnp.pi * r * (p - e))
     C0 = A * (
         -6 / (r * r)
-        + 4.0 * jnp.pi * (e + p) * dedp / (1.0 - dsigmadp)
-        + 4.0 * jnp.pi * (5.0 * e + 9.0 * p)
+        + 4.0 * jnp.pi * (e + p) * (1.0 + dedp) / (1.0 - dsigmadp)
+        + 4.0 * jnp.pi * (4.0 * e + 8.0 * p)
         + 16.0 * jnp.pi * sigma
     ) - jnp.power(
             2.0 * (m + 4.0 * jnp.pi * r * r * r * p) / (r * (r - 2.0 * m)),
