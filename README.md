@@ -27,4 +27,16 @@ We currently provided two example notebooks in the `examples` folder:
 
 ## Acknowledgements
 
-We'll put a link to the arXiv paper once it's up. Other than that, feel free to star the repo to support our work!
+If you use `jester` in your work, please cite our paper!
+```
+@article{Wouters:2025zju,
+    author = "Wouters, Thibeau and Pang, Peter T. H. and Koehn, Hauke and Rose, Henrik and Somasundaram, Rahul and Tews, Ingo and Dietrich, Tim and Van Den Broeck, Chris",
+    title = "{Leveraging differentiable programming in the inverse problem of neutron stars}",
+    eprint = "2504.15893",
+    archivePrefix = "arXiv",
+    primaryClass = "astro-ph.HE",
+    reportNumber = "LA-UR-25-23486",
+    month = "4",
+    year = "2025"
+}
+```
