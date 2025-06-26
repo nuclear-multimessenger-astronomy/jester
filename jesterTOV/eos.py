@@ -169,36 +169,72 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         Initialize the meta-model EOS with nuclear empirical parameters.
 
         The meta-model approach parameterizes nuclear matter using empirical parameters
-        measured from finite nuclei and infinite nuclear matter calculations.
+        measured from finite nuclei and infinite nuclear matter calculations. This
+        implementation combines a realistic crust model with a meta-model description
+        of the core using nuclear empirical parameters (NEPs).
 
         **Reference:** Margueron et al., Phys. Rev. C 103, 045803 (2021)
+
+        **Physical Framework:**
+        The meta-model decomposes the energy density as:
+        
+        .. math::
+            \varepsilon(n, \delta) = \varepsilon_{\mathrm{kin}}(n, \delta) + \varepsilon_{\mathrm{pot}}(n, \delta)
+
+        where :math:`\delta = (n_n - n_p)/n` is the isospin asymmetry parameter.
 
         Args:
             kappas (tuple[Float, Float, Float, Float, Float, Float], optional):
                 Meta-model expansion coefficients :math:`(\kappa_{\mathrm{sat}}, \kappa_{\mathrm{sat2}}, \kappa_{\mathrm{sat3}}, \kappa_{\mathrm{NM}}, \kappa_{\mathrm{NM2}}, \kappa_{\mathrm{NM3}})`.
-                Controls the density dependence of kinetic energy corrections. Defaults to (0.0, 0.0, 0.0, 0.0, 0.0, 0.0).
+                Controls the density dependence of kinetic energy corrections in the Thomas-Fermi gas approximation.
+                These parameters modify the kinetic energy beyond the non-relativistic limit.
+                Defaults to (0.0, 0.0, 0.0, 0.0, 0.0, 0.0).
             v_nq (list[float], optional):
-                Quartic isospin coefficients for symmetry energy expansion. Defaults to [0.0, 0.0, 0.0, 0.0, 0.0].
+                Quartic isospin coefficients :math:`v_{\mathrm{nq},\alpha}` for symmetry energy expansion up to :math:`\delta^4` terms.
+                These control the high-order isospin dependence of the potential energy contribution.
+                Defaults to [0.0, 0.0, 0.0, 0.0, 0.0].
             b_sat (Float, optional):
-                Saturation parameter controlling potential energy cutoff. Defaults to 17.0.
+                Saturation parameter :math:`b_{\mathrm{sat}}` controlling potential energy cutoff function.
+                Higher values lead to sharper exponential cutoffs at high density. Defaults to 17.0.
             b_sym (Float, optional):
-                Symmetry parameter for isospin-dependent cutoff. Defaults to 25.0.
+                Symmetry parameter :math:`b_{\mathrm{sym}}` for isospin-dependent cutoff corrections.
+                Modifies the cutoff parameter as :math:`b = b_{\mathrm{sat}} + b_{\mathrm{sym}} \delta^2`. Defaults to 25.0.
             nsat (Float, optional):
-                Nuclear saturation density :math:`n_0` [:math:`\mathrm{fm}^{-3}`]. Defaults to 0.16.
+                Nuclear saturation density :math:`n_0` [:math:`\mathrm{fm}^{-3}`]. The density at which
+                symmetric nuclear matter reaches its minimum energy per nucleon. Defaults to 0.16.
             nmin_MM_nsat (Float, optional):
-                Starting density for meta-model region [:math:`n_0` units]. Defaults to 0.75.
+                Starting density for meta-model region as fraction of :math:`n_0`.
+                Must be above the crust-core transition density. Defaults to 0.75 (= 0.12/0.16).
             nmax_nsat (Float, optional):
-                Maximum density for EOS construction [:math:`n_0` units]. Defaults to 12.
+                Maximum density for EOS construction in units of :math:`n_0`.
+                Determines the high-density reach of the neutron star model. Defaults to 12.
             ndat (Int, optional):
-                Number of density points for meta-model region. Defaults to 200.
+                Number of density points for meta-model region discretization.
+                Higher values provide smoother interpolation at computational cost. Defaults to 200.
             crust_name (str, optional):
-                Crust model name or file path. Defaults to 'DH'.
+                Crust model name (e.g., 'DH', 'BPS') or path to custom .npz file containing crust EOS data.
+                The crust provides low-density EOS data below nuclear saturation. Defaults to 'DH'.
             max_n_crust_nsat (Float, optional):
-                Maximum crust density [:math:`n_0` units]. Defaults to 0.5.
+                Maximum crust density as fraction of :math:`n_0`. Defines the crust-core
+                transition region where spline matching occurs. Defaults to 0.5.
             ndat_spline (Int, optional):
-                Points for crust-core transition spline. Defaults to 10.
+                Number of points for smooth spline interpolation across crust-core transition.
+                Ensures thermodynamic consistency and causality preservation. Defaults to 10.
             proton_fraction (bool | float | None, optional):
-                Proton fraction treatment: None for :math:`\beta`-equilibrium, float for fixed value.
+                Proton fraction treatment strategy:
+                
+                - None: Calculate :math:`\beta`-equilibrium (charge neutrality + weak equilibrium)
+                - float: Use fixed proton fraction value throughout the star
+                - bool: Use simplified uniform composition model
+                
+                :math:`\beta`-equilibrium is the physical condition for neutron star matter. Defaults to None.
+
+        Note:
+            The meta-model uses a Thomas-Fermi kinetic energy approximation with relativistic
+            corrections controlled by the :math:`\kappa` parameters, combined with a potential
+            energy expansion around saturation density with an exponential cutoff at high densities.
+            This approach provides a flexible framework for exploring nuclear physics uncertainties
+            in neutron star structure calculations.
         """
 
         # Save as attributes
@@ -765,7 +801,17 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
 
 class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
     r"""
-    MetaModel_with_CSE_EOS_model is a class to interpolate EOS data with a meta-model and using the CSE.
+    Meta-model EOS combined with piecewise speed-of-sound extensions (CSE).
+
+    This class extends the meta-model approach by allowing for piecewise-constant
+    speed-of-sound extensions at high densities. This is useful for modeling
+    phase transitions or exotic matter components in neutron star cores that
+    may not be captured by the meta-model polynomial expansions.
+
+    The EOS is constructed in two regions:
+    
+    1. **Low-to-intermediate density**: Meta-model approach (crust + core)
+    2. **High density**: Speed-of-sound extension scheme
     """
 
     def __init__(
@@ -778,19 +824,37 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         **metamodel_kwargs,
     ):
         r"""
-        Initialize the MetaModel_with_CSE_EOS_model with the provided coefficients and compute auxiliary data.
+        Initialize the MetaModel with CSE EOS combining meta-model and constant speed-of-sound extensions.
+
+        This constructor sets up a hybrid EOS that uses the meta-model approach for
+        low-to-intermediate densities and allows for user-defined constant speed-of-sound
+        extensions at high densities. The transition occurs at a break density specified
+        in the NEP dictionary during EOS construction.
 
         Args:
-            coefficient_sat (Float[Array, "n_sat_coeff"]): The coefficients for the saturation part of the metamodel part of the EOS.
-            coefficient_sym (Float[Array, "n_sym_coeff"]): The coefficients for the symmetry part of the metamodel part of the EOS.
-            nbreak (Float): The number density at the transition point between the metamodel and the CSE part of the EOS.
-            ngrids (Float[Array, "n_grid_point"]): The number densities for the CSE part of the EOS.
-            cs2grids (Float[Array, "n_grid_point"]): The speed of sound squared for the CSE part of the EOS.
-            nsat (Float, optional): Saturation density. Defaults to 0.16 fm^-3.
-            nmin (Float, optional): Starting point of densities. Defaults to 0.1 fm^-3.
-            nmax (Float, optional): End point of EOS. Defaults to 12*0.16 fm^-3, i.e. 12 nsat.
-            ndat_metamodel (Int, optional): Number of datapoints to be used for the metamodel part of the EOS. Defaults to 1000.
-            ndat_CSE (Int, optional): Number of datapoints to be used for the CSE part of the EOS. Defaults to 1000.
+            nsat (Float, optional):
+                Nuclear saturation density :math:`n_0` [:math:`\mathrm{fm}^{-3}`].
+                Reference density for the meta-model construction. Defaults to 0.16.
+            nmin_MM_nsat (Float, optional):
+                Starting density for meta-model region as fraction of :math:`n_0`.
+                Must be above crust-core transition. Defaults to 0.75 (= 0.12/0.16).
+            nmax_nsat (Float, optional):
+                Maximum density for EOS construction in units of :math:`n_0`.
+                Defines the high-density reach including CSE region. Defaults to 12.
+            ndat_metamodel (Int, optional):
+                Number of density points for meta-model region discretization.
+                Higher values give smoother meta-model interpolation. Defaults to 100.
+            ndat_CSE (Int, optional):
+                Number of density points for constant speed-of-sound extension region.
+                Controls resolution of high-density exotic matter modeling. Defaults to 100.
+            **metamodel_kwargs:
+                Additional keyword arguments passed to the underlying MetaModel_EOS_model.
+                Includes parameters like kappas, v_nq, b_sat, b_sym, crust_name, etc.
+                See MetaModel_EOS_model.__init__ for complete parameter descriptions.
+
+        See Also:
+            MetaModel_EOS_model.__init__ : Base meta-model parameters
+            construct_eos : Method that defines CSE parameters and break density
         """
 
         self.nmax = nmax_nsat * nsat
@@ -876,11 +940,23 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
 
 class MetaModel_with_peakCSE_EOS_model(Interpolate_EOS_model):
     r"""
-    MetaModel_with_peakCSE_EOS_model is a class to interpolate EOS data with a meta-model and using the CSE.
-    The parametrization of the CSE is based on the peakCSE model, which is a Gaussian peak with a logit growth rate, in order to guarantee consistency with pQCD at the highest densities.
+    Meta-model EOS with Gaussian peak Constant Speed-of-sound Extensions (peakCSE).
 
-    Args:
-        Interpolate_EOS_model (object): Base class of interpolation EOS data.
+    This class implements a sophisticated CSE parametrization based on the peakCSE model,
+    which combines a Gaussian peak structure with logistic growth to model phase transitions
+    while ensuring asymptotic consistency with perturbative QCD (pQCD) at the highest densities.
+
+    **Mathematical Framework:**
+    The speed of sound squared is parametrized as:
+
+    .. math::
+        c^2_s &= c^2_{s,{\rm break}} + \frac{\frac{1}{3} - c^2_{s,{\rm break}}}{1 + e^{-l_{\rm sig}(n - n_{\rm sig})}} + c^2_{s,{\rm peak}}e^{-\frac{1}{2}\left(\frac{n - n_{\rm peak}}{\sigma_{\rm peak}}\right)^2}
+
+    **Reference:** Greif:2018njt, arXiv:1812.08188
+
+    Note:
+        The peakCSE model provides greater physical realism than simple piecewise-constant
+        CSE by incorporating smooth transitions and theoretically motivated high-density behavior.
     """
 
     def __init__(
@@ -893,19 +969,37 @@ class MetaModel_with_peakCSE_EOS_model(Interpolate_EOS_model):
         **metamodel_kwargs,
     ):
         r"""
-        Initialize the MetaModel_with_peakCSE_EOS_model with the provided coefficients and compute auxiliary data.
+        Initialize the MetaModel with peakCSE extensions for realistic phase transition modeling.
+
+        This constructor sets up the peakCSE model that combines meta-model physics at
+        low-to-intermediate densities with sophisticated Gaussian peak + logistic growth
+        extensions at high densities, designed to model phase transitions while maintaining
+        consistency with perturbative QCD predictions.
 
         Args:
-            coefficient_sat (Float[Array, "n_sat_coeff"]): The coefficients for the saturation part of the metamodel part of the EOS.
-            coefficient_sym (Float[Array, "n_sym_coeff"]): The coefficients for the symmetry part of the metamodel part of the EOS.
-            nbreak (Float): The number density at the transition point between the metamodel and the CSE part of the EOS.
-            ngrids (Float[Array, "n_grid_point"]): The number densities for the CSE part of the EOS.
-            cs2grids (Float[Array, "n_grid_point"]): The speed of sound squared for the CSE part of the EOS.
-            nsat (Float, optional): Saturation density. Defaults to 0.16 fm^-3.
-            nmin (Float, optional): Starting point of densities. Defaults to 0.1 fm^-3.
-            nmax (Float, optional): End point of EOS. Defaults to 12*0.16 fm^-3, i.e. 12 nsat.
-            ndat_metamodel (Int, optional): Number of datapoints to be used for the metamodel part of the EOS. Defaults to 1000.
-            ndat_CSE (Int, optional): Number of datapoints to be used for the CSE part of the EOS. Defaults to 1000.
+            nsat (Float, optional):
+                Nuclear saturation density :math:`n_0` [:math:`\mathrm{fm}^{-3}`].
+                Reference density for the meta-model construction. Defaults to 0.16.
+            nmin_MM_nsat (Float, optional):
+                Starting density for meta-model region as fraction of :math:`n_0`.
+                Must be above crust-core transition. Defaults to 0.75 (= 0.12/0.16).
+            nmax_nsat (Float, optional):
+                Maximum density for EOS construction in units of :math:`n_0`.
+                Should extend to densities where pQCD limit is approached. Defaults to 12.
+            ndat_metamodel (Int, optional):
+                Number of density points for meta-model region discretization.
+                Higher values give smoother meta-model interpolation. Defaults to 100.
+            ndat_CSE (Int, optional):
+                Number of density points for peakCSE region discretization.
+                Controls resolution of phase transition and pQCD approach modeling. Defaults to 100.
+            **metamodel_kwargs:
+                Additional keyword arguments passed to the underlying MetaModel_EOS_model.
+                Includes parameters like kappas, v_nq, b_sat, b_sym, crust_name, etc.
+                See MetaModel_EOS_model.__init__ for complete parameter descriptions.
+
+        See Also:
+            MetaModel_EOS_model.__init__ : Base meta-model parameters
+            construct_eos : Method that defines peakCSE parameters and break density
         """
 
         # TODO: align with new metamodel code
@@ -917,6 +1011,44 @@ class MetaModel_with_peakCSE_EOS_model(Interpolate_EOS_model):
         self.metamodel_kwargs = metamodel_kwargs
 
     def construct_eos(self, NEP_dict: dict, peakCSE_dict: dict):
+        r"""
+        Construct the complete EOS using meta-model + peakCSE extensions.
+
+        This method builds the full EOS by combining the meta-model approach with
+        peakCSE extensions that model phase transitions through Gaussian peaks
+        and approach the pQCD conformal limit at high densities.
+
+        Args:
+            NEP_dict (dict): Nuclear empirical parameters for meta-model construction.
+                Must include 'nbreak' key specifying the transition density between
+                meta-model and peakCSE regions. See MetaModel_EOS_model.construct_eos
+                for complete NEP parameter descriptions.
+            peakCSE_dict (dict): peakCSE model parameters defining the high-density behavior:
+                
+                - **gaussian_peak** (float): Amplitude :math:`A` of the Gaussian peak
+                - **gaussian_mu** (float): Peak location :math:`\mu` [:math:`\mathrm{fm}^{-3}`]  
+                - **gaussian_sigma** (float): Peak width :math:`\sigma` [:math:`\mathrm{fm}^{-3}`]
+                - **logit_growth_rate** (float): Growth rate :math:`k` for pQCD approach
+                - **logit_midpoint** (float): Midpoint density :math:`n_{\mathrm{mid}}` for logistic transition
+
+        Returns:
+            tuple: Complete EOS data containing:
+            
+                - **ns**: Number densities [geometric units]
+                - **ps**: Pressures [geometric units] 
+                - **hs**: Specific enthalpies [geometric units]
+                - **es**: Energy densities [geometric units]
+                - **dloge_dlogps**: Logarithmic derivative :math:`\frac{d\ln\varepsilon}{d\ln p}`
+                - **mu**: Chemical potential [geometric units]
+                - **cs2**: Speed of sound squared including peakCSE structure
+
+        Note:
+            The peakCSE speed of sound follows:
+            :math:`c^2_s &= c^2_{s,{\rm break}} + \frac{\frac{1}{3} - c^2_{s,{\rm break}}}{1 + e^{-l_{\rm sig}(n - n_{\rm sig})}} + c^2_{s,{\rm peak}}e^{-\frac{1}{2}\left(\frac{n - n_{\rm peak}}{\sigma_{\rm peak}}\right)^2}`
+            
+            This ensures smooth transitions, realistic phase transition modeling,
+            and asymptotic consistency with the pQCD conformal limit :math:`c_s^2 = 1/3`.
+        """
 
         # Initializate the MetaModel part up to n_break
         metamodel = MetaModel_EOS_model(
