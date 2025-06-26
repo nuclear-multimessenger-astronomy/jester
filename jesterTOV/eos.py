@@ -124,7 +124,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         max_n_crust_nsat: Float = 0.5,
         ndat_spline: Int = 10,
         # proton fraction
-        proton_fraction: bool | float = None,
+        proton_fraction: bool | float | None = None,
     ):
         """
         Initialize the MetaModel_EOS_model with the provided coefficients and compute auxiliary data.
@@ -425,28 +425,28 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
     def compute_x(self, n: Array):
         return (n - self.nsat) / (3 * self.nsat)
 
-    def compute_b(self, delta: Array):
+    def compute_b(self, delta: Array | float):
         return self.b_sat + self.b_sym * delta**2
 
-    def compute_f_1(self, delta: Array):
+    def compute_f_1(self, delta: Array | float):
         return (1 + delta) ** (5 / 3) + (1 - delta) ** (5 / 3)
 
-    def compute_f_star(self, delta: Array):
+    def compute_f_star(self, delta: Array | float):
         return (self.kappa_sat + self.kappa_sym * delta) * (1 + delta) ** (5 / 3) + (
             self.kappa_sat - self.kappa_sym * delta
         ) * (1 - delta) ** (5 / 3)
 
-    def compute_f_star2(self, delta: Array):
+    def compute_f_star2(self, delta: Array | float):
         return (self.kappa_sat2 + self.kappa_sym2 * delta) * (1 + delta) ** (5 / 3) + (
             self.kappa_sat2 - self.kappa_sym2 * delta
         ) * (1 - delta) ** (5 / 3)
 
-    def compute_f_star3(self, delta: Array):
+    def compute_f_star3(self, delta: Array | float):
         return (self.kappa_sat3 + self.kappa_sym3 * delta) * (1 + delta) ** (5 / 3) + (
             self.kappa_sat3 - self.kappa_sym3 * delta
         ) * (1 - delta) ** (5 / 3)
 
-    def compute_v(self, v_sat: Array, v_sym2: Array, delta: Array) -> Array:
+    def compute_v(self, v_sat: Array, v_sym2: Array, delta: Array | float) -> Array:
         return jnp.array(
             [
                 v_sat[alpha] + v_sym2[alpha] * delta**2 + self.v_nq[alpha] * delta**4
@@ -482,7 +482,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
 
     def esym(self, coefficient_sym: list, x: Array):
         # TODO: change this to be self-consistent: see Rahul's approach for that.
-        return jnp.polyval(coefficient_sym[::-1], x)
+        return jnp.polyval(jnp.array(coefficient_sym[::-1]), x)
 
     def compute_pressure(
         self,
@@ -536,7 +536,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         p: Array,
         e: Array,
         x: Array,
-        delta: Array,
+        delta: Array | float,
         f_1: Array,
         f_star: Array,
         f_star2: Array,

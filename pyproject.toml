@@ -39,6 +39,13 @@ classifiers = [
 [project.optional-dependencies]
 test = ["pytest>=7.0", "pytest-cov>=4.0", "pytest-xdist>=3.0", "hypothesis>=6.0"]
 dev = ["pytest>=7.0", "pytest-cov>=4.0", "pytest-xdist>=3.0", "hypothesis>=6.0", "pre-commit"]
+docs = [
+    "sphinx>=7.0", 
+    "sphinx-rtd-theme>=1.0",
+    "nbsphinx>=0.9",
+    "sphinx-autodoc-typehints>=1.12",
+    "myst-parser>=2.0"
+]
 
 [tool.ruff]
 extend-exclude = ["examples/"]

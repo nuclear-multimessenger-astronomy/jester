@@ -131,7 +131,7 @@ def interp_in_logspace(x, xs, ys):
 
 def limit_by_MTOV(
     pc: Array, m: Array, r: Array, l: Array
-) -> tuple[Array, Array, Array]:
+) -> tuple[Array, Array, Array, Array]:
     """
     Limits the M, R and Lambda curves to be below MTOV in a jit-friendly manner (i.e., static shape sizes).
     The idea now is to feed this into some routine that creates an interpolation out of this, which then uses jnp.unique to get rid of these duplicates
@@ -214,7 +214,7 @@ def calculate_rest_mass_density(e: Float[Array, "n"], p: Float[Array, "n"]):
         return jnp.interp(e_val, e, p)
 
     # Define the ODE: drho/de = rho / (p + e)
-    def rhs(t, rho):
+    def rhs(t, rho, args):
         p_val = p_interp(t)
         return rho / (p_val + t)
 

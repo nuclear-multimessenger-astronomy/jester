@@ -3,7 +3,7 @@ Small example/utility file to convert existing crust files with other units to t
 """
 
 import numpy as np
-from joseTOV import utils
+from jesterTOV import utils
 from scipy.interpolate import interp1d
 
 
@@ -29,8 +29,8 @@ def convert_DH_crust(
     # Interpolate the curves if desired
     if interpolate:
         n_interp = np.linspace(n[0], n[n < max_n_crust][-1], interpolation_ndat)
-        e = interp1d(n, e, kind="cubic", fill_value="extrapolate")(n_interp)
-        p = interp1d(n, p, kind="cubic", fill_value="extrapolate")(n_interp)
+        e = interp1d(n, e, kind="cubic", bounds_error=False)(n_interp)
+        p = interp1d(n, p, kind="cubic", bounds_error=False)(n_interp)
         n = n_interp
 
     # Save:
