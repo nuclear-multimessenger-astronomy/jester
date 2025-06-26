@@ -178,10 +178,10 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         self.ns_crust, self.ps_crust, self.es_crust = ns_crust[mask], ps_crust[mask], es_crust[mask]
         
         self.mu_lowest = (es_crust[0] + ps_crust[0]) / ns_crust[0]
-        self.cs2_crust = jnp.gradient(ps_crust, es_crust)
+        self.cs2_crust = jnp.gradient(self.ps_crust, self.es_crust)
         
         # Make sure the metamodel starts above the crust
-        self.max_n_crust = ns_crust[-1]
+        self.max_n_crust = self.ns_crust[-1]
         
         # Create density arrays
         self.nmax = nmax_nsat * self.nsat

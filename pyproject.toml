@@ -18,6 +18,7 @@ requires-python = ">=3.9, <=3.12"
 license = {file = "LICENSE"}
 urls = {repository = "https://github.com/nuclear-multimessenger-astronomy/jester"}
 dependencies = ["jax>=0.4.23", "jaxtyping>=0.2.24", "typing_extensions>=4.5.0", "diffrax>=0.5.0", "interpax"]
+
 classifiers = [
     "Programming Language :: Python :: 3",
     'Programming Language :: Python :: 3.9',
@@ -35,6 +36,10 @@ classifiers = [
     'Operating System :: MacOS',
 ]
 
+[project.optional-dependencies]
+test = ["pytest>=7.0", "pytest-cov>=4.0", "pytest-xdist>=3.0", "hypothesis>=6.0"]
+dev = ["pytest>=7.0", "pytest-cov>=4.0", "pytest-xdist>=3.0", "hypothesis>=6.0", "pre-commit"]
+
 [tool.ruff]
 ignore = ["F722"]
 
@@ -50,8 +55,27 @@ include = ["jesterTOV"]
 
 # pyproject.toml
 [tool.pytest.ini_options]
-minversion = "6.0"
-addopts = "-ra -q"
-testpaths = [
-    "tests/*"
+minversion = "7.0"
+addopts = "-ra -q --strict-markers --strict-config"
+testpaths = ["tests"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests"
+]
+
+[tool.coverage.run]
+source = ["jesterTOV"]
+omit = ["*/tests/*", "*/examples/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:"
 ]
