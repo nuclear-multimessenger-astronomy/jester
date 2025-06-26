@@ -1,11 +1,11 @@
 [![CI](https://github.com/nuclear-multimessenger-astronomy/jester/actions/workflows/ci.yml/badge.svg)](https://github.com/nuclear-multimessenger-astronomy/jester/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/nuclear-multimessenger-astronomy/jester/branch/main/graph/badge.svg)](https://codecov.io/gh/nuclear-multimessenger-astronomy/jester)
-[![Documentation Status](https://readthedocs.org/projects/jester/badge/?version=latest)](https://jestertov.readthedocs.io/en/latest/)
+[![Documentation Status](https://readthedocs.org/projects/jestertov/badge/?version=latest)](https://jestertov.readthedocs.io/en/latest/)
 [![arXiv](https://img.shields.io/badge/arXiv-2504.15893-b31b1b.svg)](https://arxiv.org/abs/2504.15893)
 
 # JESTER
 
-JAX-accelerated neutron star physics with automatic differentiation support.
+JAX-accelerated nuclear equation of state code and TOV solver -- with support for automatic differentiation!
 
 ## Installation
 
@@ -18,19 +18,11 @@ For GPU support:
 pip install "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 ```
 
-## Quick Example
-
-```python
-import jesterTOV as jtov
-eos = jtov.eos.MetaModel_EOS_model()
-masses, radii = eos.M_R_curve()
-```
-
 ## Documentation
 
-📚 **[Read the full documentation →](https://jester.readthedocs.io/)**
+📚 **[Read the full documentation →](https://jestertov.readthedocs.io/en/latest/)**
 
-## Examples
+## Example notebooks
 
 - `examples/eos_tov.ipynb`: Basic EOS and TOV solving
 - `examples/automatic_differentiation.ipynb`: Gradient-based optimization
