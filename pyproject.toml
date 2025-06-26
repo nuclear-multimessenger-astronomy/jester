@@ -11,8 +11,9 @@ authors = [
   {name = "Peter T. H. Pang", email = "tsunhopang@gmail.com"},
   {name = "Thibeau Wouters", email = "thibeauwouters@gmail.com"}
 ]
-version = "0.0.1"
-description = "Jax-based EOS and TOV solver"
+version = "0.1.0"
+description = "JAX-accelerated nuclear equation of state code and TOV solver with automatic differentiation"
+keywords = ["neutron-stars", "eos", "tov", "jax", "physics", "astronomy", "automatic-differentiation"]
 readme = "README.md"
 requires-python = ">=3.10, <3.13"
 license = {file = "LICENSE"}
@@ -21,9 +22,10 @@ dependencies = ["jax>=0.4.23", "jaxtyping>=0.2.24", "typing_extensions>=4.5.0", 
 
 classifiers = [
     "Programming Language :: Python :: 3",
-    'Programming Language :: Python :: 3.9',
     'Programming Language :: Python :: 3.10',
     'Programming Language :: Python :: 3.11',
+    'Programming Language :: Python :: 3.12',
+    'License :: OSI Approved :: MIT License',
     'Intended Audience :: Science/Research',
     'Intended Audience :: End Users/Desktop',
     'Intended Audience :: Developers',
