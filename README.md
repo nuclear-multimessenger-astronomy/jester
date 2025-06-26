@@ -1,7 +1,8 @@
-# JESTER - Jax-based EoS and Tov solvER
-
 [![CI](https://github.com/nuclear-multimessenger-astronomy/jester/actions/workflows/ci.yml/badge.svg)](https://github.com/nuclear-multimessenger-astronomy/jester/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/nuclear-multimessenger-astronomy/jester/branch/main/graph/badge.svg)](https://codecov.io/gh/nuclear-multimessenger-astronomy/jester)
+[![arXiv](https://img.shields.io/badge/arXiv-2504.15893-b31b1b.svg)](https://arxiv.org/abs/2504.15893)
+
+# JESTER - Jax-based EoS and Tov solvER
 
 **J**ax-based **E**o**S** and **T**ov solv**ER** (JESTER) consists of a set of tools for solving the TOV equation with a given equation-of-state (EOS).
 
