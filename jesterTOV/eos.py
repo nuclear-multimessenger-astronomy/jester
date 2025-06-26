@@ -475,7 +475,9 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
 
         # Concatenate the arrays
         n = jnp.concatenate([self.ns_crust, self.n_connection, self.n_metamodel])
-        cs2 = jnp.concatenate([jnp.array(self.cs2_crust), cs2_connection, cs2_metamodel])
+        cs2 = jnp.concatenate(
+            [jnp.array(self.cs2_crust), cs2_connection, cs2_metamodel]
+        )
 
         # Make sure the cs2 stays within the physical limits
         cs2 = jnp.clip(cs2, 1e-5, 1.0)
