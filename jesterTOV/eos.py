@@ -4,7 +4,7 @@ import jax.numpy as jnp
 from jax.scipy.special import factorial
 from jaxtyping import Array, Float, Int
 
-from . import utils, tov
+from . import utils, tov, ptov
 
 ##############
 ### CRUSTS ###
@@ -66,6 +66,8 @@ class Interpolate_EOS_model(object):
         ns = jnp.array(n * utils.fm_inv3_to_geometric)
         ps = jnp.array(p * utils.MeV_fm_inv3_to_geometric)
         es = jnp.array(e * utils.MeV_fm_inv3_to_geometric)
+
+        #rhos = utils.calculate_rest_mass_density(es, ps)
         
         hs = utils.cumtrapz(ps / (es + ps), jnp.log(ps)) # enthalpy
         dloge_dlogps = jnp.diff(jnp.log(e)) / jnp.diff(jnp.log(p))
@@ -104,7 +106,9 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         # crust parameters
         crust_name: str = "DH",
         max_n_crust_nsat: Float = 0.5,
-        ndat_spline: Int = 10
+        ndat_spline: Int = 10,
+        # proton fraction
+        proton_fraction: bool | float = None
     ):
         """
         Initialize the MetaModel_EOS_model with the provided coefficients and compute auxiliary data.
@@ -136,6 +140,13 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         self.ndat = ndat
         self.max_n_crust_nsat = max_n_crust_nsat
         self.ndat_spline = ndat_spline
+
+        if isinstance(proton_fraction, float):
+            self.proton_fraction_val = proton_fraction
+            self.proton_fraction = lambda x, y: self.proton_fraction_val
+            print(f"Proton fraction fixed to {self.proton_fraction_val}")
+        else:
+            self.proton_fraction = lambda x, y: self.compute_proton_fraction(x, y)
         
         # Constructions
         assert len(kappas) == 6, "kappas must be a tuple of 6 values: kappa_sat, kappa_sat2, kappa_sat3, kappa_NM, kappa_NM2, kappa_NM3"
@@ -229,7 +240,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         
         # Auxiliaries first
         x = self.compute_x(self.n_metamodel)
-        proton_fraction = self.compute_proton_fraction(coefficient_sym, self.n_metamodel)
+        proton_fraction = self.proton_fraction(coefficient_sym, self.n_metamodel)
         delta = 1 - 2 * proton_fraction
         
         f_1 = self.compute_f_1(delta)
@@ -580,7 +591,151 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         ns, ps, hs, es, dloge_dlogps = self.interpolate_eos(n, p, e)
         
         return ns, ps, hs, es, dloge_dlogps, mu, cs2
-    
+
+
+class MetaModel_with_peakCSE_EOS_model(Interpolate_EOS_model):
+    """
+    MetaModel_with_peakCSE_EOS_model is a class to interpolate EOS data with a meta-model and using the CSE.
+
+    Args:
+        Interpolate_EOS_model (object): Base class of interpolation EOS data.
+    """
+    def __init__(
+        self,
+        nsat: Float =  0.16,
+        nmin_MM_nsat: Float = 0.12 / 0.16,
+        nmax_nsat: Float = 12,
+        ndat_metamodel: Int = 100,
+        ndat_CSE: Int = 100,
+        **metamodel_kwargs
+    ):
+        """
+        Initialize the MetaModel_with_CSE_EOS_model with the provided coefficients and compute auxiliary data.
+
+        Args:
+            coefficient_sat (Float[Array, "n_sat_coeff"]): The coefficients for the saturation part of the metamodel part of the EOS.
+            coefficient_sym (Float[Array, "n_sym_coeff"]): The coefficients for the symmetry part of the metamodel part of the EOS.
+            nbreak (Float): The number density at the transition point between the metamodel and the CSE part of the EOS.
+            ngrids (Float[Array, "n_grid_point"]): The number densities for the CSE part of the EOS.
+            cs2grids (Float[Array, "n_grid_point"]): The speed of sound squared for the CSE part of the EOS.
+            nsat (Float, optional): Saturation density. Defaults to 0.16 fm^-3.
+            nmin (Float, optional): Starting point of densities. Defaults to 0.1 fm^-3.
+            nmax (Float, optional): End point of EOS. Defaults to 12*0.16 fm^-3, i.e. 12 nsat.
+            ndat_metamodel (Int, optional): Number of datapoints to be used for the metamodel part of the EOS. Defaults to 1000.
+            ndat_CSE (Int, optional): Number of datapoints to be used for the CSE part of the EOS. Defaults to 1000.
+        """
+        
+        # TODO: align with new metamodel code
+        self.nmax = nmax_nsat * nsat
+        self.ndat_CSE = ndat_CSE
+        self.nsat = nsat
+        self.nmin_MM_nsat = nmin_MM_nsat
+        self.ndat_metamodel = ndat_metamodel
+        self.metamodel_kwargs = metamodel_kwargs
+
+    def construct_eos(self,
+                      NEP_dict: dict,
+                      peakCSE_dict: dict):
+        
+        # Initializate the MetaModel part up to n_break
+        metamodel = MetaModel_EOS_model(nsat = self.nsat,
+                                        nmin_MM_nsat = self.nmin_MM_nsat,
+                                        nmax_nsat = NEP_dict["nbreak"] / self.nsat,
+                                        ndat = self.ndat_metamodel,
+                                        **self.metamodel_kwargs
+        )
+        
+        # Construct the metamodel part:
+        mm_output = metamodel.construct_eos(NEP_dict)
+        n_metamodel, p_metamodel, _, e_metamodel, _, mu_metamodel, cs2_metamodel = mm_output
+        
+        # Convert units back for CSE initialization
+        n_metamodel = n_metamodel / utils.fm_inv3_to_geometric
+        p_metamodel = p_metamodel / utils.MeV_fm_inv3_to_geometric
+        e_metamodel = e_metamodel / utils.MeV_fm_inv3_to_geometric
+        
+        # Get values at break density
+        p_break   = jnp.interp(NEP_dict["nbreak"], n_metamodel, p_metamodel)
+        e_break   = jnp.interp(NEP_dict["nbreak"], n_metamodel, e_metamodel)
+        mu_break  = jnp.interp(NEP_dict["nbreak"], n_metamodel, mu_metamodel)
+        cs2_break = jnp.interp(NEP_dict["nbreak"], n_metamodel, cs2_metamodel)
+        
+        # Define the speed-of-sound of the extension portion
+        # the model is taken from arXiv:1812.08188
+        # but instead of energy density, I am using density as the input
+        cs2_extension_function = lambda x: (
+            peakCSE_dict['gaussian_peak'] * jnp.exp(
+                -0.5 * (
+                    (x - peakCSE_dict['gaussian_mu']) ** 2
+                    / peakCSE_dict['gaussian_sigma'] ** 2
+                )
+            )
+            + cs2_break
+            + (
+                (1. / 3. - cs2_break)
+                / (
+                    1. + jnp.exp(
+                        -peakCSE_dict['logit_growth_rate']
+                        * (x - peakCSE_dict['logit_midpoint'])
+                    )
+                )
+            )
+        )
+        # Compute n, p, e for peakCSE (number densities in unit of fm^-3)
+        n_CSE = jnp.logspace(
+            jnp.log10(NEP_dict["nbreak"]), jnp.log10(self.nmax),
+            num=self.ndat_CSE
+        )
+        cs2_CSE = cs2_extension_function(n_CSE)
+        
+        # We add a very small number to avoid problems with duplicates below
+        mu_CSE = mu_break * jnp.exp(utils.cumtrapz(cs2_CSE / n_CSE, n_CSE)) + 1e-6
+        p_CSE = p_break + utils.cumtrapz(cs2_CSE * mu_CSE, n_CSE) + 1e-6
+        e_CSE = e_break + utils.cumtrapz(mu_CSE, n_CSE) + 1e-6
+        
+        # Combine metamodel and CSE data
+        n = jnp.concatenate((n_metamodel, n_CSE))
+        p = jnp.concatenate((p_metamodel, p_CSE))
+        e = jnp.concatenate((e_metamodel, e_CSE))
+        
+        # TODO: let's decide whether we want to save cs2 and mu or just use them for computation and then discard them.
+        mu = jnp.concatenate((mu_metamodel, mu_CSE))
+        cs2 = jnp.concatenate((cs2_metamodel, cs2_CSE))
+        
+        # # FIXME: this is pretty experimental, but we have duplicates which will break TOV solver but are hard to remove in a JIT-compatible manner. Note that we should perhaps do something similar in the metamodel EOS. 
+        
+        # for array_to_check in [n, p, e]:
+        #     indices = jnp.where(jnp.diff(array_to_check) <= 0.0)[0][0]
+        #     print(indices)
+            
+        #     print(f"n at duplicates +/- 1: {n[indices-1:indices+1] /0.16} nsat")
+        # n = jnp.unique(n)
+        # e = jnp.unique(e)
+        # p = jnp.unique(p)
+
+        ns, ps, hs, es, dloge_dlogps = self.interpolate_eos(n, p, e)
+        
+        return ns, ps, hs, es, dloge_dlogps, mu, cs2
+  
+
+def locate_lowest_non_causal_point(cs2):
+        # Create a boolean mask where the value equals 1
+        mask = cs2 >= 1.
+
+        # If no element equals 1, we want to return -1 or some indicator
+        # First, check if any element equals 1
+        any_ones = jnp.any(mask)
+
+        # Find the index of the first True value in the mask
+        # argmax returns the first index of the maximum value
+        # Since our mask is boolean, the first True will be the first 1
+        indices = jnp.arange(len(cs2))
+        masked_indices = jnp.where(mask, indices, len(cs2))
+        first_index = jnp.min(masked_indices)
+
+        # Return -1 if no element equals 1, otherwise return the found index
+        return jnp.where(any_ones, first_index, -1)
+
         
 def construct_family(eos: tuple,
                      ndat: Int=50, 
@@ -603,8 +758,9 @@ def construct_family(eos: tuple,
     # calculate the pc_min
     pc_min = utils.interp_in_logspace(min_nsat * 0.16 * utils.fm_inv3_to_geometric, ns, ps)
 
-    # end at pc at pmax
-    pc_max = eos_dict["p"][-1]
+    # end at pc at pmax at which it is causal
+    cs2 = ps / es / dloge_dlogps
+    pc_max = eos_dict["p"][locate_lowest_non_causal_point(cs2)]
 
     pcs = jnp.logspace(jnp.log10(pc_min), jnp.log10(pc_max), num=ndat)
 
@@ -623,6 +779,78 @@ def construct_family(eos: tuple,
     # calculate the tidal deformability
     lambdas = 2.0 / 3.0 * ks * jnp.power(cs, -5.0)
     
+    # Limit masses to be below MTOV
+    pcs, ms, rs, lambdas = utils.limit_by_MTOV(pcs, ms, rs, lambdas)
+    
+    # Get a mass grid and interpolate, since we might have dropped provided some duplicate points
+    mass_grid = jnp.linspace(jnp.min(ms), jnp.max(ms), ndat)
+    rs = jnp.interp(mass_grid, ms, rs)
+    lambdas = jnp.interp(mass_grid, ms, lambdas)
+    pcs = jnp.interp(mass_grid, ms, pcs)
+    
+    ms = mass_grid
+
+    return jnp.log(pcs), ms, rs, lambdas
+
+
+def construct_family_nonGR(
+    eos: tuple,
+    ndat: Int=50, 
+    min_nsat: Float=2) -> tuple[Float[Array, "ndat"], Float[Array, "ndat"], Float[Array, "ndat"], Float[Array, "ndat"]]:
+    """
+    Solve the post-TOV equations and generate the M, R and Lambda curves.
+
+    Args:
+        eos (tuple): Tuple of the EOS data (ns, ps, hs, es).
+        ndat (int, optional): Number of datapoints used when constructing the central pressure grid. Defaults to 50.
+        min_nsat (int, optional): Starting density for central pressure in numbers of nsat (assumed to be 0.16 fm^-3). Defaults to 2.
+
+    Returns:
+        tuple[Float[Array, "ndat"], Float[Array, "ndat"], Float[Array, "ndat"], Float[Array, "ndat"]]: log(pcs), masses in solar masses, radii in km, and dimensionless tidal deformabilities
+    """
+    # Construct the dictionary
+    ns, ps, hs, es, dloge_dlogps, \
+    alpha, beta, gamma, \
+    lambda_BL, lambda_DY, lambda_HB = eos
+    eos_dict = dict(
+        p=ps, h=hs, e=es, dloge_dlogp=dloge_dlogps,
+        alpha=alpha, beta=beta, gamma=gamma,
+        lambda_BL=lambda_BL, lambda_DY=lambda_DY, lambda_HB=lambda_HB
+    )
+    
+    # calculate the pc_min
+    pc_min = utils.interp_in_logspace(min_nsat * 0.16 * utils.fm_inv3_to_geometric, ns, ps)
+
+    # end at pc at pmax at which it is causal
+    cs2 = ps / es / dloge_dlogps
+    pc_max = eos_dict["p"][locate_lowest_non_causal_point(cs2)]
+
+    pcs = jnp.logspace(jnp.log10(pc_min), jnp.log10(pc_max), num=ndat)
+
+    def solve_single_pc(pc):
+        """Solve for single pc value"""
+        return ptov.tov_solver(eos_dict, pc)
+    ms, rs, ks = jax.vmap(solve_single_pc)(pcs)
+    
+    ### TODO: Check the timing with respect to this implementation
+    # ms, rs, ks = jnp.vectorize(
+    #     tov.tov_solver,
+    #     excluded=[
+    #         0,
+    #     ],
+    # )(eos_dict, pcs)
+
+    # calculate the compactness
+    cs = ms / rs
+
+    # convert the mass to solar mass and the radius to km
+    ms /= utils.solar_mass_in_meter
+    rs /= 1e3
+
+    # calculate the tidal deformability
+    lambdas = 2.0 / 3.0 * ks * jnp.power(cs, -5.0)
+    
+    # TODO: perhaps put a boolean here to flag whether or not to do this, or do we always want to do this?
     # Limit masses to be below MTOV
     pcs, ms, rs, lambdas = utils.limit_by_MTOV(pcs, ms, rs, lambdas)
     
