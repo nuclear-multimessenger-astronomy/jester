@@ -41,9 +41,20 @@ test = ["pytest>=7.0", "pytest-cov>=4.0", "pytest-xdist>=3.0", "hypothesis>=6.0"
 dev = ["pytest>=7.0", "pytest-cov>=4.0", "pytest-xdist>=3.0", "hypothesis>=6.0", "pre-commit"]
 
 [tool.ruff]
-ignore = ["F722"]
+extend-exclude = ["examples/"]
 
-[tool.ruff.isort]
+[tool.ruff.lint]
+ignore = [
+    "F722",  # Forward annotation false positive
+    "F821",  # Undefined name (jaxtyping dimension names)
+    "E731",  # Lambda expressions
+    "E741",  # Ambiguous variable name
+    "F841",  # Unused local variable
+    "E722",  # Bare except
+    "E402",  # Module level import not at top of file
+]
+
+[tool.ruff.lint.isort]
 combine-as-imports = true
 extra-standard-library = ["typing_extensions"]
 lines-after-imports = 2
