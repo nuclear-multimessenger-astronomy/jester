@@ -1,4 +1,4 @@
-"""
+r"""
 Tolman-Oppenheimer-Volkoff (TOV) equation solver for neutron star structure.
 
 This module provides functions to solve the TOV equations, which describe the
@@ -16,7 +16,7 @@ from diffrax import diffeqsolve, ODETerm, Dopri5, SaveAt, PIDController
 
 
 def tov_ode(h, y, eos):
-    """
+    r"""
     TOV ordinary differential equation system.
     
     This function defines the coupled ODE system for the TOV equations plus
@@ -72,7 +72,7 @@ def tov_ode(h, y, eos):
 
 
 def calc_k2(R, M, H, b):
-    """
+    r"""
     Calculate the second Love number k₂ for tidal deformability.
 
     The Love number k₂ relates the tidal deformability to the neutron star's
@@ -127,7 +127,7 @@ def calc_k2(R, M, H, b):
 
 
 def tov_solver(eos, pc):
-    """
+    r"""
     Solve the TOV equations for a given central pressure.
 
     This function integrates the TOV equations from the center of the star

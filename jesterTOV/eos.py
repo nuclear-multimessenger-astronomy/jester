@@ -15,7 +15,7 @@ CRUST_DIR = f"{DEFAULT_DIR}/crust"
 
 
 def load_crust(name: str) -> tuple[Array, Array, Array]:
-    """
+    r"""
     Load neutron star crust equation of state data from the default directory.
 
     This function loads pre-computed crust EOS data from tabulated files, supporting
@@ -59,7 +59,7 @@ def load_crust(name: str) -> tuple[Array, Array, Array]:
 
 
 class Interpolate_EOS_model(object):
-    """
+    r"""
     Base class for interpolating equation of state (EOS) data.
 
     This class provides the fundamental interpolation framework for converting
@@ -76,7 +76,7 @@ class Interpolate_EOS_model(object):
         p: Float[Array, "n_points"],
         e: Float[Array, "n_points"],
     ):
-        """
+        r"""
         Convert physical EOS quantities to geometric units and compute auxiliary quantities.
 
         This method transforms the input EOS data from nuclear physics units to geometric
@@ -121,7 +121,7 @@ class Interpolate_EOS_model(object):
 
 
 class MetaModel_EOS_model(Interpolate_EOS_model):
-    """
+    r"""
     Meta-model equation of state for nuclear matter.
 
     This class implements the meta-modeling approach for nuclear equation of state
@@ -165,7 +165,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         # proton fraction
         proton_fraction: bool | float | None = None,
     ):
-        """
+        r"""
         Initialize the meta-model EOS with nuclear empirical parameters.
 
         The meta-model approach parameterizes nuclear matter using empirical parameters
@@ -360,7 +360,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         )
 
     def construct_eos(self, NEP_dict: dict) -> tuple:
-        """
+        r"""
         Construct the complete equation of state from nuclear empirical parameters.
 
         This method builds the full EOS by combining the crust model with the
@@ -466,7 +466,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         )
 
         # Spline for speed of sound for the connection region
-        cs2_spline = jnp.append(self.cs2_crust, cs2_metamodel)
+        cs2_spline = jnp.append(jnp.array(self.cs2_crust), cs2_metamodel)
 
         cs2_connection = utils.cubic_spline(
             self.n_connection, self.ns_spline, cs2_spline
@@ -475,7 +475,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
 
         # Concatenate the arrays
         n = jnp.concatenate([self.ns_crust, self.n_connection, self.n_metamodel])
-        cs2 = jnp.concatenate([self.cs2_crust, cs2_connection, cs2_metamodel])
+        cs2 = jnp.concatenate([jnp.array(self.cs2_crust), cs2_connection, cs2_metamodel])
 
         # Make sure the cs2 stays within the physical limits
         cs2 = jnp.clip(cs2, 1e-5, 1.0)
@@ -700,7 +700,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
     def compute_proton_fraction(
         self, coefficient_sym: list, n: Array
     ) -> Float[Array, "n_points"]:
-        """
+        r"""
         Compute proton fraction from beta-equilibrium condition.
 
         This method solves the beta-equilibrium condition:
@@ -762,7 +762,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
 
 
 class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
-    """
+    r"""
     MetaModel_with_CSE_EOS_model is a class to interpolate EOS data with a meta-model and using the CSE.
     """
 
@@ -775,7 +775,7 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         ndat_CSE: Int = 100,
         **metamodel_kwargs,
     ):
-        """
+        r"""
         Initialize the MetaModel_with_CSE_EOS_model with the provided coefficients and compute auxiliary data.
 
         Args:
@@ -804,7 +804,7 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         ngrids: Float[Array, "n_grid_point"],
         cs2grids: Float[Array, "n_grid_point"],
     ) -> tuple:
-        """
+        r"""
         Construct the EOS
 
         Args:
@@ -873,7 +873,7 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
 
 
 class MetaModel_with_peakCSE_EOS_model(Interpolate_EOS_model):
-    """
+    r"""
     MetaModel_with_peakCSE_EOS_model is a class to interpolate EOS data with a meta-model and using the CSE.
     The parametrization of the CSE is based on the peakCSE model, which is a Gaussian peak with a logit growth rate, in order to guarantee consistency with pQCD at the highest densities.
 
@@ -890,7 +890,7 @@ class MetaModel_with_peakCSE_EOS_model(Interpolate_EOS_model):
         ndat_CSE: Int = 100,
         **metamodel_kwargs,
     ):
-        """
+        r"""
         Initialize the MetaModel_with_peakCSE_EOS_model with the provided coefficients and compute auxiliary data.
 
         Args:
@@ -986,24 +986,13 @@ class MetaModel_with_peakCSE_EOS_model(Interpolate_EOS_model):
         mu = jnp.concatenate((mu_metamodel, mu_CSE))
         cs2 = jnp.concatenate((cs2_metamodel, cs2_CSE))
 
-        # # FIXME: this is pretty experimental, but we have duplicates which will break TOV solver but are hard to remove in a JIT-compatible manner. Note that we should perhaps do something similar in the metamodel EOS.
-
-        # for array_to_check in [n, p, e]:
-        #     indices = jnp.where(jnp.diff(array_to_check) <= 0.0)[0][0]
-        #     print(indices)
-
-        #     print(f"n at duplicates +/- 1: {n[indices-1:indices+1] /0.16} nsat")
-        # n = jnp.unique(n)
-        # e = jnp.unique(e)
-        # p = jnp.unique(p)
-
         ns, ps, hs, es, dloge_dlogps = self.interpolate_eos(n, p, e)
 
         return ns, ps, hs, es, dloge_dlogps, mu, cs2
 
 
 def locate_lowest_non_causal_point(cs2):
-    """
+    r"""
     Find the first point where the equation of state becomes non-causal.
 
     The speed of sound squared :math:`c_s^2 = dp/d\varepsilon` must satisfy
@@ -1030,7 +1019,7 @@ def construct_family(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> tuple[
     Float[Array, "ndat"],
     Float[Array, "ndat"],
 ]:
-    """
+    r"""
     Solve the TOV equations and generate mass-radius-tidal deformability relations.
     
     This function constructs a neutron star family by solving the Tolman-Oppenheimer-Volkoff (TOV)
@@ -1106,7 +1095,7 @@ def construct_family_nonGR(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> t
     Float[Array, "ndat"],
     Float[Array, "ndat"],
 ]:
-    """
+    r"""
     Solve modified TOV equations with beyond-GR corrections.
 
     This function extends the standard TOV equations to include phenomenological

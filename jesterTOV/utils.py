@@ -1,4 +1,4 @@
-"""
+r"""
 Utility functions for neutron star physics calculations.
 
 This module provides essential utility functions for equation of state
@@ -78,7 +78,7 @@ roots_vmap = vmap(partial(jnp.roots, strip_zeros=False), in_axes=0, out_axes=0)
 
 @vmap
 def cubic_root_for_proton_fraction(coefficients):
-    """
+    r"""
     Solve cubic equation for proton fraction in beta-equilibrium.
 
     This function solves the cubic equation that arises from the
@@ -124,7 +124,7 @@ def cubic_root_for_proton_fraction(coefficients):
 
 
 def cumtrapz(y, x):
-    """
+    r"""
     Cumulatively integrate y(x) using the composite trapezoidal rule.
 
     This function performs cumulative integration using the trapezoidal rule,
@@ -163,7 +163,7 @@ def cumtrapz(y, x):
 
 
 def interp_in_logspace(x, xs, ys):
-    """
+    r"""
     Perform logarithmic interpolation.
 
     This function performs interpolation in logarithmic space, which is
@@ -196,7 +196,7 @@ def interp_in_logspace(x, xs, ys):
 def limit_by_MTOV(
     pc: Array, m: Array, r: Array, l: Array
 ) -> tuple[Array, Array, Array, Array]:
-    """
+    r"""
     Truncate neutron star family at maximum TOV mass.
 
     This function limits the mass-radius relation to the stable branch
@@ -262,7 +262,7 @@ def limit_by_MTOV(
 
 
 def cubic_spline(xq: Float[Array, "n"], xp: Float[Array, "n"], fp: Float[Array, "n"]):
-    """
+    r"""
     Cubic spline interpolation using interpax.
 
     This function creates a cubic spline interpolator through the given
@@ -285,7 +285,7 @@ def cubic_spline(xq: Float[Array, "n"], xp: Float[Array, "n"], fp: Float[Array, 
 
 
 def sigmoid(x: Array) -> Array:
-    """
+    r"""
     Sigmoid activation function.
 
     Computes the sigmoid function:
@@ -303,7 +303,7 @@ def sigmoid(x: Array) -> Array:
 
 
 def calculate_rest_mass_density(e: Float[Array, "n"], p: Float[Array, "n"]):
-    """
+    r"""
     Compute rest-mass density from energy density and pressure.
 
     This function solves the first law of thermodynamics to obtain the

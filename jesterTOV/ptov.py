@@ -1,4 +1,4 @@
-"""
+r"""
 Post-TOV (modified TOV) equation solver with beyond-GR corrections.
 
 This module extends the standard TOV equations to include phenomenological
@@ -18,7 +18,7 @@ from diffrax import diffeqsolve, ODETerm, Dopri5, SaveAt, PIDController
 
 
 def sigma_func(p, e, m, r, lambda_BL, lambda_DY, lambda_HB, gamma, alpha, beta):
-    """
+    r"""
     Compute the non-GR correction term sigma for modified TOV equations.
 
     This function implements various phenomenological modifications to
@@ -170,7 +170,7 @@ def calc_k2(R, M, H, b):
 
 
 def tov_solver(eos, pc):
-    """
+    r"""
     Solve the modified TOV equations for a given central pressure.
 
     This function integrates the modified TOV equations that include beyond-GR
