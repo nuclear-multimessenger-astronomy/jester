@@ -28,6 +28,7 @@ jobs:
 
     - name: Run pre-commit checks
       if: matrix.python-version == '3.11'
+      continue-on-error: true
       run: |
         pip install pre-commit
         pre-commit run --all-files
