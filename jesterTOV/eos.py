@@ -177,7 +177,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
 
         **Physical Framework:**
         The meta-model decomposes the energy density as:
-        
+
         .. math::
             \varepsilon(n, \delta) = \varepsilon_{\mathrm{kin}}(n, \delta) + \varepsilon_{\mathrm{pot}}(n, \delta)
 
@@ -222,11 +222,11 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
                 Ensures thermodynamic consistency and causality preservation. Defaults to 10.
             proton_fraction (bool | float | None, optional):
                 Proton fraction treatment strategy:
-                
+
                 - None: Calculate :math:`\beta`-equilibrium (charge neutrality + weak equilibrium)
                 - float: Use fixed proton fraction value throughout the star
                 - bool: Use simplified uniform composition model
-                
+
                 :math:`\beta`-equilibrium is the physical condition for neutron star matter. Defaults to None.
 
         Note:
@@ -809,7 +809,7 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
     may not be captured by the meta-model polynomial expansions.
 
     The EOS is constructed in two regions:
-    
+
     1. **Low-to-intermediate density**: Meta-model approach (crust + core)
     2. **High density**: Speed-of-sound extension scheme
     """
@@ -1024,18 +1024,18 @@ class MetaModel_with_peakCSE_EOS_model(Interpolate_EOS_model):
                 meta-model and peakCSE regions. See MetaModel_EOS_model.construct_eos
                 for complete NEP parameter descriptions.
             peakCSE_dict (dict): peakCSE model parameters defining the high-density behavior:
-                
+
                 - **gaussian_peak** (float): Amplitude :math:`A` of the Gaussian peak
-                - **gaussian_mu** (float): Peak location :math:`\mu` [:math:`\mathrm{fm}^{-3}`]  
+                - **gaussian_mu** (float): Peak location :math:`\mu` [:math:`\mathrm{fm}^{-3}`]
                 - **gaussian_sigma** (float): Peak width :math:`\sigma` [:math:`\mathrm{fm}^{-3}`]
                 - **logit_growth_rate** (float): Growth rate :math:`k` for pQCD approach
                 - **logit_midpoint** (float): Midpoint density :math:`n_{\mathrm{mid}}` for logistic transition
 
         Returns:
             tuple: Complete EOS data containing:
-            
+
                 - **ns**: Number densities [geometric units]
-                - **ps**: Pressures [geometric units] 
+                - **ps**: Pressures [geometric units]
                 - **hs**: Specific enthalpies [geometric units]
                 - **es**: Energy densities [geometric units]
                 - **dloge_dlogps**: Logarithmic derivative :math:`\frac{d\ln\varepsilon}{d\ln p}`
@@ -1045,7 +1045,7 @@ class MetaModel_with_peakCSE_EOS_model(Interpolate_EOS_model):
         Note:
             The peakCSE speed of sound follows:
             :math:`c^2_s &= c^2_{s,{\rm break}} + \frac{\frac{1}{3} - c^2_{s,{\rm break}}}{1 + e^{-l_{\rm sig}(n - n_{\rm sig})}} + c^2_{s,{\rm peak}}e^{-\frac{1}{2}\left(\frac{n - n_{\rm peak}}{\sigma_{\rm peak}}\right)^2}`
-            
+
             This ensures smooth transitions, realistic phase transition modeling,
             and asymptotic consistency with the pQCD conformal limit :math:`c_s^2 = 1/3`.
         """
