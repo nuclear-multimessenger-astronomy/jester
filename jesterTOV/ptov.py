@@ -1,4 +1,15 @@
-# this whole script is written in geometric unit
+"""
+Post-TOV (modified TOV) equation solver with beyond-GR corrections.
+
+This module extends the standard TOV equations to include phenomenological
+modifications that parameterize deviations from General Relativity. The
+modifications are implemented through additional terms in the pressure
+gradient equation.
+
+**Units:** All calculations are performed in geometric units where :math:`G = c = 1`.
+
+**Reference:** Yagi & Yunes, Phys. Rev. D 88, 023009 (2013)
+"""
 from . import utils
 import jax
 import jax.numpy as jnp
@@ -6,6 +17,36 @@ from diffrax import diffeqsolve, ODETerm, Dopri5, SaveAt, PIDController
 
 
 def sigma_func(p, e, m, r, lambda_BL, lambda_DY, lambda_HB, gamma, alpha, beta):
+    """
+    Compute the non-GR correction term sigma for modified TOV equations.
+    
+    This function implements various phenomenological modifications to
+    General Relativity that appear as additional terms in the TOV equations.
+    The corrections are parameterized by several coupling constants.
+    
+    The sigma function includes:
+    
+    - **Brans-Dicke-like**: :math:`\sigma_{\mathrm{BL}} = -\frac{\lambda_{\mathrm{BL}} r^2}{3}(\varepsilon + 3p)(\varepsilon + p)A`
+    - **Dynamical Chern-Simons**: :math:`\sigma_{\mathrm{DY}} = \lambda_{\mathrm{DY}} \frac{2m}{r} p`
+    - **Horava-like**: :math:`\sigma_{\mathrm{HB}} = -(\frac{1}{\lambda_{\mathrm{HB}}} - 1) \frac{r}{2} \frac{dp}{dr}`
+    - **Post-Newtonian**: :math:`\sigma_{\mathrm{PN}} = \gamma \frac{2m}{r} p \tanh(\alpha(\frac{m}{r} - \beta))`
+    
+    Args:
+        p (float): Pressure at current radius.
+        e (float): Energy density at current radius.
+        m (float): Enclosed mass at current radius.
+        r (float): Current radius.
+        lambda_BL (float): Brans-Dicke-like coupling parameter.
+        lambda_DY (float): Dynamical Chern-Simons coupling parameter.
+        lambda_HB (float): Horava-like coupling parameter.
+        gamma (float): Post-Newtonian amplitude parameter.
+        alpha (float): Post-Newtonian steepness parameter.
+        beta (float): Post-Newtonian transition point parameter.
+        
+    Returns:
+        float: Total sigma correction term.
+    """
+    # Metric coefficient A = 1/(1-2m/r)
     A = 1.0 / (1.0 - 2.0 * m / r)
     dpdr = -(e + p) * (m + 4.0 * jnp.pi * r * r * r * p) / r / r * A
     sigma = 0.0
@@ -128,19 +169,49 @@ def calc_k2(R, M, H, b):
 
 
 def tov_solver(eos, pc):
-    # fetch the eos arrays
+    """
+    Solve the modified TOV equations for a given central pressure.
+    
+    This function integrates the modified TOV equations that include beyond-GR
+    corrections. The integration procedure is identical to the standard TOV case,
+    but the differential equations include additional sigma terms.
+    
+    Args:
+        eos (dict): Extended EOS interpolation data containing:
+        
+            - **p**: Pressure array [geometric units]
+            - **h**: Enthalpy array [geometric units]
+            - **e**: Energy density array [geometric units] 
+            - **dloge_dlogp**: Logarithmic derivative array
+            - **alpha, beta, gamma**: Post-Newtonian parameters
+            - **lambda_BL, lambda_DY, lambda_HB**: Theory modification parameters
+            
+        pc (float): Central pressure [geometric units].
+        
+    Returns:
+        tuple: A tuple containing:
+        
+            - **M**: Gravitational mass [geometric units]
+            - **R**: Circumferential radius [geometric units]
+            - **k2**: Second Love number for tidal deformability
+            
+    Note:
+        The modifications affect the stellar structure but the same integration
+        method and boundary conditions as the standard TOV case are used.
+    """
+    # Extract EOS interpolation arrays
     ps = eos["p"]
     hs = eos["h"]
     es = eos["e"]
     dloge_dlogps = eos["dloge_dlogp"]
-    # central values
+    # Central values and initial conditions
     hc = utils.interp_in_logspace(pc, ps, hs)
     ec = utils.interp_in_logspace(hc, hs, es)
     dedp_c = ec / pc * jnp.interp(hc, hs, dloge_dlogps)
     dhdp_c = 1.0 / (ec + pc)
     dedh_c = dedp_c / dhdp_c
 
-    # initial values
+    # Initial values using series expansion near center
     dh = -1e-3 * hc
     h0 = hc + dh
     r0 = jnp.sqrt(3.0 * (-dh) / 2.0 / jnp.pi / (ec + 3.0 * pc))
