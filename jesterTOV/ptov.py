@@ -10,6 +10,7 @@ gradient equation.
 
 **Reference:** Yagi & Yunes, Phys. Rev. D 88, 023009 (2013)
 """
+
 from . import utils
 import jax
 import jax.numpy as jnp
@@ -19,18 +20,18 @@ from diffrax import diffeqsolve, ODETerm, Dopri5, SaveAt, PIDController
 def sigma_func(p, e, m, r, lambda_BL, lambda_DY, lambda_HB, gamma, alpha, beta):
     """
     Compute the non-GR correction term sigma for modified TOV equations.
-    
+
     This function implements various phenomenological modifications to
     General Relativity that appear as additional terms in the TOV equations.
     The corrections are parameterized by several coupling constants.
-    
+
     The sigma function includes:
-    
+
     - **Brans-Dicke-like**: :math:`\sigma_{\mathrm{BL}} = -\frac{\lambda_{\mathrm{BL}} r^2}{3}(\varepsilon + 3p)(\varepsilon + p)A`
     - **Dynamical Chern-Simons**: :math:`\sigma_{\mathrm{DY}} = \lambda_{\mathrm{DY}} \frac{2m}{r} p`
     - **Horava-like**: :math:`\sigma_{\mathrm{HB}} = -(\frac{1}{\lambda_{\mathrm{HB}}} - 1) \frac{r}{2} \frac{dp}{dr}`
     - **Post-Newtonian**: :math:`\sigma_{\mathrm{PN}} = \gamma \frac{2m}{r} p \tanh(\alpha(\frac{m}{r} - \beta))`
-    
+
     Args:
         p (float): Pressure at current radius.
         e (float): Energy density at current radius.
@@ -42,7 +43,7 @@ def sigma_func(p, e, m, r, lambda_BL, lambda_DY, lambda_HB, gamma, alpha, beta):
         gamma (float): Post-Newtonian amplitude parameter.
         alpha (float): Post-Newtonian steepness parameter.
         beta (float): Post-Newtonian transition point parameter.
-        
+
     Returns:
         float: Total sigma correction term.
     """
@@ -171,30 +172,30 @@ def calc_k2(R, M, H, b):
 def tov_solver(eos, pc):
     """
     Solve the modified TOV equations for a given central pressure.
-    
+
     This function integrates the modified TOV equations that include beyond-GR
     corrections. The integration procedure is identical to the standard TOV case,
     but the differential equations include additional sigma terms.
-    
+
     Args:
         eos (dict): Extended EOS interpolation data containing:
-        
+
             - **p**: Pressure array [geometric units]
             - **h**: Enthalpy array [geometric units]
-            - **e**: Energy density array [geometric units] 
+            - **e**: Energy density array [geometric units]
             - **dloge_dlogp**: Logarithmic derivative array
             - **alpha, beta, gamma**: Post-Newtonian parameters
             - **lambda_BL, lambda_DY, lambda_HB**: Theory modification parameters
-            
+
         pc (float): Central pressure [geometric units].
-        
+
     Returns:
         tuple: A tuple containing:
-        
+
             - **M**: Gravitational mass [geometric units]
             - **R**: Circumferential radius [geometric units]
             - **k2**: Second Love number for tidal deformability
-            
+
     Note:
         The modifications affect the stellar structure but the same integration
         method and boundary conditions as the standard TOV case are used.

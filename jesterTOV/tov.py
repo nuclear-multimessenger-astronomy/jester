@@ -63,10 +63,10 @@ def tov_ode(h, y, eos):
     ) - jnp.power(2.0 * (m + 4.0 * jnp.pi * r * r * r * p) / (r * (r - 2.0 * m)), 2.0)
 
     # TOV equation derivatives
-    drdh = -r * (r - 2.0 * m) / (m + 4.0 * jnp.pi * r * r * r * p)  # dr/dh  
-    dmdh = 4.0 * jnp.pi * r * r * e * drdh                           # dm/dh
-    dHdh = b * drdh                                                   # dH/dh
-    dbdh = -(C0 * H + C1 * b) * drdh                                  # dβ/dh
+    drdh = -r * (r - 2.0 * m) / (m + 4.0 * jnp.pi * r * r * r * p)  # dr/dh
+    dmdh = 4.0 * jnp.pi * r * r * e * drdh  # dm/dh
+    dHdh = b * drdh  # dH/dh
+    dbdh = -(C0 * H + C1 * b) * drdh  # dβ/dh
 
     return drdh, dmdh, dHdh, dbdh
 
@@ -74,24 +74,24 @@ def tov_ode(h, y, eos):
 def calc_k2(R, M, H, b):
     """
     Calculate the second Love number k₂ for tidal deformability.
-    
+
     The Love number k₂ relates the tidal deformability to the neutron star's
     mass and radius. It is computed from the auxiliary variables H and β
     obtained from the TOV integration.
-    
+
     The tidal deformability is given by:
-    
+
     .. math::
         \Lambda = \frac{2}{3} k_2 C^{-5}
-        
+
     where :math:`C = M/R` is the compactness.
-    
+
     Args:
         R (float): Neutron star radius [geometric units].
         M (float): Neutron star mass [geometric units].
         H (float): Auxiliary tidal variable at surface.
         b (float): Auxiliary tidal variable β at surface.
-        
+
     Returns:
         float: Second Love number k₂.
     """
@@ -129,32 +129,32 @@ def calc_k2(R, M, H, b):
 def tov_solver(eos, pc):
     """
     Solve the TOV equations for a given central pressure.
-    
+
     This function integrates the TOV equations from the center of the star
     (where r=0, m=0) outward to the surface (where p=0), using the enthalpy
     as the integration variable. The integration starts slightly off-center
     to avoid singularities.
-    
+
     The solver uses the Dormand-Prince 5th order adaptive method (Dopri5)
     with proper error control for numerical stability.
-    
+
     Args:
         eos (dict): EOS interpolation data containing:
-        
+
             - **p**: Pressure array [geometric units]
-            - **h**: Enthalpy array [geometric units] 
+            - **h**: Enthalpy array [geometric units]
             - **e**: Energy density array [geometric units]
             - **dloge_dlogp**: Logarithmic derivative array
-            
+
         pc (float): Central pressure [geometric units].
-        
+
     Returns:
         tuple: A tuple containing:
-        
+
             - **M**: Gravitational mass [geometric units]
-            - **R**: Circumferential radius [geometric units] 
+            - **R**: Circumferential radius [geometric units]
             - **k2**: Second Love number for tidal deformability
-            
+
     Note:
         The integration is performed from center to surface, with the enthalpy
         decreasing from h_center to 0. Initial conditions are set using

@@ -18,22 +18,22 @@ def load_crust(name: str) -> tuple[Array, Array, Array]:
     """
     Load neutron star crust equation of state data from the default directory.
 
-    This function loads pre-computed crust EOS data from tabulated files, supporting 
+    This function loads pre-computed crust EOS data from tabulated files, supporting
     both built-in crust models (BPS, DH) and custom files.
 
     Args:
-        name (str): Name of the crust model to load (e.g., 'BPS', 'DH') or a filename 
+        name (str): Name of the crust model to load (e.g., 'BPS', 'DH') or a filename
                    with .npz extension for custom files.
 
     Returns:
         tuple[Array, Array, Array]: A tuple containing:
             - Number densities :math:`n` [:math:`\mathrm{fm}^{-3}`]
-            - Pressures :math:`p` [:math:`\mathrm{MeV} \, \mathrm{fm}^{-3}`] 
+            - Pressures :math:`p` [:math:`\mathrm{MeV} \, \mathrm{fm}^{-3}`]
             - Energy densities :math:`\varepsilon` [:math:`\mathrm{MeV} \, \mathrm{fm}^{-3}`]
-            
+
     Raises:
         ValueError: If the specified crust model is not found in the default directory.
-        
+
     Note:
         Available built-in crust models can be found in the crust/ subdirectory.
     """
@@ -61,7 +61,7 @@ def load_crust(name: str) -> tuple[Array, Array, Array]:
 class Interpolate_EOS_model(object):
     """
     Base class for interpolating equation of state (EOS) data.
-    
+
     This class provides the fundamental interpolation framework for converting
     tabulated EOS data (density, pressure, energy) into the auxiliary quantities
     needed for neutron star structure calculations using the TOV equations.
@@ -78,7 +78,7 @@ class Interpolate_EOS_model(object):
     ):
         """
         Convert physical EOS quantities to geometric units and compute auxiliary quantities.
-        
+
         This method transforms the input EOS data from nuclear physics units to geometric
         units used in general relativity calculations, and computes derived quantities
         needed for the TOV equations.
@@ -90,8 +90,8 @@ class Interpolate_EOS_model(object):
 
         Returns:
             tuple: A tuple containing (all in geometric units):
-            
-                - ns: Number densities 
+
+                - ns: Number densities
                 - ps: Pressures
                 - hs: Specific enthalpy :math:`h = \int \frac{dp}{\varepsilon + p}`
                 - es: Energy densities
@@ -123,19 +123,19 @@ class Interpolate_EOS_model(object):
 class MetaModel_EOS_model(Interpolate_EOS_model):
     """
     Meta-model equation of state for nuclear matter.
-    
+
     This class implements the meta-modeling approach for nuclear equation of state
     as described in Margueron et al. (Phys. Rev. C 103, 045803, 2021). The EOS
     is constructed by combining a realistic crust model with a meta-model for
     core densities based on nuclear empirical parameters (NEPs).
-    
+
     The meta-model uses a kinetic + potential energy decomposition:
-    
+
     .. math::
         \varepsilon(n, \delta) = \varepsilon_{\mathrm{kin}}(n, \delta) + \varepsilon_{\mathrm{pot}}(n, \delta)
-    
+
     where :math:`\delta = (n_n - n_p)/n` is the isospin asymmetry parameter.
-    
+
     The kinetic part is based on a Thomas-Fermi gas with relativistic corrections,
     while the potential part uses a polynomial expansion around saturation density :math:`n_0`.
     """
@@ -167,35 +167,35 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
     ):
         """
         Initialize the meta-model EOS with nuclear empirical parameters.
-        
+
         The meta-model approach parameterizes nuclear matter using empirical parameters
         measured from finite nuclei and infinite nuclear matter calculations.
-        
+
         **Reference:** Margueron et al., Phys. Rev. C 103, 045803 (2021)
 
         Args:
-            kappas (tuple[Float, Float, Float, Float, Float, Float], optional): 
+            kappas (tuple[Float, Float, Float, Float, Float, Float], optional):
                 Meta-model expansion coefficients :math:`(\kappa_{\mathrm{sat}}, \kappa_{\mathrm{sat2}}, \kappa_{\mathrm{sat3}}, \kappa_{\mathrm{NM}}, \kappa_{\mathrm{NM2}}, \kappa_{\mathrm{NM3}})`.
                 Controls the density dependence of kinetic energy corrections. Defaults to (0.0, 0.0, 0.0, 0.0, 0.0, 0.0).
-            v_nq (list[float], optional): 
+            v_nq (list[float], optional):
                 Quartic isospin coefficients for symmetry energy expansion. Defaults to [0.0, 0.0, 0.0, 0.0, 0.0].
-            b_sat (Float, optional): 
+            b_sat (Float, optional):
                 Saturation parameter controlling potential energy cutoff. Defaults to 17.0.
-            b_sym (Float, optional): 
+            b_sym (Float, optional):
                 Symmetry parameter for isospin-dependent cutoff. Defaults to 25.0.
-            nsat (Float, optional): 
+            nsat (Float, optional):
                 Nuclear saturation density :math:`n_0` [:math:`\mathrm{fm}^{-3}`]. Defaults to 0.16.
-            nmin_MM_nsat (Float, optional): 
+            nmin_MM_nsat (Float, optional):
                 Starting density for meta-model region [:math:`n_0` units]. Defaults to 0.75.
-            nmax_nsat (Float, optional): 
+            nmax_nsat (Float, optional):
                 Maximum density for EOS construction [:math:`n_0` units]. Defaults to 12.
-            ndat (Int, optional): 
+            ndat (Int, optional):
                 Number of density points for meta-model region. Defaults to 200.
-            crust_name (str, optional): 
+            crust_name (str, optional):
                 Crust model name or file path. Defaults to 'DH'.
-            max_n_crust_nsat (Float, optional): 
+            max_n_crust_nsat (Float, optional):
                 Maximum crust density [:math:`n_0` units]. Defaults to 0.5.
-            ndat_spline (Int, optional): 
+            ndat_spline (Int, optional):
                 Points for crust-core transition spline. Defaults to 10.
             proton_fraction (bool | float | None, optional):
                 Proton fraction treatment: None for :math:`\beta`-equilibrium, float for fixed value.
@@ -362,15 +362,15 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
     def construct_eos(self, NEP_dict: dict) -> tuple:
         """
         Construct the complete equation of state from nuclear empirical parameters.
-        
+
         This method builds the full EOS by combining the crust model with the
         meta-model core, ensuring thermodynamic consistency and causality.
 
         Args:
             NEP_dict (dict): Nuclear empirical parameters including:
-            
+
                 - **E_sat**: Saturation energy per nucleon [:math:`\mathrm{MeV}`] (default: -16.0)
-                - **K_sat**: Incompressibility at saturation [:math:`\mathrm{MeV}`] 
+                - **K_sat**: Incompressibility at saturation [:math:`\mathrm{MeV}`]
                 - **Q_sat, Z_sat**: Higher-order saturation parameters [:math:`\mathrm{MeV}`]
                 - **E_sym**: Symmetry energy [:math:`\mathrm{MeV}`]
                 - **L_sym**: Symmetry energy slope [:math:`\mathrm{MeV}`]
@@ -378,9 +378,9 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
 
         Returns:
             tuple: Complete EOS data containing:
-            
+
                 - **ns**: Number densities [geometric units]
-                - **ps**: Pressures [geometric units] 
+                - **ps**: Pressures [geometric units]
                 - **hs**: Specific enthalpies [geometric units]
                 - **es**: Energy densities [geometric units]
                 - **dloge_dlogps**: Logarithmic derivative :math:`\frac{d\ln\varepsilon}{d\ln p}`
@@ -702,17 +702,17 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
     ) -> Float[Array, "n_points"]:
         """
         Compute proton fraction from beta-equilibrium condition.
-        
+
         This method solves the beta-equilibrium condition:
-        
+
         .. math::
             \mu_e + \mu_p - \mu_n = 0
-            
+
         where the chemical potentials are related to the EOS through:
-        
+
         .. math::
             \mu_p - \mu_n = \frac{\partial \varepsilon}{\partial x_p} = -4 E_{\mathrm{sym}} (1 - 2x_p)
-            
+
         and the electron chemical potential is :math:`\mu_e = \hbar c (3\pi^2 x_p n)^{1/3}`.
 
         Args:
@@ -1005,14 +1005,14 @@ class MetaModel_with_peakCSE_EOS_model(Interpolate_EOS_model):
 def locate_lowest_non_causal_point(cs2):
     """
     Find the first point where the equation of state becomes non-causal.
-    
+
     The speed of sound squared :math:`c_s^2 = dp/d\varepsilon` must satisfy
     :math:`c_s^2 \leq 1` (in units where :math:`c = 1`) for causality.
     This function locates the first density where this condition is violated.
-    
+
     Args:
         cs2 (Array): Speed of sound squared values.
-        
+
     Returns:
         int: Index of first non-causal point, or -1 if EOS is everywhere causal.
     """
@@ -1108,16 +1108,16 @@ def construct_family_nonGR(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> t
 ]:
     """
     Solve modified TOV equations with beyond-GR corrections.
-    
+
     This function extends the standard TOV equations to include phenomenological
     modifications that parameterize deviations from General Relativity. The modified
     pressure gradient equation becomes:
-    
+
     .. math::
         \frac{dp}{dr} = -\frac{[\varepsilon(r) + p(r)][m(r) + 4\pi r^3 p(r)]}{r[r - 2m(r)]} - \frac{2\sigma(r)}{r}
-        
+
     where :math:`\sigma(r)` contains the non-GR corrections parameterized by
-    :math:`\lambda_{\mathrm{BL}}`, :math:`\lambda_{\mathrm{DY}}`, :math:`\lambda_{\mathrm{HB}}`, 
+    :math:`\lambda_{\mathrm{BL}}`, :math:`\lambda_{\mathrm{DY}}`, :math:`\lambda_{\mathrm{HB}}`,
     and post-Newtonian parameters :math:`\alpha`, :math:`\beta`, :math:`\gamma`.
 
     Args:
@@ -1127,7 +1127,7 @@ def construct_family_nonGR(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> t
 
     Returns:
         tuple: A tuple containing:
-        
+
             - :math:`\log(p_c)`: Logarithm of central pressures [geometric units]
             - :math:`M`: Gravitational masses [:math:`M_{\odot}`]
             - :math:`R`: Circumferential radii [:math:`\mathrm{km}`]

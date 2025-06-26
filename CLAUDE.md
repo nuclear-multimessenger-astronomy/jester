@@ -28,7 +28,10 @@ pre-commit run --all-files
 # Manual formatting and linting
 black .                    # Format code
 ruff check --fix .         # Lint and fix issues
-pyright                    # Type checking
+
+# Type checking (install if needed: npm install -g pyright)
+pyright                    # Type checking all files
+pyright jesterTOV/         # Type check specific directory
 ```
 
 ### Testing
@@ -83,9 +86,10 @@ pytest tests/
 
 ### Development Notes
 - The codebase is specialized for astrophysics/neutron star modeling
-- Pre-commit hooks enforce code quality with black and ruff (pyright temporarily disabled)
+- Pre-commit hooks enforce code quality with black and ruff
 - Examples in `examples/` directory demonstrate basic and advanced usage
 - Comprehensive test suite with 95 tests covering all major functionality
+- **LaTeX in docstrings**: Use raw strings (`r"""..."""`) for math expressions to avoid Pylance warnings
 
 ### Python Support
 Supports Python 3.10-3.12 with JAX ecosystem dependencies.
