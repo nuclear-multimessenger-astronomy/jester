@@ -2,7 +2,6 @@
 
 import pytest
 import jax.numpy as jnp
-import numpy as np
 from jesterTOV import utils
 
 
@@ -20,24 +19,19 @@ def sample_eos_dict():
     """Sample EOS dictionary for TOV solving tests using realistic polytropic EOS."""
     # Create realistic polytropic EOS: P ∝ ρ^Γ with Γ ≈ 2-3 for neutron star matter
     n = jnp.linspace(0.1, 2.0, 50)  # fm^-3, density range
-    p = 15.0 * (n / 0.16)**2.2  # MeV/fm^3, polytropic with realistic stiffness
+    p = 15.0 * (n / 0.16) ** 2.2  # MeV/fm^3, polytropic with realistic stiffness
     e = n * 939.0 + p  # MeV/fm^3, rest mass energy + pressure contribution
-    
+
     # Convert to geometric units
     p_geo = p * utils.MeV_fm_inv3_to_geometric
     e_geo = e * utils.MeV_fm_inv3_to_geometric
-    
+
     # Calculate enthalpy and dloge_dlogp
     h = utils.cumtrapz(p_geo / (e_geo + p_geo), jnp.log(p_geo))
     dloge_dlogp = jnp.diff(jnp.log(e)) / jnp.diff(jnp.log(p))
     dloge_dlogp = jnp.concatenate([jnp.array([dloge_dlogp[0]]), dloge_dlogp])
-    
-    return {
-        "p": p_geo,
-        "h": h,
-        "e": e_geo,
-        "dloge_dlogp": dloge_dlogp
-    }
+
+    return {"p": p_geo, "h": h, "e": e_geo, "dloge_dlogp": dloge_dlogp}
 
 
 @pytest.fixture
@@ -54,7 +48,7 @@ def metamodel_params():
         "ndat": 100,
         "crust_name": "DH",
         "max_n_crust_nsat": 0.5,
-        "ndat_spline": 10
+        "ndat_spline": 10,
     }
 
 
@@ -70,5 +64,5 @@ def nep_dict():
         "L_sym": 60.0,
         "K_sym": -100.0,
         "Q_sym": 0.0,
-        "Z_sym": 0.0
+        "Z_sym": 0.0,
     }

@@ -19,12 +19,12 @@ c = 299792458.0
 G = 6.6743e-11
 Msun = 1.988409870698051e30
 hbarc = 197.3269804593025  # in MeV fm
-hbar = hbarc # conventions from Rahul's code
+hbar = hbarc  # conventions from Rahul's code
 m_p = 938.2720881604904  # in MeV
 m_n = 939.5654205203889  # in MeV
 m = (m_p + m_n) / 2.0  # in MeV, average nucleonic mass defined by Margueron et al
-m_e = 0.510998 # mass electron in MeV
-solar_mass_in_meter = Msun * G / c / c # solar mass in geometric unit
+m_e = 0.510998  # mass electron in MeV
+solar_mass_in_meter = Msun * G / c / c  # solar mass in geometric unit
 
 # simple conversions
 fm_to_m = 1e-15
@@ -65,13 +65,11 @@ roots_vmap = vmap(partial(jnp.roots, strip_zeros=False), in_axes=0, out_axes=0)
 def cubic_root_for_proton_fraction(coefficients):
 
     a, b, c, d = coefficients
-    
-    f = ((3.0 * c / a) - ((b ** 2) / (a ** 2))) / 3.0
-    g = (
-        ((2.0 * (b ** 3)) / (a ** 3)) - ((9.0 * b * c) / (a ** 2)) + (27.0 * d / a)
-    ) / 27.0
-    g_squared = g ** 2
-    f_cubed = f ** 3
+
+    f = ((3.0 * c / a) - ((b**2) / (a**2))) / 3.0
+    g = (((2.0 * (b**3)) / (a**3)) - ((9.0 * b * c) / (a**2)) + (27.0 * d / a)) / 27.0
+    g_squared = g**2
+    f_cubed = f**3
     h = g_squared / 4.0 + f_cubed / 27.0
 
     R = -(g / 2.0) + jnp.sqrt(h)
@@ -130,61 +128,61 @@ def interp_in_logspace(x, xs, ys):
     logys = jnp.log(ys)
     return jnp.exp(jnp.interp(logx, logxs, logys))
 
-def limit_by_MTOV(pc: Array,
-                  m: Array, 
-                  r: Array, 
-                  l: Array) -> tuple[Array, Array, Array]:
+
+def limit_by_MTOV(
+    pc: Array, m: Array, r: Array, l: Array
+) -> tuple[Array, Array, Array]:
     """
     Limits the M, R and Lambda curves to be below MTOV in a jit-friendly manner (i.e., static shape sizes).
     The idea now is to feed this into some routine that creates an interpolation out of this, which then uses jnp.unique to get rid of these duplicates
-    
+
     Args:
         pcs (Array["npoints"]): Original pressure
         m (Array["npoints"]): Original mass curve
         r (Array["npoints"]): Original radius curve
         l (Array["npoints"]): Original lambdas curve
-        
+
     Returns:
         tuple[Array["npoints"], Array["npoints"], Array["npoints"]]: Tuple of new mass, radius and lambdas curves, where the part of the curves where mass decreases is replaced with duplication of the first entry of the M, R and Lambda arrays.
     """
-    
+
     # Fetch the MTOV, we will use it to dump duplicates of it wherever the NS family is unphysical
     m_at_TOV = jnp.max(m)
     idx_TOV = jnp.argmax(m)
-    
+
     pc_at_TOV = pc[idx_TOV]
     r_at_TOV = r[idx_TOV]
     l_at_TOV = l[idx_TOV]
-    
+
     # Find out where the mass array is increasing, and insert True at the TOV index to pad length of the array correctly
     m_is_increasing = jnp.diff(m) > 0
     m_is_increasing = jnp.insert(m_is_increasing, idx_TOV, True)
-    
+
     # All indices after MTOV index should be set to False
     m_is_increasing = jnp.where(jnp.arange(len(m)) > idx_TOV, False, m_is_increasing)
-    
+
     pc_new = jnp.where(m_is_increasing, pc, pc_at_TOV)
-    m_new  = jnp.where(m_is_increasing, m, m_at_TOV)
-    r_new  = jnp.where(m_is_increasing, r, r_at_TOV)
-    l_new  = jnp.where(m_is_increasing, l, l_at_TOV)
-    
+    m_new = jnp.where(m_is_increasing, m, m_at_TOV)
+    r_new = jnp.where(m_is_increasing, r, r_at_TOV)
+    l_new = jnp.where(m_is_increasing, l, l_at_TOV)
+
     # Sort in increasing values of M for plotting etc
     sort_idx = jnp.argsort(m_new)
-    
+
     pc_new = pc_new[sort_idx]
-    m_new  = m_new[sort_idx]
-    r_new  = r_new[sort_idx]
-    l_new  = l_new[sort_idx]
-    
+    m_new = m_new[sort_idx]
+    r_new = r_new[sort_idx]
+    l_new = l_new[sort_idx]
+
     return pc_new, m_new, r_new, l_new
+
 
 ###################
 ### SPLINES etc ###
 ###################
 
-def cubic_spline(xq: Float[Array, "n"],
-                 xp: Float[Array, "n"],
-                 fp: Float[Array, "n"]):
+
+def cubic_spline(xq: Float[Array, "n"], xp: Float[Array, "n"], fp: Float[Array, "n"]):
     """
     Create a cubic spline interpolating function through (xp, fp) with interpax (https://github.com/f0uriest/interpax)
     Args:
@@ -192,14 +190,14 @@ def cubic_spline(xq: Float[Array, "n"],
         xp (Float[Array, "n"]): x values of the data points
         fp (Float[Array, "n"]): y values of the data points, i.e. fp = f(xp)
     """
-    return interpax_interp1d(xq, xp, fp, method = "cubic")
+    return interpax_interp1d(xq, xp, fp, method="cubic")
+
 
 def sigmoid(x: Array) -> Array:
     return 1.0 / (1.0 + jnp.exp(-x))
 
 
-def calculate_rest_mass_density(e: Float[Array, "n"],
-                                p: Float[Array, "n"]):
+def calculate_rest_mass_density(e: Float[Array, "n"], p: Float[Array, "n"]):
     """
     Compute rest-mass density given arrays of energy density and pressure.
 
@@ -210,6 +208,7 @@ def calculate_rest_mass_density(e: Float[Array, "n"],
     Returns:
     - rho (jax.numpy array): Array of density values.
     """
+
     # Define a linear interpolation for p(e)
     def p_interp(e_val):
         return jnp.interp(e_val, e, p)
@@ -230,10 +229,10 @@ def calculate_rest_mass_density(e: Float[Array, "n"],
     solution = diffeqsolve(
         term,
         solver,
-        t0=e[0],       # Initial value of e
-        t1=e[-1],      # Final value of e
-        dt0=1e-8,      # Initial step size
-        y0=rho0,       # Initial value of rho
+        t0=e[0],  # Initial value of e
+        t1=e[-1],  # Final value of e
+        dt0=1e-8,  # Initial step size
+        y0=rho0,  # Initial value of rho
         saveat=SaveAt(ts=e),
         stepsize_controller=PIDController(rtol=1e-5, atol=1e-6),
     )

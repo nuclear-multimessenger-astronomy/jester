@@ -7,6 +7,7 @@ from . import utils
 import jax.numpy as jnp
 from diffrax import diffeqsolve, ODETerm, Dopri5, SaveAt, PIDController
 
+
 def tov_ode(h, y, eos):
     # fetch the eos arrays
     ps = eos["p"]
@@ -97,7 +98,7 @@ def tov_solver(eos, pc):
 
     sol = diffeqsolve(
         ODETerm(tov_ode),
-        Dopri5(scan_kind = "bounded"),
+        Dopri5(scan_kind="bounded"),
         t0=h0,
         t1=0,
         dt0=dh,
@@ -113,5 +114,5 @@ def tov_solver(eos, pc):
     b = sol.ys[3][-1]
 
     k2 = calc_k2(R, M, H, b)
-    
+
     return M, R, k2

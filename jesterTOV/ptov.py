@@ -33,7 +33,10 @@ def tov_ode(h, y, eos):
 
     # evalute the sigma and dsigmadp
     sigma = sigma_func(
-        p, e, m, r,
+        p,
+        e,
+        m,
+        r,
         eos["lambda_BL"],
         eos["lambda_DY"],
         eos["lambda_HB"],
@@ -44,7 +47,10 @@ def tov_ode(h, y, eos):
     dsigmadp_fn = jax.grad(sigma_func, argnums=0)  # Gradient w.r.t. p
     dsigmade_fn = jax.grad(sigma_func, argnums=1)  # Gradient w.r.t. p
     dsigmadp = dsigmadp_fn(
-        p, e, m, r,
+        p,
+        e,
+        m,
+        r,
         eos["lambda_BL"],
         eos["lambda_DY"],
         eos["lambda_HB"],
@@ -53,7 +59,10 @@ def tov_ode(h, y, eos):
         eos["beta"],
     )
     dsigmadp += dedp * dsigmade_fn(
-        p, e, m, r,
+        p,
+        e,
+        m,
+        r,
         eos["lambda_BL"],
         eos["lambda_DY"],
         eos["lambda_HB"],
@@ -73,10 +82,7 @@ def tov_ode(h, y, eos):
         + 4.0 * jnp.pi * (e + p) * (1.0 + dedp) / (1.0 - dsigmadp)
         + 4.0 * jnp.pi * (4.0 * e + 8.0 * p)
         + 16.0 * jnp.pi * sigma
-    ) - jnp.power(
-            2.0 * (m + 4.0 * jnp.pi * r * r * r * p) / (r * (r - 2.0 * m)),
-            2.0
-        )
+    ) - jnp.power(2.0 * (m + 4.0 * jnp.pi * r * r * r * p) / (r * (r - 2.0 * m)), 2.0)
 
     drdh = (e + p) / dpdr
     dmdh = 4.0 * jnp.pi * r * r * e * drdh
