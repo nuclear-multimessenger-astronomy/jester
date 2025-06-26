@@ -453,6 +453,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         Returns:
             Float[Array, "n_points"]: Proton fraction as a function of the number density.
         """
+        # TODO: the following comments should be in the doc string
         # # chemical potential of electron -- derivation
         # mu_e = hbarc * pow(3 * pi**2 * x * n, 1. / 3.)
         #      = hbarc * pow(3 * pi**2 * n, 1. / 3.) * y (y = x**1./3.)
@@ -595,7 +596,8 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
 
 class MetaModel_with_peakCSE_EOS_model(Interpolate_EOS_model):
     """
-    MetaModel_with_peakCSE_EOS_model is a class to interpolate EOS data with a meta-model and using the CSE.
+    MetaModel_with_peakCSE_EOS_model is a class to interpolate EOS data with a meta-model and using the CSE. 
+    The parametrization of the CSE is based on the peakCSE model, which is a Gaussian peak with a logit growth rate, in order to guarantee consistency with pQCD at the highest densities.
 
     Args:
         Interpolate_EOS_model (object): Base class of interpolation EOS data.
@@ -610,7 +612,7 @@ class MetaModel_with_peakCSE_EOS_model(Interpolate_EOS_model):
         **metamodel_kwargs
     ):
         """
-        Initialize the MetaModel_with_CSE_EOS_model with the provided coefficients and compute auxiliary data.
+        Initialize the MetaModel_with_peakCSE_EOS_model with the provided coefficients and compute auxiliary data.
 
         Args:
             coefficient_sat (Float[Array, "n_sat_coeff"]): The coefficients for the saturation part of the metamodel part of the EOS.
@@ -719,22 +721,23 @@ class MetaModel_with_peakCSE_EOS_model(Interpolate_EOS_model):
   
 
 def locate_lowest_non_causal_point(cs2):
-        # Create a boolean mask where the value equals 1
-        mask = cs2 >= 1.
+    # TODO: we might want to move this inside utils?
+    # Create a boolean mask where the value equals 1
+    mask = cs2 >= 1.
 
-        # If no element equals 1, we want to return -1 or some indicator
-        # First, check if any element equals 1
-        any_ones = jnp.any(mask)
+    # If no element equals 1, we want to return -1 or some indicator
+    # First, check if any element equals 1
+    any_ones = jnp.any(mask)
 
-        # Find the index of the first True value in the mask
-        # argmax returns the first index of the maximum value
-        # Since our mask is boolean, the first True will be the first 1
-        indices = jnp.arange(len(cs2))
-        masked_indices = jnp.where(mask, indices, len(cs2))
-        first_index = jnp.min(masked_indices)
+    # Find the index of the first True value in the mask
+    # argmax returns the first index of the maximum value
+    # Since our mask is boolean, the first True will be the first 1
+    indices = jnp.arange(len(cs2))
+    masked_indices = jnp.where(mask, indices, len(cs2))
+    first_index = jnp.min(masked_indices)
 
-        # Return -1 if no element equals 1, otherwise return the found index
-        return jnp.where(any_ones, first_index, -1)
+    # Return -1 if no element equals 1, otherwise return the found index
+    return jnp.where(any_ones, first_index, -1)
 
         
 def construct_family(eos: tuple,
