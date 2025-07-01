@@ -37,9 +37,9 @@ def sigma_func(p, e, m, r, lambda_BL, lambda_DY, lambda_HB, gamma, alpha, beta):
         e (float): Energy density at current radius.
         m (float): Enclosed mass at current radius.
         r (float): Current radius.
-        lambda_BL (float): Brans-Dicke-like coupling parameter.
-        lambda_DY (float): Dynamical Chern-Simons coupling parameter.
-        lambda_HB (float): Horava-like coupling parameter.
+        lambda_BL (float): Bowers-Liang coupling parameter.
+        lambda_DY (float): Doneva-Yazadjiev coupling parameter.
+        lambda_HB (float): Herrera-Barreto coupling parameter.
         gamma (float): Post-Newtonian amplitude parameter.
         alpha (float): Post-Newtonian steepness parameter.
         beta (float): Post-Newtonian transition point parameter.
