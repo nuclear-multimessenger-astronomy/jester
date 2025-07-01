@@ -1187,10 +1187,7 @@ def construct_family(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> tuple[
         min_nsat * 0.16 * utils.fm_inv3_to_geometric, ns, ps
     )
 
-    # end at pc at pmax at which it is causal
-    cs2 = ps / es / dloge_dlogps
-    pc_max = eos_dict["p"][locate_lowest_non_causal_point(cs2)]
-
+    pc_max = eos_dict["p"][-1]
     pcs = jnp.logspace(jnp.log10(pc_min), jnp.log10(pc_max), num=ndat)
 
     def solve_single_pc(pc):
