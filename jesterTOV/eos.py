@@ -507,16 +507,12 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         cs2_connection = utils.cubic_spline(
             self.n_connection, self.ns_spline, cs2_spline
         )
-        cs2_connection = jnp.clip(cs2_connection, 1e-5, 1.0)
 
         # Concatenate the arrays
         n = jnp.concatenate([self.ns_crust, self.n_connection, self.n_metamodel])
         cs2 = jnp.concatenate(
             [jnp.array(self.cs2_crust), cs2_connection, cs2_metamodel]
         )
-
-        # Make sure the cs2 stays within the physical limits
-        cs2 = jnp.clip(cs2, 1e-5, 1.0)
 
         # Compute pressure and energy from chemical potential and initialize the parent class with it
         log_mu = utils.cumtrapz(cs2, jnp.log(n)) + jnp.log(self.mu_lowest)
@@ -1187,7 +1183,10 @@ def construct_family(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> tuple[
         min_nsat * 0.16 * utils.fm_inv3_to_geometric, ns, ps
     )
 
-    pc_max = eos_dict["p"][-1]
+    # end at pc at pmax at which it is causal
+    cs2 = ps / es / dloge_dlogps
+    pc_max = eos_dict["p"][locate_lowest_non_causal_point(cs2)]
+
     pcs = jnp.logspace(jnp.log10(pc_min), jnp.log10(pc_max), num=ndat)
 
     def solve_single_pc(pc):
