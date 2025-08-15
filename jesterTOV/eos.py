@@ -1336,6 +1336,7 @@ def construct_family_ST(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> tupl
     Float[Array, "ndat"],
 ]:
     r"""
+    # TODO
     (updated later)
     """
 
@@ -1379,6 +1380,7 @@ def construct_family_ST(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> tupl
 
     return jnp.log(pcs), ms, rs, lambdas
 
+#For diagnostic, used in example file
 def construct_family_ST_sol(eos: tuple, ndat: Int = 1, min_nsat: Float = 2) -> tuple[
     Float[Array, "ndat"],
     Float[Array, "ndat"],
@@ -1386,6 +1388,7 @@ def construct_family_ST_sol(eos: tuple, ndat: Int = 1, min_nsat: Float = 2) -> t
     Float[Array, "ndat"],
 ]:
     r"""
+    # TODO complete the description
     Also output stellar structure solution via sol_iter (interior) and solext (exterior)
     """
 
