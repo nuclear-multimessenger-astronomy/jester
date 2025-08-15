@@ -1336,7 +1336,7 @@ def construct_family_ST(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> tupl
     Float[Array, "ndat"],
 ]:
     r"""
-    # TODO
+    # TODO:
     (updated later)
     """
 
@@ -1388,7 +1388,7 @@ def construct_family_ST_sol(eos: tuple, ndat: Int = 1, min_nsat: Float = 2) -> t
     Float[Array, "ndat"],
 ]:
     r"""
-    # TODO complete the description
+    # TODO: complete the description
     Also output stellar structure solution via sol_iter (interior) and solext (exterior)
     """
 
