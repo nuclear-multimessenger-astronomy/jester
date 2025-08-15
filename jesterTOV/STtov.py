@@ -1,53 +1,19 @@
 r"""
-Post-TOV (modified TOV) equation solver with beyond-GR corrections.
+Post-TOV (modified TOV) equation solver in the scalar tensor theory.
 
-This module extends the standard TOV equations to include phenomenological
-modifications that parameterize deviations from General Relativity. The
-modifications are implemented through additional terms in the pressure
-gradient equation.
+This module modify the standard TOV equations to calculate stellar structure solution in the scalar tensor theory. 
+#TODO Explain methods
 
 **Units:** All calculations are performed in geometric units where :math:`G = c = 1`.
 
-**Reference:** Yagi & Yunes, Phys. Rev. D 88, 023009 (2013)
+**Reference:** Stephanie M. Brown 2023 ApJ 958 125
 """
 
 from . import utils
 import jax
 import jax.numpy as jnp
+from jax import lax
 from diffrax import diffeqsolve, ODETerm, Dopri5, SaveAt, PIDController
-
-
-def calc_k2(R, M, H, b):
-
-    y = R * b / H
-    C = M / R
-
-    num = (
-        (8.0 / 5.0)
-        * jnp.power(1 - 2 * C, 2.0)
-        * jnp.power(C, 5.0)
-        * (2 * C * (y - 1) - y + 2)
-    )
-    den = (
-        2
-        * C
-        * (
-            4 * (y + 1) * jnp.power(C, 4)
-            + (6 * y - 4) * jnp.power(C, 3)
-            + (26 - 22 * y) * C * C
-            + 3 * (5 * y - 8) * C
-            - 3 * y
-            + 6
-        )
-    )
-    den -= (
-        3
-        * jnp.power(1 - 2 * C, 2)
-        * (2 * C * (y - 1) - y + 2)
-        * jnp.log(1.0 / (1 - 2 * C))
-    )
-
-    return num / den
 
 def tov_ode_iter(h, y, eos):
     # EOS quantities
@@ -59,10 +25,12 @@ def tov_ode_iter(h, y, eos):
     # scalar-tensor parameters
     beta_ST = eos["beta_ST"]
 
-    r, m, nu, psi, phi = y
+    r, m, _, psi, phi = y
     e = utils.interp_in_logspace(h, hs, es)
     p = utils.interp_in_logspace(h, hs, ps)
-    dedp = e / p * jnp.interp(h, hs, dloge_dlogps)
+    
+    #FIXME speed of sound term will be used in tidal deformability calculations
+    #dedp = e / p * jnp.interp(h, hs, dloge_dlogps)
 
     #scalar coupling function
     A_phi = jnp.exp(0.5 * beta_ST * jnp.power(phi, 2))
@@ -93,18 +61,13 @@ def tov_ode_iter(h, y, eos):
 
 
 def SText_ode(r, y, eos):
-    # y = [m, nu, phi, psi]
-    m, nu, phi, psi = y
-
+    m, _, _, psi = y
     dmdr = 0.5 * r * (r - 2.0 * m) * jnp.square(psi)
     dnudr = (2.0 * m) / (r * (r - 2.0 * m)) + r * jnp.square(psi)
     dphidr = psi
     dpsidr = -2.0 * (r - m) / (r * (r - 2.0 * m)) * psi
-
     return dmdr, dnudr, dphidr, dpsidr
 
-
-from jax import lax
 
 def tov_solver(eos, pc):
     r"""
@@ -201,7 +164,7 @@ def tov_solver(eos, pc):
         final_state = lax.while_loop(cond_fun, body_fun, init_state)
         i_final, nu0_final, phi0_final, R_final, M_inf_final, nu_inf_final, phi_inf_final = final_state
 
-        #setelah iterasi selesai, hitung sekali lagi sol_ext untuk return lengkap
+        # After iteration done, recalculate again for final structure.
         # Interior
         y0 = (r0, m0, nu0_final, psi0, phi0_final)
         sol_iter = diffeqsolve(
@@ -222,7 +185,7 @@ def tov_solver(eos, pc):
         psi_s = sol_iter.ys[3][-1]
         phi_s = sol_iter.ys[4][-1]
         
-        y_surf = (M_s, nu_s, phi_s, psi_s)  # psi0 is safe guess here
+        y_surf = (M_s, nu_s, phi_s, psi_s)
         r_max = 4*128 * 4.0 * jnp.power(3.0 / (4.0 * jnp.pi * ec), 1.0 / 3.0)
         sol_ext_final = diffeqsolve(
             ODETerm(SText_ode),
@@ -238,11 +201,13 @@ def tov_solver(eos, pc):
         return R_final, M_inf_final, nu_inf_final, phi_inf_final, sol_ext_final
 
     R, M_inf, nu_inf, phi_inf, sol_ext = run_iteration(nu0, phi0)
-
+    
+    #FIXME: Tidal deformability calculation has not been implemented
+    # Return k2 = 0 temporarily
     k2 = 0
     return M_inf, R, k2
 
-#For diagnostic
+#For diagnostic, used also in demonstration example file.
 def tov_solver_printsol(eos, pc):
     r"""
     Solve the Scalar Tensor TOV equations for a given central pressure, and return solution array.
@@ -341,7 +306,7 @@ def tov_solver_printsol(eos, pc):
         i_final, nu0_final, phi0_final, R_final, M_inf_final, nu_inf_final, phi_inf_final = final_state
 
 
-        #setelah iterasi selesai, hitung sekali lagi sol_ext untuk return lengkap
+        # After iteration done, recalculate again for final structure.
         # Interior
         # phi0_final = -0.1
         y0 = (r0, m0, nu0_final, psi0, phi0_final)
@@ -364,7 +329,7 @@ def tov_solver_printsol(eos, pc):
         psi_s = sol_iter.ys[3][-1]
         phi_s = sol_iter.ys[4][-1]
         
-        y_surf = (M_s, nu_s, phi_s, psi_s)  # psi0 is safe guess here
+        y_surf = (M_s, nu_s, phi_s, psi_s) 
         r_max = 4*128 * 4.0 * jnp.power(3.0 / (4.0 * jnp.pi * ec), 1.0 / 3.0) 
         sol_ext_final = diffeqsolve(
             ODETerm(SText_ode),
@@ -380,6 +345,8 @@ def tov_solver_printsol(eos, pc):
         return R_final, M_inf_final, nu_inf_final, phi_inf_final, sol_iter, sol_ext_final
 
     R, M_inf, nu_inf, phi_inf, sol_iter, sol_ext = run_iteration(nu0, phi0)
-
+    
+    #FIXME Tidal deformability calculation has not been implemented.
+    # Return k2 = 0 temporarily
     k2 = 0
     return M_inf, R, k2, sol_iter, sol_ext
