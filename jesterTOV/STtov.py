@@ -2,7 +2,7 @@ r"""
 Post-TOV (modified TOV) equation solver in the scalar tensor theory.
 
 This module modify the standard TOV equations to calculate stellar structure solution in the scalar tensor theory. 
-#TODO Explain methods
+# TODO: Explain methods
 
 **Units:** All calculations are performed in geometric units where :math:`G = c = 1`.
 
@@ -29,7 +29,7 @@ def tov_ode_iter(h, y, eos):
     e = utils.interp_in_logspace(h, hs, es)
     p = utils.interp_in_logspace(h, hs, ps)
     
-    #FIXME speed of sound term will be used in tidal deformability calculations
+    # FIXME speed of sound term will be used in tidal deformability calculations
     #dedp = e / p * jnp.interp(h, hs, dloge_dlogps)
 
     #scalar coupling function
@@ -202,7 +202,7 @@ def tov_solver(eos, pc):
 
     R, M_inf, nu_inf, phi_inf, sol_ext = run_iteration(nu0, phi0)
     
-    #FIXME: Tidal deformability calculation has not been implemented
+    # FIXME Tidal deformability calculation has not been implemented
     # Return k2 = 0 temporarily
     k2 = 0
     return M_inf, R, k2
@@ -346,7 +346,7 @@ def tov_solver_printsol(eos, pc):
 
     R, M_inf, nu_inf, phi_inf, sol_iter, sol_ext = run_iteration(nu0, phi0)
     
-    #FIXME Tidal deformability calculation has not been implemented.
+    # FIXME Tidal deformability calculation has not been implemented.
     # Return k2 = 0 temporarily
     k2 = 0
     return M_inf, R, k2, sol_iter, sol_ext
