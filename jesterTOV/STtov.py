@@ -20,7 +20,6 @@ def tov_ode_iter(h, y, eos):
     ps = eos["p"]
     hs = eos["h"]
     es = eos["e"]
-    dloge_dlogps = eos["dloge_dlogp"]
 
     # scalar-tensor parameters
     beta_ST = eos["beta_ST"]
@@ -29,7 +28,8 @@ def tov_ode_iter(h, y, eos):
     e = utils.interp_in_logspace(h, hs, es)
     p = utils.interp_in_logspace(h, hs, ps)
     
-    # FIXME speed of sound term will be used in tidal deformability calculations
+    # FIXME: speed of sound term will be used in tidal deformability calculations
+    dloge_dlogps = eos["dloge_dlogp"]
     #dedp = e / p * jnp.interp(h, hs, dloge_dlogps)
 
     #scalar coupling function
@@ -202,7 +202,7 @@ def tov_solver(eos, pc):
 
     R, M_inf, nu_inf, phi_inf, sol_ext = run_iteration(nu0, phi0)
     
-    # FIXME Tidal deformability calculation has not been implemented
+    # FIXME: Tidal deformability calculation has not been implemented
     # Return k2 = 0 temporarily
     k2 = 0
     return M_inf, R, k2
@@ -308,7 +308,6 @@ def tov_solver_printsol(eos, pc):
 
         # After iteration done, recalculate again for final structure.
         # Interior
-        # phi0_final = -0.1
         y0 = (r0, m0, nu0_final, psi0, phi0_final)
         sol_iter = diffeqsolve(
             ODETerm(tov_ode_iter),
@@ -346,7 +345,7 @@ def tov_solver_printsol(eos, pc):
 
     R, M_inf, nu_inf, phi_inf, sol_iter, sol_ext = run_iteration(nu0, phi0)
     
-    # FIXME Tidal deformability calculation has not been implemented.
+    # FIXME: Tidal deformability calculation has not been implemented.
     # Return k2 = 0 temporarily
     k2 = 0
     return M_inf, R, k2, sol_iter, sol_ext

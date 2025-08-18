@@ -1386,6 +1386,8 @@ def construct_family_ST_sol(eos: tuple, ndat: Int = 1, min_nsat: Float = 2) -> t
     Float[Array, "ndat"],
     Float[Array, "ndat"],
     Float[Array, "ndat"],
+    Float[Array, "ndat"],
+    Float[Array, "ndat"],
 ]:
     r"""
     # TODO: complete the description
