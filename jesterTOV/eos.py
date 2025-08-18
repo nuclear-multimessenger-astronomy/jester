@@ -4,7 +4,7 @@ import jax.numpy as jnp
 from jax.scipy.special import factorial
 from jaxtyping import Array, Float, Int
 
-from . import utils, tov, ptov
+from . import utils, tov, ptov, STtov
 
 ##############
 ### CRUSTS ###
@@ -1328,3 +1328,108 @@ def construct_family_nonGR(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> t
     ms = mass_grid
 
     return jnp.log(pcs), ms, rs, lambdas
+
+def construct_family_ST(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> tuple[
+    Float[Array, "ndat"],
+    Float[Array, "ndat"],
+    Float[Array, "ndat"],
+    Float[Array, "ndat"],
+]:
+    r"""
+    # TODO:
+    (updated later)
+    """
+
+    # Construct the dictionary
+    ns, ps, hs, es, dloge_dlogps, beta_STs, phi_cs, nu_cs = eos
+    #Here's EoS dict names defined 
+    eos_dict = dict(p=ps, h=hs, e=es, dloge_dlogp=dloge_dlogps, beta_ST = beta_STs, phi_c=phi_cs, nu_c=nu_cs)
+
+    # calculate the pc_min
+    pc_min = utils.interp_in_logspace(
+        min_nsat * 0.16 * utils.fm_inv3_to_geometric, ns, ps
+    )
+
+    pc_max = eos_dict["p"][-1]
+    pcs = jnp.logspace(jnp.log10(pc_min), jnp.log10(pc_max), num=ndat)
+    def solve_single_pc(pc):
+        """Solve for single pc value"""
+        return STtov.tov_solver(eos_dict, pc)
+    ms, rs, ks = jax.vmap(solve_single_pc)(pcs)
+    
+    # calculate the compactness
+    cs = ms / rs
+
+    # convert the mass to solar mass and the radius to km
+    ms /= utils.solar_mass_in_meter
+    rs /= 1e3
+
+    # calculate the tidal deformability
+    lambdas = 2.0 / 3.0 * ks * jnp.power(cs, -5.0)
+
+    # Limit masses to be below MTOV
+    pcs, ms, rs, lambdas = utils.limit_by_MTOV(pcs, ms, rs, lambdas)
+
+    # Get a mass grid and interpolate, since we might have dropped provided some duplicate points
+    mass_grid = jnp.linspace(jnp.min(ms), jnp.max(ms), ndat)
+    rs = jnp.interp(mass_grid, ms, rs)
+    lambdas = jnp.interp(mass_grid, ms, lambdas)
+    pcs = jnp.interp(mass_grid, ms, pcs)
+
+    ms = mass_grid
+
+    return jnp.log(pcs), ms, rs, lambdas
+
+#For diagnostic, used in example file
+def construct_family_ST_sol(eos: tuple, ndat: Int = 1, min_nsat: Float = 2) -> tuple[
+    Float[Array, "ndat"],
+    Float[Array, "ndat"],
+    Float[Array, "ndat"],
+    Float[Array, "ndat"],
+    Float[Array, "ndat"],
+    Float[Array, "ndat"],
+]:
+    r"""
+    # TODO: complete the description
+    Also output stellar structure solution via sol_iter (interior) and solext (exterior)
+    """
+
+    # Construct the dictionary
+    ns, ps, hs, es, dloge_dlogps, beta_STs, phi_cs, nu_cs = eos
+    #Here's EoS dict names defined 
+    eos_dict = dict(p=ps, h=hs, e=es, dloge_dlogp=dloge_dlogps, beta_ST = beta_STs, phi_c=phi_cs, nu_c=nu_cs)
+
+    # calculate the pc_min
+    pc_min = utils.interp_in_logspace(
+        min_nsat * 0.16 * utils.fm_inv3_to_geometric, ns, ps
+    )
+
+    pc_max = eos_dict["p"][-1]
+    pcs = jnp.logspace(jnp.log10(pc_min), jnp.log10(pc_max), num=ndat)
+    def solve_single_pc(pc):
+        """Solve for single pc value"""
+        return STtov.tov_solver_printsol(eos_dict, pc)
+    ms, rs, ks, sol_iter, solext = jax.vmap(solve_single_pc)(pcs)
+    
+    # calculate the compactness
+    cs = ms / rs
+
+    # convert the mass to solar mass and the radius to km
+    ms /= utils.solar_mass_in_meter
+    rs /= 1e3
+
+    # calculate the tidal deformability
+    lambdas = 2.0 / 3.0 * ks * jnp.power(cs, -5.0)
+
+    # Limit masses to be below MTOV
+    pcs, ms, rs, lambdas = utils.limit_by_MTOV(pcs, ms, rs, lambdas)
+
+    # Get a mass grid and interpolate, since we might have dropped provided some duplicate points
+    mass_grid = jnp.linspace(jnp.min(ms), jnp.max(ms), ndat)
+    rs = jnp.interp(mass_grid, ms, rs)
+    lambdas = jnp.interp(mass_grid, ms, lambdas)
+    pcs = jnp.interp(mass_grid, ms, pcs)
+
+    ms = mass_grid
+
+    return jnp.log(pcs), ms, rs, lambdas, sol_iter, solext
