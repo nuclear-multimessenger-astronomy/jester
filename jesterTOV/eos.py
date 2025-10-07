@@ -515,9 +515,6 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             [jnp.array(self.cs2_crust), cs2_connection, cs2_metamodel]
         )
 
-        # Make sure the cs2 stays within the physical limits
-        cs2 = jnp.clip(cs2, 1e-5, 1.0)
-
         # Compute pressure and energy from chemical potential and initialize the parent class with it
         log_mu = utils.cumtrapz(cs2, jnp.log(n)) + jnp.log(self.mu_lowest)
         mu = jnp.exp(log_mu)
