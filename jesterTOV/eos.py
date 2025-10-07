@@ -161,6 +161,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         # crust parameters
         crust_name: str = "DH",
         max_n_crust_nsat: Float = 0.5,
+        min_n_crust_nsat: Float = 2e-13,
         ndat_spline: Int = 10,
         # proton fraction
         proton_fraction: bool | float | None = None,
@@ -248,6 +249,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         self.nmax_nsat = nmax_nsat
         self.ndat = ndat
         self.max_n_crust_nsat = max_n_crust_nsat
+        self.min_n_crust_nsat = min_n_crust_nsat
         self.ndat_spline = ndat_spline
 
         if isinstance(proton_fraction, float):
@@ -370,7 +372,8 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         # Load and preprocess the crust
         ns_crust, ps_crust, es_crust = load_crust(crust_name)
         max_n_crust = max_n_crust_nsat * nsat
-        mask = ns_crust <= max_n_crust
+        min_n_crust = min_n_crust_nsat * nsat
+        mask = (ns_crust <= max_n_crust) * (ns_crust >= min_n_crust)
         self.ns_crust, self.ps_crust, self.es_crust = (
             ns_crust[mask],
             ps_crust[mask],
