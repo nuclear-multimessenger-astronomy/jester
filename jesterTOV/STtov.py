@@ -15,6 +15,7 @@ import jax.numpy as jnp
 from jax import lax
 from diffrax import diffeqsolve, ODETerm, Dopri5, SaveAt, PIDController
 
+
 def tov_ode_iter(h, y, eos):
     # EOS quantities
     ps = eos["p"]
@@ -27,14 +28,14 @@ def tov_ode_iter(h, y, eos):
     r, m, _, psi, phi = y
     e = utils.interp_in_logspace(h, hs, es)
     p = utils.interp_in_logspace(h, hs, ps)
-    
+
     # FIXME: speed of sound term will be used in tidal deformability calculations
     dloge_dlogps = eos["dloge_dlogp"]
-    #dedp = e / p * jnp.interp(h, hs, dloge_dlogps)
+    # dedp = e / p * jnp.interp(h, hs, dloge_dlogps)
 
-    #scalar coupling function
+    # scalar coupling function
     A_phi = jnp.exp(0.5 * beta_ST * jnp.power(phi, 2))
-    alpha_phi = beta_ST * phi 
+    alpha_phi = beta_ST * phi
 
     # dpdr
     dpdr = -(e + p) * (
@@ -46,13 +47,25 @@ def tov_ode_iter(h, y, eos):
 
     # chain rule derivatives
     drdh = (e + p) / dpdr
-    dmdh = (4.0 * jnp.pi * jnp.power(A_phi, 4) * jnp.power(r, 2) * e 
-            + 0.5 * r * (r - 2.0 * m) * jnp.power(psi, 2)) * drdh
-    dnudh = (2 * (m + 4.0 * jnp.pi * jnp.power(A_phi, 4) * jnp.power(r, 3) * p)
-             / (r * (r - 2.0 * m)) + r * jnp.power(psi, 2)) * drdh
+    dmdh = (
+        4.0 * jnp.pi * jnp.power(A_phi, 4) * jnp.power(r, 2) * e
+        + 0.5 * r * (r - 2.0 * m) * jnp.power(psi, 2)
+    ) * drdh
+    dnudh = (
+        2
+        * (m + 4.0 * jnp.pi * jnp.power(A_phi, 4) * jnp.power(r, 3) * p)
+        / (r * (r - 2.0 * m))
+        + r * jnp.power(psi, 2)
+    ) * drdh
     dpsidh = (
-        (4.0 * jnp.pi * jnp.power(A_phi, 4) * r / (r - 2.0 * m)
-         * (alpha_phi * (e - 3.0 * p) + r * (e - p) * psi))
+        (
+            4.0
+            * jnp.pi
+            * jnp.power(A_phi, 4)
+            * r
+            / (r - 2.0 * m)
+            * (alpha_phi * (e - 3.0 * p) + r * (e - p) * psi)
+        )
         - (2.0 * (r - m) / (r * (r - 2.0 * m)) * psi)
     ) * drdh
 
@@ -104,15 +117,25 @@ def tov_solver(eos, pc):
     tol = 1e-6
 
     # ------------------------------
-    # Function with iteration inside 
+    # Function with iteration inside
     # ------------------------------
     def run_iteration(nu0_init, phi0_init):
         # Initial carry tanpa simpan Solution
         init_state = (0, nu0_init, phi0_init, 0.0, 0.0, 1.0, 1.0)
 
         def cond_fun(state):
-            i, nu0_local, phi0_local, R_final, M_inf_final, nu_inf_final, phi_inf_final = state
-            return (i < max_iterations) & ((jnp.abs(nu_inf_final) >= tol*1e2) | (jnp.abs(phi_inf_final) >= tol))
+            (
+                i,
+                nu0_local,
+                phi0_local,
+                R_final,
+                M_inf_final,
+                nu_inf_final,
+                phi_inf_final,
+            ) = state
+            return (i < max_iterations) & (
+                (jnp.abs(nu_inf_final) >= tol * 1e2) | (jnp.abs(phi_inf_final) >= tol)
+            )
 
         def body_fun(state):
             i, nu0_local, phi0_local, _, _, _, _ = state
@@ -139,7 +162,7 @@ def tov_solver(eos, pc):
 
             # Exterior
             y_surf = (M_s, nu_s, phi_s, psi_s)
-            r_max = 4*128 * 4.0 * jnp.power(3.0 / (4.0 * jnp.pi * ec), 1.0 / 3.0)
+            r_max = 4 * 128 * 4.0 * jnp.power(3.0 / (4.0 * jnp.pi * ec), 1.0 / 3.0)
             sol_ext = diffeqsolve(
                 ODETerm(SText_ode),
                 Dopri5(scan_kind="bounded"),
@@ -148,7 +171,7 @@ def tov_solver(eos, pc):
                 dt0=1e-9,
                 y0=y_surf,
                 saveat=SaveAt(t1=True),
-                stepsize_controller=PIDController(rtol=1e-5, atol=1e-6)
+                stepsize_controller=PIDController(rtol=1e-5, atol=1e-6),
             )
 
             M_inf = sol_ext.ys[0][-1]
@@ -158,11 +181,18 @@ def tov_solver(eos, pc):
             nu0_local = nu0_local - damping * nu_inf
             phi0_local = phi0_local - damping * phi_inf
 
-
             return (i + 1, nu0_local, phi0_local, R, M_inf, nu_inf, phi_inf)
 
         final_state = lax.while_loop(cond_fun, body_fun, init_state)
-        i_final, nu0_final, phi0_final, R_final, M_inf_final, nu_inf_final, phi_inf_final = final_state
+        (
+            i_final,
+            nu0_final,
+            phi0_final,
+            R_final,
+            M_inf_final,
+            nu_inf_final,
+            phi_inf_final,
+        ) = final_state
 
         # After iteration done, recalculate again for final structure.
         # Interior
@@ -184,9 +214,9 @@ def tov_solver(eos, pc):
         nu_s = sol_iter.ys[2][-1]
         psi_s = sol_iter.ys[3][-1]
         phi_s = sol_iter.ys[4][-1]
-        
+
         y_surf = (M_s, nu_s, phi_s, psi_s)
-        r_max = 4*128 * 4.0 * jnp.power(3.0 / (4.0 * jnp.pi * ec), 1.0 / 3.0)
+        r_max = 4 * 128 * 4.0 * jnp.power(3.0 / (4.0 * jnp.pi * ec), 1.0 / 3.0)
         sol_ext_final = diffeqsolve(
             ODETerm(SText_ode),
             Dopri5(scan_kind="bounded"),
@@ -195,19 +225,20 @@ def tov_solver(eos, pc):
             dt0=1e-9,
             y0=y_surf,
             saveat=SaveAt(t1=True),
-            stepsize_controller=PIDController(rtol=1e-5, atol=1e-6)
+            stepsize_controller=PIDController(rtol=1e-5, atol=1e-6),
         )
 
         return R_final, M_inf_final, nu_inf_final, phi_inf_final, sol_ext_final
 
     R, M_inf, nu_inf, phi_inf, sol_ext = run_iteration(nu0, phi0)
-    
+
     # FIXME: Tidal deformability calculation has not been implemented
     # Return k2 = 0 temporarily
     k2 = 0
     return M_inf, R, k2
 
-#For diagnostic, used also in demonstration example file.
+
+# For diagnostic, used also in demonstration example file.
 def tov_solver_printsol(eos, pc):
     r"""
     Solve the Scalar Tensor TOV equations for a given central pressure, and return solution array.
@@ -250,8 +281,18 @@ def tov_solver_printsol(eos, pc):
         init_state = (0, nu0_init, phi0_init, 0.0, 0.0, 1.0, 1.0)
 
         def cond_fun(state):
-            i, nu0_local, phi0_local, R_final, M_inf_final, nu_inf_final, phi_inf_final = state
-            return (i < max_iterations) & ((jnp.abs(nu_inf_final) >= tol*1e2) | (jnp.abs(phi_inf_final) >= tol))
+            (
+                i,
+                nu0_local,
+                phi0_local,
+                R_final,
+                M_inf_final,
+                nu_inf_final,
+                phi_inf_final,
+            ) = state
+            return (i < max_iterations) & (
+                (jnp.abs(nu_inf_final) >= tol * 1e2) | (jnp.abs(phi_inf_final) >= tol)
+            )
 
         def body_fun(state):
             i, nu0_local, phi0_local, _, _, _, _ = state
@@ -278,7 +319,7 @@ def tov_solver_printsol(eos, pc):
 
             # Exterior
             y_surf = (M_s, nu_s, phi_s, psi_s)
-            r_max = 4*128 * 4.0 * jnp.power(3.0 / (4.0 * jnp.pi * ec), 1.0 / 3.0)
+            r_max = 4 * 128 * 4.0 * jnp.power(3.0 / (4.0 * jnp.pi * ec), 1.0 / 3.0)
             sol_ext = diffeqsolve(
                 ODETerm(SText_ode),
                 Dopri5(scan_kind="bounded"),
@@ -287,24 +328,39 @@ def tov_solver_printsol(eos, pc):
                 dt0=1e-11,
                 y0=y_surf,
                 saveat=SaveAt(t1=True),
-                stepsize_controller=PIDController(rtol=1e-5, atol=1e-6)
+                stepsize_controller=PIDController(rtol=1e-5, atol=1e-6),
             )
 
             M_inf = sol_ext.ys[0][-1]
             nu_inf = sol_ext.ys[1][-1]
             phi_inf = sol_ext.ys[2][-1]
 
-            #damped iteration
+            # damped iteration
             nu0_local = nu0_local - damping * nu_inf
             phi0_local = phi0_local - damping * phi_inf
 
-            jax.debug.print("Iteration {i}: ν∞={nu}, φ∞={phi},νc={nu0}, φc={phi0}, M={M_inf}", i=i, nu=nu_inf, phi=phi_inf,nu0 = nu0_local, phi0=phi0_local, M_inf = M_inf/utils.solar_mass_in_meter)
+            jax.debug.print(
+                "Iteration {i}: ν∞={nu}, φ∞={phi},νc={nu0}, φc={phi0}, M={M_inf}",
+                i=i,
+                nu=nu_inf,
+                phi=phi_inf,
+                nu0=nu0_local,
+                phi0=phi0_local,
+                M_inf=M_inf / utils.solar_mass_in_meter,
+            )
 
             return (i + 1, nu0_local, phi0_local, R, M_inf, nu_inf, phi_inf)
 
         final_state = lax.while_loop(cond_fun, body_fun, init_state)
-        i_final, nu0_final, phi0_final, R_final, M_inf_final, nu_inf_final, phi_inf_final = final_state
-
+        (
+            i_final,
+            nu0_final,
+            phi0_final,
+            R_final,
+            M_inf_final,
+            nu_inf_final,
+            phi_inf_final,
+        ) = final_state
 
         # After iteration done, recalculate again for final structure.
         # Interior
@@ -317,7 +373,7 @@ def tov_solver_printsol(eos, pc):
             dt0=dh,
             y0=y0,
             args=eos,
-            #saveat=SaveAt(t1=True),
+            # saveat=SaveAt(t1=True),
             saveat=SaveAt(ts=jnp.linspace(h0, 0, 500)),
             stepsize_controller=PIDController(rtol=1e-5, atol=1e-6),
         )
@@ -327,9 +383,9 @@ def tov_solver_printsol(eos, pc):
         nu_s = sol_iter.ys[2][-1]
         psi_s = sol_iter.ys[3][-1]
         phi_s = sol_iter.ys[4][-1]
-        
-        y_surf = (M_s, nu_s, phi_s, psi_s) 
-        r_max = 4*128 * 4.0 * jnp.power(3.0 / (4.0 * jnp.pi * ec), 1.0 / 3.0) 
+
+        y_surf = (M_s, nu_s, phi_s, psi_s)
+        r_max = 4 * 128 * 4.0 * jnp.power(3.0 / (4.0 * jnp.pi * ec), 1.0 / 3.0)
         sol_ext_final = diffeqsolve(
             ODETerm(SText_ode),
             Dopri5(scan_kind="bounded"),
@@ -337,14 +393,23 @@ def tov_solver_printsol(eos, pc):
             t1=r_max,
             dt0=1e-11,
             y0=y_surf,
-            saveat=SaveAt(ts=jnp.linspace(R_final, r_max, 500)), #if you want to see curve
-            stepsize_controller=PIDController(rtol=1e-5, atol=1e-6)
+            saveat=SaveAt(
+                ts=jnp.linspace(R_final, r_max, 500)
+            ),  # if you want to see curve
+            stepsize_controller=PIDController(rtol=1e-5, atol=1e-6),
         )
 
-        return R_final, M_inf_final, nu_inf_final, phi_inf_final, sol_iter, sol_ext_final
+        return (
+            R_final,
+            M_inf_final,
+            nu_inf_final,
+            phi_inf_final,
+            sol_iter,
+            sol_ext_final,
+        )
 
     R, M_inf, nu_inf, phi_inf, sol_iter, sol_ext = run_iteration(nu0, phi0)
-    
+
     # FIXME: Tidal deformability calculation has not been implemented.
     # Return k2 = 0 temporarily
     k2 = 0

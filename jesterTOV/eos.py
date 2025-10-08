@@ -161,6 +161,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         # crust parameters
         crust_name: str = "DH",
         max_n_crust_nsat: Float = 0.5,
+        min_n_crust_nsat: Float = 2e-13,
         ndat_spline: Int = 10,
         # proton fraction
         proton_fraction: bool | float | None = None,
@@ -248,6 +249,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         self.nmax_nsat = nmax_nsat
         self.ndat = ndat
         self.max_n_crust_nsat = max_n_crust_nsat
+        self.min_n_crust_nsat = min_n_crust_nsat
         self.ndat_spline = ndat_spline
 
         if isinstance(proton_fraction, float):
@@ -370,7 +372,8 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         # Load and preprocess the crust
         ns_crust, ps_crust, es_crust = load_crust(crust_name)
         max_n_crust = max_n_crust_nsat * nsat
-        mask = ns_crust <= max_n_crust
+        min_n_crust = min_n_crust_nsat * nsat
+        mask = (ns_crust <= max_n_crust) * (ns_crust >= min_n_crust)
         self.ns_crust, self.ps_crust, self.es_crust = (
             ns_crust[mask],
             ps_crust[mask],
@@ -514,9 +517,6 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         cs2 = jnp.concatenate(
             [jnp.array(self.cs2_crust), cs2_connection, cs2_metamodel]
         )
-
-        # Make sure the cs2 stays within the physical limits
-        cs2 = jnp.clip(cs2, 1e-5, 1.0)
 
         # Compute pressure and energy from chemical potential and initialize the parent class with it
         log_mu = utils.cumtrapz(cs2, jnp.log(n)) + jnp.log(self.mu_lowest)
@@ -1187,7 +1187,10 @@ def construct_family(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> tuple[
         min_nsat * 0.16 * utils.fm_inv3_to_geometric, ns, ps
     )
 
-    pc_max = eos_dict["p"][-1]
+    # end at pc at pmax at which it is causal
+    cs2 = ps / es / dloge_dlogps
+    pc_max = eos_dict["p"][locate_lowest_non_causal_point(cs2)]
+
     pcs = jnp.logspace(jnp.log10(pc_min), jnp.log10(pc_max), num=ndat)
 
     def solve_single_pc(pc):
@@ -1329,6 +1332,7 @@ def construct_family_nonGR(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> t
 
     return jnp.log(pcs), ms, rs, lambdas
 
+
 def construct_family_ST(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> tuple[
     Float[Array, "ndat"],
     Float[Array, "ndat"],
@@ -1342,8 +1346,16 @@ def construct_family_ST(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> tupl
 
     # Construct the dictionary
     ns, ps, hs, es, dloge_dlogps, beta_STs, phi_cs, nu_cs = eos
-    #Here's EoS dict names defined 
-    eos_dict = dict(p=ps, h=hs, e=es, dloge_dlogp=dloge_dlogps, beta_ST = beta_STs, phi_c=phi_cs, nu_c=nu_cs)
+    # Here's EoS dict names defined
+    eos_dict = dict(
+        p=ps,
+        h=hs,
+        e=es,
+        dloge_dlogp=dloge_dlogps,
+        beta_ST=beta_STs,
+        phi_c=phi_cs,
+        nu_c=nu_cs,
+    )
 
     # calculate the pc_min
     pc_min = utils.interp_in_logspace(
@@ -1352,11 +1364,13 @@ def construct_family_ST(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> tupl
 
     pc_max = eos_dict["p"][-1]
     pcs = jnp.logspace(jnp.log10(pc_min), jnp.log10(pc_max), num=ndat)
+
     def solve_single_pc(pc):
         """Solve for single pc value"""
         return STtov.tov_solver(eos_dict, pc)
+
     ms, rs, ks = jax.vmap(solve_single_pc)(pcs)
-    
+
     # calculate the compactness
     cs = ms / rs
 
@@ -1380,7 +1394,8 @@ def construct_family_ST(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> tupl
 
     return jnp.log(pcs), ms, rs, lambdas
 
-#For diagnostic, used in example file
+
+# For diagnostic, used in example file
 def construct_family_ST_sol(eos: tuple, ndat: Int = 1, min_nsat: Float = 2) -> tuple[
     Float[Array, "ndat"],
     Float[Array, "ndat"],
@@ -1396,8 +1411,16 @@ def construct_family_ST_sol(eos: tuple, ndat: Int = 1, min_nsat: Float = 2) -> t
 
     # Construct the dictionary
     ns, ps, hs, es, dloge_dlogps, beta_STs, phi_cs, nu_cs = eos
-    #Here's EoS dict names defined 
-    eos_dict = dict(p=ps, h=hs, e=es, dloge_dlogp=dloge_dlogps, beta_ST = beta_STs, phi_c=phi_cs, nu_c=nu_cs)
+    # Here's EoS dict names defined
+    eos_dict = dict(
+        p=ps,
+        h=hs,
+        e=es,
+        dloge_dlogp=dloge_dlogps,
+        beta_ST=beta_STs,
+        phi_c=phi_cs,
+        nu_c=nu_cs,
+    )
 
     # calculate the pc_min
     pc_min = utils.interp_in_logspace(
@@ -1406,11 +1429,13 @@ def construct_family_ST_sol(eos: tuple, ndat: Int = 1, min_nsat: Float = 2) -> t
 
     pc_max = eos_dict["p"][-1]
     pcs = jnp.logspace(jnp.log10(pc_min), jnp.log10(pc_max), num=ndat)
+
     def solve_single_pc(pc):
         """Solve for single pc value"""
         return STtov.tov_solver_printsol(eos_dict, pc)
+
     ms, rs, ks, sol_iter, solext = jax.vmap(solve_single_pc)(pcs)
-    
+
     # calculate the compactness
     cs = ms / rs
 

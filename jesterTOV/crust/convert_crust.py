@@ -28,7 +28,9 @@ def convert_DH_crust(
 
     # Interpolate the curves if desired
     if interpolate:
-        n_interp = np.linspace(n[0], n[n < max_n_crust][-1], interpolation_ndat)
+        n_interp = np.logspace(
+            np.log10(n[0]), np.log10(n[n < max_n_crust][-1]), interpolation_ndat
+        )
         e = interp1d(n, e, kind="cubic", bounds_error=False)(n_interp)
         p = interp1d(n, p, kind="cubic", bounds_error=False)(n_interp)
         n = n_interp
