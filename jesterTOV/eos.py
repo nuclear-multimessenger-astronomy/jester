@@ -1126,22 +1126,18 @@ class MetaModel_with_peakCSE_EOS_model(Interpolate_EOS_model):
         return ns, ps, hs, es, dloge_dlogps, mu, cs2
 
     def offset_calc(self, nbreak, cs2_break, peakCSE_dict):
-        gaussian_part = (
-            peakCSE_dict["gaussian_peak"]
-            * jnp.exp(
-                -0.5
-                * (nbreak - peakCSE_dict["gaussian_mu"]) ** 2
-                / peakCSE_dict["gaussian_sigma"] ** 2
-            )
+        gaussian_part = peakCSE_dict["gaussian_peak"] * jnp.exp(
+            -0.5
+            * (nbreak - peakCSE_dict["gaussian_mu"]) ** 2
+            / peakCSE_dict["gaussian_sigma"] ** 2
         )
         exp_part = jnp.exp(
             -peakCSE_dict["logit_growth_rate"]
             * (nbreak - peakCSE_dict["logit_midpoint"])
         )
-        offset = (
-            (1.0 + exp_part) * (cs2_break - gaussian_part) - 1.0 / 3.0
-        ) / exp_part
+        offset = ((1.0 + exp_part) * (cs2_break - gaussian_part) - 1.0 / 3.0) / exp_part
         return offset
+
 
 def locate_lowest_non_causal_point(cs2):
     r"""
@@ -1347,6 +1343,7 @@ def construct_family_nonGR(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> t
 
     return jnp.log(pcs), ms, rs, lambdas
 
+
 def construct_family_ST(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> tuple[
     Float[Array, "ndat"],
     Float[Array, "ndat"],
@@ -1360,8 +1357,16 @@ def construct_family_ST(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> tupl
 
     # Construct the dictionary
     ns, ps, hs, es, dloge_dlogps, beta_STs, phi_cs, nu_cs = eos
-    #Here's EoS dict names defined 
-    eos_dict = dict(p=ps, h=hs, e=es, dloge_dlogp=dloge_dlogps, beta_ST = beta_STs, phi_c=phi_cs, nu_c=nu_cs)
+    # Here's EoS dict names defined
+    eos_dict = dict(
+        p=ps,
+        h=hs,
+        e=es,
+        dloge_dlogp=dloge_dlogps,
+        beta_ST=beta_STs,
+        phi_c=phi_cs,
+        nu_c=nu_cs,
+    )
 
     # calculate the pc_min
     pc_min = utils.interp_in_logspace(
@@ -1370,11 +1375,13 @@ def construct_family_ST(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> tupl
 
     pc_max = eos_dict["p"][-1]
     pcs = jnp.logspace(jnp.log10(pc_min), jnp.log10(pc_max), num=ndat)
+
     def solve_single_pc(pc):
         """Solve for single pc value"""
         return STtov.tov_solver(eos_dict, pc)
+
     ms, rs, ks = jax.vmap(solve_single_pc)(pcs)
-    
+
     # calculate the compactness
     cs = ms / rs
 
@@ -1398,7 +1405,8 @@ def construct_family_ST(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> tupl
 
     return jnp.log(pcs), ms, rs, lambdas
 
-#For diagnostic, used in example file
+
+# For diagnostic, used in example file
 def construct_family_ST_sol(eos: tuple, ndat: Int = 1, min_nsat: Float = 2) -> tuple[
     Float[Array, "ndat"],
     Float[Array, "ndat"],
@@ -1414,8 +1422,16 @@ def construct_family_ST_sol(eos: tuple, ndat: Int = 1, min_nsat: Float = 2) -> t
 
     # Construct the dictionary
     ns, ps, hs, es, dloge_dlogps, beta_STs, phi_cs, nu_cs = eos
-    #Here's EoS dict names defined 
-    eos_dict = dict(p=ps, h=hs, e=es, dloge_dlogp=dloge_dlogps, beta_ST = beta_STs, phi_c=phi_cs, nu_c=nu_cs)
+    # Here's EoS dict names defined
+    eos_dict = dict(
+        p=ps,
+        h=hs,
+        e=es,
+        dloge_dlogp=dloge_dlogps,
+        beta_ST=beta_STs,
+        phi_c=phi_cs,
+        nu_c=nu_cs,
+    )
 
     # calculate the pc_min
     pc_min = utils.interp_in_logspace(
@@ -1424,11 +1440,13 @@ def construct_family_ST_sol(eos: tuple, ndat: Int = 1, min_nsat: Float = 2) -> t
 
     pc_max = eos_dict["p"][-1]
     pcs = jnp.logspace(jnp.log10(pc_min), jnp.log10(pc_max), num=ndat)
+
     def solve_single_pc(pc):
         """Solve for single pc value"""
         return STtov.tov_solver_printsol(eos_dict, pc)
+
     ms, rs, ks, sol_iter, solext = jax.vmap(solve_single_pc)(pcs)
-    
+
     # calculate the compactness
     cs = ms / rs
 
