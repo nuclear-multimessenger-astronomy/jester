@@ -1079,6 +1079,7 @@ class MetaModel_with_peakCSE_EOS_model(Interpolate_EOS_model):
         # Define the speed-of-sound of the extension portion
         # the model is taken from arXiv:1812.08188
         # but instead of energy density, I am using density as the input
+        offset = self.offset_calc(NEP_dict["nbreak"], cs2_break, peakCSE_dict)
         cs2_extension_function = lambda x: (
             peakCSE_dict["gaussian_peak"]
             * jnp.exp(
@@ -1088,9 +1089,9 @@ class MetaModel_with_peakCSE_EOS_model(Interpolate_EOS_model):
                     / peakCSE_dict["gaussian_sigma"] ** 2
                 )
             )
-            + cs2_break
+            + offset
             + (
-                (1.0 / 3.0 - cs2_break)
+                (1.0 / 3.0 - offset)
                 / (
                     1.0
                     + jnp.exp(
@@ -1123,6 +1124,19 @@ class MetaModel_with_peakCSE_EOS_model(Interpolate_EOS_model):
         ns, ps, hs, es, dloge_dlogps = self.interpolate_eos(n, p, e)
 
         return ns, ps, hs, es, dloge_dlogps, mu, cs2
+
+    def offset_calc(self, nbreak, cs2_break, peakCSE_dict):
+        gaussian_part = peakCSE_dict["gaussian_peak"] * jnp.exp(
+            -0.5
+            * (nbreak - peakCSE_dict["gaussian_mu"]) ** 2
+            / peakCSE_dict["gaussian_sigma"] ** 2
+        )
+        exp_part = jnp.exp(
+            -peakCSE_dict["logit_growth_rate"]
+            * (nbreak - peakCSE_dict["logit_midpoint"])
+        )
+        offset = ((1.0 + exp_part) * (cs2_break - gaussian_part) - 1.0 / 3.0) / exp_part
+        return offset
 
 
 def locate_lowest_non_causal_point(cs2):
