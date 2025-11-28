@@ -43,7 +43,11 @@ If you use `jester` in your work, please cite our paper!
     archivePrefix = "arXiv",
     primaryClass = "astro-ph.HE",
     reportNumber = "LA-UR-25-23486",
-    month = "4",
+    doi = "10.1103/v2y8-kxvx",
+    journal = "Phys. Rev. D",
+    volume = "112",
+    number = "4",
+    pages = "043037",
     year = "2025"
 }
 ```
