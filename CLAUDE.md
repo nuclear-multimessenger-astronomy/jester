@@ -6,38 +6,48 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 JESTER (**J**ax-based **E**o**S** and **T**ov solv**ER**) is a scientific computing library for solving the Tolman-Oppenheimer-Volkoff (TOV) equations for neutron star physics. It provides hardware-accelerated computations via JAX with automatic differentiation capabilities.
 
+## ⚡ IMPORTANT: Use `uv` for All Python Operations
+
+**ALWAYS use `uv` for running Python commands and managing dependencies:**
+- Use `uv run <command>` instead of running commands directly
+- Use `uv pip install` instead of `pip install`
+- Use `uv run pytest` instead of `pytest`
+- Use `uv run pre-commit` instead of `pre-commit`
+
+This ensures consistent dependency management and environment handling across all development tasks.
+
 ## Development Commands
 
 ### Installation and Setup
 ```bash
 # Development install
-pip install -e .
+uv pip install -e .
 
 # Install pre-commit hooks
-pre-commit install
+uv run pre-commit install
 
 # For GPU support (optional)
-pip install "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+uv pip install "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 ```
 
 ### Code Quality
 ```bash
 # Run all pre-commit checks
-pre-commit run --all-files
+uv run pre-commit run --all-files
 
 # Manual formatting and linting
-black .                    # Format code
-ruff check --fix .         # Lint and fix issues
+uv run black .                    # Format code
+uv run ruff check --fix .         # Lint and fix issues
 
 # Type checking (install if needed: npm install -g pyright)
-pyright                    # Type checking all files
-pyright jesterTOV/         # Type check specific directory
+uv run pyright                    # Type checking all files
+uv run pyright jesterTOV/         # Type check specific directory
 ```
 
 ### Testing
 ```bash
-# Run tests (if available)
-pytest tests/
+# Run tests
+uv run pytest tests/
 ```
 
 **TESTING PHILOSOPHY**: Focus on understanding physics and fixing root causes rather than modifying tests to pass. Debug with print statements to understand failures, then fix underlying issues in source code.
@@ -230,10 +240,10 @@ open docs/_build/html/index.html
 ### Testing Commands
 ```bash
 # Run all tests
-pytest
+uv run pytest
 
 # Run specific categories
-pytest -m unit          # Unit tests only
-pytest -m integration   # Integration tests only
-pytest -m "not slow"    # Skip slow tests
+uv run pytest -m unit          # Unit tests only
+uv run pytest -m integration   # Integration tests only
+uv run pytest -m "not slow"    # Skip slow tests
 ```

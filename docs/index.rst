@@ -53,35 +53,9 @@ Contents
 
 .. toctree::
    :maxdepth: 2
-   :caption: User Guide
-   
-   installation
-   quickstart
-   physics_background
-   tutorials/index
-   
-.. toctree::
-   :maxdepth: 2
    :caption: API Reference
-   
+
    api/jesterTOV
-   api/eos
-   api/tov
-   api/ptov
-   api/utils
-   
-.. toctree::
-   :maxdepth: 2
-   :caption: Examples
-   
-   examples/index
-   
-.. toctree::
-   :maxdepth: 1
-   :caption: Development
-   
-   contributing
-   changelog
 
 Indices and tables
 ==================

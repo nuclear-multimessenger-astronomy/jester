@@ -3,19 +3,6 @@ jesterTOV.eos module
 
 The equation of state (EOS) module provides classes and functions for modeling neutron star matter equations of state.
 
-.. automodule:: jesterTOV.eos
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Key Classes
------------
-
-.. autoclass:: jesterTOV.eos.MetaModel_EOS_model
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 Mathematical Background
 -----------------------
 
@@ -28,3 +15,11 @@ The total energy density is given by:
    \varepsilon(n, \delta) = \varepsilon_{\text{kinetic}}(n, \delta) + \varepsilon_{\text{potential}}(n, \delta)
 
 where :math:`n` is the baryon number density and :math:`\delta = 1 - 2Y_p` is the isospin asymmetry parameter.
+
+API Reference
+-------------
+
+.. automodule:: jesterTOV.eos
+   :members:
+   :undoc-members:
+   :show-inheritance:
