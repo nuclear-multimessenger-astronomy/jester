@@ -12,6 +12,13 @@ JAX-accelerated nuclear equation of state code and TOV solver -- with support fo
 pip install jesterTOV
 ```
 
+With optional dependencies:
+```bash
+pip install jesterTOV[examples]  # For running example notebooks
+pip install jesterTOV[dev]       # For development (testing, pre-commit)
+pip install jesterTOV[docs]      # For building documentation
+```
+
 Or install from source:
 ```bash
 pip install git+https://github.com/nuclear-multimessenger-astronomy/jester
