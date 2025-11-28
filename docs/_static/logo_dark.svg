@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="200" height="50" viewBox="0 0 200 50" xmlns="http://www.w3.org/2000/svg">
+  <text x="10" y="35" font-family="Arial, sans-serif" font-size="32" font-weight="bold" fill="#ecf0f1">
+    JESTER
+  </text>
+  <text x="10" y="47" font-family="Arial, sans-serif" font-size="8" fill="#bdc3c7">
+    JAX-based EoS and TOV solvER
+  </text>
+</svg>

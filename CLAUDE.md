@@ -53,6 +53,87 @@ pytest tests/
 ### Test Suite Status
 **All 97 tests passing** - No skipped tests!
 
+### Documentation Development
+```bash
+# Install documentation dependencies
+uv pip install -e ".[docs]"
+
+# Build documentation locally
+uv run sphinx-build docs docs/_build/html
+
+# Build with warnings as errors (strict mode, same as CI)
+uv run sphinx-build -W --keep-going docs docs/_build/html
+
+# View documentation in browser
+open docs/_build/html/index.html  # macOS
+xdg-open docs/_build/html/index.html  # Linux
+
+# Clean build artifacts
+rm -rf docs/_build
+```
+
+**Documentation Structure**:
+```
+docs/
+├── conf.py              # Sphinx configuration (theme, extensions, settings)
+├── index.rst            # Main documentation page with table of contents
+├── api/                 # Auto-generated API documentation
+│   ├── jesterTOV.rst
+│   ├── eos.rst
+│   ├── tov.rst
+│   ├── ptov.rst
+│   └── utils.rst
+└── _static/             # Static assets (CSS, logos, images)
+    ├── style.css        # Custom CSS overrides
+    ├── logo_light.svg   # Logo for light mode
+    ├── logo_dark.svg    # Logo for dark mode
+    └── icon.svg         # Favicon
+```
+
+**Theme and Styling**:
+- **Theme**: `sphinx-book-theme` (matching flowjax style)
+- **Custom CSS**: `docs/_static/style.css` for theme overrides
+- **Logo customization**: Update SVG files in `docs/_static/` or modify `conf.py` logo paths
+- **Theme options**: Edit `html_theme_options` in `docs/conf.py`
+
+**Adding New Documentation Pages**:
+1. Create `.rst` or `.md` file in `docs/` directory
+2. Add the file to a `toctree` directive in `index.rst` or parent page
+3. Example:
+   ```rst
+   .. toctree::
+      :maxdepth: 2
+
+      new_page
+      tutorials/tutorial_1
+   ```
+
+**Working with LaTeX in Docstrings**:
+- Always use raw strings: `r"""..."""` to avoid escape sequence warnings
+- Inline math: `$E = mc^2$` or `\(E = mc^2\)`
+- Display math: `$$E = mc^2$$` or `\[E = mc^2\]`
+- MathJax is configured in `conf.py` to handle both formats
+
+**Documentation Deployment**:
+- **Automatic**: Pushes to `main` branch trigger GitHub Actions workflow (`.github/workflows/docs.yml`)
+- **Manual**: Can trigger via GitHub Actions "Run workflow" button
+- **URL**: https://nuclear-multimessenger-astronomy.github.io/jester/
+- **Build time**: ~2-3 minutes from push to live
+
+**Troubleshooting**:
+- **Import errors during build**: Ensure all dependencies are in `pyproject.toml` `[project.optional-dependencies.docs]`
+- **Missing modules**: Run `uv pip install -e ".[docs]"` to reinstall
+- **Broken links**: Check `toctree` directives reference existing files
+- **Theme not loading**: Verify `sphinx-book-theme` is installed and `html_static_path` includes `_static`
+- **Logo not showing**: Check SVG file paths in `conf.py` match files in `docs/_static/`
+
+**Documentation Best Practices**:
+- Build locally before committing to catch errors early
+- Use `sphinx-build -W` (warnings as errors) to match CI behavior
+- Keep docstrings concise but complete with type hints
+- Add examples to docstrings for complex functions
+- Update API docs when adding new modules or public functions
+
 ## Architecture
 
 ### Core Modules
@@ -111,11 +192,30 @@ Supports Python 3.10-3.12 with JAX ecosystem dependencies.
 **Status**: GitHub Actions CI operational with automated testing
 
 ### ✅ Phase 3: Documentation System - COMPLETED
-**Status**: Sphinx documentation with Read the Docs integration operational
+**Status**: Sphinx documentation with GitHub Pages deployment operational
+
+**Documentation Details**:
+- **Site URL**: https://nuclear-multimessenger-astronomy.github.io/jester/
+- **Theme**: sphinx-book-theme (matching flowjax style)
+- **Deployment**: Automated via GitHub Actions on push to main
+- **Features**: Copy buttons, dark/light mode, responsive design
+- **Build Tool**: uv for dependency management
+
+**Local Documentation Build**:
+```bash
+# Install documentation dependencies
+uv pip install -e ".[docs]"
+
+# Build documentation
+uv run sphinx-build docs docs/_build/html
+
+# View locally
+open docs/_build/html/index.html
+```
 
 **Achievements**:
-- ✅ **Documentation site** - Full API docs with mathematical formulas at readthedocs.io
-- ✅ **GitHub Actions CI/CD** - Automated testing across Python 3.10, 3.11, 3.12
+- ✅ **Documentation site** - GitHub Pages with flowjax-style theme
+- ✅ **GitHub Actions CI/CD** - Automated testing and docs deployment
 - ✅ **Code quality** - Pre-commit hooks with black, ruff, comprehensive test suite
 - ✅ **Type safety** - Reduced pyright errors from 23 to 10 (57% improvement)
 
