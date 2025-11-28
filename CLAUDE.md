@@ -80,21 +80,29 @@ Supports Python 3.10-3.12 with JAX ecosystem dependencies.
 
 ## Repository Status
 
-### 🔥 HIGH PRIORITY: PyPI Package Release
-**Status**: Ready for production release - all infrastructure complete
+### ✅ PyPI Package Release - COMPLETED
+**Status**: v0.1.0 published to PyPI - Package available for installation
 
-**Critical Actions Needed**:
-1. **Package preparation** - Verify pyproject.toml metadata and dependencies
-2. **Version tagging** - Create v0.1.0 release tag with proper changelog
-3. **PyPI upload** - Build and upload package to Python Package Index
-4. **Installation testing** - Verify `pip install jesterTOV` works correctly
-5. **Documentation update** - Update README and docs with PyPI installation instructions
+**IMPORTANT**: Future PyPI releases MUST be done through pull requests, not direct commits to main. This ensures:
+- Proper code review before publishing
+- Clean git history
+- Adherence to branch protection rules
+- CI/CD validation before release
 
-**Benefits of PyPI Release**:
-- Easy installation for users: `pip install jesterTOV`
-- Version management and dependency resolution
-- Increased discoverability and adoption
-- Professional scientific software distribution
+**Release Workflow for Future Versions**:
+1. Create a feature branch for version bump and changelog
+2. Update `version` in pyproject.toml
+3. Build with `uv build` to verify
+4. Create PR to main branch
+5. After PR approval and merge, tag the merge commit: `git tag v0.x.x`
+6. Push tag: `git push origin v0.x.x`
+7. Publish to PyPI: `uv publish --token <token>`
+
+**v0.1.0 Release Info**:
+- Package available: `pip install jesterTOV`
+- PyPI page: https://pypi.org/project/jesterTOV/
+- Git tag: v0.1.0
+- Build system: hatchling with flat package layout
 
 ### ✅ Phase 1: Testing Infrastructure - COMPLETED
 **Status**: All 97 tests passing with no skipped tests
