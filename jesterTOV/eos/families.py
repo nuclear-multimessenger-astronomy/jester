@@ -1,10 +1,12 @@
+# FIXME: move to a different place
+
 r"""Neutron star family construction utilities."""
 
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float, Int
 
-from .. import utils, tov, ptov, STtov
+from jesterTOV import utils, tov, ptov, STtov
 
 
 def locate_lowest_non_causal_point(cs2):

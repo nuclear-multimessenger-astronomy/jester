@@ -4,9 +4,9 @@ import jax.numpy as jnp
 from jax.scipy.special import factorial
 from jaxtyping import Array, Float, Int
 
-from ... import utils
-from ..base import Interpolate_EOS_model
-from ..crust import load_crust
+from jesterTOV import utils
+from jesterTOV.eos.base import Interpolate_EOS_model
+from jesterTOV.eos.crust import load_crust
 
 
 class MetaModel_EOS_model(Interpolate_EOS_model):

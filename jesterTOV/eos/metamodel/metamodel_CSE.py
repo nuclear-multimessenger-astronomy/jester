@@ -3,9 +3,9 @@ r"""Meta-model EOS with piecewise constant speed-of-sound extensions (CSE)."""
 import jax.numpy as jnp
 from jaxtyping import Array, Float, Int
 
-from ... import utils
-from ..base import Interpolate_EOS_model
-from .metamodel import MetaModel_EOS_model
+from jesterTOV import utils
+from jesterTOV.eos.base import Interpolate_EOS_model
+from jesterTOV.eos.metamodel.base import MetaModel_EOS_model
 
 
 class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):

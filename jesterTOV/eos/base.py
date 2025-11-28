@@ -3,7 +3,7 @@ r"""Base classes for equation of state models."""
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from .. import utils
+from jesterTOV import utils
 
 
 class Interpolate_EOS_model(object):
