@@ -32,21 +32,6 @@ jobs:
         pip install pre-commit
         pre-commit run --all-files
 
-    - name: Run tests with coverage
+    - name: Run tests
       run: |
-        pytest --cov=jesterTOV --cov-report=xml --cov-report=term-missing
-
-    - name: Upload results to Codecov
-      uses: codecov/codecov-action@v5
-      with:
-        token: ${{ secrets.CODECOV_TOKEN }}
-        slug: nuclear-multimessenger-astronomy/jester
-
-    - name: Upload coverage to Codecov
-      if: matrix.python-version == '3.11'
-      uses: codecov/codecov-action@v3
-      with:
-        file: ./coverage.xml
-        flags: unittests
-        name: codecov-umbrella
-        fail_ci_if_error: false
+        pytest
