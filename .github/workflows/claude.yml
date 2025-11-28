@@ -1,4 +1,4 @@
-name: Claude Code
+name: Claude Code - On Demand
 
 on:
   issue_comment:

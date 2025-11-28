@@ -1,0 +1,10 @@
+# CODEOWNERS file for jester repository
+# This file defines required reviewers for specific files/directories
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# GitHub Actions workflows require review before changes can be merged
+# This prevents unauthorized modifications to CI/CD and automation
+/.github/workflows/ @ThibeauWouters @tsunhopang
+
+# Security: Require review for changes to security-sensitive files
+/.github/CODEOWNERS @ThibeauWouters @tsunhopang
