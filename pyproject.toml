@@ -8,8 +8,8 @@ include = ["jesterTOV/*"]
 [project]
 name = "jesterTOV"
 authors = [
-  {name = "Peter T. H. Pang", email = "tsunhopang@gmail.com"},
-  {name = "Thibeau Wouters", email = "thibeauwouters@gmail.com"}
+  {name = "Thibeau Wouters", email = "thibeauwouters@gmail.com"},
+  {name = "Peter T. H. Pang", email = "tsunhopang@gmail.com"}
 ]
 version = "0.1.0"
 description = "JAX-accelerated nuclear equation of state code and TOV solver with automatic differentiation"
@@ -18,7 +18,17 @@ readme = "README.md"
 requires-python = ">=3.10, <3.13"
 license = {file = "LICENSE"}
 urls = {repository = "https://github.com/nuclear-multimessenger-astronomy/jester"}
-dependencies = ["jax>=0.4.23", "jaxtyping>=0.2.24", "typing_extensions>=4.5.0", "diffrax>=0.5.0", "interpax"]
+dependencies = [
+    "jax>=0.4.23",
+    "jaxtyping>=0.2.24",
+    "typing_extensions>=4.5.0",
+    "diffrax>=0.5.0",
+    "interpax",
+    "ipykernel>=7.1.0",
+    "pip>=25.3",
+    "matplotlib>=3.10.7",
+    "pre-commit>=4.5.0",
+]
 
 classifiers = [
     "Programming Language :: Python :: 3",
