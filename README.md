@@ -4,7 +4,7 @@
 
 # JESTER
 
-JAX-accelerated nuclear equation of state code and TOV solver -- with support for automatic differentiation!
+JAX-accelerated nuclear equation of state code and TOV solver - with support for automatic differentiation!
 
 ## Installation
 
