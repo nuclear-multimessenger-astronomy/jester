@@ -158,8 +158,13 @@ class TestCalculateRestMassDensity:
         e = jnp.linspace(100, 1000, 20)  # Energy density
         p = jnp.linspace(10, 300, 20)  # Pressure
 
-        # FIXME: Skip this test for now as it has compatibility issues with current diffrax version
-        pytest.skip("Rest mass density calculation has diffrax compatibility issues")
+        # Test the actual function to see what error occurs
+        rho = utils.calculate_rest_mass_density(e, p)
+
+        # Basic checks
+        assert jnp.all(rho > 0)
+        assert jnp.all(jnp.isfinite(rho))
+        assert len(rho) == len(e)
 
 
 class TestSigmoid:

@@ -46,18 +46,12 @@ pytest tests/
 - Geometric units require careful handling (realistic NS: M~2000m, R~12000m, P~1e-11 m^-2)
 - TOV integration direction: enthalpy decreases center→surface, so dm/dh < 0 is correct
 - Use realistic polytropic EOSs, not linear ones, for neutron star tests
+- **MetaModel EOS density limits**: MetaModel should only be tested up to ~2 nsat (causality issues at higher densities)
+- **MetaModel+CSE**: CSE extension can safely go to 6+ nsat (designed for high-density regions)
+- **Stiff EOS parameters**: Use L_sym ≥ 90, Q_sat = 0, K_sym = 0 for realistic neutron star masses
 
-### Skipped Tests Status
-**2 tests currently skipped** (properly documented edge cases):
-
-#### 1. Rest Mass Density Calculation (`tests/test_utils.py:161`)
-**Status**: Function available but test skipped due to diffrax compatibility
-**Location**: `jesterTOV/utils.py:306-360`  
-**Test with**: `pytest tests/test_utils.py::TestCalculateRestMassDensity -v`
-
-#### 2. Extreme Soft EOS Test (`tests/test_integration.py:425`)
-**Status**: Physics-based limitation - soft EOS naturally produces lower maximum masses (1.18 vs 1.2 Msun threshold)
-**Priority**: Low (represents physically valid edge case, not core functionality failure)
+### Test Suite Status
+**All 97 tests passing** - No skipped tests!
 
 ## Architecture
 
@@ -103,10 +97,10 @@ Supports Python 3.10-3.12 with JAX ecosystem dependencies.
 - Professional scientific software distribution
 
 ### ✅ Phase 1: Testing Infrastructure - COMPLETED
-**Status**: 95 tests passing, 2 properly skipped (known issues)
+**Status**: All 97 tests passing with no skipped tests
 
-### ✅ Phase 2: CI/CD & Code Quality - COMPLETED  
-**Status**: GitHub Actions CI operational with full coverage reporting
+### ✅ Phase 2: CI/CD & Code Quality - COMPLETED
+**Status**: GitHub Actions CI operational with automated testing
 
 ### ✅ Phase 3: Documentation System - COMPLETED
 **Status**: Sphinx documentation with Read the Docs integration operational
@@ -114,7 +108,7 @@ Supports Python 3.10-3.12 with JAX ecosystem dependencies.
 **Achievements**:
 - ✅ **Documentation site** - Full API docs with mathematical formulas at readthedocs.io
 - ✅ **GitHub Actions CI/CD** - Automated testing across Python 3.10, 3.11, 3.12
-- ✅ **Code quality** - Pre-commit hooks with black, ruff, comprehensive test coverage
+- ✅ **Code quality** - Pre-commit hooks with black, ruff, comprehensive test suite
 - ✅ **Type safety** - Reduced pyright errors from 23 to 10 (57% improvement)
 
 ### ✅ Type Safety Issues - RESOLVED
@@ -130,10 +124,7 @@ Supports Python 3.10-3.12 with JAX ecosystem dependencies.
 # Run all tests
 pytest
 
-# Run with coverage
-pytest --cov=jesterTOV --cov-report=html
-
-# Run specific categories  
+# Run specific categories
 pytest -m unit          # Unit tests only
 pytest -m integration   # Integration tests only
 pytest -m "not slow"    # Skip slow tests

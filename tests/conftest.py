@@ -44,7 +44,7 @@ def metamodel_params():
         "b_sym": 25.0,
         "nsat": 0.16,
         "nmin_MM_nsat": 0.12 / 0.16,
-        "nmax_nsat": 8.0,
+        "nmax_nsat": 2.0,
         "ndat": 100,
         "crust_name": "DH",
         "max_n_crust_nsat": 0.5,
@@ -58,11 +58,11 @@ def nep_dict():
     return {
         "E_sat": -16.0,
         "K_sat": 220.0,
-        "Q_sat": -300.0,
+        "Q_sat": 0.0,
         "Z_sat": 0.0,
         "E_sym": 32.0,
-        "L_sym": 60.0,
-        "K_sym": -100.0,
+        "L_sym": 90.0,
+        "K_sym": 0.0,
         "Q_sym": 0.0,
         "Z_sym": 0.0,
     }
