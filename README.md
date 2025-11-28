@@ -1,5 +1,5 @@
 [![CI](https://github.com/nuclear-multimessenger-astronomy/jester/actions/workflows/ci.yml/badge.svg)](https://github.com/nuclear-multimessenger-astronomy/jester/actions/workflows/ci.yml)
-[![Documentation Status](https://readthedocs.org/projects/jestertov/badge/?version=latest)](https://jestertov.readthedocs.io/en/latest/)
+[![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://nuclear-multimessenger-astronomy.github.io/jester/)
 [![arXiv](https://img.shields.io/badge/arXiv-2504.15893-b31b1b.svg)](https://arxiv.org/abs/2504.15893)
 
 # JESTER
@@ -31,7 +31,23 @@ pip install "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-releases/jax
 
 ## Documentation
 
-📚 **[Read the full documentation →](https://jestertov.readthedocs.io/en/latest/)**
+📚 **[Read the full documentation →](https://nuclear-multimessenger-astronomy.github.io/jester/)**
+
+### Building Documentation Locally
+
+To build and view the documentation on your local machine:
+
+```bash
+# Install documentation dependencies
+uv pip install -e ".[docs]"
+
+# Build the documentation
+uv run sphinx-build docs docs/_build/html
+
+# Open in your browser
+open docs/_build/html/index.html  # macOS
+xdg-open docs/_build/html/index.html  # Linux
+```
 
 ## Example notebooks
 
