@@ -20,7 +20,7 @@ from jimgw.prior import UniformPrior, CombinePrior
 from jimgw.jim import Jim
 from jesterTOV.inference.transforms import MicroToMacroTransform
 from jesterTOV.inference.constraints.likelihood import GWlikelihood_with_masses, RadioTimingLikelihood, ChiEFTLikelihood, NICERLikelihood, NICERLikelihood_with_masses, CombinedLikelihood, ZeroLikelihood
-import jesterTOV.inference.postprocessing as postprocessing
+import jesterTOV.inference.postprocessing as postprocessing # TODO: need to implement this
 
 print(f"GPU found?")
 print(jax.devices())
@@ -203,6 +203,7 @@ def main(args):
     
     # Sample GW170817 PE
     # TODO: has to be discarded in the end? Or setup in the priors?
+    likelihoods_list_GW = []
     if args.sample_GW170817:
         m1_GW170817_prior = UniformPrior(1.5, 2.1, parameter_names=["mass_1_GW170817"])
         m2_GW170817_prior = UniformPrior(1.0, 1.5, parameter_names=["mass_2_GW170817"])
@@ -212,9 +213,6 @@ def main(args):
         
         keep_names += ["mass_1_GW170817", "mass_2_GW170817"]
         
-    likelihoods_list_GW = []
-    if args.sample_GW170817:
-        # NOTE: this is a slightly older NF so the default kwargs are ok
         likelihoods_list_GW += [GWlikelihood_with_masses("GW170817", "./NFs/GW170817/model.eqx")]
     
     #############
@@ -267,7 +265,6 @@ def main(args):
     ##############
     ### chiEFT ###
     ##############
-
     
     likelihoods_list_chiEFT = []
     # FIXME: only add chiEFT if we are sampling MM+CSE, ignore during MM-only

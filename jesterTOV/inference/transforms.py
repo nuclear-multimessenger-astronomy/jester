@@ -2,7 +2,6 @@ import jax.numpy as jnp
 from jax.scipy.special import logsumexp
 from jaxtyping import Float
 
-import copy
 from jimgw.transforms import NtoMTransform
 from jesterTOV.eos import MetaModel_with_CSE_EOS_model, MetaModel_EOS_model, construct_family
 
