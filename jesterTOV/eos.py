@@ -4,7 +4,7 @@ import jax.numpy as jnp
 from jax.scipy.special import factorial
 from jaxtyping import Array, Float, Int
 
-from . import utils, tov, ptov, STtov
+from . import utils, tov, ptov, STtov, eibitov
 
 ##############
 ### CRUSTS ###
