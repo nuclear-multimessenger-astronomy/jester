@@ -1346,7 +1346,123 @@ def construct_family_nonGR(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> t
 
     return jnp.log(pcs), ms, rs, lambdas
 
+def construct_family_eibi(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> tuple[
+    Float[Array, "ndat"],
+    Float[Array, "ndat"],
+    Float[Array, "ndat"],
+    Float[Array, "ndat"],
+]:
+    r"""
+    Construct neutron star family in Eddington-inspired Born-Infeld (EiBI) gravity.
+    
+    This function generates a sequence of neutron star solutions by solving the modified
+    TOV equations in EiBI gravity across a range of central pressures. The EiBI framework
+    introduces a parameter $\kappa$ that modifies gravitational interactions, reducing to
+    standard General Relativity when $\kappa \to 0$.
+    
+    The solutions are computed for central pressures ranging from a minimum determined
+    by nuclear saturation density ($n_{\mathrm{sat}} = 0.16$ fm⁻³) to a maximum where
+    the equation of state becomes acausal (sound speed exceeds speed of light).
+    
+    The tidal deformability $\Lambda$ is calculated from the Love number $k_2$ and
+    compactness $C = M/R$ using:
+    
 
+    .. math::
+        \frac{dp}{dr} = -\frac{1}{4\pi\kappa} \frac{
+            \frac{r}{2\kappa}\left(\frac{1}{ab} + \frac{a}{b^3} - 2\right) + \frac{2m}{r^2} + \frac{\Lambda_{\mathrm{cosmo}} r}{3\lambda}
+        }{
+            \left[\frac{4}{A - B} + \frac{3}{B} + \frac{1}{A}\frac{de}{dp}\right]
+            \left[1 - \frac{2m}{r} - \frac{\Lambda_{\mathrm{cosmo}} r^2}{3\lambda}\right]
+        }
+    
+    where:
+    - $a = \sqrt{1 + 8\pi\kappa\varepsilon}$, $b = \sqrt{1 - 8\pi\kappa p}$
+    - $A = 1 + 8\pi\kappa\varepsilon$, $B = 1 - 8\pi\kappa p$
+    - $\lambda = \kappa\Lambda_{\mathrm{cosmo}} + 1$
+    
+    The mass equation becomes:
+    
+    .. math::
+        \frac{dm}{dr} = \frac{r^2}{4\kappa}\left(2 - \frac{3}{ab} + \frac{a}{b^3}\right)
+    
+    The resulting mass-radius relation is truncated at the maximum TOV mass and
+    interpolated to ensure uniform sampling.
+    
+    Args:
+        eos (tuple): Extended EOS tuple containing:
+            - ns: Baryon density array [fm⁻³]
+            - ps: Pressure array [geometric units]
+            - hs: Enthalpy array
+            - es: Energy density array [geometric units]
+            - dloge_dlogps: Derivative d(log ε)/d(log p)
+            - kappa: EiBI gravity parameter $\kappa$ [m²]
+            - Lambda_cosmo: Cosmological constant parameter
+        ndat (int, optional): Number of points in central pressure grid. Defaults to 50.
+        min_nsat (float, optional): Starting density in units of nuclear saturation density. 
+                                    Defaults to 2.
+    
+    Returns:
+        tuple: A tuple containing:
+            - $\log(p_c)$: Logarithm of central pressures [geometric units]
+            - $M$: Gravitational masses [$M_{\odot}$]
+            - $R$: Circumferential radii [km]
+            - $\Lambda$: Dimensionless tidal deformabilities
+    
+    Note:
+        The function automatically handles unit conversions from geometric units to
+        physical units (solar masses and kilometers) and ensures the resulting
+        mass-radius relation represents only stable configurations.
+    """
+
+    # Construct the dictionary
+    (
+        ns,
+        ps,
+        hs,
+        es,
+        dloge_dlogps,
+        kappa,
+        Lambda_cosmo,
+    ) = eos
+    eos_dict = dict(
+        p=ps,
+        h=hs,
+        e=es,
+        dloge_dlogp=dloge_dlogps,
+        kappa=kappa,
+        Lambda_cosmo=Lambda_cosmo,
+    )
+
+    # calculate the pc_min
+    pc_min = utils.interp_in_logspace(
+        min_nsat * 0.16 * utils.fm_inv3_to_geometric, ns, ps
+    )
+
+    # end at pc at pmax at which it is causal
+    cs2 = ps / es / dloge_dlogps
+    pc_max = eos_dict["p"][locate_lowest_non_causal_point(cs2)]
+
+    pcs = jnp.logspace(jnp.log10(pc_min), jnp.log10(pc_max), num=ndat)
+
+    def solve_single_pc(pc):
+        """Solve for single pc value"""
+        return eibitov.tov_solver(eos_dict, pc)
+
+    ms, rs, ks = jax.vmap(solve_single_pc)(pcs)
+
+    cs = ms / rs
+
+    # convert the mass to solar mass and the radius to km
+    ms /= utils.solar_mass_in_meter
+    rs /= 1e3
+
+    # calculate the tidal deformability
+    lambdas = 2.0 / 3.0 * ks * jnp.power(cs, -5.0)
+
+    pcs, ms, rs, lambdas = utils.limit_by_MTOV_and_interpolate(pcs, ms, rs, lambdas, ndat)
+
+    return jnp.log(pcs), ms, rs, lambdas
 def construct_family_ST(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> tuple[
     Float[Array, "ndat"],
     Float[Array, "ndat"],
