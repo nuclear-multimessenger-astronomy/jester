@@ -38,14 +38,17 @@ download_dataset() {
     fi
 }
 
-# Download all datasets with delays
-download_dataset "J0030" "amsterdam" "intermediate" 2
-download_dataset "J0030" "amsterdam" "original" 2
+### Maryland samples (usually lighter)
 download_dataset "J0030" "maryland" "original" 2
-download_dataset "J0740" "amsterdam" "intermediate" 2
-download_dataset "J0740" "amsterdam" "original" 2
 download_dataset "J0740" "maryland" "original" 2
-download_dataset "J0740" "amsterdam" "recent" 2
+
+# ### Amsterdam samples (usually heavier, so might take longer)
+# download_dataset "J0030" "amsterdam" "intermediate" 2
+# download_dataset "J0030" "amsterdam" "original" 2
+# download_dataset "J0740" "amsterdam" "intermediate" 2
+# # download_dataset "J0740" "amsterdam" "original" 2
+# # download_dataset "J0740" "amsterdam" "recent" 2 # not fully downloaded, just the mr samples
+
 
 echo ""
 echo "=========================================="

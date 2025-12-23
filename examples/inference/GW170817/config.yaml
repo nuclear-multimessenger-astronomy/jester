@@ -4,8 +4,8 @@
 seed: 43
 
 # Execution options
-dry_run: false        # Set to true to setup everything but not run sampler
-validate_only: false  # Set to true to only validate configuration
+dry_run: false         # Set to false to run full MCMC sampling
+validate_only: false  # Set to true to only validate configuration (faster than dry_run)
 
 # Transform configuration: MetaModel + CSE for high-density region
 transform:
@@ -27,9 +27,12 @@ likelihoods:
   - type: "gw"
     enabled: true
     parameters:
-      event_name: "GW170817"
-      model_path: "./NFs/GW170817/model.eqx"
-      sample_masses: true
+      events:
+        - name: "GW170817"
+          model_dir: "../../../jesterTOV/inference/flows/models/gw_maf/gw170817/gw170817_gwtc1_lowspin_posterior"
+      penalty_value: -99999.0
+      N_masses_evaluation: 20
+      N_masses_batch_size: 10
 
 # MCMC sampler configuration
 sampler:
@@ -42,6 +45,9 @@ sampler:
   learning_rate: 0.001
   output_dir: "./outdir_gw170817/"
 
-# Data paths
-data_paths:
-  gw170817_model: "./NFs/GW170817/model.eqx"
+# Postprocessing configuration
+postprocessing:
+  enabled: true
+  make_cornerplot: true
+  make_massradius: true
+  make_pressuredensity: true
