@@ -1,37 +1,58 @@
-# FIXME: this needs to be updated to the rest of the codebase, this is just a copy of an old file
+"""Gravitational wave event likelihood implementations"""
 
-import numpy as np
+import os
 import jax
 import jax.numpy as jnp
-import os
-import json
-import arviz
+import numpy as np
 
-from jimgw.base import LikelihoodBase
-from jimgw.prior import Prior
-from jimgw.transforms import NtoMTransform
-
-import equinox as eqx
-from flowjax.flows import block_neural_autoregressive_flow
-from flowjax.distributions import Normal, Transformed
-
-from joseTOV.eos import MetaModel_with_CSE_EOS_model, Crust_with_CSE_EOS_model, construct_family
-import joseTOV.utils as jose_utils
+from jesterTOV.inference.base import LikelihoodBase
+from jesterTOV.inference.flows.train_flow import Flow
 
 class GWlikelihood_with_masses(LikelihoodBase):
+    """
+    Gravitational wave likelihood using normalizing flow posteriors
 
-    def __init__(self,
-                 eos: str,
-                 ifo_network: str,
-                 suffix: str,
-                 id: str,
-                 transform: MicroToMacroTransform = None,
-                 very_negative_value: float = -99999.0,
-                 N_samples_masses: int = 2_000,
-                 N_masses_evaluation: int = 1,
-                 nf_prior: Transformed = None,
-                 hdi_prob: float = 0.90):
-        
+    This likelihood evaluates the GW posterior by:
+    1. Sampling masses (m1, m2) from the trained normalizing flow
+    2. Interpolating tidal deformabilities (Λ1, Λ2) from the EOS
+    3. Evaluating the NF log probability on (m1, m2, Λ1, Λ2)
+    4. Importance sampling to remove the prior used during NF training
+
+    Parameters
+    ----------
+    eos : str
+        Equation of state name
+    ifo_network : str
+        Interferometer network (e.g., "HLV")
+    suffix : str
+        Additional identifier suffix
+    id : str
+        Event identifier (e.g., "GW170817")
+    very_negative_value : float, optional
+        Penalty value for invalid samples (default: -99999.0)
+    N_samples_masses : int, optional
+        Number of samples for determining mass range (default: 2000)
+    N_masses_evaluation : int, optional
+        Number of mass samples per likelihood evaluation (default: 1)
+    nf_prior : Transformed, optional
+        Prior distribution used during NF training (for importance sampling)
+    hdi_prob : float, optional
+        Probability level for credible intervals (default: 0.90)
+    """
+
+    def __init__(
+        self,
+        eos: str,
+        ifo_network: str,
+        suffix: str,
+        id: str,
+        very_negative_value: float = -99999.0,
+        N_samples_masses: int = 2_000,
+        N_masses_evaluation: int = 1,
+        nf_prior = None,  # TODO: Add type hint when flowjax is imported
+        hdi_prob: float = 0.90,
+    ):
+        super().__init__()
         self.eos = eos
         self.ifo_network = ifo_network
         self.suffix = suffix
@@ -42,28 +63,30 @@ class GWlikelihood_with_masses(LikelihoodBase):
         else:
             self.name = f"{self.eos}_{self.ifo_network}_{self.id}"
             saved_location = f"models/{self.eos}/{self.ifo_network}/{self.id}"
-        self.transform = transform
         self.very_negative_value = very_negative_value
         self.N_masses_evaluation = N_masses_evaluation
         self.nf_prior = nf_prior
-        
-        # Locate the file
-        print(f"Loading the trained NF model from: {saved_location}")
-        nf_file = os.path.join(NF_PATH, saved_location + ".eqx")
-        nf_kwargs_file = os.path.join(NF_PATH, saved_location + "_kwargs.json")
-        
-        if not os.path.exists(nf_file):
-            print(f"Tried looking for the NF architecture at path {nf_file}, but it doesn't exist!")
-        
-        # Load the kwargs used to train the NF to define the PyTree structure
-        with open(nf_kwargs_file, "r") as f:
-            nf_kwargs = json.load(f)
-            
-        like_flow = make_flow(jax.random.PRNGKey(0), nf_kwargs["nn_depth"], nf_kwargs["nn_block_dim"])
-        
-        # Load the normalizing flow
-        loaded_model: Transformed = eqx.tree_deserialise_leaves(nf_file, like=like_flow)
-        self.NS_posterior = loaded_model
+
+        # FIXME: NF_PATH should be configurable or passed via data loading system
+        NF_PATH = os.environ.get("NF_PATH", "./models")
+
+        # Construct model directory path
+        model_dir = os.path.join(NF_PATH, saved_location)
+
+        print(f"Loading the trained NF model from: {model_dir}")
+
+        if not os.path.exists(model_dir):
+            raise FileNotFoundError(
+                f"NF model directory not found: {model_dir}\n"
+                f"Expected structure: {model_dir}/flow_weights.eqx, flow_kwargs.json, metadata.json"
+            )
+
+        # Load the normalizing flow using the Flow class
+        # This handles all the architecture reconstruction and weight loading
+        flow_wrapper = Flow.from_directory(model_dir)
+        self.NS_posterior = flow_wrapper.flow  # Extract the underlying flowjax model
+        self.flow_metadata = flow_wrapper.metadata
+        self.flow_kwargs = flow_wrapper.flow_kwargs
         
         print(f"Loaded the NF for run {self.eos}_{self.id}")
         seed = np.random.randint(0, 100000)
@@ -76,16 +99,34 @@ class GWlikelihood_with_masses(LikelihoodBase):
         # Use it to get the range of m1 and m2
         m1 = nf_samples[:, 0]
         m2 = nf_samples[:, 1]
-        
-        # Instead, we use the 99% credible interval:
-        self.m1_min, self.m1_max = arviz.hdi(np.array(m1), hdi_prob=hdi_prob)
-        self.m2_min, self.m2_max = arviz.hdi(np.array(m2), hdi_prob=hdi_prob)
+
+        # Use credible interval based on percentiles
+        lower_percentile = (1 - hdi_prob) / 2 * 100
+        upper_percentile = (1 - (1 - hdi_prob) / 2) * 100
+        self.m1_min, self.m1_max = np.percentile(np.array(m1), [lower_percentile, upper_percentile])
+        self.m2_min, self.m2_max = np.percentile(np.array(m2), [lower_percentile, upper_percentile])
         
         print(f"The range of m1 for {self.eos}_{self.id} is: {self.m1_min:.4f} to {self.m1_max:.4f}")
         print(f"The range of m2 for {self.eos}_{self.id} is: {self.m2_min:.4f} to {self.m2_max:.4f}")
         
 
     def evaluate(self, params: dict[str, float], data: dict) -> float:
+        """
+        Evaluate log likelihood for given EOS parameters
+
+        Parameters
+        ----------
+        params : dict[str, float]
+            Must contain 'masses_EOS' and 'Lambdas_EOS' arrays from transform,
+            plus 'key' for random sampling
+        data : dict
+            Not used (data encapsulated in likelihood object)
+
+        Returns
+        -------
+        float
+            Log likelihood value
+        """
     
         # Generate some samples from the NS posterior to know the mass range
         sampled_key = params["key"].astype("int64")
