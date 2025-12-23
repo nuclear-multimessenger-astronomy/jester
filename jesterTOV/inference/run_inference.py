@@ -1,409 +1,386 @@
+#!/usr/bin/env python
 """
-Full-scale inference: we will use jim as flowMC wrapper
+Modular inference script for jesterTOV
 """
 
-################
-### PREAMBLE ###
-################
-import os 
+# FIXME: Need to organize this a bit better so that it is more modular and easier to process
+
+import os
 import time
-import shutil
 import numpy as np
-np.random.seed(43) # for reproducibility # FIXME: do this differently?
-import argparse
-
 import jax
 import jax.numpy as jnp
+from pathlib import Path
+
+# FIXME: make a flag that turns this on/off and document it, turn ON by default
+# Enable 64-bit precision
 jax.config.update("jax_enable_x64", True)
 
-from jimgw.prior import UniformPrior, CombinePrior
-from jimgw.jim import Jim
-from jesterTOV.inference.transforms import MicroToMacroTransform
-from jesterTOV.inference.constraints.likelihood import GWlikelihood_with_masses, RadioTimingLikelihood, ChiEFTLikelihood, NICERLikelihood, NICERLikelihood_with_masses, CombinedLikelihood, ZeroLikelihood
-import jesterTOV.inference.postprocessing as postprocessing # TODO: need to implement this
+# FIXME: make a flag that turns this on/off and document it, turn OFF by default
+# jax.config.update("jax_debug_nans", True)
 
-print(f"GPU found?")
-print(jax.devices())
+from .config.parser import load_config
+from .priors.parser import parse_prior_file
+from .transforms.factory import create_transform
+from .likelihoods.factory import create_combined_likelihood
+from .samplers import setup_flowmc_sampler, JesterSampler
+# FIXME: DataLoader removed - need to implement data loading functions
 
-################
-### Argparse ###
-################
 
-def parse_arguments():
-    parser = argparse.ArgumentParser(description="Full-scale inference script with customizable options.")
-    parser.add_argument("--make-cornerplot", 
-                        type=bool, 
-                        default=True, 
-                        help="Whether to make the cornerplot. Need to turn this off for large cornerplots since can be expensive in memory.")
-    parser.add_argument("--crust-name", 
-                        type=str, 
-                        default="DH",
-                        choices=["DH", "BPS", "DH_fixed"],
-                        help="Which filename for the crust to choose.")
-    # parser.add_argument("--GW-events", 
-    #                     type=dict, 
-    #                     help="Dictionary of GW events pointing to their respective run configurations (NFs etc).") # TODO: need to implement this properly
-    parser.add_argument("--sample-GW170817", 
-                        type=bool, 
-                        default=False,
-                        help="Whether to sample the GW170817 event")
-    parser.add_argument("--sample-J0030", 
-                        type=bool, 
-                        default=False, 
-                        help="Whether to sample the J0030 event")
-    parser.add_argument("--sample-J0740", 
-                        type=bool, 
-                        default=False, 
-                        help="Whether to sample the J0740 event")
-    parser.add_argument("--sample-radio", # TODO: need a dictionary here as well
-                        type=bool, 
-                        default=False, 
-                        help="Whether to sample the radio timing mass measurement pulsars. Do all of them at once.")
-    parser.add_argument("--sample-NICER-masses",  # TODO: let's try to avoid that for now
-                        type=bool, 
-                        default=False, 
-                        help="If set to True, then we sample the NICER masses as well instead of integrating up to MTOV")
-    parser.add_argument("--sample-chiEFT", 
-                        type=bool, 
-                        default=False, 
-                        help="Whether to sample chiEFT data")
-    parser.add_argument("--use-zero-likelihood", 
-                        type=bool, 
-                        default=False, 
-                        help="Whether to use a mock log-likelihood which constantly returns 0")
-    parser.add_argument("--outdir", 
-                        type=str, 
-                        default="./outdir/", 
-                        help="Directory to save output files (default: './outdir/')")
-    parser.add_argument("--N-samples-EOS", 
-                        type=int, 
-                        default=10_000,
-                        help="Number of samples for which the TOV equations are solved at the end. ") # TODO: rename to nb_output_samples or something, clearer
-    parser.add_argument("--nb-cse", # TODO: need a better way to specify the architecture here
-                        type=int, 
-                        default=8, 
-                        help="Number of CSE grid points (excluding the last one at the end, since its density value is fixed, we do add the cs2 prior separately.)")
-    parser.add_argument("--sampling-seed", 
-                        type=int, 
-                        default=11,
-                        help="Number of CSE grid points (excluding the last one at the end, since its density value is fixed, we do add the cs2 prior separately.)")
-    parser.add_argument("--nmax-nsat", # TODO: need a better way to specify the architecture here
-                        type=float, 
-                        default=25.0, 
-                        help="Endpoint density for the TOV equations in units of n_sat.")
-    ### flowMC/Jim hyperparameters
-    parser.add_argument("--n-loop-training", 
-                        type=int, 
-                        default=60,
-                        help="Number of flowMC training loops.)")
-    parser.add_argument("--n-loop-production", 
-                        type=int, 
-                        default=30,
-                        help="Number of flowMC production loops.)")
-    parser.add_argument("--eps-mass-matrix", 
-                        type=float, 
-                        default=3e-5,
-                        help="Overall scaling factor for the step size matrix for MALA.")
-    parser.add_argument("--n-local-steps", 
-                        type=int, 
-                        default=50,
-                        help="Number of local steps to perform.")
-    parser.add_argument("--n-global-steps", 
-                        type=int, 
-                        default=50,
-                        help="Number of global steps to perform.")
-    parser.add_argument("--n-epochs", 
-                        type=int, 
-                        default=20,
-                        help="Number of epochs for NF training.")
-    parser.add_argument("--n-chains", 
-                        type=int, 
-                        default=1000,
-                        help="Number of MCMC chains to evolve.")
-    parser.add_argument("--train-thinning", 
-                        type=int, 
-                        default=1,
-                        help="Thinning factor before feeding samples to NF for training.")
-    parser.add_argument("--output-thinning", 
-                        type=int, 
-                        default=5,
-                        help="Thinning factor before saving samples.")
-    return parser.parse_args()
+def setup_prior(config):
+    """
+    Setup prior from configuration
 
-def main(args):
-    
-    NMAX_NSAT = args.nmax_nsat
-    NB_CSE = args.nb_cse
+    Parameters
+    ----------
+    config : InferenceConfig
+        Configuration object
 
-    # TODO: need to load this from a file and process them in a separate script for the priors
-    K_sat_prior = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
-    Q_sat_prior = UniformPrior(-500.0, 1100.0, parameter_names=["Q_sat"])
-    Z_sat_prior = UniformPrior(-2500.0, 1500.0, parameter_names=["Z_sat"])
+    Returns
+    -------
+    CombinePrior
+        Combined prior object
+    """
+    # Determine conditional parameters
+    nb_CSE = (
+        config.transform.nb_CSE if config.transform.type == "metamodel_cse" else 0
+    )
 
-    E_sym_prior = UniformPrior(28.0, 45.0, parameter_names=["E_sym"])
-    L_sym_prior = UniformPrior(10.0, 200.0, parameter_names=["L_sym"])
-    K_sym_prior = UniformPrior(-300.0, 100.0, parameter_names=["K_sym"])
-    Q_sym_prior = UniformPrior(-800.0, 800.0, parameter_names=["Q_sym"])
-    Z_sym_prior = UniformPrior(-2500.0, 1500.0, parameter_names=["Z_sym"])
-
-    prior_list = [
-        E_sym_prior,
-        L_sym_prior, 
-        K_sym_prior,
-        Q_sym_prior,
-        Z_sym_prior,
-
-        K_sat_prior,
-        Q_sat_prior,
-        Z_sat_prior,
+    # Collect GW events that need mass priors
+    sample_gw_events = [
+        lk.parameters.get("event_name", "GW170817")
+        for lk in config.likelihoods
+        if lk.type == "gw" and lk.enabled
     ]
 
-    ### CSE priors
-    if NB_CSE > 0:
-        print(f"Using the regular nbreak prior: U[1.0, 2.0] * 0.16")
-        nbreak_prior = UniformPrior(1.0 * 0.16, 2.0 * 0.16, parameter_names=[f"nbreak"])
-        prior_list.append(nbreak_prior)
-        for i in range(NB_CSE):
-            # NOTE: the density parameters are sampled from U[0, 1], so we need to scale it, but it depends on break so will be done internally
-            prior_list.append(UniformPrior(0.0, 1.0, parameter_names=[f"n_CSE_{i}_u"]))
-            prior_list.append(UniformPrior(0.0, 1.0, parameter_names=[f"cs2_CSE_{i}"]))
+    # Parse prior file
+    prior = parse_prior_file(
+        config.prior.specification_file,
+        nb_CSE=nb_CSE,
+        sample_gw_events=sample_gw_events,
+    )
 
-        # Final point to end
-        prior_list.append(UniformPrior(0.0, 1.0, parameter_names=[f"cs2_CSE_{NB_CSE}"]))
-
-    # Construct the EOS prior and a transform here which can be used down below for creating the EOS plots after inference is completed
-    eos_prior = CombinePrior(prior_list)
-    eos_param_names = eos_prior.parameter_names
-    all_output_keys = ["logpc_EOS", "masses_EOS", "radii_EOS", "Lambdas_EOS", "n", "p", "h", "e", "dloge_dlogp", "cs2"]
-    name_mapping = (eos_param_names, all_output_keys)
-    
-    # This transform will be the same as my_transform, but with different output keys, namely, all EOS related quantities, for postprocessing
-    if args.nb_cse > 0:
-        keep_names = ["E_sym", "L_sym", "nbreak"]
-    else:
-        keep_names = ["E_sym", "L_sym"]
-    my_transform_eos = MicroToMacroTransform(name_mapping,
-                                             keep_names=keep_names,
-                                             nmax_nsat=NMAX_NSAT,
-                                             nb_CSE=NB_CSE,
-                                             crust_name=args.crust_name
-                                             )
-    
-    # Create the output directory if it does not exist
-    outdir = args.outdir
-    if not os.path.exists(outdir):
-        os.makedirs(outdir)
-        
-    # Copy this script to the output directory, for reproducibility later on
-    shutil.copy(__file__, os.path.join(outdir, "backup_inference.py"))
-    
-    ##########
-    ### GW ###
-    ##########
-    
-    # Sample GW170817 PE
-    # TODO: has to be discarded in the end? Or setup in the priors?
-    likelihoods_list_GW = []
-    if args.sample_GW170817:
-        m1_GW170817_prior = UniformPrior(1.5, 2.1, parameter_names=["mass_1_GW170817"])
-        m2_GW170817_prior = UniformPrior(1.0, 1.5, parameter_names=["mass_2_GW170817"])
-
-        prior_list.append(m1_GW170817_prior)
-        prior_list.append(m2_GW170817_prior)
-        
-        keep_names += ["mass_1_GW170817", "mass_2_GW170817"]
-        
-        likelihoods_list_GW += [GWlikelihood_with_masses("GW170817", "./NFs/GW170817/model.eqx")]
-    
-    #############
-    ### NICER ###
-    #############
-    
-    # TODO: add G1124251 here
-    if args.sample_J0030 and args.sample_NICER_masses:
-        prior_list += [UniformPrior(1.0, 2.0, parameter_names=["mass_J0030"])]
-        keep_names += ["mass_J0030"]
-        
-    if args.sample_J0740 and args.sample_NICER_masses:
-        prior_list += [UniformPrior(1.5, 2.5, parameter_names=["mass_J0740"])]
-        keep_names += ["mass_J0740"]
-    
-    likelihoods_list_NICER = []
-    if args.sample_J0030:
-        if args.sample_NICER_masses:
-            print(f"Loading data necessary for the event J0030 and sampling the with NICER masses")
-            likelihoods_list_NICER += [NICERLikelihood_with_masses("J0030")]
-        
-        else:
-            print(f"Loading data necessary for the event J0030")
-            likelihoods_list_NICER += [NICERLikelihood("J0030")]
-    
-    if args.sample_J0740:
-        if args.sample_NICER_masses:
-            print(f"Loading data necessary for the event J0740 and sampling the with NICER masses")
-            likelihoods_list_NICER += [NICERLikelihood_with_masses("J0740")]
-        
-        else:
-            print(f"Loading data necessary for the event J0740")
-            likelihoods_list_NICER += [NICERLikelihood("J0740")]
-            
-    #############
-    ### RADIO ###
-    #############
-            
-    # Radio timing mass measurement pulsars
-    likelihoods_list_radio = []
-    if args.sample_radio:
-        likelihoods_list_radio += [RadioTimingLikelihood("J1614", 1.94, 0.06)]
-        # likelihoods_list_radio += [utils.RadioTimingLikelihood("J0348", 2.01, 0.08)]
-        if not args.sample_J0740:
-            likelihoods_list_radio += [RadioTimingLikelihood("J0740", 2.08, 0.14)]
-        else:
-            print("NOTE: Not adding the radio timing for J0740 since we also sample the NICER result -- this already has this in the prior")
+    return prior
 
 
-    ##############
-    ### chiEFT ###
-    ##############
-    
-    likelihoods_list_chiEFT = []
-    # FIXME: only add chiEFT if we are sampling MM+CSE, ignore during MM-only
-    if args.sample_chiEFT and args.nb_cse > 0:
-        keep_names += ["nbreak"]
-        print(f"Loading data necessary for the Chiral EFT")
-        likelihoods_list_chiEFT += [ChiEFTLikelihood()]
+def setup_transform(config, keep_names=None):
+    """
+    Setup transform from configuration
 
-    # Total likelihoods list:
-    if args.use_zero_likelihood:
-        likelihoods_list = []
-    else:
-        likelihoods_list = likelihoods_list_GW + likelihoods_list_NICER + likelihoods_list_radio + likelihoods_list_chiEFT
-    
-    print(f"Sanity checking: likelihoods_list = {likelihoods_list}\nlen(likelihoods_list) = {len(likelihoods_list)}")
-    likelihood = CombinedLikelihood(likelihoods_list)
-        
-    # Construct the transform object
-    TOV_output_keys = ["masses_EOS", "radii_EOS", "Lambdas_EOS"]
-    prior = CombinePrior(prior_list)
-    sampled_param_names = prior.parameter_names
-    name_mapping = (sampled_param_names, TOV_output_keys)
-    my_transform = MicroToMacroTransform(name_mapping,
-                                               keep_names = keep_names,
-                                               nmax_nsat = NMAX_NSAT,
-                                               nb_CSE = NB_CSE,
-                                               )
-    
-    if args.use_zero_likelihood:
-        print("Using the zero likelihood:")
-        likelihood = ZeroLikelihood(my_transform)
+    Parameters
+    ----------
+    config : InferenceConfig
+        Configuration object
+    keep_names : list[str], optional
+        Parameter names to keep in transformed output
 
-    mass_matrix = jnp.eye(prior.n_dim)
-    local_sampler_arg = {"step_size": mass_matrix * args.eps_mass_matrix}
-    kwargs = {"n_loop_training": args.n_loop_training,
-            "n_loop_production": args.n_loop_production,
-            "n_chains": args.n_chains,
-            "n_local_steps": args.n_local_steps,
-            "n_global_steps": args.n_global_steps,
-            "n_epochs": args.n_epochs,
-            "train_thinning": args.train_thinning,
-            "output_thinning": args.output_thinning,
-            "local_sampler_name": "GaussianRandomWalk"
-    }
-    
-    print("We are going to give these kwargs to Jim:")
-    print(kwargs)
-    
-    print("We are going to sample the following parameters:")
-    print(prior.parameter_names)
+    Returns
+    -------
+    JesterTransformBase
+        Transform instance
+    """
+    transform = create_transform(config.transform)
 
-    # Define the Jim object here
-    jim = Jim(likelihood,
-              prior,
-              local_sampler_arg = local_sampler_arg,
-              likelihood_transforms = [my_transform],
-              **kwargs)
+    # TODO: Handle name mapping and keep_names properly
+    # This will require updates to the transform base class
 
-    # Test case
-    samples = prior.sample(jax.random.PRNGKey(0), 3)
-    samples_transformed = jax.vmap(my_transform.forward)(samples)
-    log_prob = jax.vmap(likelihood.evaluate)(samples_transformed, {})
-    
-    print("log_prob")
-    print(log_prob)
-    
-    # Do the sampling
-    print(f"Sampling seed is set to: {args.sampling_seed}")
+    return transform
+
+
+def setup_likelihood(config, transform, data_loader=None):
+    """
+    Setup combined likelihood from configuration
+
+    Parameters
+    ----------
+    config : InferenceConfig
+        Configuration object
+    transform : JesterTransformBase
+        Transform instance
+    data_loader : None
+        DEPRECATED - data loading will be handled differently
+
+    Returns
+    -------
+    LikelihoodBase
+        Combined likelihood instance
+    """
+    # FIXME: data_loader parameter is deprecated, pass None for now
+    return create_combined_likelihood(
+        config.likelihoods, data_loader
+    )
+
+
+def run_sampling(flowmc_sampler, seed, outdir):
+    """
+    Run MCMC sampling and save results
+
+    Parameters
+    ----------
+    flowmc_sampler : JesterSampler
+        JesterSampler instance configured with flowMC backend
+    seed : int
+        Random seed for sampling
+    outdir : str or Path
+        Output directory
+
+    Returns
+    -------
+    dict
+        Dictionary containing samples and log probabilities
+    """
+    print(f"Starting MCMC sampling with seed {seed}...")
     start = time.time()
-    jim.sample(jax.random.PRNGKey(args.sampling_seed))
-    jim.print_summary()
+    flowmc_sampler.sample(jax.random.PRNGKey(seed))
+    flowmc_sampler.print_summary()
     end = time.time()
     runtime = end - start
 
-    print(f"Sampling has been successful, now we will do some postprocessing. Sampling time: roughly {int(runtime / 60)} mins")
+    print(
+        f"Sampling complete! Runtime: {int(runtime / 60)} min {int(runtime % 60)} sec"
+    )
 
     ### POSTPROCESSING ###
-        
+
     # Training (just to count number of samples)
-    sampler_state = jim.sampler.get_sampler_state(training=True)
-    log_prob = sampler_state["log_prob"].flatten()
-    nb_samples_training = len(log_prob)
+    sampler_state = flowmc_sampler.sampler.get_sampler_state(training=True)
+    log_prob_train = sampler_state["log_prob"].flatten()
+    nb_samples_training = len(log_prob_train)
 
-    # Production (also for postprocessing plotting)
-    sampler_state = jim.sampler.get_sampler_state(training=False)
+    # Production (for saving and plotting)
+    sampler_state = flowmc_sampler.sampler.get_sampler_state(training=False)
 
-    # Get the samples, and also get them as a dictionary
-    samples_named = jim.get_samples()
+    # Get the samples as a dictionary
+    samples_named = flowmc_sampler.get_samples()
     samples_named_for_saving = {k: np.array(v) for k, v in samples_named.items()}
-    samples_named = {k: np.array(v).flatten() for k, v in samples_named.items()}
-    keys, samples = list(samples_named.keys()), np.array(list(samples_named.values()))
+    samples_named_flat = {k: np.array(v).flatten() for k, v in samples_named.items()}
 
-    # Get the log prob, also count number of samples from it
-    log_prob = np.array(sampler_state["log_prob"])
-    log_prob = log_prob.flatten()
+    # Get the log prob
+    log_prob = np.array(sampler_state["log_prob"]).flatten()
     nb_samples_production = len(log_prob)
     total_nb_samples = nb_samples_training + nb_samples_production
-    
+
     # Save the final results
-    print(f"Saving the final results")
-    np.savez(os.path.join(outdir, "results_production.npz"), log_prob=log_prob, **samples_named_for_saving)
+    print(f"Saving results to {outdir}")
+    os.makedirs(outdir, exist_ok=True)
+
+    result_path = os.path.join(outdir, "results_production.npz")
+    np.savez(result_path, log_prob=log_prob, **samples_named_for_saving)
 
     print(f"Number of samples generated in training: {nb_samples_training}")
     print(f"Number of samples generated in production: {nb_samples_production}")
-    print(f"Number of samples generated: {total_nb_samples}")
-    
-    # Save the runtime to a file as well
-    with open(os.path.join(outdir, "runtime.txt"), "w") as f:
-        f.write(f"{runtime}")
+    print(f"Total number of samples: {total_nb_samples}")
 
-    # Generate the final EOS + TOV samples from the EOS parameter samples
-    idx_1 = np.random.choice(np.arange(len(log_prob)), size=args.N_samples_EOS, replace=False)
-    idx_2 = np.random.choice(np.arange(len(log_prob)), size=args.N_samples_EOS, replace=False)
-    
-    chosen_samples_test = {k: jnp.array(v[idx_1]) for k, v in samples_named.items()}
-    chosen_samples = {k: jnp.array(v[idx_2]) for k, v in samples_named.items()}
-    # NOTE: jax lax map helps us deal with batching, but a batch size multiple of 10 gives errors, therefore this weird number
-    # transformed_samples = jax.lax.map(jax.jit(my_transform_eos.forward), chosen_samples, batch_size = 4_999)
-    
-    # First do a single batch to jit compile, then do compiled vmap to get the timing right
-    my_forward = jax.jit(my_transform_eos.forward)
-    _ = jax.vmap(my_forward)(chosen_samples_test)
-    
+    # Save the runtime
+    with open(os.path.join(outdir, "runtime.txt"), "w") as f:
+        f.write(f"{runtime}\n")
+        f.write(f"Training samples: {nb_samples_training}\n")
+        f.write(f"Production samples: {nb_samples_production}\n")
+
+    return {
+        "samples": samples_named_flat,
+        "samples_for_saving": samples_named_for_saving,
+        "log_prob": log_prob,
+        "runtime": runtime,
+    }
+
+
+def generate_eos_samples(
+    config, samples_dict, transform_eos, outdir, n_eos_samples=10_000
+):
+    """
+    Generate EOS curves from sampled parameters
+
+    Parameters
+    ----------
+    config : InferenceConfig
+        Configuration object
+    samples_dict : dict
+        Dictionary of sampled parameters
+    transform_eos : JesterTransformBase
+        Transform for generating full EOS quantities
+    outdir : str or Path
+        Output directory
+    n_eos_samples : int, optional
+        Number of EOS samples to generate
+    """
+    samples = samples_dict["samples"]
+    log_prob = samples_dict["log_prob"]
+
+    # Cap n_eos_samples at available sample size
+    n_available = len(log_prob)
+    if n_eos_samples > n_available:
+        print(f"Warning: Requested {n_eos_samples} EOS samples but only {n_available} available.")
+        print(f"Using all {n_available} samples instead.")
+        n_eos_samples = n_available
+
+    print(f"Generating {n_eos_samples} EOS samples...")
+
+    # Randomly select samples
+    idx = np.random.choice(np.arange(len(log_prob)), size=n_eos_samples, replace=False)
+
+    chosen_samples = {k: jnp.array(v[idx]) for k, v in samples.items()}
+
+    # Generate EOS curves (with JIT compilation)
+    print("JIT compiling and running TOV solver...")
+    my_forward = jax.jit(transform_eos.forward)
+
+    # Warm up JIT
+    warmup_size = min(100, n_available)
+    test_idx = np.random.choice(np.arange(len(log_prob)), size=warmup_size, replace=False)
+    test_samples = {k: jnp.array(v[test_idx]) for k, v in samples.items()}
+    _ = jax.vmap(my_forward)(test_samples)
+
+    # Run full batch
     TOV_start = time.time()
     transformed_samples = jax.vmap(my_forward)(chosen_samples)
     TOV_end = time.time()
-    print(f"Time taken for TOV map: {TOV_end - TOV_start} s")
-    chosen_samples.update(transformed_samples)
+    print(f"TOV solve time: {TOV_end - TOV_start:.2f} s")
 
-    log_prob = log_prob[idx_2]
-    np.savez(os.path.join(args.outdir, "eos_samples.npz"), log_prob=log_prob, **chosen_samples)
-    
-    # # TODO: needs to be updated
-    # if args.make_cornerplot:
-    #     try:    
-    #         postprocessing.plot_corner(outdir, samples, keys)
-    #     except Exception as e:
-    #         print(f"Could not make the corner plot, because of the following error: {e}")
-    
+    # Combine and save
+    chosen_samples.update(transformed_samples)
+    selected_log_prob = log_prob[idx]
+
+    eos_path = os.path.join(outdir, "eos_samples.npz")
+    np.savez(eos_path, log_prob=selected_log_prob, **chosen_samples)
+    print(f"EOS samples saved to {outdir}/eos_samples.npz")
+
+
+def main(config_path: str):
+    """Main inference script
+
+    Parameters
+    ----------
+    config_path : str
+        Path to YAML configuration file
+    """
+    # Load configuration
+    print(f"Loading configuration from {config_path}")
+    config = load_config(config_path)
+
+    outdir = config.sampler.output_dir
+
+    # Print GPU info
+    print(f"JAX devices: {jax.devices()}")
+
+    # Validation only
+    if config.validate_only:
+        print("Configuration valid!")
+        return
+
+    # FIXME: DataLoader was removed - need to implement data loading functionality
+    # The data_paths from config should be used to configure data loading functions
+    # For now, set data_loader to None
+    data_loader = None
+
+    # Setup components
+    print("Setting up prior...")
+    prior = setup_prior(config)
+    print(f"Prior parameter names: {prior.parameter_names}")
+
+    print("Setting up transform...")
+    transform = setup_transform(config)
+
+    # Create EOS-only transform for postprocessing
+    # TODO: This needs proper implementation with keep_names
+    transform_eos = setup_transform(config)
+
+    print("Setting up likelihood...")
+    likelihood = setup_likelihood(config, transform, data_loader)
+
+    print("Setting up flowMC sampler...")
+    flowmc_sampler = setup_flowmc_sampler(
+        config.sampler,
+        prior,
+        likelihood,
+        transform,
+        seed=config.seed,
+    )
+
+    print("\n" + "=" * 60)
+    print("Configuration Summary")
+    print("=" * 60)
+    print(f"Transform type: {config.transform.type}")
+    print(f"Number of chains: {config.sampler.n_chains}")
+    print(f"Training loops: {config.sampler.n_loop_training}")
+    print(f"Production loops: {config.sampler.n_loop_production}")
+    print(f"Output directory: {outdir}")
+    print(f"Random seed: {config.seed}")
+    print("=" * 60 + "\n")
+
+    # Dry run option
+    if config.dry_run:
+        print("Dry run complete!")
+        return
+
+    # Create output directory
+    os.makedirs(outdir, exist_ok=True)
+
+    # Test likelihood evaluation # FIXME: this should throw an error if a Nan is found
+    print("Testing likelihood evaluation...")
+    test_samples = prior.sample(jax.random.PRNGKey(0), 3)
+    test_samples_transformed = jax.vmap(transform.forward)(test_samples)
+    test_log_prob = jax.vmap(likelihood.evaluate)(test_samples_transformed, {})
+    print(f"Test log probabilities: {test_log_prob}")
+
+    # Run inference
+    results = run_sampling(flowmc_sampler, config.seed, outdir)
+
+    # Generate EOS samples
+    n_eos_samples = config.sampler.n_eos_samples
+    generate_eos_samples(config, results, transform_eos, outdir, n_eos_samples)
+
+    # Run postprocessing if enabled
+    if config.postprocessing.enabled:
+        print("\n" + "=" * 60)
+        print("Running postprocessing...")
+        print("=" * 60)
+        from jesterTOV.inference.postprocessing.postprocessing import generate_all_plots
+
+        generate_all_plots(
+            outdir=outdir,
+            prior_dir=config.postprocessing.prior_dir,
+            make_cornerplot_flag=config.postprocessing.make_cornerplot,
+            make_massradius_flag=config.postprocessing.make_massradius,
+            make_pressuredensity_flag=config.postprocessing.make_pressuredensity,
+            make_histograms_flag=config.postprocessing.make_histograms,
+            make_contours_flag=config.postprocessing.make_contours,
+        )
+        print(f"\nPostprocessing complete! Plots saved to {outdir}")
+
+    print(f"\nInference complete! Results saved to {outdir}")
+
+
+def cli_entry_point():
+    """
+    Entry point for console script.
+
+    Allows running inference with:
+        run_jester_inference config.yaml
+
+    Instead of:
+        python -m jesterTOV.inference.run_inference config.yaml
+    """
+    import sys
+
+    # Check for exactly one argument (the config file path)
+    if len(sys.argv) != 2:
+        print("Usage: run_jester_inference <config.yaml>")
+        print("\nExamples:")
+        print("  run_jester_inference config.yaml")
+        print("  run_jester_inference examples/inference/full_inference/config.yaml")
+        print("\nOptions like dry_run and validate_only should be set in the YAML config file.")
+        sys.exit(1)
+
+    config_path = sys.argv[1]
+    main(config_path)
+
+
 if __name__ == "__main__":
-    args = parse_arguments()  # Get command-line arguments
-    main(args)
+    import sys
+
+    if len(sys.argv) != 2:
+        print("Usage: python -m jesterTOV.inference.run_inference <config.yaml>")
+        sys.exit(1)
+
+    main(sys.argv[1])

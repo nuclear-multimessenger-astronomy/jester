@@ -1,0 +1,3 @@
+83.50402498245239
+Training samples: 160
+Production samples: 160

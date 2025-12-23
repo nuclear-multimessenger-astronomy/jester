@@ -1,0 +1,47 @@
+# GW170817-only inference configuration
+# Simple configuration for constraining EOS using only gravitational wave data
+
+seed: 43
+
+# Execution options
+dry_run: false        # Set to true to setup everything but not run sampler
+validate_only: false  # Set to true to only validate configuration
+
+# Transform configuration: MetaModel + CSE for high-density region
+transform:
+  type: "metamodel_cse"
+  ndat_metamodel: 100
+  nmax_nsat: 25.0
+  nb_CSE: 8
+  min_nsat_TOV: 0.75
+  ndat_TOV: 100
+  nb_masses: 100
+  crust_name: "DH"
+
+# Prior specification file
+prior:
+  specification_file: "prior.prior"
+
+# Likelihood constraints (only GW170817 enabled)
+likelihoods:
+  - type: "gw"
+    enabled: true
+    parameters:
+      event_name: "GW170817"
+      model_path: "./NFs/GW170817/model.eqx"
+      sample_masses: true
+
+# MCMC sampler configuration
+sampler:
+  n_chains: 20
+  n_loop_training: 3
+  n_loop_production: 3
+  n_local_steps: 100
+  n_global_steps: 100
+  n_epochs: 30
+  learning_rate: 0.001
+  output_dir: "./outdir_gw170817/"
+
+# Data paths
+data_paths:
+  gw170817_model: "./NFs/GW170817/model.eqx"

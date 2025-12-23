@@ -1,0 +1,172 @@
+"""Base class for jesterTOV EOS transforms."""
+
+from abc import ABC, abstractmethod
+# Following the Jim/jimgw architecture - base class copied to remove dependency
+from jesterTOV.inference.base import NtoMTransform
+from jaxtyping import Float
+import jax.numpy as jnp
+from jesterTOV.eos import construct_family
+
+
+class JesterTransformBase(NtoMTransform, ABC):
+    """Base class for all jester EOS transforms.
+
+    Provides common interface for converting EOS parameters
+    (microscopic) to observables (macroscopic: M, R, Lambda).
+
+    Parameters
+    ----------
+    name_mapping : tuple[list[str], list[str]]
+        Tuple of (input_names, output_names) for the transform
+    keep_names : list[str], optional
+        Names to keep in the output (default: all input names)
+    ndat_metamodel : int
+        Number of data points for MetaModel EOS (default: 100)
+    nmax_nsat : float
+        Maximum density in units of saturation density (default: 25.0)
+    min_nsat_TOV : float
+        Minimum density for TOV integration in units of nsat (default: 0.75)
+    ndat_TOV : int
+        Number of data points for TOV integration (default: 100)
+    nb_masses : int
+        Number of masses to sample (default: 100)
+    crust_name : str
+        Name of crust model to use: "DH", "BPS", or "DH_fixed" (default: "DH")
+    """
+
+    def __init__(
+        self,
+        name_mapping: tuple[list[str], list[str]],
+        keep_names: list[str] = None,
+        ndat_metamodel: int = 100,
+        nmax_nsat: float = 25.0,
+        min_nsat_TOV: float = 0.75,
+        ndat_TOV: int = 100,
+        nb_masses: int = 100,
+        crust_name: str = "DH",
+    ):
+        # By default, keep all input names
+        if keep_names is None:
+            keep_names = name_mapping[0]
+
+        super().__init__(name_mapping)
+
+        # Validate crust_name
+        if crust_name not in ["DH", "BPS", "DH_fixed"]:
+            raise ValueError(
+                f"crust_name must be 'DH', 'BPS', or 'DH_fixed', got {crust_name}"
+            )
+
+        # Save configuration
+        self.ndat_metamodel = ndat_metamodel
+        self.nmax_nsat = nmax_nsat
+        self.nmax = nmax_nsat * 0.16  # Convert to physical units (fm^-3)
+        self.min_nsat_TOV = min_nsat_TOV
+        self.ndat_TOV = ndat_TOV
+        self.nb_masses = nb_masses
+        self.crust_name = crust_name
+
+        print(f"Transform initialized with crust: {crust_name}")
+
+        # Construct lambda for solving TOV equations
+        self.construct_family_lambda = lambda x: construct_family(
+            x, ndat=self.ndat_TOV, min_nsat=self.min_nsat_TOV
+        )
+
+        # Fixed parameters (currently empty, but available for future use)
+        self.fixed_params = {}
+
+    @abstractmethod
+    def get_eos_type(self) -> str:
+        """Return EOS type identifier (e.g., 'MM', 'MM_CSE').
+
+        Returns
+        -------
+        str
+            EOS type identifier
+        """
+        pass
+
+    @abstractmethod
+    def get_parameter_names(self) -> list[str]:
+        """Return list of expected parameter names.
+
+        Returns
+        -------
+        list[str]
+            List of parameter names this transform expects
+        """
+        pass
+
+    def _solve_tov(
+        self, eos_tuple: tuple
+    ) -> tuple[Float, Float, Float, Float]:
+        """Solve TOV equations for a given EOS.
+
+        Parameters
+        ----------
+        eos_tuple : tuple
+            Tuple of (ns, ps, hs, es, dloge_dlogps) arrays
+
+        Returns
+        -------
+        tuple
+            (logpc_EOS, masses_EOS, radii_EOS, Lambdas_EOS)
+        """
+        return self.construct_family_lambda(eos_tuple)
+
+    def _create_return_dict(
+        self,
+        logpc_EOS: Float,
+        masses_EOS: Float,
+        radii_EOS: Float,
+        Lambdas_EOS: Float,
+        ns: Float,
+        ps: Float,
+        hs: Float,
+        es: Float,
+        dloge_dlogps: Float,
+        cs2: Float,
+    ) -> dict[str, Float]:
+        """Create standardized return dictionary.
+
+        Parameters
+        ----------
+        logpc_EOS : Float
+            Log of central pressure
+        masses_EOS : Float
+            Neutron star masses
+        radii_EOS : Float
+            Neutron star radii
+        Lambdas_EOS : Float
+            Tidal deformabilities
+        ns : Float
+            Baryon number densities
+        ps : Float
+            Pressures
+        hs : Float
+            Enthalpies
+        es : Float
+            Energy densities
+        dloge_dlogps : Float
+            Logarithmic derivative of energy density w.r.t. pressure
+        cs2 : Float
+            Sound speeds squared
+
+        Returns
+        -------
+        dict[str, Float]
+            Dictionary with EOS and TOV solution data
+        """
+        return {
+            "logpc_EOS": logpc_EOS,
+            "masses_EOS": masses_EOS,
+            "radii_EOS": radii_EOS,
+            "Lambdas_EOS": Lambdas_EOS,
+            "n": ns,
+            "p": ps,
+            "h": hs,
+            "e": es,
+            "dloge_dlogp": dloge_dlogps,
+            "cs2": cs2,
+        }
