@@ -26,6 +26,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
+from jax import Array
 from flowjax.distributions import Normal, Transformed
 from flowjax.flows import (
     block_neural_autoregressive_flow,
@@ -795,7 +796,7 @@ class Flow:
 
         return cls(flow_model, metadata, flow_kwargs)
 
-    def sample(self, key: jax.random.PRNGKey, shape: Tuple[int, ...]) -> np.ndarray:
+    def sample(self, key: jax.random.PRNGKey | Array, shape: Tuple[int, ...]) -> np.ndarray:
         """
         Sample from the flow and return in original scale.
 
@@ -803,7 +804,7 @@ class Flow:
         converted back to the original scale.
 
         Args:
-            key: JAX random key
+            key: JAX random key (accepts both jax.random.PRNGKey and jax.Array)
             shape: Shape of samples to generate (e.g., (1000,) for 1000 samples)
 
         Returns:
@@ -821,12 +822,12 @@ class Flow:
 
         return samples_np
 
-    def standardize_input(self, data: np.ndarray) -> np.ndarray:
+    def standardize_input(self, data: np.ndarray | Array) -> np.ndarray | Array:
         """
         Standardize input data to [0, 1] domain using training bounds.
 
         Args:
-            data: Input data in original scale
+            data: Input data in original scale (accepts numpy or JAX arrays)
 
         Returns:
             Data scaled to [0, 1] (or unchanged if standardization not used)
@@ -843,12 +844,12 @@ class Flow:
             return (data - data_min) / data_range
         return data
 
-    def destandardize_output(self, data: np.ndarray) -> np.ndarray:
+    def destandardize_output(self, data: np.ndarray | Array) -> np.ndarray | Array:
         """
         Convert standardized data back to original scale.
 
         Args:
-            data: Data in [0, 1] domain
+            data: Data in [0, 1] domain (accepts numpy or JAX arrays)
 
         Returns:
             Data in original scale (or unchanged if standardization not used)
@@ -861,7 +862,7 @@ class Flow:
             return inverse_standardize_data(data, self.data_bounds)
         return data
 
-    def log_prob(self, x: np.ndarray) -> np.ndarray:
+    def log_prob(self, x: np.ndarray | Array) -> np.ndarray:
         """
         Evaluate log probability of data under the flow.
 
@@ -869,7 +870,8 @@ class Flow:
         before evaluation.
 
         Args:
-            x: Data in original scale, shape (n_samples, n_features)
+            x: Data in original scale, shape (n_samples, n_features).
+               Accepts both numpy arrays and JAX arrays.
 
         Returns:
             Log probabilities, shape (n_samples,)

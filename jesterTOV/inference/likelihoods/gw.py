@@ -2,7 +2,6 @@
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 
 from jesterTOV.inference.base.likelihood import LikelihoodBase
 from jesterTOV.inference.flows.train_flow import Flow
@@ -71,69 +70,48 @@ class GWLikelihood(LikelihoodBase):
         float
             Log likelihood value for this GW event
         """
-        # Extract parameters
+        # Extract EOS information
         sampled_key = int(params["_random_key"])
         key = jax.random.key(sampled_key)
         masses_EOS = params["masses_EOS"]
         Lambdas_EOS = params["Lambdas_EOS"]
         mtov = jnp.max(masses_EOS)
 
-        # Split into batches
-        n_full_batches = self.N_masses_evaluation // self.N_masses_batch_size
-        remainder = self.N_masses_evaluation % self.N_masses_batch_size
+        # Sample all N_masses_evaluation samples from NF in one go (efficient)
+        all_nf_samples = self.flow.sample(key, (self.N_masses_evaluation,))
+        all_nf_samples = jnp.array(all_nf_samples)  # shape: [N_masses_evaluation, 2]
 
-        def process_batch(batch_key):
-            """Process one batch of mass samples"""
-            # Sample masses from flow (returns numpy array)
-            nf_samples = self.flow.sample(batch_key, (self.N_masses_batch_size,))
-            nf_samples = jnp.array(nf_samples)  # Convert to JAX array
-            m1 = nf_samples[:, 0]
-            m2 = nf_samples[:, 1]
+        def process_batch(batch_samples):
+            """Process a batch of NF samples (shape: [batch_size, 2] or [remainder, 2])"""
+            # TODO: check indexing behavior in jax here
+            m1 = batch_samples[:, 0]
+            m2 = batch_samples[:, 1]
 
-            # Interpolate lambdas from EOS
+            # Interpolate lambdas for the batch
             lambda_1 = jnp.interp(m1, masses_EOS, Lambdas_EOS, right=1.0)
             lambda_2 = jnp.interp(m2, masses_EOS, Lambdas_EOS, right=1.0)
 
-            # Evaluate log_prob on (m1, m2, lambda_1, lambda_2)
+            # Evaluate log_prob on batch
             ml_grid = jnp.stack([m1, m2, lambda_1, lambda_2], axis=-1)
-            logpdf = self.flow.log_prob(np.array(ml_grid))
-            logpdf = jnp.array(logpdf)  # Convert back to JAX array
+            logpdf = self.flow.log_prob(ml_grid)
+            logpdf = jnp.array(logpdf)
 
             # Penalties for masses exceeding Mtov
             penalty_m1 = jnp.where(m1 > mtov, self.penalty_value, 0.0)
             penalty_m2 = jnp.where(m2 > mtov, self.penalty_value, 0.0)
 
-            # Return sum of log probabilities and penalties for this batch
-            return jnp.sum(logpdf) + jnp.sum(penalty_m1) + jnp.sum(penalty_m2)
+            # Return log probs + penalties for this batch
+            return logpdf + penalty_m1 + penalty_m2
 
-        # Process full batches using jax.lax.map for memory efficiency
-        total_sum = 0.0
-        if n_full_batches > 0:
-            batch_keys = jax.random.split(key, n_full_batches)
-            batch_sums = jax.lax.map(process_batch, batch_keys)
-            total_sum = jnp.sum(batch_sums)
-
-        # Handle remainder batch (if N_masses_evaluation not divisible by batch size)
-        if remainder > 0:
-            key, remainder_key = jax.random.split(key)
-            nf_samples = self.flow.sample(remainder_key, (remainder,))
-            nf_samples = jnp.array(nf_samples)
-            m1 = nf_samples[:, 0]
-            m2 = nf_samples[:, 1]
-
-            lambda_1 = jnp.interp(m1, masses_EOS, Lambdas_EOS, right=1.0)
-            lambda_2 = jnp.interp(m2, masses_EOS, Lambdas_EOS, right=1.0)
-
-            ml_grid = jnp.stack([m1, m2, lambda_1, lambda_2], axis=-1)
-            logpdf = self.flow.log_prob(np.array(ml_grid))
-            logpdf = jnp.array(logpdf)
-
-            penalty_m1 = jnp.where(m1 > mtov, self.penalty_value, 0.0)
-            penalty_m2 = jnp.where(m2 > mtov, self.penalty_value, 0.0)
-
-            total_sum += jnp.sum(logpdf) + jnp.sum(penalty_m1) + jnp.sum(penalty_m2)
+        # Use jax.lax.map with batching to process all samples
+        # jax.lax.map handles edge cases where final batch is smaller
+        batch_logprobs = jax.lax.map(
+            process_batch,
+            all_nf_samples,
+            batch_size=self.N_masses_batch_size
+        )
 
         # Average over all samples for this event
-        log_likelihood = total_sum / self.N_masses_evaluation
+        log_likelihood = jnp.mean(batch_logprobs)
 
         return log_likelihood
