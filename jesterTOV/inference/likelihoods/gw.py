@@ -70,8 +70,8 @@ class GWLikelihood(LikelihoodBase):
         float
             Log likelihood value for this GW event
         """
-        # Extract EOS information
-        sampled_key = int(params["_random_key"])
+        # Extract parameters
+        sampled_key = params["_random_key"].astype("int64")
         key = jax.random.key(sampled_key)
         masses_EOS = params["masses_EOS"]
         Lambdas_EOS = params["Lambdas_EOS"]
@@ -113,5 +113,6 @@ class GWLikelihood(LikelihoodBase):
 
         # Average over all samples for this event
         log_likelihood = jnp.mean(batch_logprobs)
+        log_likelihood = float(log_likelihood)
 
         return log_likelihood
