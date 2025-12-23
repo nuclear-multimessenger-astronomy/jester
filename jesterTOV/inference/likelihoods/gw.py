@@ -72,7 +72,7 @@ class GWLikelihood(LikelihoodBase):
             Log likelihood value for this GW event
         """
         # Extract parameters
-        sampled_key = int(params["_random_key"])
+        sampled_key = params["_random_key"].astype("int64")
         key = jax.random.key(sampled_key)
         masses_EOS = params["masses_EOS"]
         Lambdas_EOS = params["Lambdas_EOS"]

@@ -3,11 +3,11 @@
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH -p gpu_h100
-#SBATCH -t 03:00:00
+#SBATCH -t 05:00:00
 #SBATCH --gpus-per-node=1
 #SBATCH --cpus-per-gpu=1
 #SBATCH --mem-per-gpu=10G
-#SBATCH --output="./logs/train_all_flows.out"
+#SBATCH --output="./outdir/log.out"
 #SBATCH --job-name="maf"
 
 now=$(date)
@@ -16,7 +16,7 @@ echo "$now"
 # Loading modules
 # module load 2024
 # module load Python/3.10.4-GCCcore-11.3.0
-source activate /home/twouters2/projects/jester_review/jester/.venv/bin/activate
+source /home/twouters2/projects/jester_review/jester/.venv/bin/activate
 
 # Display GPU name
 nvidia-smi --query-gpu=name --format=csv,noheader
