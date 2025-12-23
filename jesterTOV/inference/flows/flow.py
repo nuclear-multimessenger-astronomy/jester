@@ -1,0 +1,265 @@
+"""
+Flow class for loading and using trained normalizing flows.
+
+This module provides the Flow class which wraps flowjax normalizing flows
+with automatic handling of data standardization for sampling and log probability
+evaluation.
+"""
+
+import json
+import os
+from typing import Any, Dict, Tuple
+
+import equinox as eqx
+import jax
+import jax.numpy as jnp
+from jax import Array
+from flowjax.distributions import Transformed
+from flowjax.bijections import Invert
+
+
+class Flow:
+    """
+    Wrapper class for flowjax normalizing flows with automatic standardization handling.
+
+    This class encapsulates a trained normalizing flow and handles data standardization
+    transparently. When sampling, it automatically converts samples back to the original
+    scale if standardization was used during training.
+
+    Attributes:
+        flow: The underlying flowjax flow model
+        metadata: Training metadata dictionary
+        flow_kwargs: Flow architecture kwargs
+        standardize: Whether standardization was used during training
+        data_bounds: Min/max bounds for each feature (if standardization was used)
+
+    Example:
+        >>> # Load a trained flow
+        >>> flow = Flow.from_directory("./models/gw170817/")
+        >>>
+        >>> # Sample in original scale (standardization handled automatically)
+        >>> samples = flow.sample(jax.random.key(0), (1000,))
+        >>>
+        >>> # Access metadata
+        >>> print(f"Flow type: {flow.metadata['flow_type']}")
+        >>> print(f"Standardized: {flow.standardize}")
+    """
+
+    def __init__(
+        self,
+        flow: Any,
+        metadata: Dict[str, Any],
+        flow_kwargs: Dict[str, Any],
+    ):
+        """
+        Initialize Flow wrapper.
+
+        Args:
+            flow: Trained flowjax flow model
+            metadata: Training metadata
+            flow_kwargs: Flow architecture kwargs
+        """
+        self.flow = flow
+        self.metadata = metadata
+        self.flow_kwargs = flow_kwargs
+        self.standardize = metadata["standardize"] # TODO: this behavior should be changed in the future
+
+        # Always store bounds as JAX arrays
+        # If standardization is disabled, use trivial bounds (min=0, range=1)
+        # that make standardization operations identity transformations
+        if self.standardize:
+            self.data_min = jnp.array(metadata["data_bounds_min"])
+            self.data_max = jnp.array(metadata["data_bounds_max"])
+        else:
+            # Trivial bounds: min=0, max=1 → operations become identity
+            # Assume 4D flow (m1, m2, lambda1, lambda2)
+            n_features = 4
+            self.data_min = jnp.zeros(n_features)
+            self.data_max = jnp.ones(n_features)
+
+        # Precompute data range (max - min) to avoid repeated computation
+        self.data_range = self.data_max - self.data_min
+        # Avoid division by zero (though this shouldn't happen with our bounds)
+        self.data_range = jnp.where(self.data_range == 0, 1.0, self.data_range)
+
+    @classmethod
+    def from_directory(cls, output_dir: str) -> "Flow":
+        """
+        Load a trained flow from a directory.
+
+        Args:
+            output_dir: Directory containing flow_weights.eqx, flow_kwargs.json, metadata.json
+
+        Returns:
+            Flow instance with loaded model and metadata
+
+        Example:
+            >>> flow = Flow.from_directory("./models/gw170817/")
+        """
+        # Load the flow model and metadata
+        flow_model, metadata = load_model(output_dir)
+
+        # Load kwargs
+        kwargs_path = os.path.join(output_dir, "flow_kwargs.json")
+        with open(kwargs_path, "r") as f:
+            flow_kwargs = json.load(f)
+
+        return cls(flow_model, metadata, flow_kwargs)
+
+    def sample(self, key: Array, shape: Tuple[int, ...]) -> Array:
+        """
+        Sample from the flow and return in original scale.
+
+        If standardization was used during training, samples are automatically
+        converted back to the original scale. If not, the transformation is
+        identity (no-op).
+
+        Args:
+            key: JAX random key (jax.Array)
+            shape: Shape of samples to generate (e.g., (1000,) for 1000 samples)
+
+        Returns:
+            Samples in original scale as JAX array of shape (*shape, n_features)
+
+        Example:
+            >>> samples = flow.sample(jax.random.key(0), (1000,))
+            >>> print(samples.shape)  # (1000, 4) for 4D flow
+        """
+        samples = self.flow.sample(key, shape)
+
+        # Inverse standardization: [0,1] -> original scale
+        # If standardization was disabled, this is identity (min=0, range=1)
+        samples = samples * self.data_range + self.data_min
+
+        return samples
+
+    def standardize_input(self, data: Array) -> Array:
+        """
+        Standardize input data to [0, 1] domain using training bounds.
+
+        If standardization was disabled, this is identity (no-op).
+
+        Args:
+            data: Input data in original scale (JAX array)
+
+        Returns:
+            Data scaled to [0, 1] (or unchanged if standardization not used)
+
+        Example:
+            >>> original_data = jnp.array([[1.4, 1.3, 100, 200]])
+            >>> standardized = flow.standardize_input(original_data)
+        """
+        # Standardization: original scale -> [0,1]
+        # If standardization was disabled, this is identity (min=0, range=1)
+        return (data - self.data_min) / self.data_range
+
+    def destandardize_output(self, data: Array) -> Array:
+        """
+        Convert standardized data back to original scale.
+
+        If standardization was disabled, this is identity (no-op).
+
+        Args:
+            data: Data in [0, 1] domain (JAX array)
+
+        Returns:
+            Data in original scale (or unchanged if standardization not used)
+
+        Example:
+            >>> standardized_data = jnp.array([[0.5, 0.5, 0.5, 0.5]])
+            >>> original = flow.destandardize_output(standardized_data)
+        """
+        # Inverse standardization: [0,1] -> original scale
+        # If standardization was disabled, this is identity (min=0, range=1)
+        return data * self.data_range + self.data_min
+
+    def log_prob(self, x: Array) -> Array:
+        """
+        Evaluate log probability of data under the flow.
+
+        If standardization was used, input data is automatically standardized
+        before evaluation and Jacobian correction is applied. If not, operations
+        are identity (no-op).
+
+        Args:
+            x: Data in original scale, shape (n_samples, n_features).
+               JAX array.
+
+        Returns:
+            Log probabilities as JAX array, shape (n_samples,)
+
+        Example:
+            >>> data = jnp.array([[1.4, 1.3, 100, 200]])
+            >>> log_prob = flow.log_prob(data)
+        """
+        # Standardize input (identity if standardization disabled)
+        x_std = self.standardize_input(x)
+
+        # Evaluate log probability
+        log_p = self.flow.log_prob(x_std)
+
+        # Account for Jacobian of inverse transformation
+        # For min-max scaling: log p(x) = log p(x_std) - sum(log(x_max - x_min))
+        # If standardization was disabled (range=1), log_det_jacobian = 0
+        log_det_jacobian = -jnp.sum(jnp.log(self.data_range))
+        log_p = log_p + log_det_jacobian
+
+        return log_p
+
+
+def load_model(output_dir: str) -> Tuple[Any, Dict[str, Any]]:
+    """
+    Load a trained flow model from saved files.
+
+    Args:
+        output_dir: Directory containing saved model files
+
+    Returns:
+        flow: Loaded flow model
+        metadata: Training metadata (includes data_bounds if standardization was used)
+
+    Example:
+        >>> flow, metadata = load_model("./models/gw170817/")
+    """
+    # Import here to avoid circular dependency
+    from .train_flow import create_flow, create_physics_constraint_bijection
+
+    # Load kwargs
+    kwargs_path = os.path.join(output_dir, "flow_kwargs.json")
+    with open(kwargs_path, "r") as f:
+        flow_kwargs = json.load(f)
+
+    # Recreate flow architecture
+    key = jax.random.key(flow_kwargs["seed"])
+    flow = create_flow(
+        key=key,
+        flow_type=flow_kwargs["flow_type"],
+        nn_depth=flow_kwargs["nn_depth"],
+        nn_block_dim=flow_kwargs["nn_block_dim"],
+        nn_width=flow_kwargs["nn_width"],
+        flow_layers=flow_kwargs["flow_layers"],
+        knots=flow_kwargs["knots"],
+        tanh_max_val=flow_kwargs["tanh_max_val"],
+        invert=flow_kwargs["invert"],
+        cond_dim=flow_kwargs["cond_dim"],
+        transformer_type=flow_kwargs["transformer_type"],
+        transformer_knots=flow_kwargs["transformer_knots"],
+        transformer_interval=flow_kwargs["transformer_interval"],
+    )
+
+    # Load weights
+    weights_path = os.path.join(output_dir, "flow_weights.eqx")
+    flow = eqx.tree_deserialise_leaves(weights_path, flow)
+
+    # Load metadata
+    metadata_path = os.path.join(output_dir, "metadata.json")
+    with open(metadata_path, "r") as f:
+        metadata = json.load(f)
+
+    # Wrap with physics bijection if it was used during training
+    if flow_kwargs["constrain_physics"]:
+        use_chirp_mass = flow_kwargs["use_chirp_mass"]
+        physics_bijection = create_physics_constraint_bijection(use_chirp_mass)
+        flow = Transformed(flow, Invert(physics_bijection))
+
+    return flow, metadata

@@ -5,8 +5,7 @@ This script trains a flowjax normalizing flow on gravitational wave (GW) posteri
 samples for the component masses and tidal deformabilities. The trained flow can
 later be used for importance sampling or other inference tasks.
 
-The module also provides a Flow class for easy loading and usage of trained models,
-with automatic handling of data standardization.
+For loading and using trained models, see jesterTOV.inference.flows.flow.Flow.
 
 # TODO: make the final flow the default below
 
@@ -541,7 +540,7 @@ def create_transformer(
 
 
 def create_flow(
-    key: jax.random.PRNGKey,
+    key: Array,
     flow_type: str = "triangular_spline_flow",
     nn_depth: int = 5,
     nn_block_dim: int = 8,
@@ -642,7 +641,7 @@ def create_flow(
 def train_flow(
     flow: Any,
     data: np.ndarray,
-    key: jax.random.PRNGKey,
+    key: Array,
     learning_rate: float = 1e-3,
     max_epochs: int = 600,
     max_patience: int = 50,
@@ -718,248 +717,7 @@ def save_model(
         json.dump(metadata, f, indent=2)
 
 
-class Flow:
-    """
-    Wrapper class for flowjax normalizing flows with automatic standardization handling.
-
-    This class encapsulates a trained normalizing flow and handles data standardization
-    transparently. When sampling, it automatically converts samples back to the original
-    scale if standardization was used during training.
-
-    Attributes:
-        flow: The underlying flowjax flow model
-        metadata: Training metadata dictionary
-        flow_kwargs: Flow architecture kwargs
-        standardize: Whether standardization was used during training
-        data_bounds: Min/max bounds for each feature (if standardization was used)
-
-    Example:
-        >>> # Load a trained flow
-        >>> flow = Flow.from_directory("./models/gw170817/")
-        >>>
-        >>> # Sample in original scale (standardization handled automatically)
-        >>> samples = flow.sample(jax.random.key(0), (1000,))
-        >>>
-        >>> # Access metadata
-        >>> print(f"Flow type: {flow.metadata['flow_type']}")
-        >>> print(f"Standardized: {flow.standardize}")
-    """
-
-    def __init__(
-        self,
-        flow: Any,
-        metadata: Dict[str, Any],
-        flow_kwargs: Dict[str, Any],
-    ):
-        """
-        Initialize Flow wrapper.
-
-        Args:
-            flow: Trained flowjax flow model
-            metadata: Training metadata
-            flow_kwargs: Flow architecture kwargs
-        """
-        self.flow = flow
-        self.metadata = metadata
-        self.flow_kwargs = flow_kwargs
-        self.standardize = metadata["standardize"]
-
-        if self.standardize:
-            self.data_bounds = {
-                "min": np.array(metadata["data_bounds_min"]),
-                "max": np.array(metadata["data_bounds_max"]),
-            }
-        else:
-            self.data_bounds = None
-
-    @classmethod
-    def from_directory(cls, output_dir: str) -> "Flow":
-        """
-        Load a trained flow from a directory.
-
-        Args:
-            output_dir: Directory containing flow_weights.eqx, flow_kwargs.json, metadata.json
-
-        Returns:
-            Flow instance with loaded model and metadata
-
-        Example:
-            >>> flow = Flow.from_directory("./models/gw170817/")
-        """
-        # Load the flow model and metadata
-        flow_model, metadata = load_model(output_dir)
-
-        # Load kwargs
-        kwargs_path = os.path.join(output_dir, "flow_kwargs.json")
-        with open(kwargs_path, "r") as f:
-            flow_kwargs = json.load(f)
-
-        return cls(flow_model, metadata, flow_kwargs)
-
-    def sample(self, key: jax.random.PRNGKey | Array, shape: Tuple[int, ...]) -> np.ndarray:
-        """
-        Sample from the flow and return in original scale.
-
-        If standardization was used during training, samples are automatically
-        converted back to the original scale.
-
-        Args:
-            key: JAX random key (accepts both jax.random.PRNGKey and jax.Array)
-            shape: Shape of samples to generate (e.g., (1000,) for 1000 samples)
-
-        Returns:
-            Samples in original scale as numpy array of shape (*shape, n_features)
-
-        Example:
-            >>> samples = flow.sample(jax.random.key(0), (1000,))
-            >>> print(samples.shape)  # (1000, 4) for 4D flow
-        """
-        samples = self.flow.sample(key, shape)
-        samples_np = np.array(samples)
-
-        if self.standardize and self.data_bounds is not None:
-            samples_np = inverse_standardize_data(samples_np, self.data_bounds)
-
-        return samples_np
-
-    def standardize_input(self, data: np.ndarray | Array) -> np.ndarray | Array:
-        """
-        Standardize input data to [0, 1] domain using training bounds.
-
-        Args:
-            data: Input data in original scale (accepts numpy or JAX arrays)
-
-        Returns:
-            Data scaled to [0, 1] (or unchanged if standardization not used)
-
-        Example:
-            >>> original_data = np.array([[1.4, 1.3, 100, 200]])
-            >>> standardized = flow.standardize_input(original_data)
-        """
-        if self.standardize and self.data_bounds is not None:
-            data_min = self.data_bounds["min"]
-            data_max = self.data_bounds["max"]
-            data_range = data_max - data_min
-            data_range = np.where(data_range == 0, 1.0, data_range)
-            return (data - data_min) / data_range
-        return data
-
-    def destandardize_output(self, data: np.ndarray | Array) -> np.ndarray | Array:
-        """
-        Convert standardized data back to original scale.
-
-        Args:
-            data: Data in [0, 1] domain (accepts numpy or JAX arrays)
-
-        Returns:
-            Data in original scale (or unchanged if standardization not used)
-
-        Example:
-            >>> standardized_data = np.array([[0.5, 0.5, 0.5, 0.5]])
-            >>> original = flow.destandardize_output(standardized_data)
-        """
-        if self.standardize and self.data_bounds is not None:
-            return inverse_standardize_data(data, self.data_bounds)
-        return data
-
-    def log_prob(self, x: np.ndarray | Array) -> np.ndarray:
-        """
-        Evaluate log probability of data under the flow.
-
-        If standardization was used, input data is automatically standardized
-        before evaluation.
-
-        Args:
-            x: Data in original scale, shape (n_samples, n_features).
-               Accepts both numpy arrays and JAX arrays.
-
-        Returns:
-            Log probabilities, shape (n_samples,)
-
-        Example:
-            >>> data = np.array([[1.4, 1.3, 100, 200]])
-            >>> log_prob = flow.log_prob(data)
-        """
-        # Standardize input if needed
-        x_std = self.standardize_input(x)
-
-        # Evaluate log probability
-        log_p = self.flow.log_prob(x_std)
-
-        # Note: If standardization was used, we need to account for the Jacobian
-        # of the inverse transformation. For min-max scaling:
-        # log p(x) = log p(x_std) - sum(log(x_max - x_min))
-        if self.standardize and self.data_bounds is not None:
-            data_range = self.data_bounds["max"] - self.data_bounds["min"]
-            data_range = np.where(data_range == 0, 1.0, data_range)
-            log_det_jacobian = -np.sum(np.log(data_range))
-            log_p = log_p + log_det_jacobian
-
-        return np.array(log_p)
-
-
-def load_model(output_dir: str) -> Tuple[Any, Dict[str, Any]]:
-    """
-    Load a trained flow model from saved files.
-
-    Args:
-        output_dir: Directory containing saved model files
-
-    Returns:
-        flow: Loaded flow model
-        metadata: Training metadata (includes data_bounds if standardization was used)
-
-    Example:
-        >>> flow, metadata = load_model("./models/gw170817/")
-        >>> # Sample in standardized space
-        >>> samples_standardized = flow.sample(jax.random.key(0), (1000,))
-        >>> # Convert back to original scale if standardization was used
-        >>> if metadata["standardize"]:
-        >>>     bounds = {
-        >>>         "min": np.array(metadata["data_bounds_min"]),
-        >>>         "max": np.array(metadata["data_bounds_max"])
-        >>>     }
-        >>>     samples = inverse_standardize_data(np.array(samples_standardized), bounds)
-    """
-    # Load kwargs
-    kwargs_path = os.path.join(output_dir, "flow_kwargs.json")
-    with open(kwargs_path, "r") as f:
-        flow_kwargs = json.load(f)
-
-    # Recreate flow architecture
-    key = jax.random.key(flow_kwargs["seed"])
-    flow = create_flow(
-        key=key,
-        flow_type=flow_kwargs["flow_type"],
-        nn_depth=flow_kwargs["nn_depth"],
-        nn_block_dim=flow_kwargs["nn_block_dim"],
-        nn_width=flow_kwargs["nn_width"],
-        flow_layers=flow_kwargs["flow_layers"],
-        knots=flow_kwargs["knots"],
-        tanh_max_val=flow_kwargs["tanh_max_val"],
-        invert=flow_kwargs["invert"],
-        cond_dim=flow_kwargs["cond_dim"],
-        transformer_type=flow_kwargs["transformer_type"],
-        transformer_knots=flow_kwargs["transformer_knots"],
-        transformer_interval=flow_kwargs["transformer_interval"],
-    )
-
-    # Load weights
-    weights_path = os.path.join(output_dir, "flow_weights.eqx")
-    flow = eqx.tree_deserialise_leaves(weights_path, flow)
-
-    # Load metadata
-    metadata_path = os.path.join(output_dir, "metadata.json")
-    with open(metadata_path, "r") as f:
-        metadata = json.load(f)
-
-    # Wrap with physics bijection if it was used during training
-    if flow_kwargs["constrain_physics"]:
-        use_chirp_mass = flow_kwargs["use_chirp_mass"]
-        physics_bijection = create_physics_constraint_bijection(use_chirp_mass)
-        flow = Transformed(flow, Invert(physics_bijection))
-
-    return flow, metadata
+# Flow class and load_model moved to jesterTOV.inference.flows.flow
 
 
 def plot_losses(losses: Dict[str, np.ndarray], output_path: str) -> None:
@@ -1326,7 +1084,7 @@ def main():
     print(f"Figures saved to: {os.path.join(args.output_dir, 'figures')}")
     print("=" * 60)
     print("\nTo use the trained flow:")
-    print(">>> from jesterTOV.inference.flows.train_flow import Flow")
+    print(">>> from jesterTOV.inference.flows.flow import Flow")
     print(f">>> flow = Flow.from_directory('{args.output_dir}')")
     print(">>> samples = flow.sample(jax.random.key(0), (1000,))")
     if args.standardize:
