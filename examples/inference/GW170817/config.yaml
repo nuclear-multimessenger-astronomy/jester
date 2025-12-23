@@ -30,6 +30,7 @@ likelihoods:
       event_name: "GW170817"
       model_path: "./NFs/GW170817/model.eqx"
       sample_masses: true
+      
 
 # MCMC sampler configuration
 sampler:
@@ -40,7 +41,7 @@ sampler:
   n_global_steps: 100
   n_epochs: 30
   learning_rate: 0.001
-  output_dir: "./outdir_gw170817/"
+  output_dir: "./outdir/"
 
 # Data paths
 data_paths:
