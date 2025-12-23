@@ -87,11 +87,54 @@ class LikelihoodConfig(BaseModel):
         Whether this likelihood is enabled
     parameters : dict
         Likelihood-specific parameters
+
+        For GW likelihoods:
+            events : list[dict]
+                List of GW events with 'name' and 'model_dir' keys
+            penalty_value : float
+                Penalty for masses exceeding Mtov (default: -99999.0)
+            N_masses_evaluation : int
+                Number of mass samples per evaluation (default: 20)
+            N_masses_batch_size : int
+                Batch size for mass sampling (default: 10)
     """
 
     type: Literal["gw", "nicer", "radio", "chieft", "rex", "zero"]
     enabled: bool = True
     parameters: Dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("parameters")
+    @classmethod
+    def validate_gw_parameters(cls, v: Dict[str, Any], info) -> Dict[str, Any]:
+        """Validate GW likelihood parameters."""
+        if "type" not in info.data or info.data["type"] != "gw":
+            return v
+
+        # Check required fields for GW likelihood
+        if "events" not in v:
+            raise ValueError(
+                "GW likelihood requires 'events' parameter (list of dicts with 'name' and 'model_dir')"
+            )
+
+        events = v["events"]
+        if not isinstance(events, list) or len(events) == 0:
+            raise ValueError("GW likelihood 'events' must be a non-empty list")
+
+        # Validate each event
+        for i, event in enumerate(events):
+            if not isinstance(event, dict):
+                raise ValueError(f"Event {i} must be a dict with 'name' and 'model_dir' keys")
+            if "name" not in event:
+                raise ValueError(f"Event {i} missing required 'name' field")
+            if "model_dir" not in event:
+                raise ValueError(f"Event {i} missing required 'model_dir' field")
+
+        # Set defaults for optional parameters
+        v.setdefault("penalty_value", -99999.0)
+        v.setdefault("N_masses_evaluation", 20)
+        v.setdefault("N_masses_batch_size", 10)
+
+        return v
 
 
 class SamplerConfig(BaseModel):

@@ -41,17 +41,22 @@ def setup_prior(config):
     CombinePrior
         Combined prior object
     """
+    from .base.prior import UniformPrior, CombinePrior
+
     # Determine conditional parameters
     nb_CSE = (
         config.transform.nb_CSE if config.transform.type == "metamodel_cse" else 0
     )
 
-    # Collect GW events that need mass priors
-    sample_gw_events = [
-        lk.parameters.get("event_name", "GW170817")
-        for lk in config.likelihoods
-        if lk.type == "gw" and lk.enabled
-    ]
+    # Collect GW events from all enabled GW likelihoods
+    sample_gw_events = []
+    has_gw_likelihoods = False
+    for lk in config.likelihoods:
+        if lk.type == "gw" and lk.enabled:
+            has_gw_likelihoods = True
+            # Extract event names from the events list
+            events = lk.parameters.get("events", [])
+            sample_gw_events.extend([event["name"] for event in events])
 
     # Parse prior file
     prior = parse_prior_file(
@@ -59,6 +64,14 @@ def setup_prior(config):
         nb_CSE=nb_CSE,
         sample_gw_events=sample_gw_events,
     )
+
+    # Add _random_key prior if GW likelihoods are enabled
+    if has_gw_likelihoods:
+        print("Adding _random_key prior for GW likelihood sampling")
+        random_key_prior = UniformPrior(
+            float(0), float(2**32 - 1), parameter_names=["_random_key"]
+        )
+        prior = CombinePrior([prior, random_key_prior])
 
     return prior
 

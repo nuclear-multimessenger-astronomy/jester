@@ -3,7 +3,7 @@
 from ..config.schema import LikelihoodConfig
 # FIXME: DataLoader removed - need to implement data loading functions
 from .combined import CombinedLikelihood, ZeroLikelihood
-from .gw import GWlikelihood_with_masses
+from .gw import GWLikelihood
 from .nicer import NICERLikelihood, NICERLikelihood_with_masses
 from .radio import RadioTimingLikelihood
 from .chieft import ChiEFTLikelihood
@@ -35,17 +35,11 @@ def create_likelihood(
     params = config.parameters
 
     if config.type == "gw":
-        event_name = params.get("event_name", "GW170817") # FIXME: this should be required field
-        model_path = params.get("model_path", None) # FIXME: this should be required field
-
-        # FIXME: need to have a way to extract kwargs for different likelihoods
-
-        # FIXME: Implement load_gw_nf_model(event_name, model_path) -> normalizing flow model
-        # This should load a trained normalizing flow model from model_path
-        # For now, raise NotImplementedError
-        raise NotImplementedError(
-            f"GW likelihood data loading not implemented. "
-            f"Need to implement load_gw_nf_model('{event_name}', '{model_path}')"
+        # GW likelihoods are handled specially in create_combined_likelihood
+        # This function should not be called directly for GW type
+        raise RuntimeError(
+            "GW likelihoods should be created via create_combined_likelihood, "
+            "not create_likelihood directly"
         )
 
     elif config.type == "nicer":
@@ -124,10 +118,34 @@ def create_combined_likelihood(
         If no likelihoods are enabled
     """
     likelihoods = []
+
     for config in likelihood_configs:
-        likelihood = create_likelihood(config, data_loader)
-        if likelihood is not None:
-            likelihoods.append(likelihood)
+        if not config.enabled:
+            continue
+
+        # Special handling for GW likelihoods: create one likelihood per event
+        if config.type == "gw":
+            params = config.parameters
+            events = params["events"]  # Required, validated by schema
+            penalty_value = params.get("penalty_value", -99999.0)
+            N_masses_evaluation = params.get("N_masses_evaluation", 20)
+            N_masses_batch_size = params.get("N_masses_batch_size", 10)
+
+            # Create one GWLikelihood per event
+            for event in events:
+                gw_likelihood = GWLikelihood(
+                    event_name=event["name"],
+                    model_dir=event["model_dir"],
+                    penalty_value=penalty_value,
+                    N_masses_evaluation=N_masses_evaluation,
+                    N_masses_batch_size=N_masses_batch_size,
+                )
+                likelihoods.append(gw_likelihood)
+        else:
+            # For non-GW likelihoods, use standard creation
+            likelihood = create_likelihood(config, data_loader)
+            if likelihood is not None:
+                likelihoods.append(likelihood)
 
     if len(likelihoods) == 0:
         raise ValueError("No likelihoods enabled in configuration")

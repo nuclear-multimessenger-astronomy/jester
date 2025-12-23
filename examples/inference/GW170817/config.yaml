@@ -4,8 +4,8 @@
 seed: 43
 
 # Execution options
-dry_run: false        # Set to true to setup everything but not run sampler
-validate_only: false  # Set to true to only validate configuration
+dry_run: false         # Set to false to run full MCMC sampling
+validate_only: false  # Set to true to only validate configuration (faster than dry_run)
 
 # Transform configuration: MetaModel + CSE for high-density region
 transform:
@@ -43,6 +43,9 @@ sampler:
   learning_rate: 0.001
   output_dir: "./outdir/"
 
-# Data paths
-data_paths:
-  gw170817_model: "./NFs/GW170817/model.eqx"
+# Postprocessing configuration
+postprocessing:
+  enabled: true
+  make_cornerplot: true
+  make_massradius: true
+  make_pressuredensity: true

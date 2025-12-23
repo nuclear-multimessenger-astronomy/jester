@@ -1,114 +1,56 @@
 """Gravitational wave event likelihood implementations"""
 
-import os
 import jax
 import jax.numpy as jnp
 import numpy as np
 
-from jesterTOV.inference.base import LikelihoodBase
+from jesterTOV.inference.base.likelihood import LikelihoodBase
 from jesterTOV.inference.flows.train_flow import Flow
 
-class GWlikelihood_with_masses(LikelihoodBase):
+
+class GWLikelihood(LikelihoodBase):
     """
-    Gravitational wave likelihood using normalizing flow posteriors
+    Gravitational wave likelihood for a single GW event using normalizing flow posteriors
 
     This likelihood evaluates the GW posterior by:
     1. Sampling masses (m1, m2) from the trained normalizing flow
     2. Interpolating tidal deformabilities (Λ1, Λ2) from the EOS
     3. Evaluating the NF log probability on (m1, m2, Λ1, Λ2)
-    4. Importance sampling to remove the prior used during NF training
 
     Parameters
     ----------
-    eos : str
-        Equation of state name
-    ifo_network : str
-        Interferometer network (e.g., "HLV")
-    suffix : str
-        Additional identifier suffix
-    id : str
-        Event identifier (e.g., "GW170817")
-    very_negative_value : float, optional
-        Penalty value for invalid samples (default: -99999.0)
-    N_samples_masses : int, optional
-        Number of samples for determining mass range (default: 2000)
+    event_name : str
+        Name of the GW event (e.g., "GW170817")
+    model_dir : str
+        Path to directory containing the trained normalizing flow model
+    penalty_value : float, optional
+        Penalty value for samples where masses exceed Mtov (default: -99999.0)
     N_masses_evaluation : int, optional
-        Number of mass samples per likelihood evaluation (default: 1)
-    nf_prior : Transformed, optional
-        Prior distribution used during NF training (for importance sampling)
-    hdi_prob : float, optional
-        Probability level for credible intervals (default: 0.90)
+        Number of mass samples per likelihood evaluation (default: 20)
+    N_masses_batch_size : int, optional
+        Batch size for processing mass samples (default: 10)
     """
 
     def __init__(
         self,
-        eos: str,
-        ifo_network: str,
-        suffix: str,
-        id: str,
-        very_negative_value: float = -99999.0,
-        N_samples_masses: int = 2_000,
-        N_masses_evaluation: int = 1,
-        nf_prior = None,  # TODO: Add type hint when flowjax is imported
-        hdi_prob: float = 0.90,
+        event_name: str,
+        model_dir: str,
+        penalty_value: float = -99999.0,
+        N_masses_evaluation: int = 20,
+        N_masses_batch_size: int = 10,
     ):
         super().__init__()
-        self.eos = eos
-        self.ifo_network = ifo_network
-        self.suffix = suffix
-        self.id = id
-        if len(self.suffix) > 0:
-            self.name = f"{self.eos}_{self.ifo_network}_{self.id}_{self.suffix}"
-            saved_location = f"models/{self.eos}/{self.ifo_network}/{self.id}_{self.suffix}"
-        else:
-            self.name = f"{self.eos}_{self.ifo_network}_{self.id}"
-            saved_location = f"models/{self.eos}/{self.ifo_network}/{self.id}"
-        self.very_negative_value = very_negative_value
+        self.event_name = event_name
+        self.model_dir = model_dir
+        self.penalty_value = penalty_value
         self.N_masses_evaluation = N_masses_evaluation
-        self.nf_prior = nf_prior
+        self.N_masses_batch_size = N_masses_batch_size
 
-        # FIXME: NF_PATH should be configurable or passed via data loading system
-        NF_PATH = os.environ.get("NF_PATH", "./models")
+        # Load Flow model for this event
+        print(f"Loading NF model for {event_name} from {model_dir}")
+        self.flow = Flow.from_directory(model_dir)
+        print(f"Loaded NF model for {event_name}")
 
-        # Construct model directory path
-        model_dir = os.path.join(NF_PATH, saved_location)
-
-        print(f"Loading the trained NF model from: {model_dir}")
-
-        if not os.path.exists(model_dir):
-            raise FileNotFoundError(
-                f"NF model directory not found: {model_dir}\n"
-                f"Expected structure: {model_dir}/flow_weights.eqx, flow_kwargs.json, metadata.json"
-            )
-
-        # Load the normalizing flow using the Flow class
-        # This handles all the architecture reconstruction and weight loading
-        flow_wrapper = Flow.from_directory(model_dir)
-        self.NS_posterior = flow_wrapper.flow  # Extract the underlying flowjax model
-        self.flow_metadata = flow_wrapper.metadata
-        self.flow_kwargs = flow_wrapper.flow_kwargs
-        
-        print(f"Loaded the NF for run {self.eos}_{self.id}")
-        seed = np.random.randint(0, 100000)
-        key = jax.random.key(seed)
-        key, subkey = jax.random.split(key)
-        
-        # Generate some samples from the NS posterior to know the mass range
-        nf_samples = self.NS_posterior.sample(subkey, (N_samples_masses,))
-        
-        # Use it to get the range of m1 and m2
-        m1 = nf_samples[:, 0]
-        m2 = nf_samples[:, 1]
-
-        # Use credible interval based on percentiles
-        lower_percentile = (1 - hdi_prob) / 2 * 100
-        upper_percentile = (1 - (1 - hdi_prob) / 2) * 100
-        self.m1_min, self.m1_max = np.percentile(np.array(m1), [lower_percentile, upper_percentile])
-        self.m2_min, self.m2_max = np.percentile(np.array(m2), [lower_percentile, upper_percentile])
-        
-        print(f"The range of m1 for {self.eos}_{self.id} is: {self.m1_min:.4f} to {self.m1_max:.4f}")
-        print(f"The range of m2 for {self.eos}_{self.id} is: {self.m2_min:.4f} to {self.m2_max:.4f}")
-        
 
     def evaluate(self, params: dict[str, float], data: dict) -> float:
         """
@@ -117,46 +59,81 @@ class GWlikelihood_with_masses(LikelihoodBase):
         Parameters
         ----------
         params : dict[str, float]
-            Must contain 'masses_EOS' and 'Lambdas_EOS' arrays from transform,
-            plus 'key' for random sampling
+            Must contain:
+            - '_random_key': Random seed for mass sampling (cast to int64)
+            - 'masses_EOS': Array of neutron star masses from EOS
+            - 'Lambdas_EOS': Array of tidal deformabilities from EOS
         data : dict
             Not used (data encapsulated in likelihood object)
 
         Returns
         -------
         float
-            Log likelihood value
+            Log likelihood value for this GW event
         """
-    
-        # Generate some samples from the NS posterior to know the mass range
-        sampled_key = params["key"].astype("int64")
+        # Extract parameters
+        sampled_key = int(params["_random_key"])
         key = jax.random.key(sampled_key)
-        masses_EOS, Lambdas_EOS = params['masses_EOS'], params['Lambdas_EOS']
+        masses_EOS = params["masses_EOS"]
+        Lambdas_EOS = params["Lambdas_EOS"]
         mtov = jnp.max(masses_EOS)
-        
-        ### Old method -- using large array of samples at once. This works fine but is restricted in memory quite easily
-        nf_samples = self.NS_posterior.sample(key, (self.N_masses_evaluation,))
-        # Use the NF to sample the masses, then we discard Lambdas and instead infer them from the sampled EOS
-        m1 = nf_samples[:, 0].flatten()
-        m2 = nf_samples[:, 1].flatten()
-        
-        penalty_mass1_mtov = jnp.where(m1 > mtov, self.very_negative_value, 0.0).at[0].get()
-        penalty_mass2_mtov = jnp.where(m2 > mtov, self.very_negative_value, 0.0).at[0].get()
-        
-        # Lambdas: interpolate to get the values
-        lambda_1 = jnp.interp(m1, masses_EOS, Lambdas_EOS, right = 1.0)
-        lambda_2 = jnp.interp(m2, masses_EOS, Lambdas_EOS, right = 1.0)
-        
-        # Make a 4D array of the m1, m2, and lambda values and evalaute NF log prob on it
-        ml_grid = jnp.array([m1, m2, lambda_1, lambda_2]).T
-        
-        logpdf_NS = self.NS_posterior.log_prob(ml_grid)
-        logpdf_NS = jnp.mean(logpdf_NS)
-        
-        # Evaluate the log prior so we can subtract it (importance sampling strategy)
-        logpdf_prior = self.nf_prior.log_prob(ml_grid)
-        logpdf_prior = jnp.mean(logpdf_prior)
-        
-        log_likelihood = logpdf_NS - logpdf_prior + penalty_mass1_mtov + penalty_mass2_mtov
-        
+
+        # Split into batches
+        n_full_batches = self.N_masses_evaluation // self.N_masses_batch_size
+        remainder = self.N_masses_evaluation % self.N_masses_batch_size
+
+        def process_batch(batch_key):
+            """Process one batch of mass samples"""
+            # Sample masses from flow (returns numpy array)
+            nf_samples = self.flow.sample(batch_key, (self.N_masses_batch_size,))
+            nf_samples = jnp.array(nf_samples)  # Convert to JAX array
+            m1 = nf_samples[:, 0]
+            m2 = nf_samples[:, 1]
+
+            # Interpolate lambdas from EOS
+            lambda_1 = jnp.interp(m1, masses_EOS, Lambdas_EOS, right=1.0)
+            lambda_2 = jnp.interp(m2, masses_EOS, Lambdas_EOS, right=1.0)
+
+            # Evaluate log_prob on (m1, m2, lambda_1, lambda_2)
+            ml_grid = jnp.stack([m1, m2, lambda_1, lambda_2], axis=-1)
+            logpdf = self.flow.log_prob(np.array(ml_grid))
+            logpdf = jnp.array(logpdf)  # Convert back to JAX array
+
+            # Penalties for masses exceeding Mtov
+            penalty_m1 = jnp.where(m1 > mtov, self.penalty_value, 0.0)
+            penalty_m2 = jnp.where(m2 > mtov, self.penalty_value, 0.0)
+
+            # Return sum of log probabilities and penalties for this batch
+            return jnp.sum(logpdf) + jnp.sum(penalty_m1) + jnp.sum(penalty_m2)
+
+        # Process full batches using jax.lax.map for memory efficiency
+        total_sum = 0.0
+        if n_full_batches > 0:
+            batch_keys = jax.random.split(key, n_full_batches)
+            batch_sums = jax.lax.map(process_batch, batch_keys)
+            total_sum = jnp.sum(batch_sums)
+
+        # Handle remainder batch (if N_masses_evaluation not divisible by batch size)
+        if remainder > 0:
+            key, remainder_key = jax.random.split(key)
+            nf_samples = self.flow.sample(remainder_key, (remainder,))
+            nf_samples = jnp.array(nf_samples)
+            m1 = nf_samples[:, 0]
+            m2 = nf_samples[:, 1]
+
+            lambda_1 = jnp.interp(m1, masses_EOS, Lambdas_EOS, right=1.0)
+            lambda_2 = jnp.interp(m2, masses_EOS, Lambdas_EOS, right=1.0)
+
+            ml_grid = jnp.stack([m1, m2, lambda_1, lambda_2], axis=-1)
+            logpdf = self.flow.log_prob(np.array(ml_grid))
+            logpdf = jnp.array(logpdf)
+
+            penalty_m1 = jnp.where(m1 > mtov, self.penalty_value, 0.0)
+            penalty_m2 = jnp.where(m2 > mtov, self.penalty_value, 0.0)
+
+            total_sum += jnp.sum(logpdf) + jnp.sum(penalty_m1) + jnp.sum(penalty_m2)
+
+        # Average over all samples for this event
+        log_likelihood = total_sum / self.N_masses_evaluation
+
         return log_likelihood
