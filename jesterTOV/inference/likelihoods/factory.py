@@ -1,10 +1,9 @@
 """Factory functions for creating likelihoods from configuration"""
 
 from ..config.schema import LikelihoodConfig
-# FIXME: DataLoader removed - need to implement data loading functions
 from .combined import CombinedLikelihood, ZeroLikelihood
 from .gw import GWLikelihood
-from .nicer import NICERLikelihood, NICERLikelihood_with_masses
+from .nicer import NICERLikelihood
 from .radio import RadioTimingLikelihood
 from .chieft import ChiEFTLikelihood
 from .rex import REXLikelihood
@@ -43,18 +42,11 @@ def create_likelihood(
         )
 
     elif config.type == "nicer":
-        targets = params.get("targets", ["J0030", "J0740"])
-        analysis_groups = params.get("analysis_groups", ["amsterdam", "maryland"])
-
-        # FIXME: Implement load_nicer_kde(psr_name, analysis_group, n_samples) -> gaussian_kde
-        # This should:
-        # 1. Load NICER posterior samples from data files
-        # 2. Construct KDE from the samples
-        # 3. Handle caching to avoid re-creating KDEs
-        # For now, raise NotImplementedError
-        raise NotImplementedError(
-            f"NICER likelihood data loading not implemented. "
-            f"Need to implement load_nicer_kde() for targets: {targets}, groups: {analysis_groups}"
+        # NICER likelihoods are handled specially in create_combined_likelihood
+        # This function should not be called directly for NICER type
+        raise RuntimeError(
+            "NICER likelihoods should be created via create_combined_likelihood, "
+            "not create_likelihood directly"
         )
 
     elif config.type == "radio":
@@ -140,8 +132,25 @@ def create_combined_likelihood(
                     N_masses_batch_size=N_masses_batch_size,
                 )
                 likelihoods.append(gw_likelihood)
+
+        # Special handling for NICER likelihoods: create one likelihood per pulsar
+        elif config.type == "nicer":
+            params = config.parameters
+            pulsars = params["pulsars"]  # Required, validated by schema
+            N_masses_evaluation = params.get("N_masses_evaluation", 100)
+
+            # Create one NICERLikelihood per pulsar
+            for pulsar in pulsars:
+                nicer_likelihood = NICERLikelihood(
+                    psr_name=pulsar["name"],
+                    amsterdam_samples_file=pulsar["amsterdam_samples_file"],
+                    maryland_samples_file=pulsar["maryland_samples_file"],
+                    N_masses_evaluation=N_masses_evaluation,
+                )
+                likelihoods.append(nicer_likelihood)
+
         else:
-            # For non-GW likelihoods, use standard creation
+            # For other likelihoods, use standard creation
             likelihood = create_likelihood(config, data_loader)
             if likelihood is not None:
                 likelihoods.append(likelihood)

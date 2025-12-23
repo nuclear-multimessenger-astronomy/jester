@@ -105,34 +105,66 @@ class LikelihoodConfig(BaseModel):
 
     @field_validator("parameters")
     @classmethod
-    def validate_gw_parameters(cls, v: Dict[str, Any], info) -> Dict[str, Any]:
-        """Validate GW likelihood parameters."""
-        if "type" not in info.data or info.data["type"] != "gw":
+    def validate_likelihood_parameters(cls, v: Dict[str, Any], info) -> Dict[str, Any]:
+        """Validate likelihood-specific parameters."""
+        if "type" not in info.data:
             return v
 
-        # Check required fields for GW likelihood
-        if "events" not in v:
-            raise ValueError(
-                "GW likelihood requires 'events' parameter (list of dicts with 'name' and 'model_dir')"
-            )
+        likelihood_type = info.data["type"]
 
-        events = v["events"]
-        if not isinstance(events, list) or len(events) == 0:
-            raise ValueError("GW likelihood 'events' must be a non-empty list")
+        # Validate GW likelihood parameters
+        if likelihood_type == "gw":
+            if "events" not in v:
+                raise ValueError(
+                    "GW likelihood requires 'events' parameter (list of dicts with 'name' and 'model_dir')"
+                )
 
-        # Validate each event
-        for i, event in enumerate(events):
-            if not isinstance(event, dict):
-                raise ValueError(f"Event {i} must be a dict with 'name' and 'model_dir' keys")
-            if "name" not in event:
-                raise ValueError(f"Event {i} missing required 'name' field")
-            if "model_dir" not in event:
-                raise ValueError(f"Event {i} missing required 'model_dir' field")
+            events = v["events"]
+            if not isinstance(events, list) or len(events) == 0:
+                raise ValueError("GW likelihood 'events' must be a non-empty list")
 
-        # Set defaults for optional parameters
-        v.setdefault("penalty_value", -99999.0)
-        v.setdefault("N_masses_evaluation", 20)
-        v.setdefault("N_masses_batch_size", 10)
+            # Validate each event
+            for i, event in enumerate(events):
+                if not isinstance(event, dict):
+                    raise ValueError(f"Event {i} must be a dict with 'name' and 'model_dir' keys")
+                if "name" not in event:
+                    raise ValueError(f"Event {i} missing required 'name' field")
+                if "model_dir" not in event:
+                    raise ValueError(f"Event {i} missing required 'model_dir' field")
+
+            # Set defaults for optional parameters
+            v.setdefault("penalty_value", -99999.0)
+            v.setdefault("N_masses_evaluation", 20)
+            v.setdefault("N_masses_batch_size", 10)
+
+        # Validate NICER likelihood parameters
+        elif likelihood_type == "nicer":
+            if "pulsars" not in v:
+                raise ValueError(
+                    "NICER likelihood requires 'pulsars' parameter "
+                    "(list of dicts with 'name', 'amsterdam_samples_file', and 'maryland_samples_file')"
+                )
+
+            pulsars = v["pulsars"]
+            if not isinstance(pulsars, list) or len(pulsars) == 0:
+                raise ValueError("NICER likelihood 'pulsars' must be a non-empty list")
+
+            # Validate each pulsar
+            for i, pulsar in enumerate(pulsars):
+                if not isinstance(pulsar, dict):
+                    raise ValueError(
+                        f"Pulsar {i} must be a dict with 'name', 'amsterdam_samples_file', "
+                        f"and 'maryland_samples_file' keys"
+                    )
+                if "name" not in pulsar:
+                    raise ValueError(f"Pulsar {i} missing required 'name' field")
+                if "amsterdam_samples_file" not in pulsar:
+                    raise ValueError(f"Pulsar {i} missing required 'amsterdam_samples_file' field")
+                if "maryland_samples_file" not in pulsar:
+                    raise ValueError(f"Pulsar {i} missing required 'maryland_samples_file' field")
+
+            # Set default for optional parameter
+            v.setdefault("N_masses_evaluation", 100)
 
         return v
 
