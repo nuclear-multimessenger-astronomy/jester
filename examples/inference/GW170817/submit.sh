@@ -6,9 +6,9 @@
 #SBATCH -t 05:00:00
 #SBATCH --gpus-per-node=1
 #SBATCH --cpus-per-gpu=1
-#SBATCH --mem-per-gpu=10G
+#SBATCH --mem-per-gpu=40G
 #SBATCH --output="./outdir/log.out"
-#SBATCH --job-name="maf"
+#SBATCH --job-name="GW170817"
 
 now=$(date)
 echo "$now"

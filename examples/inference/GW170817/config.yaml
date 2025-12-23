@@ -37,9 +37,9 @@ likelihoods:
 
 # MCMC sampler configuration
 sampler:
-  n_chains: 20
-  n_loop_training: 3
-  n_loop_production: 3
+  n_chains: 1000
+  n_loop_training: 30
+  n_loop_production: 30
   n_local_steps: 100
   n_global_steps: 100
   n_epochs: 30
