@@ -52,14 +52,15 @@ This ensures consistent dependency management and environment handling across al
 
 ### Installation and Setup
 ```bash
-# Development install
+# Development install (CPU-only JAX by default)
 uv pip install -e .
+
+# Install with GPU support (optional)
+uv pip install -e ".[cuda12]"   # For CUDA 12.x
+uv pip install -e ".[cuda13]"   # For CUDA 13.x (when available)
 
 # Install pre-commit hooks
 uv run pre-commit install
-
-# For GPU support (optional)
-uv pip install "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 ```
 
 ### Code Quality
