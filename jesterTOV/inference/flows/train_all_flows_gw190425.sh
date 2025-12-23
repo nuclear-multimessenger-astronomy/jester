@@ -2,12 +2,12 @@
 #Set job requirements
 #SBATCH -N 1
 #SBATCH -n 1
-#SBATCH -p gpu_a100
-#SBATCH -t 03:00:00
+#SBATCH -p gpu_h100
+#SBATCH -t 05:00:00
 #SBATCH --gpus-per-node=1
 #SBATCH --cpus-per-gpu=1
 #SBATCH --mem-per-gpu=10G
-#SBATCH --output="./logs/train_all_flows_gw190425.out"
+#SBATCH --output="./logs/train_all_flows_gw190425_part2.out"
 #SBATCH --job-name="GW190425_maf"
 
 now=$(date)
@@ -45,9 +45,6 @@ echo "Training flows for gw190425..."
 echo "------------------------------------------"
 
 gw190425_FILES=(
-    "gw190425_phenomdnrt-hs_posterior.npz"
-    "gw190425_phenomdnrt-ls_posterior.npz"
-    "gw190425_phenompnrt-hs_posterior.npz"
     "gw190425_phenompnrt-ls_posterior.npz"
     "gw190425_taylorf2-hs_posterior.npz"
     "gw190425_taylorf2-ls_posterior.npz"
