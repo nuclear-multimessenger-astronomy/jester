@@ -16,7 +16,7 @@ echo "$now"
 # Loading modules
 # module load 2024
 # module load Python/3.10.4-GCCcore-11.3.0
-conda activate /home/twouters2/miniconda3/envs/jose
+source activate /home/twouters2/projects/jester_review/jester/.venv/bin/activate
 
 # Display GPU name
 nvidia-smi --query-gpu=name --format=csv,noheader
@@ -30,15 +30,14 @@ DATA_DIR="../data"
 MODELS_DIR="./models/gw_maf"
 
 # Training hyperparameters (matching test.sh configuration)
-NUM_EPOCHS=1000
-LEARNING_RATE=5e-4
-MAX_PATIENCE=50
+NUM_EPOCHS=3000
+LEARNING_RATE=1e-4
+MAX_PATIENCE=500
 FLOW_TYPE="masked_autoregressive_flow"
 TRANSFORMER="rational_quadratic_spline"
 TRANSFORMER_KNOTS=8
 TRANSFORMER_INTERVAL=4
 NN_DEPTH=4
-MAX_SAMPLES=20000
 
 # GW170817 posterior files
 echo ""

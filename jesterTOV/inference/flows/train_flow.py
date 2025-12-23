@@ -292,8 +292,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=1024,
-        help="Batch size for training (default: 1024)",
+        default=128,
+        help="Batch size for training (default: 128)",
     )
     parser.add_argument(
         "--constrain-physics",
@@ -646,7 +646,7 @@ def train_flow(
     max_epochs: int = 600,
     max_patience: int = 50,
     val_prop: float = 0.2,
-    batch_size: int = 1024,
+    batch_size: int = 128,
 ) -> Tuple[Any, Dict[str, np.ndarray]]:
     """
     Train the normalizing flow on data.
