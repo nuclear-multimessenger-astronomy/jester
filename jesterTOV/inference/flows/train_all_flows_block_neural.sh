@@ -65,7 +65,6 @@ for posterior_file in "${GW170817_FILES[@]}"; do
         --max-patience ${MAX_PATIENCE} \
         --flow-type ${FLOW_TYPE} \
         --nn-depth ${NN_DEPTH} \
-        --max-samples ${MAX_SAMPLES} \
         --standardize \
         --plot-corner \
         --plot-losses

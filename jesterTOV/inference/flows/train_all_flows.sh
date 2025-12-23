@@ -70,7 +70,6 @@ for posterior_file in "${GW170817_FILES[@]}"; do
         --transformer-knots ${TRANSFORMER_KNOTS} \
         --transformer-interval ${TRANSFORMER_INTERVAL} \
         --nn-depth ${NN_DEPTH} \
-        --max-samples ${MAX_SAMPLES} \
         --standardize \
         --plot-corner \
         --plot-losses
