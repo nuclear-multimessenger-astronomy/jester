@@ -300,12 +300,6 @@ L_sym = UniformPrior(10.0, 200.0, parameter_names=["L_sym"])
 nbreak = UniformPrior(0.16, 0.32, parameter_names=["nbreak"])
 ```
 
-**GW mass priors** (only if GW event sampled):
-```python
-mass_1_GW170817 = UniformPrior(1.5, 2.1, parameter_names=["mass_1_GW170817"])
-mass_2_GW170817 = UniformPrior(1.0, 1.5, parameter_names=["mass_2_GW170817"])
-```
-
 ---
 
 ## Documentation Maintenance

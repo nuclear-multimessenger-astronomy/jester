@@ -15,7 +15,3 @@ Z_sym = UniformPrior(-2000.0, 1500.0, parameter_names=["Z_sym"])
 
 # CSE breaking density (only included if nb_CSE > 0 in config)
 nbreak = UniformPrior(0.16, 0.32, parameter_names=["nbreak"])
-
-# GW event masses (only included if event is being sampled)
-mass_1_GW170817 = UniformPrior(1.5, 2.1, parameter_names=["mass_1_GW170817"])
-mass_2_GW170817 = UniformPrior(1.0, 1.5, parameter_names=["mass_2_GW170817"])

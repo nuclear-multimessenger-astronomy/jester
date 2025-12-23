@@ -312,7 +312,7 @@ Generate EOS samples (TOV solve on selected samples)
 - **Example**: `K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])`
 - **Conditional parameters**: Use Python if-statements (e.g., `if nb_CSE > 0: nbreak = ...`)
 - **CSE grid parameters**: Added automatically by parser based on `nb_CSE` in config
-- **Available variables**: `nb_CSE`, `sample_gw_events`, `UniformPrior`
+- **Available variables**: `nb_CSE`, `UniformPrior`
 - **Documentation**: See `jesterTOV/inference/priors/specifications/README.md`
 
 #### Implementation Status

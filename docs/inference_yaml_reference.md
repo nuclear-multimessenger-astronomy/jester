@@ -146,7 +146,6 @@ List of observational constraints. Each likelihood has:
   parameters:
     event_name: "GW170817"          # GW event name
     model_path: "./NFs/model.eqx"   # Path to normalizing flow model
-    sample_masses: true              # Sample m1, m2 as parameters
     very_negative_value: -9999999.0  # Return for invalid M-R (optional)
 ```
 
@@ -158,8 +157,7 @@ List of observational constraints. Each likelihood has:
   parameters:
     targets: ["J0030", "J0740"]              # Pulsar names
     analysis_groups: ["amsterdam", "maryland"]  # Analysis groups to use
-    sample_masses: false                      # Include mass priors?
-    m_min: 1.0                                # Min mass for marginalization (if not sampling)
+    m_min: 1.0                                # Min mass for marginalization
     m_max: 2.5                                # Max mass for marginalization
     nb_masses: 100                            # Mass grid size
 ```

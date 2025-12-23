@@ -132,7 +132,6 @@ nbreak = UniformPrior(0.16, 0.32, parameter_names=["nbreak"])
 The parser automatically:
 - Includes NEP parameters (`_sat` and `_sym` suffixes)
 - Includes `nbreak` only if `nb_CSE > 0` in config
-- Includes GW mass priors only for enabled events
 - Adds CSE grid parameters programmatically if `nb_CSE > 0`
 
 ## Key Design Principles

@@ -122,7 +122,7 @@ prior.prior (Python file)
     ├─> priors/parser.py::parse_prior_file()
     │       ├─> Execute Python code in namespace
     │       ├─> Extract Prior objects
-    │       ├─> Filter based on config (nb_CSE, sample_gw_events)
+    │       ├─> Filter based on config (nb_CSE)
     │       └─> Auto-generate CSE grid priors if needed
     │
     └─> CombinePrior (list of Prior objects)
@@ -317,7 +317,7 @@ class CombinePrior:
         # Returns: scalar or array
 
 # Usage
-prior = parse_prior_file("prior.prior", nb_CSE=8, sample_gw_events=["GW170817"])
+prior = parse_prior_file("prior.prior", nb_CSE=8)
 samples = prior.sample(rng_key, 1000)
 log_p = prior.log_prob(samples)
 ```

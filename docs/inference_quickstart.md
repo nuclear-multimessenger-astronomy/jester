@@ -145,11 +145,6 @@ likelihoods:
     parameters:
       event_name: "GW170817"
       model_path: "./NFs/GW170817/model.eqx"
-      sample_masses: true  # Sample m1, m2
-
-# Add mass priors to prior.prior:
-# mass_1_GW170817 = UniformPrior(1.5, 2.1, parameter_names=["mass_1_GW170817"])
-# mass_2_GW170817 = UniformPrior(1.0, 1.5, parameter_names=["mass_2_GW170817"])
 ```
 
 ### Radio Pulsar Timing

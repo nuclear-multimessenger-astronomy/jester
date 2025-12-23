@@ -278,14 +278,12 @@ likelihoods:
     parameters:
       event_name: "GW170817"
       model_path: "./NFs/GW170817/model.eqx"
-      sample_masses: true     # Include mass priors
 
   - type: "nicer"             # X-ray timing
     enabled: true
     parameters:
       targets: ["J0030", "J0740"]
       analysis_groups: ["amsterdam", "maryland"]
-      sample_masses: false    # Marginalize over masses
       m_min: 1.0
       m_max: 2.5
       nb_masses: 100
@@ -882,13 +880,10 @@ from jesterTOV.inference.priors.parser import parse_prior_file
 
 # Determine conditional parameters
 nb_CSE = config.transform.nb_CSE if config.transform.type == "metamodel_cse" else 0
-sample_gw_events = [lk.parameters["event_name"] for lk in config.likelihoods if lk.type == "gw"]
-
 # Parse prior file
 prior = parse_prior_file(
     config.prior.specification_file,
-    nb_CSE=nb_CSE,
-    sample_gw_events=sample_gw_events
+    nb_CSE=nb_CSE
 )
 # Returns: CombinePrior object
 ```
@@ -1059,9 +1054,8 @@ print(f"Loaded config with {len(config.likelihoods)} likelihoods")
 
 # 2. Setup components
 nb_CSE = config.transform.nb_CSE if config.transform.type == "metamodel_cse" else 0
-sample_gw = [lk.parameters.get("event_name") for lk in config.likelihoods if lk.type == "gw"]
 
-prior = parse_prior_file(config.prior.specification_file, nb_CSE=nb_CSE, sample_gw_events=sample_gw)
+prior = parse_prior_file(config.prior.specification_file, nb_CSE=nb_CSE)
 print(f"Prior has {prior.n_dim} dimensions")
 
 transform = create_transform(config.transform)

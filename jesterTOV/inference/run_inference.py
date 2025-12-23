@@ -48,21 +48,17 @@ def setup_prior(config):
         config.transform.nb_CSE if config.transform.type == "metamodel_cse" else 0
     )
 
-    # Collect GW events from all enabled GW likelihoods
-    sample_gw_events = []
+    # Check if GW likelihoods are enabled
     has_gw_likelihoods = False
     for lk in config.likelihoods:
         if lk.type == "gw" and lk.enabled:
             has_gw_likelihoods = True
-            # Extract event names from the events list
-            events = lk.parameters.get("events", [])
-            sample_gw_events.extend([event["name"] for event in events])
+            break
 
     # Parse prior file
     prior = parse_prior_file(
         config.prior.specification_file,
         nb_CSE=nb_CSE,
-        sample_gw_events=sample_gw_events,
     )
 
     # Add _random_key prior if GW likelihoods are enabled

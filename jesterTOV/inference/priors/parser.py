@@ -1,14 +1,13 @@
 """Parser for .prior specification files in bilby-style Python format."""
 
 from pathlib import Path
-from typing import Union, Optional, Any
+from typing import Union, Any
 from jesterTOV.inference.base import CombinePrior, Prior, UniformPrior
 
 
 def parse_prior_file(
     prior_file: Union[str, Path],
     nb_CSE: int = 0,
-    sample_gw_events: Optional[list[str]] = None,
 ) -> CombinePrior:
     """Parse .prior file (Python format) and return CombinePrior object.
 
@@ -17,12 +16,10 @@ def parse_prior_file(
         K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
         Q_sat = UniformPrior(-500.0, 1100.0, parameter_names=["Q_sat"])
         nbreak = UniformPrior(0.16, 0.32, parameter_names=["nbreak"])
-        mass_1_GW170817 = UniformPrior(1.5, 2.1, parameter_names=["mass_1_GW170817"])
 
     The parser will automatically:
     - Include all NEP parameters (_sat and _sym parameters)
     - Include nbreak only if nb_CSE > 0
-    - Include GW mass priors only if the event is in sample_gw_events
     - Add CSE grid parameters (n_CSE_i_u, cs2_CSE_i) automatically if nb_CSE > 0
 
     Parameters
@@ -31,8 +28,6 @@ def parse_prior_file(
         Path to .prior specification file (Python format)
     nb_CSE : int, optional
         Number of CSE parameters (0 for MetaModel only)
-    sample_gw_events : list[str], optional
-        List of GW event names to include mass priors for
 
     Returns
     -------
@@ -60,8 +55,6 @@ def parse_prior_file(
 
     if not prior_file.exists():
         raise FileNotFoundError(f"Prior specification file not found: {prior_file}")
-
-    sample_gw_events = sample_gw_events or []
 
     # Read the prior file
     with open(prior_file, "r") as f:
@@ -99,14 +92,6 @@ def parse_prior_file(
         elif param_name == "nbreak":
             if nb_CSE > 0:
                 prior_list.append(prior)
-        # Include GW mass priors only if event is being sampled
-        elif param_name.startswith("mass_"):
-            # Extract event name from parameter name (e.g., mass_1_GW170817 -> GW170817)
-            parts = param_name.split("_")
-            if len(parts) >= 3:
-                event_name = "_".join(parts[2:])  # Everything after "mass_1_" or "mass_2_"
-                if event_name in sample_gw_events:
-                    prior_list.append(prior)
         else:
             # Include any other parameters not handled by special cases
             prior_list.append(prior)

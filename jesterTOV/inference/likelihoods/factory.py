@@ -45,7 +45,6 @@ def create_likelihood(
     elif config.type == "nicer":
         targets = params.get("targets", ["J0030", "J0740"])
         analysis_groups = params.get("analysis_groups", ["amsterdam", "maryland"])
-        sample_masses = params.get("sample_masses", False)
 
         # FIXME: Implement load_nicer_kde(psr_name, analysis_group, n_samples) -> gaussian_kde
         # This should:
