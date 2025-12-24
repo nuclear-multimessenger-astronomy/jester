@@ -48,11 +48,11 @@ def setup_prior(config):
         config.transform.nb_CSE if config.transform.type == "metamodel_cse" else 0
     )
 
-    # Check if GW likelihoods are enabled
-    has_gw_likelihoods = False
+    # Check if GW or NICER likelihoods are enabled (both need _random_key)
+    needs_random_key = False
     for lk in config.likelihoods:
-        if lk.type == "gw" and lk.enabled:
-            has_gw_likelihoods = True
+        if lk.enabled and lk.type in ["gw", "nicer"]:
+            needs_random_key = True
             break
 
     # Parse prior file
@@ -61,9 +61,9 @@ def setup_prior(config):
         nb_CSE=nb_CSE,
     )
 
-    # Add _random_key prior if GW likelihoods are enabled
-    if has_gw_likelihoods:
-        print("Adding _random_key prior for GW likelihood sampling")
+    # Add _random_key prior if GW or NICER likelihoods are enabled
+    if needs_random_key:
+        print("Adding _random_key prior for likelihood sampling")
         random_key_prior = UniformPrior(
             float(0), float(2**32 - 1), parameter_names=["_random_key"]
         )

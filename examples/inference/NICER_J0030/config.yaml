@@ -4,7 +4,7 @@
 seed: 44
 
 # Execution options
-dry_run: false          # Set to false to run full MCMC sampling
+dry_run: true           # Set to false to run full MCMC sampling
 validate_only: false   # Set to true to only validate configuration (faster than dry_run)
 
 # Transform configuration: MetaModel + CSE for high-density region
@@ -31,7 +31,8 @@ likelihoods:
         - name: "J0030"
           amsterdam_samples_file: "../../../jesterTOV/inference/data/NICER/J00300451_amsterdam_ST_PST_NICER_only_Riley2019.npz"
           maryland_samples_file: "../../../jesterTOV/inference/data/NICER/J00300451_maryland_2spot_NICER_only_RM.npz"
-      N_masses_evaluation: 100
+      N_masses_evaluation: 20    # Number of mass samples per likelihood evaluation (updated to match GW approach)
+      N_masses_batch_size: 10    # Batch size for processing mass samples
 
 # MCMC sampler configuration
 sampler:

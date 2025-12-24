@@ -31,7 +31,8 @@ likelihoods:
         - name: "J0740"
           amsterdam_samples_file: "../../../jesterTOV/inference/data/NICER/J07406620_amsterdam_gamma_NICERXMM_equal_weights_recent.npz"
           maryland_samples_file: "../../../jesterTOV/inference/data/NICER/J07406620_maryland_unknown_NICERXMM_RM.npz"
-      N_masses_evaluation: 100
+      N_masses_evaluation: 20    # Number of mass samples per likelihood evaluation (updated to match GW approach)
+      N_masses_batch_size: 10    # Batch size for processing mass samples
 
 # MCMC sampler configuration
 sampler:

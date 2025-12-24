@@ -21,6 +21,7 @@ The JESTER inference system uses YAML configuration files validated by Pydantic 
 
 # Top-level configuration
 seed: 43
+postprocessing: enabled=True make_cornerplot=True make_massradius=True make_pressuredensity=True make_histograms=True make_contours=True prior_dir=None
 dry_run: False
 validate_only: False
 
@@ -80,6 +81,9 @@ data_paths: {}
 - `likelihoods`: `list[LikelihoodConfig]` (**required**)
 
 - `sampler`: `SamplerConfig` (**required**)
+
+- `postprocessing`: `PostprocessingConfig` (optional)
+  - Default: `enabled=True make_cornerplot=True make_massradius=True make_pressuredensity=True make_histograms=True make_contours=True prior_dir=None`
 
 - `data_paths`: `dict[str, str]` (optional)
   - Default: `{}`
@@ -334,7 +338,6 @@ likelihoods:
     enabled: true
     parameters:
       event_name: "GW170817"
-      sample_masses: true
   
   - type: "nicer"
     enabled: true

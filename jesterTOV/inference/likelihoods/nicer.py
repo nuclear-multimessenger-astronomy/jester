@@ -1,24 +1,28 @@
 """
 NICER X-ray timing likelihood implementations
-
-TODO: Generalize to e.g. only one group, weights between different hotspot models,...
 """
 
+import jax
 import jax.numpy as jnp
 import numpy as np
-from jax.scipy.special import logsumexp
 from jax.scipy.stats import gaussian_kde
 from jaxtyping import Float
 
-from jesterTOV.inference.base import LikelihoodBase
+from jesterTOV.inference.base.likelihood import LikelihoodBase
 
 
 class NICERLikelihood(LikelihoodBase):
     """
-    NICER likelihood marginalizing over mass using M-R interpolation
+    NICER likelihood using mass sampling and EOS interpolation
+    
+    TODO: Generalize to e.g. only one group, weights between different hotspot models,...
 
     This likelihood loads posterior samples from Amsterdam and Maryland groups,
-    constructs KDEs, and marginalizes over mass to compute the likelihood.
+    constructs KDEs, and evaluates the likelihood by:
+    1. Sampling masses from the NICER posterior samples
+    2. Interpolating radius from the EOS for those masses
+    3. Evaluating the KDE log probability at (mass, radius)
+    4. Averaging over all samples
 
     Parameters
     ----------
@@ -31,10 +35,9 @@ class NICERLikelihood(LikelihoodBase):
         Path to npz file with Maryland group posterior samples
         Expected to contain 'mass' (Msun) and 'radius' (km) arrays
     N_masses_evaluation : int, optional
-        Number of mass points for marginalization grid (default: 100)
-        Mass range is automatically determined from EOS (1.0 to max(masses_EOS))
+        Number of mass samples per likelihood evaluation (default: 20)
     N_masses_batch_size : int, optional
-        Batch size for processing mass grid points (default: 20)
+        Batch size for processing mass samples (default: 10)
     """
 
     def __init__(
@@ -42,14 +45,14 @@ class NICERLikelihood(LikelihoodBase):
         psr_name: str,
         amsterdam_samples_file: str,
         maryland_samples_file: str,
-        N_masses_evaluation: int = 100,
-        N_masses_batch_size: int = 20,
+        N_masses_evaluation: int = 20,
+        N_masses_batch_size: int = 10,
     ):
         super().__init__()
         self.psr_name = psr_name
         self.N_masses_evaluation = N_masses_evaluation
         self.N_masses_batch_size = N_masses_batch_size
-        
+
         # Load samples from npz files
         print(f"Loading Amsterdam samples for {psr_name} from {amsterdam_samples_file}")
         amsterdam_data = np.load(amsterdam_samples_file, allow_pickle=True)
@@ -63,6 +66,10 @@ class NICERLikelihood(LikelihoodBase):
         amsterdam_radius = amsterdam_data['radius']
         maryland_mass = maryland_data['mass']
         maryland_radius = maryland_data['radius']
+
+        # Store mass samples as JAX arrays for random sampling
+        self.amsterdam_masses = jnp.array(amsterdam_mass)
+        self.maryland_masses = jnp.array(maryland_mass)
 
         # Stack into [mass, radius] arrays for KDE
         # Convert to JAX arrays for JAX KDE
@@ -83,6 +90,7 @@ class NICERLikelihood(LikelihoodBase):
         ----------
         params : dict[str, Float]
             Must contain:
+            - '_random_key': Random seed for mass sampling (cast to int64)
             - 'masses_EOS': Array of neutron star masses from EOS
             - 'radii_EOS': Array of neutron star radii from EOS
         data : dict
@@ -93,63 +101,101 @@ class NICERLikelihood(LikelihoodBase):
         float
             Log likelihood value for this NICER observation
         """
-        import jax
+        # Extract parameters
+        sampled_key = params["_random_key"].astype("int64")
+        key = jax.random.key(sampled_key)
+        masses_EOS = params["masses_EOS"]
+        radii_EOS = params["radii_EOS"]
 
-        masses_EOS, radii_EOS = params["masses_EOS"], params["radii_EOS"]
+        # Split key for Amsterdam and Maryland sampling
+        key_amsterdam, key_maryland = jax.random.split(key)
 
-        # Create mass grid and interpolate radii from EOS
-        m = jnp.linspace(1.0, jnp.max(masses_EOS), self.N_masses_evaluation)
-        r = jnp.interp(m, masses_EOS, radii_EOS)
+        # Sample masses from the NICER posterior samples
+        # Each group gets half of N_masses_evaluation samples
+        n_samples_per_group = self.N_masses_evaluation // 2
 
-        # Stack into (N, 2) array for batch processing
-        mr_points = jnp.stack([m, r], axis=1)
+        # Sample indices and get mass samples
+        amsterdam_indices = jax.random.choice(
+            key_amsterdam,
+            len(self.amsterdam_masses),
+            shape=(n_samples_per_group,),
+            replace=True
+        )
+        maryland_indices = jax.random.choice(
+            key_maryland,
+            len(self.maryland_masses),
+            shape=(n_samples_per_group,),
+            replace=True
+        )
 
-        def process_point(mr_point):
+        amsterdam_mass_samples = self.amsterdam_masses[amsterdam_indices]
+        maryland_mass_samples = self.maryland_masses[maryland_indices]
+
+        def process_sample_amsterdam(mass):
             """
-            Process a single (mass, radius) point
-
-            Note: jax.lax.map with batch_size still applies the function to individual
-            elements, not batches. The batch_size parameter is for compilation optimization.
+            Process a single Amsterdam mass sample
 
             Parameters
             ----------
-            mr_point : array, shape (2,)
-                Single point with [mass, radius]
+            mass : float
+                Sampled mass value
 
             Returns
             -------
-            array, shape (2,)
-                [log_prob_maryland, log_prob_amsterdam]
+            float
+                Log probability from Amsterdam KDE
             """
-            # Reshape to (2, 1) for KDE evaluation
-            mr_grid = mr_point.reshape(2, 1)
+            # Interpolate radius from EOS
+            radius = jnp.interp(mass, masses_EOS, radii_EOS)
 
-            # Evaluate KDE at this point
-            logy_maryland = self.maryland_posterior.logpdf(mr_grid)
-            logy_amsterdam = self.amsterdam_posterior.logpdf(mr_grid)
+            # Evaluate Amsterdam KDE at (mass, radius)
+            mr_point = jnp.array([[mass], [radius]])  # Shape: (2, 1)
+            logpdf = self.amsterdam_posterior.logpdf(mr_point)
 
-            return jnp.array([logy_maryland, logy_amsterdam])
+            return logpdf
+
+        def process_sample_maryland(mass):
+            """
+            Process a single Maryland mass sample
+
+            Parameters
+            ----------
+            mass : float
+                Sampled mass value
+
+            Returns
+            -------
+            float
+                Log probability from Maryland KDE
+            """
+            # Interpolate radius from EOS
+            radius = jnp.interp(mass, masses_EOS, radii_EOS)
+
+            # Evaluate Maryland KDE at (mass, radius)
+            mr_point = jnp.array([[mass], [radius]])  # Shape: (2, 1)
+            logpdf = self.maryland_posterior.logpdf(mr_point)
+
+            return logpdf
 
         # Use jax.lax.map with batching for memory-efficient processing
-        # batch_size helps with compilation memory, not runtime batching
-        all_logprobs = jax.lax.map(
-            process_point,
-            mr_points,
+        amsterdam_logprobs = jax.lax.map(
+            process_sample_amsterdam,
+            amsterdam_mass_samples,
             batch_size=self.N_masses_batch_size
         )
 
-        # Extract Maryland and Amsterdam log probabilities
-        logy_maryland = all_logprobs[:, 0]
-        logy_amsterdam = all_logprobs[:, 1]
+        maryland_logprobs = jax.lax.map(
+            process_sample_maryland,
+            maryland_mass_samples,
+            batch_size=self.N_masses_batch_size
+        )
 
-        # Marginalize over mass using logsumexp
-        logL_maryland = logsumexp(logy_maryland) - jnp.log(len(logy_maryland))
-        logL_amsterdam = logsumexp(logy_amsterdam) - jnp.log(len(logy_amsterdam))
+        # Average over all samples for each group
+        logL_amsterdam = jnp.mean(amsterdam_logprobs)
+        logL_maryland = jnp.mean(maryland_logprobs)
 
-        # Average the two groups (equal weights) using logsumexp for numerical stability
-        # log(0.5 * (L_maryland + L_amsterdam)) = logsumexp([logL_maryland, logL_amsterdam]) - log(2)
-        logL_array = jnp.array([logL_maryland, logL_amsterdam])
-        log_likelihood = logsumexp(logL_array) - jnp.log(2)
+        # Average the two groups (equal weights)
+        log_likelihood = (logL_amsterdam + logL_maryland) / 2.0
 
         return log_likelihood
 
