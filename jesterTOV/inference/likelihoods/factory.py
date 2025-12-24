@@ -138,6 +138,7 @@ def create_combined_likelihood(
             params = config.parameters
             pulsars = params["pulsars"]  # Required, validated by schema
             N_masses_evaluation = params.get("N_masses_evaluation", 100)
+            N_masses_batch_size = params.get("N_masses_batch_size", 20)
 
             # Create one NICERLikelihood per pulsar
             for pulsar in pulsars:
@@ -146,6 +147,7 @@ def create_combined_likelihood(
                     amsterdam_samples_file=pulsar["amsterdam_samples_file"],
                     maryland_samples_file=pulsar["maryland_samples_file"],
                     N_masses_evaluation=N_masses_evaluation,
+                    N_masses_batch_size=N_masses_batch_size,
                 )
                 likelihoods.append(nicer_likelihood)
 

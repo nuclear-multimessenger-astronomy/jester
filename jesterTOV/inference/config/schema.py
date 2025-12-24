@@ -97,6 +97,14 @@ class LikelihoodConfig(BaseModel):
                 Number of mass samples per evaluation (default: 20)
             N_masses_batch_size : int
                 Batch size for mass sampling (default: 10)
+
+        For NICER likelihoods:
+            pulsars : list[dict]
+                List of pulsars with 'name', 'amsterdam_samples_file', and 'maryland_samples_file' keys
+            N_masses_evaluation : int
+                Number of mass grid points for marginalization (default: 100)
+            N_masses_batch_size : int
+                Batch size for processing mass grid points (default: 20)
     """
 
     type: Literal["gw", "nicer", "radio", "chieft", "rex", "zero"]
@@ -163,8 +171,9 @@ class LikelihoodConfig(BaseModel):
                 if "maryland_samples_file" not in pulsar:
                     raise ValueError(f"Pulsar {i} missing required 'maryland_samples_file' field")
 
-            # Set default for optional parameter
+            # Set defaults for optional parameters
             v.setdefault("N_masses_evaluation", 100)
+            v.setdefault("N_masses_batch_size", 20)
 
         return v
 
