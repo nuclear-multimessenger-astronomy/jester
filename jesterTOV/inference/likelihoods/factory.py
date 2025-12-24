@@ -58,12 +58,10 @@ def create_likelihood(
         )
 
     elif config.type == "chieft":
-        # FIXME: Implement load_chieft_bands() -> (n_low, p_low, n_high, p_high)
-        # This should load ChiEFT pressure-density bands from data files
-        # For now, raise NotImplementedError
-        raise NotImplementedError(
-            "ChiEFT likelihood data loading not implemented. "
-            "Need to implement load_chieft_bands() -> (n_low, p_low, n_high, p_high)"
+        return ChiEFTLikelihood(
+            low_filename=params.get("low_filename", None),
+            high_filename=params.get("high_filename", None),
+            nb_n=params.get("nb_n", 100),
         )
 
     elif config.type == "rex":

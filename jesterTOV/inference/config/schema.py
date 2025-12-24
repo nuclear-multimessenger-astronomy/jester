@@ -105,6 +105,14 @@ class LikelihoodConfig(BaseModel):
                 Number of mass grid points for marginalization (default: 100)
             N_masses_batch_size : int
                 Batch size for processing mass grid points (default: 20)
+
+        For chiEFT likelihoods:
+            low_filename : str, optional
+                Path to lower bound data file (default: data/chiEFT/2402.04172/low.dat)
+            high_filename : str, optional
+                Path to upper bound data file (default: data/chiEFT/2402.04172/high.dat)
+            nb_n : int
+                Number of density points for integration (default: 100)
     """
 
     type: Literal["gw", "nicer", "radio", "chieft", "rex", "zero"]
