@@ -8,8 +8,6 @@ This script compares:
 For each dataset, it generates corner plots with density overlays to visualize
 the comparison between truth and approximation methods.
 
-TODO: density=True
-TODO: generalize for the different datasets
 """
 
 import os
@@ -21,7 +19,7 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
 from corner import corner
-from scipy.stats import gaussian_kde
+from jax.scipy.stats import gaussian_kde
 
 # Import JESTER modules
 import sys
@@ -49,14 +47,13 @@ GW_EVENTS = {
         "labels": [r"$m_1$ [$M_\odot$]", r"$m_2$ [$M_\odot$]", r"$\Lambda_1$", r"$\Lambda_2$"],
         "n_samples": 10000,
     },
-    # Can add GW190425 later
-    # "GW190425": {
-    #     "data_file": DATA_DIR / "gw190425" / "gw190425_phenompnrt-ls_posterior.npz",
-    #     "model_dir": MODELS_DIR / "gw190425" / "gw190425_phenompnrt-ls_posterior",
-    #     "parameters": ["mass_1_source", "mass_2_source", "lambda_1", "lambda_2"],
-    #     "labels": [r"$m_1$ [$M_\odot$]", r"$m_2$ [$M_\odot$]", r"$\Lambda_1$", r"$\Lambda_2$"],
-    #     "n_samples": 10000,
-    # },
+    "GW190425": {
+        "data_file": DATA_DIR / "gw190425" / "gw190425_phenompnrt-ls_posterior.npz",
+        "model_dir": MODELS_DIR / "gw190425" / "gw190425_phenompnrt-ls_posterior",
+        "parameters": ["mass_1_source", "mass_2_source", "lambda_1", "lambda_2"],
+        "labels": [r"$m_1$ [$M_\odot$]", r"$m_2$ [$M_\odot$]", r"$\Lambda_1$", r"$\Lambda_2$"],
+        "n_samples": 10000,
+    },
 }
 
 # NICER pulsars configuration
@@ -173,8 +170,11 @@ def validate_gw_event(event_name: str, config: Dict) -> None:
         approx_label="NF",
     )
 
-    # Save figure
-    output_file = OUTPUT_DIR / f"{event_name.lower()}_nf_validation.png"
+    # Save figure in subdirectory for the event
+    model_name = config["model_dir"].name  # e.g., "gw170817_gwtc1_lowspin_posterior"
+    output_subdir = OUTPUT_DIR / event_name.lower()
+    output_subdir.mkdir(parents=True, exist_ok=True)
+    output_file = output_subdir / f"{model_name}_nf_validation.png"
     fig.savefig(output_file, dpi=300, bbox_inches="tight")
     print(f"  Saved figure to {output_file}")
     plt.close(fig)
@@ -207,12 +207,12 @@ def load_nicer_original_samples(data_file: Path, parameters: list) -> np.ndarray
 
 def sample_from_kde(kde: gaussian_kde, n_samples: int, seed: int = 42) -> np.ndarray:
     """
-    Sample from KDE.
+    Sample from JAX KDE.
 
     Parameters
     ----------
     kde : gaussian_kde
-        Fitted KDE object
+        Fitted JAX KDE object
     n_samples : int
         Number of samples to draw
     seed : int
@@ -223,8 +223,10 @@ def sample_from_kde(kde: gaussian_kde, n_samples: int, seed: int = 42) -> np.nda
     samples : np.ndarray
         Array of shape (n_samples, n_params), transposed to match original format
     """
-    np.random.seed(seed)
-    samples = kde.resample(n_samples).T  # Transpose to (n_samples, n_params)
+    key = jax.random.key(seed)
+    # JAX KDE.resample returns shape (n_dims, n_samples), transpose to (n_samples, n_dims)
+    samples_jax = kde.resample(key, shape=(n_samples,))
+    samples = np.array(samples_jax).T  # Transpose to (n_samples, n_params)
     return samples
 
 
@@ -254,11 +256,12 @@ def validate_nicer_pulsar(pulsar_name: str, config: Dict) -> None:
     maryland_samples = load_nicer_original_samples(config["maryland"], config["parameters"])
     print(f"  Loaded {maryland_samples.shape[0]} Maryland samples")
 
-    # Construct KDEs (same as in NICERLikelihood)
-    print(f"Constructing KDEs...")
-    amsterdam_kde = gaussian_kde(amsterdam_samples.T)
-    maryland_kde = gaussian_kde(maryland_samples.T)
-    print(f"  KDEs constructed successfully")
+    # Construct JAX KDEs (same as in NICERLikelihood)
+    print(f"Constructing JAX KDEs...")
+    # Convert to JAX arrays and transpose to (n_dims, n_samples) for KDE
+    amsterdam_kde = gaussian_kde(jnp.array(amsterdam_samples.T))
+    maryland_kde = gaussian_kde(jnp.array(maryland_samples.T))
+    print(f"  JAX KDEs constructed successfully")
 
     # Sample from KDEs (equal weights from each group)
     n_samples_per_group = config["n_samples"] // 2
@@ -290,8 +293,13 @@ def validate_nicer_pulsar(pulsar_name: str, config: Dict) -> None:
         approx_label="KDE",
     )
 
-    # Save figure
-    output_file = OUTPUT_DIR / f"nicer_{pulsar_name.lower()}_kde_validation.png"
+    # Save figure in subdirectory named after the Amsterdam dataset
+    amsterdam_name = config["amsterdam"].stem  # e.g., "J00300451_amsterdam_ST_U_NICER_only_Riley2019"
+    maryland_name = config["maryland"].stem
+    output_subdir = OUTPUT_DIR / "nicer" / pulsar_name
+    output_subdir.mkdir(parents=True, exist_ok=True)
+    # Use both group names in filename for clarity
+    output_file = output_subdir / f"{pulsar_name}_amsterdam-maryland_kde_validation.png"
     fig.savefig(output_file, dpi=300, bbox_inches="tight")
     print(f"  Saved figure to {output_file}")
     plt.close(fig)
@@ -300,6 +308,54 @@ def validate_nicer_pulsar(pulsar_name: str, config: Dict) -> None:
 # ============================================================================
 # Plotting Functions
 # ============================================================================
+
+def compute_plot_ranges(
+    original_samples: np.ndarray,
+    approx_samples: np.ndarray,
+    percentile: float = 99.9,
+) -> list:
+    """
+    Compute plot ranges for each parameter based on percentiles.
+
+    Takes the widest bounds across both sample sets to ensure full visibility.
+
+    Parameters
+    ----------
+    original_samples : np.ndarray
+        Original posterior samples, shape (n_samples, n_params)
+    approx_samples : np.ndarray
+        Approximation samples (NF or KDE), shape (n_samples, n_params)
+    percentile : float
+        Percentile to use for range (default: 99.9 means 0.05% to 99.95%)
+
+    Returns
+    -------
+    ranges : list
+        List of (min, max) tuples for each parameter
+    """
+    n_params = original_samples.shape[1]
+    ranges = []
+
+    lower_percentile = (100 - percentile) / 2.0
+    upper_percentile = 100 - lower_percentile
+
+    for i in range(n_params):
+        # Compute percentiles for original samples
+        orig_lower = np.percentile(original_samples[:, i], lower_percentile)
+        orig_upper = np.percentile(original_samples[:, i], upper_percentile)
+
+        # Compute percentiles for approximation samples
+        approx_lower = np.percentile(approx_samples[:, i], lower_percentile)
+        approx_upper = np.percentile(approx_samples[:, i], upper_percentile)
+
+        # Take widest bounds
+        param_min = min(orig_lower, approx_lower)
+        param_max = max(orig_upper, approx_upper)
+
+        ranges.append((param_min, param_max))
+
+    return ranges
+
 
 def plot_corner_comparison(
     original_samples: np.ndarray,
@@ -332,7 +388,10 @@ def plot_corner_comparison(
     fig : plt.Figure
         Corner plot figure
     """
-    # Create figure
+    # Compute plot ranges based on 99.9% percentiles
+    ranges = compute_plot_ranges(original_samples, approx_samples, percentile=99.9)
+
+    # Create figure with original samples (blue)
     fig = corner(
         original_samples,
         labels=labels,
@@ -344,9 +403,12 @@ def plot_corner_comparison(
         levels=[0.68, 0.95],
         smooth=1.0,
         label=truth_label,
+        density=True,
+        hist_kwargs={"color": "blue", "density": True},
+        range=ranges,
     )
 
-    # Overlay approximation samples
+    # Overlay approximation samples (red)
     corner(
         approx_samples,
         fig=fig,
@@ -358,6 +420,9 @@ def plot_corner_comparison(
         levels=[0.68, 0.95],
         smooth=1.0,
         label=approx_label,
+        density=True,
+        hist_kwargs={"color": "red", "density": True},
+        range=ranges,
     )
 
     # Add title
