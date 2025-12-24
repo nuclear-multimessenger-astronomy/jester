@@ -4,7 +4,7 @@
 seed: 44
 
 # Execution options
-dry_run: true           # Set to false to run full MCMC sampling
+dry_run: false           # Set to false to run full MCMC sampling
 validate_only: false   # Set to true to only validate configuration (faster than dry_run)
 
 # Transform configuration: MetaModel + CSE for high-density region
