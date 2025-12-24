@@ -106,6 +106,12 @@ class LikelihoodConfig(BaseModel):
             N_masses_batch_size : int
                 Batch size for processing mass grid points (default: 20)
 
+        For radio timing likelihoods:
+            pulsars : list[dict]
+                List of pulsars with 'name', 'mass_mean', and 'mass_std' keys
+            nb_masses : int
+                Number of mass points for numerical integration (default: 100)
+
         For chiEFT likelihoods:
             low_filename : str, optional
                 Path to lower bound data file (default: data/chiEFT/2402.04172/low.dat)
@@ -182,6 +188,44 @@ class LikelihoodConfig(BaseModel):
             # Set defaults for optional parameters
             v.setdefault("N_masses_evaluation", 100)
             v.setdefault("N_masses_batch_size", 20)
+
+        # Validate radio timing likelihood parameters
+        elif likelihood_type == "radio":
+            if "pulsars" not in v:
+                raise ValueError(
+                    "Radio timing likelihood requires 'pulsars' parameter "
+                    "(list of dicts with 'name', 'mass_mean', and 'mass_std')"
+                )
+
+            pulsars = v["pulsars"]
+            if not isinstance(pulsars, list) or len(pulsars) == 0:
+                raise ValueError("Radio timing likelihood 'pulsars' must be a non-empty list")
+
+            # Validate each pulsar
+            for i, pulsar in enumerate(pulsars):
+                if not isinstance(pulsar, dict):
+                    raise ValueError(
+                        f"Pulsar {i} must be a dict with 'name', 'mass_mean', and 'mass_std' keys"
+                    )
+                if "name" not in pulsar:
+                    raise ValueError(f"Pulsar {i} missing required 'name' field")
+                if "mass_mean" not in pulsar:
+                    raise ValueError(f"Pulsar {i} missing required 'mass_mean' field")
+                if "mass_std" not in pulsar:
+                    raise ValueError(f"Pulsar {i} missing required 'mass_std' field")
+
+                # Validate mass values
+                if not isinstance(pulsar["mass_mean"], (int, float)) or pulsar["mass_mean"] <= 0:
+                    raise ValueError(
+                        f"Pulsar {i} 'mass_mean' must be a positive number, got: {pulsar['mass_mean']}"
+                    )
+                if not isinstance(pulsar["mass_std"], (int, float)) or pulsar["mass_std"] <= 0:
+                    raise ValueError(
+                        f"Pulsar {i} 'mass_std' must be a positive number, got: {pulsar['mass_std']}"
+                    )
+
+            # Set defaults for optional parameters
+            v.setdefault("nb_masses", 100)
 
         return v
 

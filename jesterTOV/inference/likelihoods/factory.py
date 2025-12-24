@@ -50,11 +50,11 @@ def create_likelihood(
         )
 
     elif config.type == "radio":
-        return RadioTimingLikelihood(
-            psr_name=params.get("psr_name", "J0740+6620"),
-            mean=params.get("mass_mean", 2.08),
-            std=params.get("mass_std", 0.07),
-            nb_masses=params.get("nb_masses", 100),
+        # Radio timing likelihoods are handled specially in create_combined_likelihood
+        # This function should not be called directly for radio type
+        raise RuntimeError(
+            "Radio timing likelihoods should be created via create_combined_likelihood, "
+            "not create_likelihood directly"
         )
 
     elif config.type == "chieft":
@@ -148,6 +148,22 @@ def create_combined_likelihood(
                     N_masses_batch_size=N_masses_batch_size,
                 )
                 likelihoods.append(nicer_likelihood)
+
+        # Special handling for radio timing likelihoods: create one likelihood per pulsar
+        elif config.type == "radio":
+            params = config.parameters
+            pulsars = params["pulsars"]  # Required, validated by schema
+            nb_masses = params.get("nb_masses", 100)
+
+            # Create one RadioTimingLikelihood per pulsar
+            for pulsar in pulsars:
+                radio_likelihood = RadioTimingLikelihood(
+                    psr_name=pulsar["name"],
+                    mean=pulsar["mass_mean"],
+                    std=pulsar["mass_std"],
+                    nb_masses=nb_masses,
+                )
+                likelihoods.append(radio_likelihood)
 
         else:
             # For other likelihoods, use standard creation
