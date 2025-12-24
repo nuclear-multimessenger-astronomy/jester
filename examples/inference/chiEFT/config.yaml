@@ -1,0 +1,51 @@
+# ChiEFT-only inference configuration
+# Constraining EOS using chiral effective field theory pressure-density bands at low densities
+# Data from Koehn et al., Phys.Rev.X 15 (2025) 2, 021014
+
+seed: 44
+
+# Execution options
+dry_run: true         # Set to false to run full MCMC sampling
+validate_only: false    # Set to true to only validate configuration (faster than dry_run)
+
+transform:
+  type: "metamodel_cse"
+  ndat_metamodel: 100
+  nmax_nsat: 25.0
+  nb_CSE: 8 
+  min_nsat_TOV: 0.75
+  ndat_TOV: 100
+  nb_masses: 100
+  crust_name: "DH"
+
+# Prior specification file
+prior:
+  specification_file: "prior.prior"
+
+# Likelihood constraints (only chiEFT enabled)
+likelihoods:
+  - type: "chieft"
+    enabled: true
+    parameters:
+      low_filename: "../../../jesterTOV/inference/data/chiEFT/2402.04172/low.dat"
+      high_filename: "../../../jesterTOV/inference/data/chiEFT/2402.04172/high.dat"
+      nb_n: 100  # Number of density points for integration
+
+
+# MCMC sampler configuration
+sampler:
+  n_chains: 1000
+  n_loop_training: 30
+  n_loop_production: 20
+  n_local_steps: 100
+  n_global_steps: 100
+  n_epochs: 30
+  learning_rate: 0.001
+  output_dir: "./outdir/"
+
+# Postprocessing configuration
+postprocessing:
+  enabled: true
+  make_cornerplot: true
+  make_massradius: true
+  make_pressuredensity: true
