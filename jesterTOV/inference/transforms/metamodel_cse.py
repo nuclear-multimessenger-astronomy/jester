@@ -40,7 +40,7 @@ class MetaModelCSETransform(JesterTransformBase):
     def __init__(
         self,
         name_mapping: tuple[list[str], list[str]],
-        keep_names: list[str] = None,
+        keep_names: list[str] | None = None,
         nb_CSE: int = 8,
         ndat_CSE: int = 100,
         **kwargs,

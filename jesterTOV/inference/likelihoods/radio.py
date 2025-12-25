@@ -1,8 +1,11 @@
 """Radio pulsar timing likelihood implementations"""
 
+from typing import Any
+
 import jax.numpy as jnp
 from jax.scipy.special import logsumexp
-from jaxtyping import Float
+from jaxtyping import Array, Float
+
 from jesterTOV.inference.base import LikelihoodBase
 
 
@@ -15,7 +18,7 @@ class RadioTimingLikelihood(LikelihoodBase):
     over possible true masses below M_max, assuming a Gaussian measurement uncertainty.
 
     The likelihood is computed as:
-    
+
     TODO: double-check the math just to be sure
 
     .. math::
@@ -34,12 +37,27 @@ class RadioTimingLikelihood(LikelihoodBase):
     std : float
         Observed mass standard deviation in solar masses (M_☉)
     nb_masses : int, optional
-        Number of mass points for numerical integration. Default: 100
+        Number of mass points for numerical integration. Default: 500
+    m_min : float, optional
+        Minimum mass for integration in solar masses. Default: 0.1
+
+    Attributes
+    ----------
+    psr_name : str
+        Pulsar name
+    mean : float
+        Observed mass mean
+    std : float
+        Observed mass standard deviation
+    nb_masses : int
+        Number of integration points
+    m_min : float
+        Minimum integration mass
 
     Notes
     -----
     The integration is performed using a discrete sum with logsumexp for
-    numerical stability. The mass grid spans from 1.0 M_☉ to M_max.
+    numerical stability. The mass grid spans from m_min M_☉ to M_max.
 
     Examples
     --------
@@ -48,6 +66,12 @@ class RadioTimingLikelihood(LikelihoodBase):
     >>> log_prob = likelihood.evaluate(params, {})
     """
 
+    psr_name: str
+    mean: float
+    std: float
+    nb_masses: int
+    m_min: float
+
     def __init__(
         self,
         psr_name: str,
@@ -55,7 +79,7 @@ class RadioTimingLikelihood(LikelihoodBase):
         std: float,
         nb_masses: int = 500,
         m_min: float = 0.1,  # TODO: determine if needs tuning later on
-    ):
+    ) -> None:
         super().__init__()
         self.psr_name = psr_name
         self.mean = mean
@@ -63,15 +87,15 @@ class RadioTimingLikelihood(LikelihoodBase):
         self.nb_masses = nb_masses
         self.m_min = m_min  # Minimum mass for integration (M_☉)
 
-    def evaluate(self, params: dict[str, Float], data: dict) -> Float:
+    def evaluate(self, params: dict[str, Float | Array], data: dict[str, Any]) -> Float:
         """
         Evaluate the log likelihood.
 
         Parameters
         ----------
-        params : dict[str, Float]
+        params : dict[str, Float | Array]
             Dictionary containing 'masses_EOS' key with sampled mass points
-        data : dict
+        data : dict[str, Any]
             Unused (data is encapsulated in the likelihood object)
 
         Returns
@@ -80,8 +104,8 @@ class RadioTimingLikelihood(LikelihoodBase):
             Log likelihood value
         """
         # Extract maximum TOV mass from the EOS
-        masses_EOS = params["masses_EOS"]
-        mtov = jnp.max(masses_EOS)
+        masses_EOS: Float[Array, " n_points"] = params["masses_EOS"]
+        mtov: Float = jnp.max(masses_EOS)
 
         # Create mass grid for integration from m_min to M_max
         # Per Eq. (X): P(θ_EOS | d_radio) ∝ (1/M_TOV) ∫₀^M_TOV P(M | d_radio) dM

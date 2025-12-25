@@ -8,12 +8,16 @@ transformations with Jacobian corrections for Bayesian inference.
 """
 
 from abc import ABC
-from typing import Callable
+from typing import Callable, TypeAlias
 
 import jax
 import jax.numpy as jnp
 from beartype import beartype as typechecker
 from jaxtyping import Float, jaxtyped
+
+# Type aliases for better readability
+ParamDict: TypeAlias = dict[str, Float]
+NameMapping: TypeAlias = tuple[list[str], list[str]]
 
 
 class Transform(ABC):
@@ -24,12 +28,12 @@ class Transform(ABC):
     is purely for keeping track of parameter name mappings.
     """
 
-    name_mapping: tuple[list[str], list[str]]
+    name_mapping: NameMapping
 
     def __init__(
         self,
-        name_mapping: tuple[list[str], list[str]],
-    ):
+        name_mapping: NameMapping,
+    ) -> None:
         """
         Parameters
         ----------
@@ -67,9 +71,9 @@ class NtoMTransform(Transform):
     requiring invertibility or Jacobian corrections.
     """
 
-    transform_func: Callable[[dict[str, Float]], dict[str, Float]]
+    transform_func: Callable[[ParamDict], ParamDict]
 
-    def forward(self, x: dict[str, Float]) -> dict[str, Float]:
+    def forward(self, x: ParamDict) -> ParamDict:
         """
         Push forward the input x to transformed coordinate y.
 
@@ -107,7 +111,7 @@ class NtoNTransform(NtoMTransform):
     def n_dim(self) -> int:
         return len(self.name_mapping[0])
 
-    def transform(self, x: dict[str, Float]) -> tuple[dict[str, Float], Float]:
+    def transform(self, x: ParamDict) -> tuple[ParamDict, Float]:
         """
         Transform the input x to transformed coordinate y and return the log Jacobian determinant.
 
@@ -115,12 +119,12 @@ class NtoNTransform(NtoMTransform):
 
         Parameters
         ----------
-        x : dict[str, Float]
+        x : ParamDict
             The input dictionary.
 
         Returns
         -------
-        y : dict[str, Float]
+        y : ParamDict
             The transformed dictionary.
         log_det : Float
             The log Jacobian determinant.
@@ -151,20 +155,20 @@ class BijectiveTransform(NtoNTransform):
     are applied to the prior.
     """
 
-    inverse_transform_func: Callable[[dict[str, Float]], dict[str, Float]]
+    inverse_transform_func: Callable[[ParamDict], ParamDict]
 
-    def inverse(self, y: dict[str, Float]) -> tuple[dict[str, Float], Float]:
+    def inverse(self, y: ParamDict) -> tuple[ParamDict, Float]:
         """
         Inverse transform the input y to original coordinate x.
 
         Parameters
         ----------
-        y : dict[str, Float]
+        y : ParamDict
             The transformed dictionary.
 
         Returns
         -------
-        x : dict[str, Float]
+        x : ParamDict
             The original dictionary.
         log_det : Float
             The log Jacobian determinant.
@@ -185,18 +189,18 @@ class BijectiveTransform(NtoNTransform):
         )
         return y_copy, jacobian
 
-    def backward(self, y: dict[str, Float]) -> dict[str, Float]:
+    def backward(self, y: ParamDict) -> ParamDict:
         """
         Pull back the input y to original coordinate x (without Jacobian).
 
         Parameters
         ----------
-        y : dict[str, Float]
+        y : ParamDict
             The transformed dictionary.
 
         Returns
         -------
-        x : dict[str, Float]
+        x : ParamDict
             The original dictionary.
         """
         y_copy = y.copy()
@@ -230,13 +234,13 @@ class ScaleTransform(BijectiveTransform):
 
     def __init__(
         self,
-        name_mapping: tuple[list[str], list[str]],
+        name_mapping: NameMapping,
         scale: Float,
-    ):
+    ) -> None:
         """
         Parameters
         ----------
-        name_mapping : tuple[list[str], list[str]]
+        name_mapping : NameMapping
             Tuple of (input_names, output_names).
         scale : Float
             The scaling factor.
@@ -265,13 +269,13 @@ class OffsetTransform(BijectiveTransform):
 
     def __init__(
         self,
-        name_mapping: tuple[list[str], list[str]],
+        name_mapping: NameMapping,
         offset: Float,
-    ):
+    ) -> None:
         """
         Parameters
         ----------
-        name_mapping : tuple[list[str], list[str]]
+        name_mapping : NameMapping
             Tuple of (input_names, output_names).
         offset : Float
             The offset value.
@@ -298,12 +302,12 @@ class LogitTransform(BijectiveTransform):
 
     def __init__(
         self,
-        name_mapping: tuple[list[str], list[str]],
-    ):
+        name_mapping: NameMapping,
+    ) -> None:
         """
         Parameters
         ----------
-        name_mapping : tuple[list[str], list[str]]
+        name_mapping : NameMapping
             Tuple of (input_names, output_names).
         """
         super().__init__(name_mapping)

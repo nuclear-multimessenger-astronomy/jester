@@ -191,6 +191,98 @@ docs/
 - **Geometric units:** Physics calculations use geometric unit system throughout
 - **Type safety:** Strong typing with `jaxtyping` for array shapes and dtypes
 - **64-bit precision:** Enabled by default in `__init__.py` for numerical accuracy
+- **Type hints:** Comprehensive type annotations for better code maintainability and IDE support
+
+### Type Hinting Standards
+
+**All new code MUST include comprehensive type hints.** Type hints improve code maintainability, enable better IDE support, catch bugs early, and make the codebase more user-friendly.
+
+**Required Type Hints**:
+- **Function signatures**: All function parameters and return types
+- **Class attributes**: Public attributes should be annotated
+- **Module-level variables**: Constants and important module variables
+- **Complex data structures**: Dictionaries, lists, and custom types
+
+**Type Hinting Guidelines**:
+
+1. **Use standard library types** (Python 3.10+ syntax):
+   ```python
+   from typing import Optional, Union, Callable, Any
+
+   # Good: Modern syntax
+   def process_data(values: list[float], threshold: float | None = None) -> dict[str, float]:
+       ...
+
+   # Avoid: Old-style typing (but acceptable for Python 3.9 compatibility)
+   from typing import List, Dict
+   def process_data(values: List[float], threshold: Optional[float] = None) -> Dict[str, float]:
+       ...
+   ```
+
+2. **Use `jaxtyping` for JAX arrays**:
+   ```python
+   from jaxtyping import Array, Float, Int
+   import jax.numpy as jnp
+
+   # Specify array shapes and dtypes
+   def solve_tov(
+       pressure: Float[Array, "n_points"],
+       density: Float[Array, "n_points"]
+   ) -> Float[Array, "n_points"]:
+       ...
+   ```
+
+3. **Use `Pydantic` models for configuration**:
+   ```python
+   from pydantic import BaseModel, Field
+
+   class SamplerConfig(BaseModel):
+       n_chains: int = Field(gt=0, description="Number of MCMC chains")
+       learning_rate: float = Field(gt=0.0, le=1.0)
+   ```
+
+4. **Document complex types with `TypeAlias`**:
+   ```python
+   from typing import TypeAlias
+
+   # Define reusable type aliases
+   ParameterDict: TypeAlias = dict[str, float]
+   EOSFunction: TypeAlias = Callable[[float], float]
+   ```
+
+5. **Use `Protocol` for duck typing**:
+   ```python
+   from typing import Protocol
+
+   class Likelihood(Protocol):
+       def evaluate(self, params: dict[str, float], data: dict) -> float:
+           ...
+   ```
+
+6. **Avoid `Any` when possible**:
+   - Use specific types or generics instead of `Any`
+   - If `Any` is necessary, add a comment explaining why
+   - Consider using `object` for truly unknown types
+
+**Type Checking**:
+```bash
+# Check types before committing
+uv run pyright jesterTOV/inference/
+
+# Fix type errors, don't suppress them unless absolutely necessary
+```
+
+**Gradual Adoption**:
+- All new files must have complete type hints
+- When editing existing files, add type hints to functions you modify
+- Large files can be improved incrementally (start with public APIs)
+
+**Benefits**:
+- **Better IDE support**: Autocomplete, go-to-definition, refactoring tools
+- **Early bug detection**: Catch type mismatches before runtime
+- **Living documentation**: Type hints serve as inline documentation
+- **Easier onboarding**: New contributors understand interfaces faster
+- **Safer refactoring**: Type checker catches broken contracts
 
 ### Development Notes
 - The codebase is specialized for astrophysics/neutron star modeling

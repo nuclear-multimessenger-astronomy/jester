@@ -1,5 +1,7 @@
 """flowMC sampler implementation and setup"""
 
+from typing import Any
+
 import jax
 import jax.numpy as jnp
 from flowMC.nfmodel.rqSpline import MaskedCouplingRQSpline
@@ -36,7 +38,7 @@ class FlowMCSampler(JesterSampler):
         Name of the local sampler: "MALA" or "GaussianRandomWalk" (default: "GaussianRandomWalk")
     seed : int, optional
         Random seed (default: 0)
-    local_sampler_arg : dict, optional
+    local_sampler_arg : dict[str, Any], optional
         Arguments for local sampler (e.g., {"step_size": ...})
     num_layers : int, optional
         Number of coupling layers in normalizing flow (default: 10)
@@ -44,7 +46,7 @@ class FlowMCSampler(JesterSampler):
         Hidden layer sizes for normalizing flow (default: [128, 128])
     num_bins : int, optional
         Number of bins for rational quadratic splines (default: 8)
-    **kwargs
+    **kwargs : Any
         Additional arguments passed to flowMC Sampler:
         - n_loop_training : int
         - n_loop_production : int
@@ -59,24 +61,36 @@ class FlowMCSampler(JesterSampler):
 
     Attributes
     ----------
-    sampler : flowMC.Sampler
+    sampler : Sampler
         FlowMC sampler instance
     """
+
+    sampler: Sampler
 
     def __init__(
         self,
         likelihood: LikelihoodBase,
         prior: Prior,
-        sample_transforms: list[BijectiveTransform] = [],
-        likelihood_transforms: list[NtoMTransform] = [],
+        sample_transforms: list[BijectiveTransform] | None = None,
+        likelihood_transforms: list[NtoMTransform] | None = None,
         local_sampler_name: str = "GaussianRandomWalk",
         seed: int = 0,
-        local_sampler_arg: dict = {},
+        local_sampler_arg: dict[str, Any] | None = None,
         num_layers: int = 10,
-        hidden_size: list[int] = [128, 128],
+        hidden_size: list[int] | None = None,
         num_bins: int = 8,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
+        # Handle None defaults
+        if sample_transforms is None:
+            sample_transforms = []
+        if likelihood_transforms is None:
+            likelihood_transforms = []
+        if local_sampler_arg is None:
+            local_sampler_arg = {}
+        if hidden_size is None:
+            hidden_size = [128, 128]
+
         # Initialize base class (sets up transforms and parameter names)
         super().__init__(likelihood, prior, sample_transforms, likelihood_transforms)
 

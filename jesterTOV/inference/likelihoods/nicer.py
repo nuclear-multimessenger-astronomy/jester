@@ -2,11 +2,13 @@
 NICER X-ray timing likelihood implementations
 """
 
+from typing import Any
+
 import jax
 import jax.numpy as jnp
 import numpy as np
 from jax.scipy.stats import gaussian_kde
-from jaxtyping import Float
+from jaxtyping import Array, Float
 
 from jesterTOV.inference.base.likelihood import LikelihoodBase
 
@@ -14,7 +16,7 @@ from jesterTOV.inference.base.likelihood import LikelihoodBase
 class NICERLikelihood(LikelihoodBase):
     """
     NICER likelihood using mass sampling and EOS interpolation
-    
+
     TODO: Generalize to e.g. only one group, weights between different hotspot models,...
 
     This likelihood loads posterior samples from Amsterdam and Maryland groups,
@@ -40,7 +42,27 @@ class NICERLikelihood(LikelihoodBase):
         Number of mass samples per likelihood evaluation (default: 20)
     N_masses_batch_size : int, optional
         Batch size for processing mass samples (default: 10)
+
+    Attributes
+    ----------
+    amsterdam_masses : Float[Array, " n_amsterdam"]
+        Mass samples from Amsterdam group
+    maryland_masses : Float[Array, " n_maryland"]
+        Mass samples from Maryland group
+    amsterdam_posterior : gaussian_kde
+        KDE of Amsterdam (mass, radius) posterior
+    maryland_posterior : gaussian_kde
+        KDE of Maryland (mass, radius) posterior
     """
+
+    psr_name: str
+    penalty_value: float
+    N_masses_evaluation: int
+    N_masses_batch_size: int
+    amsterdam_masses: Float[Array, " n_amsterdam"]
+    maryland_masses: Float[Array, " n_maryland"]
+    amsterdam_posterior: Any  # gaussian_kde type
+    maryland_posterior: Any  # gaussian_kde type
 
     def __init__(
         self,
@@ -50,7 +72,7 @@ class NICERLikelihood(LikelihoodBase):
         penalty_value: float = -99999.0,
         N_masses_evaluation: int = 20,
         N_masses_batch_size: int = 10,
-    ):
+    ) -> None:
         super().__init__()
         self.psr_name = psr_name
         self.penalty_value = penalty_value
@@ -86,38 +108,38 @@ class NICERLikelihood(LikelihoodBase):
         self.maryland_posterior = gaussian_kde(maryland_mr)
         print(f"Loaded JAX KDEs for {psr_name}")
 
-    def evaluate(self, params: dict[str, Float], data: dict) -> Float:
+    def evaluate(self, params: dict[str, Float | Array], data: dict[str, Any]) -> Float:
         """
         Evaluate log likelihood for given EOS parameters
 
         Parameters
         ----------
-        params : dict[str, Float]
+        params : dict[str, Float | Array]
             Must contain:
             - '_random_key': Random seed for mass sampling (cast to int64)
             - 'masses_EOS': Array of neutron star masses from EOS
             - 'radii_EOS': Array of neutron star radii from EOS
-        data : dict
+        data : dict[str, Any]
             Not used (data encapsulated in likelihood object)
 
         Returns
         -------
-        float
+        Float
             Log likelihood value for this NICER observation
         """
         # Extract parameters
         sampled_key = params["_random_key"].astype("int64")
         key = jax.random.key(sampled_key)
-        masses_EOS = params["masses_EOS"]
-        radii_EOS = params["radii_EOS"]
-        mtov = jnp.max(masses_EOS)
+        masses_EOS: Float[Array, " n_points"] = params["masses_EOS"]
+        radii_EOS: Float[Array, " n_points"] = params["radii_EOS"]
+        mtov: Float = jnp.max(masses_EOS)
 
         # Split key for Amsterdam and Maryland sampling
         key_amsterdam, key_maryland = jax.random.split(key)
 
         # Sample masses from the NICER posterior samples
         # Each group gets half of N_masses_evaluation samples
-        n_samples_per_group = self.N_masses_evaluation // 2
+        n_samples_per_group: int = self.N_masses_evaluation // 2
 
         # Sample indices and get mass samples
         amsterdam_indices = jax.random.choice(
@@ -133,22 +155,22 @@ class NICERLikelihood(LikelihoodBase):
             replace=True
         )
 
-        amsterdam_mass_samples = self.amsterdam_masses[amsterdam_indices]
-        maryland_mass_samples = self.maryland_masses[maryland_indices]
+        amsterdam_mass_samples: Float[Array, " n_amsterdam_samples"] = self.amsterdam_masses[amsterdam_indices]
+        maryland_mass_samples: Float[Array, " n_maryland_samples"] = self.maryland_masses[maryland_indices]
 
-        def process_sample_amsterdam(mass):
+        def process_sample_amsterdam(mass: Float) -> Float:
             """
             Process a single Amsterdam mass sample
 
             Parameters
             ----------
-            mass : float
+            mass : Float
                 Sampled mass value
 
             Returns
             -------
-            float
-                Log probability from Amsterdam KDE
+            Float
+                Log probability from Amsterdam KDE including penalty
             """
             # Interpolate radius from EOS
             radius = jnp.interp(mass, masses_EOS, radii_EOS)
@@ -162,19 +184,19 @@ class NICERLikelihood(LikelihoodBase):
 
             return logpdf + penalty
 
-        def process_sample_maryland(mass):
+        def process_sample_maryland(mass: Float) -> Float:
             """
             Process a single Maryland mass sample
 
             Parameters
             ----------
-            mass : float
+            mass : Float
                 Sampled mass value
 
             Returns
             -------
-            float
-                Log probability from Maryland KDE
+            Float
+                Log probability from Maryland KDE including penalty
             """
             # Interpolate radius from EOS
             radius = jnp.interp(mass, masses_EOS, radii_EOS)
