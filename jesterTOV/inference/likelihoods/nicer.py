@@ -34,6 +34,8 @@ class NICERLikelihood(LikelihoodBase):
     maryland_samples_file : str
         Path to npz file with Maryland group posterior samples
         Expected to contain 'mass' (Msun) and 'radius' (km) arrays
+    penalty_value : float, optional
+        Penalty value for samples where mass exceeds Mtov (default: -99999.0)
     N_masses_evaluation : int, optional
         Number of mass samples per likelihood evaluation (default: 20)
     N_masses_batch_size : int, optional
@@ -45,11 +47,13 @@ class NICERLikelihood(LikelihoodBase):
         psr_name: str,
         amsterdam_samples_file: str,
         maryland_samples_file: str,
+        penalty_value: float = -99999.0,
         N_masses_evaluation: int = 20,
         N_masses_batch_size: int = 10,
     ):
         super().__init__()
         self.psr_name = psr_name
+        self.penalty_value = penalty_value
         self.N_masses_evaluation = N_masses_evaluation
         self.N_masses_batch_size = N_masses_batch_size
 
@@ -106,6 +110,7 @@ class NICERLikelihood(LikelihoodBase):
         key = jax.random.key(sampled_key)
         masses_EOS = params["masses_EOS"]
         radii_EOS = params["radii_EOS"]
+        mtov = jnp.max(masses_EOS)
 
         # Split key for Amsterdam and Maryland sampling
         key_amsterdam, key_maryland = jax.random.split(key)
@@ -152,7 +157,10 @@ class NICERLikelihood(LikelihoodBase):
             mr_point = jnp.array([[mass], [radius]])  # Shape: (2, 1)
             logpdf = self.amsterdam_posterior.logpdf(mr_point)
 
-            return logpdf
+            # Penalty for mass exceeding Mtov
+            penalty = jnp.where(mass > mtov, self.penalty_value, 0.0)
+
+            return logpdf + penalty
 
         def process_sample_maryland(mass):
             """
@@ -175,7 +183,10 @@ class NICERLikelihood(LikelihoodBase):
             mr_point = jnp.array([[mass], [radius]])  # Shape: (2, 1)
             logpdf = self.maryland_posterior.logpdf(mr_point)
 
-            return logpdf
+            # Penalty for mass exceeding Mtov
+            penalty = jnp.where(mass > mtov, self.penalty_value, 0.0)
+
+            return logpdf + penalty
 
         # Use jax.lax.map with batching for memory-efficient processing
         amsterdam_logprobs = jax.lax.map(
