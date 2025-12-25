@@ -1,11 +1,14 @@
 """Base class for jesterTOV EOS transforms."""
 
 from abc import ABC, abstractmethod
-# Following the Jim/jimgw architecture - base class copied to remove dependency
-from jesterTOV.inference.base import NtoMTransform
-from jaxtyping import Float
+from typing import Any, Callable
+
 import jax.numpy as jnp
+from jaxtyping import Array, Float
+
+# Following the Jim/jimgw architecture - base class copied to remove dependency
 from jesterTOV.eos import construct_family
+from jesterTOV.inference.base import NtoMTransform
 from jesterTOV.inference.likelihoods.constraints import check_all_constraints
 
 
@@ -19,7 +22,7 @@ class JesterTransformBase(NtoMTransform, ABC):
     ----------
     name_mapping : tuple[list[str], list[str]]
         Tuple of (input_names, output_names) for the transform
-    keep_names : list[str], optional
+    keep_names : list[str] | None, optional
         Names to keep in the output (default: all input names)
     ndat_metamodel : int
         Number of data points for MetaModel EOS (default: 100)
@@ -33,19 +36,42 @@ class JesterTransformBase(NtoMTransform, ABC):
         Number of masses to sample (default: 100)
     crust_name : str
         Name of crust model to use: "DH", "BPS", or "DH_fixed" (default: "DH")
+
+    Attributes
+    ----------
+    keep_names : list[str]
+        Names to keep in the output
+    ndat_metamodel : int
+        Number of data points for MetaModel EOS
+    nmax_nsat : float
+        Maximum density in units of saturation density
+    nmax : float
+        Maximum density in physical units (fm^-3)
+    construct_family_lambda : Callable
+        Lambda function for solving TOV equations
     """
+
+    keep_names: list[str]
+    ndat_metamodel: int
+    nmax_nsat: float
+    nmax: float
+    min_nsat_TOV: float
+    ndat_TOV: int
+    nb_masses: int
+    crust_name: str
+    construct_family_lambda: Callable[[Any], Any]
 
     def __init__(
         self,
         name_mapping: tuple[list[str], list[str]],
-        keep_names: list[str] = None,
+        keep_names: list[str] | None = None,
         ndat_metamodel: int = 100,
         nmax_nsat: float = 25.0,
         min_nsat_TOV: float = 0.75,
         ndat_TOV: int = 100,
         nb_masses: int = 100,
         crust_name: str = "DH",
-    ):
+    ) -> None:
         # By default, keep all input names
         if keep_names is None:
             keep_names = name_mapping[0]
@@ -103,35 +129,35 @@ class JesterTransformBase(NtoMTransform, ABC):
         pass
 
     def _solve_tov(
-        self, eos_tuple: tuple
-    ) -> tuple[Float, Float, Float, Float]:
+        self, eos_tuple: tuple[Array, Array, Array, Array, Array]
+    ) -> tuple[Float[Array, " n"], Float[Array, " n"], Float[Array, " n"], Float[Array, " n"]]:
         """Solve TOV equations for a given EOS.
 
         Parameters
         ----------
-        eos_tuple : tuple
+        eos_tuple : tuple[Array, Array, Array, Array, Array]
             Tuple of (ns, ps, hs, es, dloge_dlogps) arrays
 
         Returns
         -------
-        tuple
+        tuple[Float[Array, " n"], Float[Array, " n"], Float[Array, " n"], Float[Array, " n"]]
             (logpc_EOS, masses_EOS, radii_EOS, Lambdas_EOS)
         """
         return self.construct_family_lambda(eos_tuple)
 
     def _create_return_dict(
         self,
-        logpc_EOS: Float,
-        masses_EOS: Float,
-        radii_EOS: Float,
-        Lambdas_EOS: Float,
-        ns: Float,
-        ps: Float,
-        hs: Float,
-        es: Float,
-        dloge_dlogps: Float,
-        cs2: Float,
-    ) -> dict[str, Float]:
+        logpc_EOS: Float[Array, " n"],
+        masses_EOS: Float[Array, " n"],
+        radii_EOS: Float[Array, " n"],
+        Lambdas_EOS: Float[Array, " n"],
+        ns: Float[Array, " n"],
+        ps: Float[Array, " n"],
+        hs: Float[Array, " n"],
+        es: Float[Array, " n"],
+        dloge_dlogps: Float[Array, " n"],
+        cs2: Float[Array, " n"],
+    ) -> dict[str, Float | Float[Array, " n"]]:
         """Create standardized return dictionary with constraint checking.
 
         This method checks for physical constraint violations (NaN, causality, etc.)

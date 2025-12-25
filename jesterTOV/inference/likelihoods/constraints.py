@@ -4,27 +4,32 @@ This module provides modular constraint checking functions and a likelihood
 class that penalizes samples violating physical constraints.
 """
 
+from typing import Any
+
 import jax.numpy as jnp
+from jaxtyping import Array, Float
 
 from jesterTOV.inference.base.likelihood import LikelihoodBase
 
 
-def check_tov_validity(masses: jnp.ndarray, radii: jnp.ndarray, lambdas: jnp.ndarray) -> float:
+def check_tov_validity(
+    masses: Float[Array, " n"], radii: Float[Array, " n"], lambdas: Float[Array, " n"]
+) -> Float:
     """
     Check if TOV integration succeeded by counting NaN values.
 
     Parameters
     ----------
-    masses : jnp.ndarray
+    masses : Float[Array, " n"]
         Array of neutron star masses from TOV solution
-    radii : jnp.ndarray
+    radii : Float[Array, " n"]
         Array of neutron star radii from TOV solution
-    lambdas : jnp.ndarray
+    lambdas : Float[Array, " n"]
         Array of tidal deformabilities from TOV solution
 
     Returns
     -------
-    float
+    Float
         Number of NaN values found (0 = valid, >0 = invalid)
         Returns a scalar for JAX compatibility (avoids TracerBoolConversionError)
     """
@@ -34,7 +39,7 @@ def check_tov_validity(masses: jnp.ndarray, radii: jnp.ndarray, lambdas: jnp.nda
     return n_nan_masses + n_nan_radii + n_nan_lambdas
 
 
-def check_causality_violation(cs2: jnp.ndarray) -> float:
+def check_causality_violation(cs2: Float[Array, " n"]) -> Float:
     """
     Check for causality violations (sound speed exceeds speed of light).
 
@@ -42,19 +47,19 @@ def check_causality_violation(cs2: jnp.ndarray) -> float:
 
     Parameters
     ----------
-    cs2 : jnp.ndarray
+    cs2 : Float[Array, " n"]
         Array of squared sound speeds (cs^2/c^2)
 
     Returns
     -------
-    float
+    Float
         Number of points where cs^2 > 1 (0 = valid, >0 = violation)
         Returns a scalar for JAX compatibility
     """
     return jnp.sum(cs2 > 1.0)
 
 
-def check_stability(cs2: jnp.ndarray) -> float:
+def check_stability(cs2: Float[Array, " n"]) -> Float:
     """
     Check for thermodynamic instability (negative sound speed squared).
 
@@ -62,19 +67,19 @@ def check_stability(cs2: jnp.ndarray) -> float:
 
     Parameters
     ----------
-    cs2 : jnp.ndarray
+    cs2 : Float[Array, " n"]
         Array of squared sound speeds (cs^2/c^2)
 
     Returns
     -------
-    float
+    Float
         Number of points where cs^2 < 0 (0 = valid, >0 = unstable)
         Returns a scalar for JAX compatibility
     """
     return jnp.sum(cs2 < 0.0)
 
 
-def check_pressure_monotonicity(p: jnp.ndarray) -> float:
+def check_pressure_monotonicity(p: Float[Array, " n"]) -> Float:
     """
     Check if pressure is monotonically increasing with density.
 
@@ -97,12 +102,12 @@ def check_pressure_monotonicity(p: jnp.ndarray) -> float:
 
 
 def check_all_constraints(
-    masses: jnp.ndarray,
-    radii: jnp.ndarray,
-    lambdas: jnp.ndarray,
-    cs2: jnp.ndarray,
-    p: jnp.ndarray,
-) -> dict[str, float]:
+    masses: Float[Array, " n"],
+    radii: Float[Array, " n"],
+    lambdas: Float[Array, " n"],
+    cs2: Float[Array, " n"],
+    p: Float[Array, " n"],
+) -> dict[str, Float]:
     """
     Run all constraint checks and return violation counts.
 
@@ -111,20 +116,20 @@ def check_all_constraints(
 
     Parameters
     ----------
-    masses : jnp.ndarray
+    masses : Float[Array, " n"]
         Neutron star masses from TOV
-    radii : jnp.ndarray
+    radii : Float[Array, " n"]
         Neutron star radii from TOV
-    lambdas : jnp.ndarray
+    lambdas : Float[Array, " n"]
         Tidal deformabilities from TOV
-    cs2 : jnp.ndarray
+    cs2 : Float[Array, " n"]
         Squared sound speeds
-    p : jnp.ndarray
+    p : Float[Array, " n"]
         Pressure array (sorted by density)
 
     Returns
     -------
-    dict[str, float]
+    dict[str, Float]
         Dictionary with constraint violation counts:
         - 'n_tov_failures': Number of NaN in TOV solution
         - 'n_causality_violations': Number of cs^2 > 1 points
@@ -178,18 +183,22 @@ class ConstraintEOSLikelihood(LikelihoodBase):
     >>>       penalty_stability: -1.0e5
     """
 
+    penalty_causality: float
+    penalty_stability: float
+    penalty_pressure: float
+
     def __init__(
         self,
         penalty_causality: float = -1e10,
         penalty_stability: float = -1e5,
         penalty_pressure: float = -1e5,
-    ):
+    ) -> None:
         super().__init__()
         self.penalty_causality = float(penalty_causality)
         self.penalty_stability = float(penalty_stability)
         self.penalty_pressure = float(penalty_pressure)
 
-    def evaluate(self, params: dict[str, float], data: dict) -> float:
+    def evaluate(self, params: dict[str, Float | Array], data: dict[str, Any]) -> Float:
         """
         Evaluate EOS constraint log likelihood.
 
@@ -263,7 +272,7 @@ class ConstraintTOVLikelihood(LikelihoodBase):
         super().__init__()
         self.penalty_tov = float(penalty_tov)
 
-    def evaluate(self, params: dict[str, float], data: dict) -> float:
+    def evaluate(self, params: dict[str, float], data: dict) -> Float:
         """
         Evaluate TOV constraint log likelihood.
 
@@ -280,7 +289,7 @@ class ConstraintTOVLikelihood(LikelihoodBase):
 
         Returns
         -------
-        float
+        Float
             TOV penalty (0.0 if valid, large negative if invalid)
         """
         # Get violation count from transform output (default to 0 if not present)
@@ -346,7 +355,7 @@ class ConstraintLikelihood(LikelihoodBase):
         self.penalty_stability = penalty_stability
         self.penalty_pressure = penalty_pressure
 
-    def evaluate(self, params: dict[str, float], data: dict) -> float:
+    def evaluate(self, params: dict[str, float], data: dict) -> Float:
         """
         Evaluate constraint log likelihood.
 
@@ -366,7 +375,7 @@ class ConstraintLikelihood(LikelihoodBase):
 
         Returns
         -------
-        float
+        Float
             Sum of penalties (0.0 if valid, large negative if invalid)
         """
         # Get violation counts from transform output (default to 0 if not present)

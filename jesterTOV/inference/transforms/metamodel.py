@@ -35,7 +35,7 @@ class MetaModelTransform(JesterTransformBase):
     def __init__(
         self,
         name_mapping: tuple[list[str], list[str]],
-        keep_names: list[str] = None,
+        keep_names: list[str] | None = None,
         **kwargs,
     ):
         super().__init__(name_mapping, keep_names, **kwargs)

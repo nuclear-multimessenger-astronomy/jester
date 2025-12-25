@@ -4,11 +4,15 @@ Chiral Effective Field Theory likelihood implementations
 TODO: need to generalize to other ways to use chiEFT information in the likelihood. For now only works with the data from Koehn et al., Phys.Rev.X 15 (2025) 2, 021014.
 """
 
+from pathlib import Path
+from typing import Any, Callable
+
 import jax.numpy as jnp
 import numpy as np
-from pathlib import Path
-from jaxtyping import Float
+from jaxtyping import Array, Float
+
 from jesterTOV.inference.base import LikelihoodBase
+
 
 class ChiEFTLikelihood(LikelihoodBase):
     """
@@ -18,22 +22,47 @@ class ChiEFTLikelihood(LikelihoodBase):
 
     Parameters
     ----------
-    low_filename : str or Path, optional
+    low_filename : str | Path | None, optional
         Path to file containing lower bound of chiEFT band.
         Defaults to data/chiEFT/2402.04172/low.dat
-    high_filename : str or Path, optional
+    high_filename : str | Path | None, optional
         Path to file containing upper bound of chiEFT band.
         Defaults to data/chiEFT/2402.04172/high.dat
     nb_n : int, optional
         Number of density points for integration (default: 100)
+
+    Attributes
+    ----------
+    n_low : Float[Array, " n_points"]
+        Density grid for lower bound (in nsat units)
+    p_low : Float[Array, " n_points"]
+        Pressure values for lower bound (MeV/fm^3)
+    n_high : Float[Array, " n_points"]
+        Density grid for upper bound (in nsat units)
+    p_high : Float[Array, " n_points"]
+        Pressure values for upper bound (MeV/fm^3)
+    EFT_low : Callable
+        Interpolation function for lower bound
+    EFT_high : Callable
+        Interpolation function for upper bound
+    nb_n : int
+        Number of density points for integration
     """
+
+    n_low: Float[Array, " n_points"]
+    p_low: Float[Array, " n_points"]
+    n_high: Float[Array, " n_points"]
+    p_high: Float[Array, " n_points"]
+    EFT_low: Callable[[Float | Float[Array, "..."]], Float | Float[Array, "..."]]
+    EFT_high: Callable[[Float | Float[Array, "..."]], Float | Float[Array, "..."]]
+    nb_n: int
 
     def __init__(
         self,
         low_filename: str | Path | None = None,
         high_filename: str | Path | None = None,
         nb_n: int = 100,
-    ):
+    ) -> None:
         super().__init__()
 
         # Set default paths if not provided
@@ -69,7 +98,7 @@ class ChiEFTLikelihood(LikelihoodBase):
 
         self.nb_n = nb_n
 
-    def evaluate(self, params: dict[str, Float], data: dict) -> Float:
+    def evaluate(self, params: dict[str, Float | Array], data: dict[str, Any]) -> Float:
         # Import here to avoid circular dependency # FIXME: what circular dependency?
         from jesterTOV import utils as jose_utils
 

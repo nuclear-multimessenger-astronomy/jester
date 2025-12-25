@@ -1,7 +1,10 @@
 """Gravitational wave event likelihood implementations"""
 
+from typing import Any
+
 import jax
 import jax.numpy as jnp
+from jaxtyping import Array, Float
 
 from jesterTOV.inference.base.likelihood import LikelihoodBase
 from jesterTOV.inference.flows.flow import Flow
@@ -28,7 +31,19 @@ class GWLikelihood(LikelihoodBase):
         Number of mass samples per likelihood evaluation (default: 20)
     N_masses_batch_size : int, optional
         Batch size for processing mass samples (default: 10)
+
+    Attributes
+    ----------
+    flow : Flow
+        Normalizing flow model for this GW event
     """
+
+    event_name: str
+    model_dir: str
+    penalty_value: float
+    N_masses_evaluation: int
+    N_masses_batch_size: int
+    flow: Flow
 
     def __init__(
         self,
@@ -37,7 +52,7 @@ class GWLikelihood(LikelihoodBase):
         penalty_value: float = -99999.0,
         N_masses_evaluation: int = 20,
         N_masses_batch_size: int = 10,
-    ):
+    ) -> None:
         super().__init__()
         self.event_name = event_name
         self.model_dir = model_dir
@@ -51,36 +66,36 @@ class GWLikelihood(LikelihoodBase):
         print(f"Loaded NF model for {event_name}")
 
 
-    def evaluate(self, params: dict[str, float], data: dict) -> float:
+    def evaluate(self, params: dict[str, Float | Array], data: dict[str, Any]) -> Float:
         """
         Evaluate log likelihood for given EOS parameters
 
         Parameters
         ----------
-        params : dict[str, float]
+        params : dict[str, Float | Array]
             Must contain:
             - '_random_key': Random seed for mass sampling (cast to int64)
             - 'masses_EOS': Array of neutron star masses from EOS
             - 'Lambdas_EOS': Array of tidal deformabilities from EOS
-        data : dict
+        data : dict[str, Any]
             Not used (data encapsulated in likelihood object)
 
         Returns
         -------
-        float
+        Float
             Log likelihood value for this GW event
         """
         # Extract parameters
         sampled_key = params["_random_key"].astype("int64")
         key = jax.random.key(sampled_key)
-        masses_EOS = params["masses_EOS"]
-        Lambdas_EOS = params["Lambdas_EOS"]
-        mtov = jnp.max(masses_EOS)
+        masses_EOS: Float[Array, " n_points"] = params["masses_EOS"]
+        Lambdas_EOS: Float[Array, " n_points"] = params["Lambdas_EOS"]
+        mtov: Float = jnp.max(masses_EOS)
 
         # Sample all N_masses_evaluation samples from NF in one go
-        all_nf_samples = self.flow.sample(key, (self.N_masses_evaluation,))
+        all_nf_samples: Float[Array, "n_samples 2"] = self.flow.sample(key, (self.N_masses_evaluation,))
 
-        def process_sample(sample):
+        def process_sample(sample: Float[Array, " 2"]) -> Float:
             """
             Process a single NF sample
 
@@ -89,8 +104,13 @@ class GWLikelihood(LikelihoodBase):
 
             Parameters
             ----------
-            sample : array, shape (2,)
+            sample : Float[Array, " 2"]
                 Single sample with [m1, m2]
+
+            Returns
+            -------
+            Float
+                Log probability including penalties for this sample
             """
             m1 = sample[0]
             m2 = sample[1]

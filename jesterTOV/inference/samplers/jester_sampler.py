@@ -6,6 +6,8 @@ Backend-specific implementations (e.g., flowMC, Jim, NumPyro) should
 inherit from JesterSampler and implement the sampler initialization.
 """
 
+from typing import Any
+
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float, PRNGKeyArray
@@ -39,9 +41,9 @@ class JesterSampler:
         Likelihood object with evaluate(params, data) method
     prior : Prior
         Prior object with sample() and log_prob() methods
-    sample_transforms : list[BijectiveTransform], optional
+    sample_transforms : list[BijectiveTransform] | None, optional
         Bijective transforms applied during sampling (with Jacobians)
-    likelihood_transforms : list[NtoMTransform], optional
+    likelihood_transforms : list[NtoMTransform] | None, optional
         N-to-M transforms applied before likelihood evaluation
 
     Attributes
@@ -56,7 +58,7 @@ class JesterSampler:
         Transforms applied before likelihood evaluation
     parameter_names : list[str]
         Names of parameters (propagated through sample transforms)
-    sampler : Any
+    sampler : Any | None
         Backend sampler instance (created by subclasses)
 
     Notes
@@ -65,13 +67,26 @@ class JesterSampler:
     The sampler should have a .sample() method and support get_sampler_state().
     """
 
+    likelihood: LikelihoodBase
+    prior: Prior
+    sample_transforms: list[BijectiveTransform]
+    likelihood_transforms: list[NtoMTransform]
+    parameter_names: list[str]
+    sampler: Any | None
+
     def __init__(
         self,
         likelihood: LikelihoodBase,
         prior: Prior,
-        sample_transforms: list[BijectiveTransform] = [],
-        likelihood_transforms: list[NtoMTransform] = [],
-    ):
+        sample_transforms: list[BijectiveTransform] | None = None,
+        likelihood_transforms: list[NtoMTransform] | None = None,
+    ) -> None:
+        # Handle None defaults
+        if sample_transforms is None:
+            sample_transforms = []
+        if likelihood_transforms is None:
+            likelihood_transforms = []
+
         self.likelihood = likelihood
         self.prior = prior
 
@@ -112,7 +127,7 @@ class JesterSampler:
         """
         return dict(zip(self.parameter_names, x))
 
-    def posterior(self, params: Float[Array, " n_dim"], data: dict):
+    def posterior(self, params: Float[Array, " n_dim"], data: dict[str, Any]) -> Float:
         """
         Evaluate posterior log probability.
 
@@ -138,7 +153,7 @@ class JesterSampler:
             named_params = transform.forward(named_params)
         return self.likelihood.evaluate(named_params, data) + prior
 
-    def sample(self, key: PRNGKeyArray, initial_position: Array = jnp.array([])):
+    def sample(self, key: PRNGKeyArray, initial_position: Array = jnp.array([])) -> None:
         """
         Run MCMC sampling.
 
@@ -161,7 +176,7 @@ class JesterSampler:
             "sample() must be implemented by backend-specific subclass"
         )
 
-    def print_summary(self, transform: bool = True):
+    def print_summary(self, transform: bool = True) -> None:
         """
         Print summary of sampling run.
 

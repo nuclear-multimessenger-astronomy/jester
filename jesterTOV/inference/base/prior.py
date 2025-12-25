@@ -8,6 +8,7 @@ with flowMC's Distribution base class.
 """
 
 from dataclasses import field
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -36,7 +37,7 @@ class Prior(Distribution):
     def n_dim(self) -> int:
         return len(self.parameter_names)
 
-    def __init__(self, parameter_names: list[str]):
+    def __init__(self, parameter_names: list[str]) -> None:
         """
         Parameters
         ----------
@@ -76,12 +77,12 @@ class Prior(Distribution):
 
         Returns
         -------
-        samples : dict
+        samples : dict[str, Float[Array, " n_samples"]]
             Samples from the distribution. The keys are the names of the parameters.
         """
         raise NotImplementedError
 
-    def log_prob(self, z: dict[str, Array]) -> Float:
+    def log_prob(self, z: dict[str, Float | Array]) -> Float:
         """
         Evaluate the log probability of the prior.
 
@@ -106,10 +107,10 @@ class LogisticDistribution(Prior):
     Note: This class follows the Jim/jimgw architecture.
     """
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"LogisticDistribution(parameter_names={self.parameter_names})"
 
-    def __init__(self, parameter_names: list[str], **kwargs):
+    def __init__(self, parameter_names: list[str], **kwargs: Any) -> None:
         super().__init__(parameter_names)
         self.composite = False
         assert self.n_dim == 1, "LogisticDistribution needs to be 1D distributions"
@@ -167,14 +168,14 @@ class SequentialTransformPrior(Prior):
     base_prior: Prior
     transforms: list[BijectiveTransform]
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"Sequential(priors={self.base_prior}, parameter_names={self.parameter_names})"
 
     def __init__(
         self,
         base_prior: Prior,
         transforms: list[BijectiveTransform],
-    ):
+    ) -> None:
         self.base_prior = base_prior
         self.transforms = transforms
         self.parameter_names = base_prior.parameter_names
@@ -256,7 +257,7 @@ class CombinePrior(Prior):
 
     base_prior: list[Prior] = field(default_factory=list)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
             f"Combine(priors={self.base_prior}, parameter_names={self.parameter_names})"
         )
@@ -264,7 +265,7 @@ class CombinePrior(Prior):
     def __init__(
         self,
         priors: list[Prior],
-    ):
+    ) -> None:
         """
         Parameters
         ----------
@@ -334,7 +335,7 @@ class UniformPrior(SequentialTransformPrior):
     xmin: float
     xmax: float
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"UniformPrior(xmin={self.xmin}, xmax={self.xmax}, parameter_names={self.parameter_names})"
 
     def __init__(
@@ -342,7 +343,7 @@ class UniformPrior(SequentialTransformPrior):
         xmin: float,
         xmax: float,
         parameter_names: list[str],
-    ):
+    ) -> None:
         """
         Parameters
         ----------

@@ -5,6 +5,8 @@ It is copied here to remove the dependency on jimgw.
 """
 
 from abc import ABC, abstractmethod
+from typing import Any
+
 from jaxtyping import Float
 
 
@@ -23,25 +25,35 @@ class LikelihoodBase(ABC):
     a given set of parameters.
     """
 
-    _model: object
-    _data: object
+    _model: Any
+    _data: Any
 
     @property
-    def model(self):
+    def model(self) -> Any:
         """
         The model for the likelihood.
+
+        Returns
+        -------
+        Any
+            The model object. Specific type depends on the likelihood implementation.
         """
         return self._model
 
     @property
-    def data(self):
+    def data(self) -> Any:
         """
         The data for the likelihood.
+
+        Returns
+        -------
+        Any
+            The data object. Specific type depends on the likelihood implementation.
         """
         return self._data
 
     @abstractmethod
-    def evaluate(self, params: dict[str, Float], data: dict) -> Float:
+    def evaluate(self, params: dict[str, Float], data: dict[str, Any]) -> Float:
         """
         Evaluate the log-likelihood for a given set of parameters.
 
