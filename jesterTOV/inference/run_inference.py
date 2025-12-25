@@ -27,6 +27,56 @@ from .samplers import setup_flowmc_sampler, JesterSampler
 # FIXME: DataLoader removed - need to implement data loading functions
 
 
+def determine_keep_names(config, prior):
+    """
+    Determine which parameters need to be preserved in transform output.
+
+    This function checks which likelihoods are enabled and determines which
+    prior parameters need to be kept in the transform output for likelihood
+    evaluation.
+
+    Parameters
+    ----------
+    config : InferenceConfig
+        Configuration object with likelihood settings
+    prior : CombinePrior
+        Prior object with parameter names
+
+    Returns
+    -------
+    list[str] | None
+        List of parameter names to keep, or None if no special handling needed
+
+    Raises
+    ------
+    ValueError
+        If a required parameter is missing from the prior
+    """
+    keep_names = []
+
+    # ChiEFT likelihood requires 'nbreak' parameter
+    chieft_enabled = any(lk.enabled and lk.type == "chieft" for lk in config.likelihoods)
+    if chieft_enabled:
+        if "nbreak" not in prior.parameter_names:
+            raise ValueError(
+                "ChiEFT likelihood is enabled but 'nbreak' parameter is not in the prior. "
+                "Please add 'nbreak' to your prior specification file. "
+                f"Current prior parameters: {prior.parameter_names}"
+            )
+        keep_names.append("nbreak")
+        print("ChiEFT likelihood enabled: 'nbreak' parameter will be preserved in transform output")
+
+    # Add future likelihood parameter requirements here
+    # Example:
+    # some_other_likelihood_enabled = any(lk.enabled and lk.type == "other" for lk in config.likelihoods)
+    # if some_other_likelihood_enabled:
+    #     if "some_param" not in prior.parameter_names:
+    #         raise ValueError("...")
+    #     keep_names.append("some_param")
+
+    return keep_names if keep_names else None
+
+
 def setup_prior(config):
     """
     Setup prior from configuration
@@ -88,10 +138,7 @@ def setup_transform(config, keep_names=None):
     JesterTransformBase
         Transform instance
     """
-    transform = create_transform(config.transform)
-
-    # TODO: Handle name mapping and keep_names properly
-    # This will require updates to the transform base class
+    transform = create_transform(config.transform, keep_names=keep_names)
 
     return transform
 
@@ -287,8 +334,12 @@ def main(config_path: str):
     prior = setup_prior(config)
     print(f"Prior parameter names: {prior.parameter_names}")
 
+    # Determine which parameters need to be preserved in transform output
+    # based on enabled likelihoods (validates required parameters exist in prior)
+    keep_names = determine_keep_names(config, prior)
+
     print("Setting up transform...")
-    transform = setup_transform(config)
+    transform = setup_transform(config, keep_names=keep_names)
 
     # Create EOS-only transform for postprocessing
     # TODO: This needs proper implementation with keep_names

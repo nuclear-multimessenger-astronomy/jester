@@ -7,7 +7,9 @@ from .metamodel_cse import MetaModelCSETransform
 
 
 def create_transform(
-    config: TransformConfig, name_mapping: tuple[list[str], list[str]] | None = None
+    config: TransformConfig,
+    name_mapping: tuple[list[str], list[str]] | None = None,
+    keep_names: list[str] | None = None,
 ) -> JesterTransformBase:
     """Create transform from configuration.
 
@@ -18,6 +20,9 @@ def create_transform(
     name_mapping : tuple[list[str], list[str]], optional
         Tuple of (input_names, output_names) for the transform.
         If None, will be constructed from config and prior.
+    keep_names : list[str], optional
+        Parameter names to keep in transformed output.
+        By default, all input parameters are kept.
 
     Returns
     -------
@@ -49,6 +54,7 @@ def create_transform(
         "ndat_TOV": config.ndat_TOV,
         "nb_masses": config.nb_masses,
         "crust_name": config.crust_name,
+        "keep_names": keep_names,
     }
 
     # Default name mapping if not provided

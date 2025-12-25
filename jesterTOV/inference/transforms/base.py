@@ -51,6 +51,9 @@ class JesterTransformBase(NtoMTransform, ABC):
 
         super().__init__(name_mapping)
 
+        # Store keep_names for use in forward()
+        self.keep_names = keep_names
+
         # Validate crust_name
         if crust_name not in ["DH", "BPS", "DH_fixed"]:
             raise ValueError(
@@ -170,3 +173,49 @@ class JesterTransformBase(NtoMTransform, ABC):
             "dloge_dlogp": dloge_dlogps,
             "cs2": cs2,
         }
+
+    def set_keep_names(self, keep_names: list[str] | None) -> None:
+        """Set or update the list of parameter names to keep in transform output.
+
+        This allows updating keep_names after transform construction, which is
+        useful when the set of required parameters depends on which likelihoods
+        are enabled.
+
+        Parameters
+        ----------
+        keep_names : list[str] | None
+            Parameter names to preserve in output. If None, keeps all input parameters.
+        """
+        if keep_names is None:
+            keep_names = self.name_mapping[0]
+        self.keep_names = keep_names
+
+    def forward(self, x: dict[str, Float]) -> dict[str, Float]:
+        """
+        Override NtoMTransform.forward() to preserve keep_names parameters.
+
+        This ensures that parameters in self.keep_names are preserved in the
+        output even though they're consumed by the transform.
+
+        Parameters
+        ----------
+        x : dict[str, Float]
+            Input parameter dictionary
+
+        Returns
+        -------
+        dict[str, Float]
+            Transformed parameter dictionary with keep_names preserved
+        """
+        import jax
+
+        # Save parameters that should be kept
+        kept_params = {name: x[name] for name in self.keep_names if name in x}
+
+        # Call parent forward() which does the standard transformation
+        result = super().forward(x)
+
+        # Add back the kept parameters
+        result.update(kept_params)
+
+        return result
