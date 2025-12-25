@@ -16,11 +16,11 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import corner
 import os
-import tqdm
 import argparse
 from scipy.stats import gaussian_kde
 from typing import Dict, Optional, Any
 import warnings
+import arviz as az
 
 np.random.seed(2)
 import jesterTOV.utils as jose_utils
@@ -313,7 +313,7 @@ def make_mass_radius_plot(data: Dict[str, Any],
     """
     print("Creating mass-radius plot...")
 
-    plt.figure(figsize=(6, 12))
+    plt.figure(figsize=(10, 8))
     m_min, m_max = 0.75, 3.5
     r_min, r_max = 6.0, 18.0
 
@@ -340,7 +340,8 @@ def make_mass_radius_plot(data: Dict[str, Any],
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
 
     bad_counter = 0
-    for i in tqdm.tqdm(range(len(prob)), desc="Plotting M-R curves"):
+    print(f"Plotting {len(prob)} M-R curves...")
+    for i in range(len(prob)):
         # Skip invalid samples
         if any(np.isnan(m[i])) or any(np.isnan(r[i])) or any(np.isnan(l[i])):
             bad_counter += 1
@@ -441,7 +442,8 @@ def make_pressure_density_plot(data: Dict[str, Any],
     cmap = DEFAULT_COLORMAP if use_crest_cmap else sns.color_palette("viridis", as_cmap=True)
 
     bad_counter = 0
-    for i in tqdm.tqdm(range(len(prob)), desc="Plotting p-n curves"):
+    print(f"Plotting {len(prob)} p-n curves...")
+    for i in range(len(prob)):
         # Skip invalid samples
         if any(np.isnan(m[i])) or any(np.isnan(r[i])) or any(np.isnan(l[i])):
             bad_counter += 1
@@ -522,47 +524,63 @@ def make_parameter_histograms(data: Dict[str, Any],
         prior_params['R14'] = np.array([np.interp(1.4, mass, radius) for mass, radius in zip(m_prior, r_prior)])
         prior_params['p3nsat'] = np.array([np.interp(3.0, dens, press) for dens, press in zip(n_prior, p_prior)])
 
-    # Define parameters to plot
+    # Define parameters to plot (without fixed ranges)
     if TEX_ENABLED:
         parameters = {
-            'MTOV': {'values': MTOV_list, 'range': (1.75, 2.75), 'xlabel': r"$M_{\rm{TOV}}$ [$M_{\odot}$]"},
-            'R14': {'values': R14_list, 'range': (10.0, 16.0), 'xlabel': r"$R_{1.4}$ [km]"},
-            'p3nsat': {'values': p3nsat_list, 'range': (0.1, 200.0), 'xlabel': r"$p(3n_{\rm{sat}})$ [MeV fm$^{-3}$]"}
+            'MTOV': {'values': MTOV_list, 'xlabel': r"$M_{\rm{TOV}}$ [$M_{\odot}$]"},
+            'R14': {'values': R14_list, 'xlabel': r"$R_{1.4}$ [km]"},
+            'p3nsat': {'values': p3nsat_list, 'xlabel': r"$p(3n_{\rm{sat}})$ [MeV fm$^{-3}$]"}
         }
     else:
         parameters = {
-            'MTOV': {'values': MTOV_list, 'range': (1.75, 2.75), 'xlabel': "M_TOV [M_sun]"},
-            'R14': {'values': R14_list, 'range': (10.0, 16.0), 'xlabel': "R_1.4 [km]"},
-            'p3nsat': {'values': p3nsat_list, 'range': (0.1, 200.0), 'xlabel': "p(3n_sat) [MeV fm^-3]"}
+            'MTOV': {'values': MTOV_list, 'xlabel': "M_TOV [M_sun]"},
+            'R14': {'values': R14_list, 'xlabel': "R_1.4 [km]"},
+            'p3nsat': {'values': p3nsat_list, 'xlabel': "p(3n_sat) [MeV fm^-3]"}
         }
 
     for param_name, param_data in parameters.items():
         plt.figure(figsize=figsize_horizontal)
 
+        # Calculate 90% HDI using arviz
+        hdi = az.hdi(param_data['values'], hdi_prob=0.90)
+        hdi_low, hdi_high = hdi
+        median = np.median(param_data['values'])
+
+        # Calculate errors for title formatting
+        low_err = median - hdi_low
+        high_err = hdi_high - median
+
+        # Auto-zoom: 25% wider than HDI
+        hdi_width = hdi_high - hdi_low
+        x_min = hdi_low - 0.25 * hdi_width
+        x_max = hdi_high + 0.25 * hdi_width
+
         # Plot prior histogram if available
         if prior_data is not None and param_name in prior_params:
             kde_prior = gaussian_kde(prior_params[param_name])
-            x = np.linspace(param_data['range'][0], param_data['range'][1], 1000)
+            x = np.linspace(x_min, x_max, 1000)
             y_prior = kde_prior(x)
             plt.fill_between(x, y_prior, alpha=ALPHA, color=COLORS_DICT['prior'], label='Prior')
 
         # Create posterior KDE
         kde = gaussian_kde(param_data['values'])
-        x = np.linspace(param_data['range'][0], param_data['range'][1], 1000)
+        x = np.linspace(x_min, x_max, 1000)
         y = kde(x)
 
         plt.plot(x, y, color=COLORS_DICT['posterior'], lw=3.0, label='Posterior')
         plt.fill_between(x, y, alpha=0.3, color=COLORS_DICT['posterior'])
 
-        # Add credible interval information
-        low, med, high = report_credible_interval(param_data['values'])
-
         plt.xlabel(param_data['xlabel'])
         plt.ylabel('Density')
-        plt.xlim(param_data['range'])
+        plt.xlim(x_min, x_max)
         plt.ylim(bottom=0.0)
         plt.legend()
-        plt.title(f'{param_name}: {med:.2f} -{low:.2f} +{high:.2f}')
+
+        # Format title with subscript/superscript notation
+        if TEX_ENABLED:
+            plt.title(f'{param_name}: ${median:.2f}_{{-{low_err:.2f}}}^{{+{high_err:.2f}}}$')
+        else:
+            plt.title(f'{param_name}: {median:.2f}_{{{-low_err:.2f}}}^{{{+high_err:.2f}}}')
 
         save_name = os.path.join(outdir, f"{param_name}_histogram.pdf")
         plt.savefig(save_name, bbox_inches="tight")
@@ -620,7 +638,8 @@ def make_contour_radii_plot(data: Dict[str, Any],
     radii_low = np.empty_like(masses_array)
     radii_high = np.empty_like(masses_array)
 
-    for i, mass_point in tqdm.tqdm(enumerate(masses_array), total=len(masses_array), desc="Computing R contours"):
+    print(f"Computing radii contours for {len(masses_array)} mass points...")
+    for i, mass_point in enumerate(masses_array):
         # Gather all radii at this mass point
         radii_at_mass = []
         for mass, radius in zip(m, r):
@@ -680,7 +699,8 @@ def make_contour_pressures_plot(data: Dict[str, Any],
     press_low = np.empty_like(dens_array)
     press_high = np.empty_like(dens_array)
 
-    for i, dens in tqdm.tqdm(enumerate(dens_array), total=len(dens_array), desc="Computing p contours"):
+    print(f"Computing pressure contours for {len(dens_array)} density points...")
+    for i, dens in enumerate(dens_array):
         # Gather all pressures at this density point
         press_at_dens = []
         for density, pressure in zip(n, p):
