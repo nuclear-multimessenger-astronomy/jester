@@ -7,7 +7,7 @@ from .nicer import NICERLikelihood
 from .radio import RadioTimingLikelihood
 from .chieft import ChiEFTLikelihood
 from .rex import REXLikelihood
-from .constraints import ConstraintLikelihood
+from .constraints import ConstraintLikelihood, ConstraintEOSLikelihood, ConstraintTOVLikelihood
 
 
 def create_likelihood(
@@ -82,6 +82,18 @@ def create_likelihood(
             penalty_causality=params.get("penalty_causality", -1e10),
             penalty_stability=params.get("penalty_stability", -1e5),
             penalty_pressure=params.get("penalty_pressure", -1e5),
+        )
+
+    elif config.type == "constraints_eos":
+        return ConstraintEOSLikelihood(
+            penalty_causality=params.get("penalty_causality", -1e10),
+            penalty_stability=params.get("penalty_stability", -1e5),
+            penalty_pressure=params.get("penalty_pressure", -1e5),
+        )
+
+    elif config.type == "constraints_tov":
+        return ConstraintTOVLikelihood(
+            penalty_tov=params.get("penalty_tov", -1e10),
         )
 
     elif config.type == "zero":

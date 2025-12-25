@@ -145,9 +145,160 @@ def check_all_constraints(
     }
 
 
+class ConstraintEOSLikelihood(LikelihoodBase):
+    """
+    EOS-level constraint likelihood for enforcing physical validity.
+
+    This likelihood only checks EOS-level constraints (causality, stability, pressure).
+    It does NOT check TOV integration results, allowing JAX to optimize away the
+    TOV solve when only EOS constraints are needed (much faster for chiEFT, etc).
+
+    The transform must add EOS violation counts to its output dictionary:
+    - 'n_causality_violations': Number of cs^2 > 1 points
+    - 'n_stability_violations': Number of cs^2 < 0 points
+    - 'n_pressure_violations': Number of non-monotonic pressure points
+
+    Parameters
+    ----------
+    penalty_causality : float, optional
+        Log likelihood penalty for causality violation (default: -1e10)
+    penalty_stability : float, optional
+        Log likelihood penalty for thermodynamic instability (default: -1e5)
+    penalty_pressure : float, optional
+        Log likelihood penalty for non-monotonic pressure (default: -1e5)
+
+    Examples
+    --------
+    >>> # In config.yaml (chiEFT example - no TOV solve needed)
+    >>> likelihoods:
+    >>>   - type: "constraints_eos"
+    >>>     enabled: true
+    >>>     parameters:
+    >>>       penalty_causality: -1.0e10
+    >>>       penalty_stability: -1.0e5
+    """
+
+    def __init__(
+        self,
+        penalty_causality: float = -1e10,
+        penalty_stability: float = -1e5,
+        penalty_pressure: float = -1e5,
+    ):
+        super().__init__()
+        self.penalty_causality = penalty_causality
+        self.penalty_stability = penalty_stability
+        self.penalty_pressure = penalty_pressure
+
+    def evaluate(self, params: dict[str, float], data: dict) -> float:
+        """
+        Evaluate EOS constraint log likelihood.
+
+        Returns 0.0 if all EOS constraints satisfied, applies penalties otherwise.
+        Uses jnp.where for JAX compatibility (no Python if-statements).
+
+        Parameters
+        ----------
+        params : dict[str, float]
+            Must contain EOS constraint violation counts from transform:
+            - 'n_causality_violations'
+            - 'n_stability_violations'
+            - 'n_pressure_violations'
+        data : dict
+            Not used (constraints are in params from transform)
+
+        Returns
+        -------
+        float
+            Sum of EOS penalties (0.0 if valid, large negative if invalid)
+        """
+        # Get violation counts from transform output (default to 0 if not present)
+        n_causality_violations = params.get('n_causality_violations', 0.0)
+        n_stability_violations = params.get('n_stability_violations', 0.0)
+        n_pressure_violations = params.get('n_pressure_violations', 0.0)
+
+        # Apply penalties using jnp.where (JAX-compatible, no branching)
+        # If count > 0, apply penalty, otherwise 0.0
+        penalty_caus = jnp.where(n_causality_violations > 0, self.penalty_causality, 0.0)
+        penalty_stab = jnp.where(n_stability_violations > 0, self.penalty_stability, 0.0)
+        penalty_press = jnp.where(n_pressure_violations > 0, self.penalty_pressure, 0.0)
+
+        # Sum all EOS penalties
+        log_likelihood = penalty_caus + penalty_stab + penalty_press
+
+        return log_likelihood
+
+
+class ConstraintTOVLikelihood(LikelihoodBase):
+    """
+    TOV-level constraint likelihood for enforcing valid TOV integration.
+
+    This likelihood only checks TOV integration results (NaN in M-R-Λ).
+    It does NOT check EOS-level constraints. Use together with ConstraintEOSLikelihood
+    for full constraint checking, or use alone when EOS constraints are already satisfied.
+
+    The transform must add TOV violation counts to its output dictionary:
+    - 'n_tov_failures': Number of NaN in TOV solution (M, R, Λ)
+
+    Parameters
+    ----------
+    penalty_tov : float, optional
+        Log likelihood penalty for TOV integration failure (default: -1e10)
+
+    Examples
+    --------
+    >>> # In config.yaml (full constraint checking)
+    >>> likelihoods:
+    >>>   - type: "constraints_eos"
+    >>>     enabled: true
+    >>>   - type: "constraints_tov"
+    >>>     enabled: true
+    >>>     parameters:
+    >>>       penalty_tov: -1.0e10
+    """
+
+    def __init__(
+        self,
+        penalty_tov: float = -1e10,
+    ):
+        super().__init__()
+        self.penalty_tov = penalty_tov
+
+    def evaluate(self, params: dict[str, float], data: dict) -> float:
+        """
+        Evaluate TOV constraint log likelihood.
+
+        Returns 0.0 if TOV integration succeeded, applies penalty otherwise.
+        Uses jnp.where for JAX compatibility (no Python if-statements).
+
+        Parameters
+        ----------
+        params : dict[str, float]
+            Must contain TOV constraint violation counts from transform:
+            - 'n_tov_failures'
+        data : dict
+            Not used (constraints are in params from transform)
+
+        Returns
+        -------
+        float
+            TOV penalty (0.0 if valid, large negative if invalid)
+        """
+        # Get violation count from transform output (default to 0 if not present)
+        n_tov_failures = params.get('n_tov_failures', 0.0)
+
+        # Apply penalty using jnp.where (JAX-compatible, no branching)
+        # If count > 0, apply penalty, otherwise 0.0
+        penalty_tov = jnp.where(n_tov_failures > 0, self.penalty_tov, 0.0)
+
+        return penalty_tov
+
+
 class ConstraintLikelihood(LikelihoodBase):
     """
-    Constraint likelihood for enforcing EOS physical validity.
+    Combined constraint likelihood for enforcing EOS physical validity.
+
+    DEPRECATED: Use ConstraintEOSLikelihood and ConstraintTOVLikelihood instead
+    for better control and performance. This class is kept for backwards compatibility.
 
     This likelihood reads constraint violation counts from the transform output
     and applies penalties using JAX-compatible operations (jnp.where).
@@ -171,7 +322,7 @@ class ConstraintLikelihood(LikelihoodBase):
 
     Examples
     --------
-    >>> # In config.yaml
+    >>> # In config.yaml (deprecated - use constraints_eos + constraints_tov instead)
     >>> likelihoods:
     >>>   - type: "constraints"
     >>>     enabled: true

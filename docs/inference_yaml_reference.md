@@ -133,7 +133,7 @@ Specifies prior distributions for parameters.
 
 List of observational constraints. Each likelihood has:
 
-- `type`: `"gw" | "nicer" | "radio" | "chieft" | "rex" | "zero"` (**required**)
+- `type`: `"gw" | "nicer" | "radio" | "chieft" | "rex" | "constraints" | "constraints_eos" | "constraints_tov" | "zero"` (**required**)
 
 - `enabled`: `bool` (optional)
   - Default: `True`
