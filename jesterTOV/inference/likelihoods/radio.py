@@ -107,6 +107,10 @@ class RadioTimingLikelihood(LikelihoodBase):
         masses_EOS: Float[Array, " n_points"] = params["masses_EOS"]
         mtov: Float = jnp.max(masses_EOS)
 
+        # Check for invalid M_TOV before computing (avoids NaN from log(mtov))
+        # Invalid cases: mtov <= m_min (unphysical masses from TOV failures)
+        invalid_mtov = mtov <= self.m_min
+
         # Create mass grid for integration from m_min to M_max
         # Per Eq. (X): P(θ_EOS | d_radio) ∝ (1/M_TOV) ∫₀^M_TOV P(M | d_radio) dM
         # Note: Start at m_min (default 0.1 M_☉) instead of 0 to avoid numerical issues
@@ -121,13 +125,20 @@ class RadioTimingLikelihood(LikelihoodBase):
         # integral ≈ dx * sum(exp(log_likelihood_array))
         # log(integral) = log(dx) + logsumexp(log_likelihood_array)
         dx = (mtov - self.m_min) / self.nb_masses
-        log_likelihood = logsumexp(log_likelihood_array) + jnp.log(dx)
+        log_integral = logsumexp(log_likelihood_array) + jnp.log(dx)
 
         # Apply 1/M_max normalization factor (uniform prior on true mass in [0, M_TOV])
-        log_likelihood -= jnp.log(mtov)
+        # Use jnp.where to avoid computing log(mtov) when mtov is invalid
+        log_likelihood = jnp.where(
+            invalid_mtov,
+            -1e10,  # Large negative penalty for invalid masses
+            log_integral - jnp.log(mtov),  # Normal calculation for valid masses
+        )
 
-        # Penalty for unphysical masses (mtov <= m_min)
-        # If M_TOV is below the minimum integration mass, the integral is invalid
-        penalty_mtov = jnp.where(mtov <= self.m_min, -1e10, 0.0)
+        # Safety net: replace any remaining NaN/inf with large negative value
+        # This catches edge cases not covered by the mtov check
+        log_likelihood = jnp.nan_to_num(
+            log_likelihood, nan=-1e10, posinf=-1e10, neginf=-1e10
+        )
 
-        return log_likelihood + penalty_mtov
+        return log_likelihood
