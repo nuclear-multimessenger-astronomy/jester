@@ -53,13 +53,15 @@ class RadioTimingLikelihood(LikelihoodBase):
         psr_name: str,
         mean: float,
         std: float,
-        nb_masses: int = 100,
+        nb_masses: int = 500,
+        m_min: float = 0.1,  # TODO: determine if needs tuning later on
     ):
         super().__init__()
         self.psr_name = psr_name
         self.mean = mean
         self.std = std
         self.nb_masses = nb_masses
+        self.m_min = m_min  # Minimum mass for integration (M_☉)
 
     def evaluate(self, params: dict[str, Float], data: dict) -> Float:
         """
@@ -81,18 +83,27 @@ class RadioTimingLikelihood(LikelihoodBase):
         masses_EOS = params["masses_EOS"]
         mtov = jnp.max(masses_EOS)
 
-        # FIXME: This will fail if mtov < 1.0 M_☉ ! Watch out!
-        # Create mass grid for integration from 1 M_☉ to M_max
-        m = jnp.linspace(1.0, mtov, self.nb_masses)
+        # Create mass grid for integration from m_min to M_max
+        # Per Eq. (X): P(θ_EOS | d_radio) ∝ (1/M_TOV) ∫₀^M_TOV P(M | d_radio) dM
+        # Note: Start at m_min (default 0.1 M_☉) instead of 0 to avoid numerical issues
+        m = jnp.linspace(self.m_min, mtov, self.nb_masses)
 
-        # Gaussian log likelihood for each mass point
-        log_likelihood_array = -0.5 * ((m - self.mean) / self.std) ** 2
+        # Gaussian log likelihood with proper normalization constant
+        # P(M | d_radio) = N(M | mean, std)
+        gauss_norm = -0.5 * jnp.log(2 * jnp.pi * self.std**2)
+        log_likelihood_array = gauss_norm + (-0.5 * ((m - self.mean) / self.std) ** 2)
 
         # Numerical integration using logsumexp (for stability)
-        # log(sum(exp(x))) - log(N) = log(mean(exp(x)))
-        log_likelihood = logsumexp(log_likelihood_array) - jnp.log(self.nb_masses)
+        # integral ≈ dx * sum(exp(log_likelihood_array))
+        # log(integral) = log(dx) + logsumexp(log_likelihood_array)
+        dx = (mtov - self.m_min) / self.nb_masses
+        log_likelihood = logsumexp(log_likelihood_array) + jnp.log(dx)
 
-        # Apply 1/M_max normalization factor (uniform prior on true mass)
+        # Apply 1/M_max normalization factor (uniform prior on true mass in [0, M_TOV])
         log_likelihood -= jnp.log(mtov)
 
-        return log_likelihood
+        # Penalty for unphysical masses (mtov <= m_min)
+        # If M_TOV is below the minimum integration mass, the integral is invalid
+        penalty_mtov = jnp.where(mtov <= self.m_min, -1e10, 0.0)
+
+        return log_likelihood + penalty_mtov
