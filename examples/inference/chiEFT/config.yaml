@@ -22,8 +22,18 @@ transform:
 prior:
   specification_file: "prior.prior"
 
-# Likelihood constraints (only chiEFT enabled)
+# Likelihood constraints (only chiEFT + EOS constraints enabled)
 likelihoods:
+  # Physical constraint likelihood - enforces EOS validity (no TOV solve needed!)
+  # Automatically rejects samples with: causality violations, instabilities, non-monotonic pressure
+  - type: "constraints_eos"
+    enabled: true
+    parameters:
+      penalty_causality: -1.0e10
+      penalty_stability: -1.0e5
+      penalty_pressure: -1.0e5
+
+  # ChiEFT likelihood - constrains low-density EOS using chiral effective field theory
   - type: "chieft"
     enabled: true
     parameters:

@@ -120,7 +120,7 @@ class LikelihoodConfig(BaseModel):
             nb_n : int
                 Number of density points for integration (default: 100)
 
-        For constraint likelihoods:
+        For constraint likelihoods (type: "constraints" - deprecated, use constraints_eos + constraints_tov):
             penalty_tov : float
                 Log likelihood penalty for TOV integration failure (default: -1e10)
             penalty_causality : float
@@ -129,9 +129,21 @@ class LikelihoodConfig(BaseModel):
                 Log likelihood penalty for thermodynamic instability (cs^2 < 0) (default: -1e5)
             penalty_pressure : float
                 Log likelihood penalty for non-monotonic pressure (default: -1e5)
+
+        For EOS constraint likelihoods (type: "constraints_eos"):
+            penalty_causality : float
+                Log likelihood penalty for causality violation (cs^2 > 1) (default: -1e10)
+            penalty_stability : float
+                Log likelihood penalty for thermodynamic instability (cs^2 < 0) (default: -1e5)
+            penalty_pressure : float
+                Log likelihood penalty for non-monotonic pressure (default: -1e5)
+
+        For TOV constraint likelihoods (type: "constraints_tov"):
+            penalty_tov : float
+                Log likelihood penalty for TOV integration failure (default: -1e10)
     """
 
-    type: Literal["gw", "nicer", "radio", "chieft", "rex", "constraints", "zero"]
+    type: Literal["gw", "nicer", "radio", "chieft", "rex", "constraints", "constraints_eos", "constraints_tov", "zero"]
     enabled: bool = True
     parameters: Dict[str, Any] = Field(default_factory=dict)
 
@@ -237,13 +249,25 @@ class LikelihoodConfig(BaseModel):
             # Set defaults for optional parameters
             v.setdefault("nb_masses", 100)
 
-        # Validate constraint likelihood parameters
+        # Validate constraint likelihood parameters (deprecated - use constraints_eos + constraints_tov)
         elif likelihood_type == "constraints":
             # Set defaults for optional parameters
             v.setdefault("penalty_tov", -1e10)
             v.setdefault("penalty_causality", -1e10)
             v.setdefault("penalty_stability", -1e5)
             v.setdefault("penalty_pressure", -1e5)
+
+        # Validate EOS constraint likelihood parameters
+        elif likelihood_type == "constraints_eos":
+            # Set defaults for optional parameters
+            v.setdefault("penalty_causality", -1e10)
+            v.setdefault("penalty_stability", -1e5)
+            v.setdefault("penalty_pressure", -1e5)
+
+        # Validate TOV constraint likelihood parameters
+        elif likelihood_type == "constraints_tov":
+            # Set defaults for optional parameters
+            v.setdefault("penalty_tov", -1e10)
 
         return v
 
