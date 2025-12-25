@@ -6,6 +6,7 @@ from jesterTOV.inference.base import NtoMTransform
 from jaxtyping import Float
 import jax.numpy as jnp
 from jesterTOV.eos import construct_family
+from jesterTOV.inference.likelihoods.constraints import check_all_constraints
 
 
 class JesterTransformBase(NtoMTransform, ABC):
@@ -131,7 +132,11 @@ class JesterTransformBase(NtoMTransform, ABC):
         dloge_dlogps: Float,
         cs2: Float,
     ) -> dict[str, Float]:
-        """Create standardized return dictionary.
+        """Create standardized return dictionary with constraint checking.
+
+        This method checks for physical constraint violations (NaN, causality, etc.)
+        and adds violation counts to the output. It also cleans NaN values to prevent
+        propagation through the likelihood evaluation.
 
         Parameters
         ----------
@@ -159,19 +164,39 @@ class JesterTransformBase(NtoMTransform, ABC):
         Returns
         -------
         dict[str, Float]
-            Dictionary with EOS and TOV solution data
+            Dictionary with EOS and TOV solution data, including:
+            - Original EOS quantities (with NaN cleaned)
+            - Constraint violation counts (scalars for JAX compatibility)
         """
+        # Check all constraints BEFORE cleaning NaN
+        # This gives us violation counts as scalars (JAX-compatible)
+        constraints = check_all_constraints(masses_EOS, radii_EOS, Lambdas_EOS, cs2, ps)
+
+        # Clean NaN values to prevent propagation through likelihood evaluation
+        # Use 0.0 as sentinel (will be caught by constraint likelihood)
+        masses_EOS_clean = jnp.nan_to_num(masses_EOS, nan=0.0, posinf=0.0, neginf=0.0)
+        radii_EOS_clean = jnp.nan_to_num(radii_EOS, nan=0.0, posinf=0.0, neginf=0.0)
+        Lambdas_EOS_clean = jnp.nan_to_num(Lambdas_EOS, nan=0.0, posinf=0.0, neginf=0.0)
+        logpc_EOS_clean = jnp.nan_to_num(logpc_EOS, nan=0.0, posinf=0.0, neginf=0.0)
+
         return {
-            "logpc_EOS": logpc_EOS,
-            "masses_EOS": masses_EOS,
-            "radii_EOS": radii_EOS,
-            "Lambdas_EOS": Lambdas_EOS,
+            # TOV solution (cleaned)
+            "logpc_EOS": logpc_EOS_clean,
+            "masses_EOS": masses_EOS_clean,
+            "radii_EOS": radii_EOS_clean,
+            "Lambdas_EOS": Lambdas_EOS_clean,
+            # EOS quantities
             "n": ns,
             "p": ps,
             "h": hs,
             "e": es,
             "dloge_dlogp": dloge_dlogps,
             "cs2": cs2,
+            # Constraint violation counts (scalars for JAX compatibility)
+            "n_tov_failures": constraints['n_tov_failures'],
+            "n_causality_violations": constraints['n_causality_violations'],
+            "n_stability_violations": constraints['n_stability_violations'],
+            "n_pressure_violations": constraints['n_pressure_violations'],
         }
 
     def set_keep_names(self, keep_names: list[str] | None) -> None:
