@@ -43,6 +43,7 @@ sampler:
   n_global_steps: 100
   n_epochs: 30
   learning_rate: 0.001
+  step_size: 0.00001
   output_dir: "./outdir/"
 
 # Postprocessing configuration
