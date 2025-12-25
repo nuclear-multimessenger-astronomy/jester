@@ -37,7 +37,8 @@ dependencies = [
     "corner>=2.2.0",
     "scipy>=1.10.0",
     "tqdm>=4.65.0",
-    "zenodo-get>=1.5.0"
+    "zenodo-get>=1.5.0",
+    "arviz>=0.15.0"
 ]
 
 classifiers = [
