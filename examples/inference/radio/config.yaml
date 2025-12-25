@@ -22,9 +22,14 @@ transform:
 prior:
   specification_file: "prior.prior"
 
-# Likelihood constraints: radio timing observations
-# These constrain the maximum TOV mass using observed pulsar masses
+# Likelihood constraints
 likelihoods:
+  # Physical constraint likelihood - enforces EOS validity
+  # Automatically rejects samples with: TOV failures, causality violations, instabilities
+  - type: "constraints"
+    enabled: true
+
+  # Radio timing observations - constrain maximum TOV mass using observed pulsar masses
   - type: "radio"
     enabled: true
     parameters:

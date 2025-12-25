@@ -22,8 +22,14 @@ transform:
 prior:
   specification_file: "prior.prior"
 
-# Likelihood constraints (only NICER PSR J0030+0451 enabled)
+# Likelihood constraints
 likelihoods:
+  # Physical constraint likelihood - enforces EOS validity
+  # Automatically rejects samples with: TOV failures, causality violations, instabilities
+  - type: "constraints"
+    enabled: true
+
+  # NICER X-ray timing constraint (PSR J0030+0451)
   - type: "nicer"
     enabled: true
     parameters:

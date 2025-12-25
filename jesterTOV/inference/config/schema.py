@@ -81,7 +81,7 @@ class LikelihoodConfig(BaseModel):
 
     Attributes
     ----------
-    type : Literal["gw", "nicer", "radio", "chieft", "rex", "zero"]
+    type : Literal["gw", "nicer", "radio", "chieft", "rex", "constraints", "zero"]
         Type of likelihood constraint
     enabled : bool
         Whether this likelihood is enabled
@@ -119,9 +119,19 @@ class LikelihoodConfig(BaseModel):
                 Path to upper bound data file (default: data/chiEFT/2402.04172/high.dat)
             nb_n : int
                 Number of density points for integration (default: 100)
+
+        For constraint likelihoods:
+            penalty_tov : float
+                Log likelihood penalty for TOV integration failure (default: -1e10)
+            penalty_causality : float
+                Log likelihood penalty for causality violation (cs^2 > 1) (default: -1e10)
+            penalty_stability : float
+                Log likelihood penalty for thermodynamic instability (cs^2 < 0) (default: -1e5)
+            penalty_pressure : float
+                Log likelihood penalty for non-monotonic pressure (default: -1e5)
     """
 
-    type: Literal["gw", "nicer", "radio", "chieft", "rex", "zero"]
+    type: Literal["gw", "nicer", "radio", "chieft", "rex", "constraints", "zero"]
     enabled: bool = True
     parameters: Dict[str, Any] = Field(default_factory=dict)
 
@@ -226,6 +236,14 @@ class LikelihoodConfig(BaseModel):
 
             # Set defaults for optional parameters
             v.setdefault("nb_masses", 100)
+
+        # Validate constraint likelihood parameters
+        elif likelihood_type == "constraints":
+            # Set defaults for optional parameters
+            v.setdefault("penalty_tov", -1e10)
+            v.setdefault("penalty_causality", -1e10)
+            v.setdefault("penalty_stability", -1e5)
+            v.setdefault("penalty_pressure", -1e5)
 
         return v
 
