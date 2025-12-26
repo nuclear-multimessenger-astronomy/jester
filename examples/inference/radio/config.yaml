@@ -26,7 +26,9 @@ prior:
 likelihoods:
   # Physical constraint likelihood - enforces EOS validity
   # Automatically rejects samples with: TOV failures, causality violations, instabilities
-  - type: "constraints"
+  - type: "constraints_eos"
+    enabled: true
+  - type: "constraints_tov"
     enabled: true
 
   # Radio timing observations - constrain maximum TOV mass using observed pulsar masses
