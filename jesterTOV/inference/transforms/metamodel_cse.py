@@ -1,40 +1,111 @@
-"""MetaModel EOS transform with CSE (Constant Speed Extension)."""
+r"""
+MetaModel equation of state transform with Constant Speed Extension.
+
+This module implements the transform from nuclear empirical parameters (NEP)
+plus high-density extension parameters to neutron star observables. The CSE
+(Constant Speed Extension) extends the MetaModel beyond the breaking density
+by specifying the sound speed on a grid, allowing exploration of stiffer EOSs
+that can support massive neutron stars with central densities up to 6+ n_sat.
+"""
 
 import jax.numpy as jnp
 from jaxtyping import Float
 
 from .base import JesterTransformBase
 from jesterTOV.eos import MetaModel_with_CSE_EOS_model
+from jesterTOV.logging_config import get_logger
+
+logger = get_logger("jester")
 
 
 class MetaModelCSETransform(JesterTransformBase):
-    """Transform NEP+CSE parameters to M-R-Lambda using MetaModel+CSE EOS.
+    """Transform from NEP+CSE parameters to neutron star observables.
 
-    This transform uses the MetaModel parametrization with the Constant
-    Speed Extension (CSE) for modeling the high-density region beyond
-    the breaking density nbreak.
+    This transform extends the standard MetaModel by adding a Constant Speed
+    Extension (CSE) that controls the high-density behavior beyond a breaking
+    density. The CSE parametrizes the sound speed on a grid of density points,
+    enabling exploration of stiff EOSs needed to explain massive pulsars like
+    PSR J0740+6620 (M ~ 2.1 solar masses) without violating causality.
+
+    The full parameter space consists of:
+    - 8 NEP parameters (K_sat, Q_sat, Z_sat, E_sym, L_sym, K_sym, Q_sym, Z_sym)
+    - 1 breaking density (nbreak) where CSE extension begins
+    - 2*nb_CSE + 1 CSE parameters defining cs²(n) on a grid
 
     Parameters
     ----------
     name_mapping : tuple[list[str], list[str]]
-        Tuple of (input_names, output_names) for the transform
+        Tuple of (input_names, output_names) defining the parameter transform.
+        Input names should include the 8 NEP parameters, nbreak, and CSE grid
+        parameters; output names typically include mass, radius, and tidal
+        deformability arrays.
     keep_names : list[str], optional
-        Names to keep in the output (default: all input names)
-    nb_CSE : int
-        Number of CSE grid points (default: 8)
-    ndat_CSE : int
-        Number of data points for CSE region (default: 100)
+        Additional parameter names to preserve in the output dictionary alongside
+        the transformed quantities. Default is to keep all input parameters.
+    nb_CSE : int, optional
+        Number of CSE grid points for parametrizing the high-density region.
+        More points allow finer control but increase parameter dimensionality.
+        Default is 8, which provides sufficient flexibility for typical applications.
+    ndat_CSE : int, optional
+        Number of interpolation points used when constructing the EOS in the
+        CSE region. Default is 100.
     **kwargs
-        Additional arguments passed to JesterTransformBase
+        Additional arguments passed to JesterTransformBase, including:
+        - ndat_metamodel : int
+            Number of density grid points for low-density MetaModel region
+        - nmax_nsat : float
+            Maximum density in units of saturation density
+        - crust_name : str
+            Which crust model to use (e.g., "BPS", "DH")
+
+    Attributes
+    ----------
+    nb_CSE : int
+        Number of CSE grid points
+    ndat_CSE : int
+        Number of data points for CSE interpolation
+    eos : MetaModel_with_CSE_EOS_model
+        The MetaModel+CSE EOS instance used for constructing p(n) curves
+
+    Notes
+    -----
+    The CSE grid parameters are specified as:
+    - n_CSE_i_u : Normalized density position (0 to 1) for grid point i
+    - cs2_CSE_i : Sound speed squared at grid point i
+
+    The normalized positions are converted to physical densities via:
+    n_CSE_i = nbreak + n_CSE_i_u * (nmax - nbreak)
+
+    This ensures the CSE grid spans from nbreak to nmax with proper ordering.
+
+    See Also
+    --------
+    MetaModelTransform : Basic version without CSE extension
 
     Examples
     --------
+    Create a transform with 8 CSE grid points:
+
+    >>> from jesterTOV.inference.transforms import MetaModelCSETransform
     >>> transform = MetaModelCSETransform(
-    ...     name_mapping=(["K_sat", ..., "nbreak", ...], ["masses_EOS", ...]),
+    ...     name_mapping=(
+    ...         ["K_sat", "Q_sat", "Z_sat", "E_sym", "L_sym", "K_sym", "Q_sym", "Z_sym",
+    ...          "nbreak", "n_CSE_0_u", "cs2_CSE_0", ..., "cs2_CSE_8"],
+    ...         ["masses_EOS", "radii_EOS", "Lambdas_EOS"]
+    ...     ),
     ...     nb_CSE=8,
-    ...     ndat_metamodel=100
+    ...     ndat_metamodel=100,
+    ...     ndat_CSE=100
     ... )
-    >>> result = transform.forward({"K_sat": 230.0, ..., "nbreak": 0.2, ...})
+    >>> params = {
+    ...     "K_sat": 230.0, "Q_sat": 0.0, "Z_sat": 0.0,
+    ...     "E_sym": 32.0, "L_sym": 90.0, "K_sym": 0.0, "Q_sym": 0.0, "Z_sym": 0.0,
+    ...     "nbreak": 0.20,  # Breaking density at 0.2 fm^-3
+    ...     "n_CSE_0_u": 0.1, "cs2_CSE_0": 0.5,  # First grid point
+    ...     # ... more CSE parameters
+    ... }
+    >>> result = transform.forward(params)
+    >>> print(result["masses_EOS"])  # Neutron star masses
     """
 
     def __init__(
@@ -62,25 +133,33 @@ class MetaModelCSETransform(JesterTransformBase):
         # Set transform function
         self.transform_func = self.transform_func_MM_CSE
 
-        print(f"MetaModel+CSE initialized with {nb_CSE} CSE grid points")
+        # NOTE: Cannot log here - transforms may be instantiated inside JAX-traced code
 
     def get_eos_type(self) -> str:
-        """Return EOS type identifier.
+        """Return the EOS parametrization identifier.
 
         Returns
         -------
         str
-            "MM_CSE" for MetaModel with CSE
+            The string "MM_CSE" (MetaModel with Constant Speed Extension)
+            identifying this EOS parametrization. This is used for logging
+            and output file organization.
         """
         return "MM_CSE"
 
     def get_parameter_names(self) -> list[str]:
-        """Return list of expected parameter names.
+        """Return the complete list of EOS parameter names.
 
         Returns
         -------
         list[str]
-            List of 8 NEP + 1 nbreak + 2*nb_CSE CSE grid parameters
+            The full parameter list consisting of:
+            - 8 NEP parameters: K_sat, Q_sat, Z_sat, E_sym, L_sym, K_sym, Q_sym, Z_sym
+            - 1 breaking density: nbreak
+            - 2*nb_CSE CSE grid parameters: n_CSE_i_u and cs2_CSE_i for i=0..nb_CSE-1
+            - 1 final sound speed: cs2_CSE_{nb_CSE}
+
+            Total: 8 + 1 + 2*nb_CSE + 1 = 10 + 2*nb_CSE parameters
         """
         nep_params = [
             "K_sat",
@@ -98,27 +177,48 @@ class MetaModelCSETransform(JesterTransformBase):
         return nep_params + cse_params
 
     def transform_func_MM_CSE(self, params: dict[str, Float]) -> dict[str, Float]:
-        """Core transformation: NEP+CSE → M-R-Lambda.
+        """Compute neutron star observables from NEP and CSE parameters.
+
+        This method constructs a two-region equation of state: the MetaModel
+        below nbreak and the CSE extension above nbreak. The CSE grid points
+        are sorted and converted from normalized positions (0 to 1) to physical
+        densities, then the full EOS is constructed and TOV equations solved.
 
         Parameters
         ----------
         params : dict[str, Float]
-            Dictionary containing NEP and CSE parameters
+            Dictionary containing:
+            - 8 NEP parameters (K_sat, Q_sat, Z_sat, E_sym, L_sym, K_sym, Q_sym, Z_sym)
+            - Breaking density (nbreak)
+            - CSE grid parameters (n_CSE_i_u, cs2_CSE_i for i=0..nb_CSE)
+            - Any additional parameters specified in `keep_names`
 
         Returns
         -------
         dict[str, Float]
-            Dictionary with:
-            - logpc_EOS: Log of central pressure
-            - masses_EOS: Neutron star masses
-            - radii_EOS: Neutron star radii
-            - Lambdas_EOS: Tidal deformabilities
-            - n: Baryon number densities
-            - p: Pressures
-            - h: Enthalpies
-            - e: Energy densities
-            - dloge_dlogp: Log derivative of e w.r.t. p
-            - cs2: Sound speeds squared
+            Dictionary containing EOS and TOV solution quantities:
+
+            - logpc_EOS : Log10 of central pressures (geometric units)
+            - masses_EOS : Neutron star masses at each central pressure (solar masses)
+            - radii_EOS : Neutron star radii at each central pressure (km)
+            - Lambdas_EOS : Dimensionless tidal deformabilities
+            - n : Baryon number density grid (geometric units)
+            - p : Pressure values on density grid (geometric units)
+            - h : Specific enthalpy values (geometric units)
+            - e : Energy density values (geometric units)
+            - dloge_dlogp : Logarithmic derivative d(log e)/d(log p)
+            - cs2 : Sound speed squared (dimensionless, cs²/c²)
+
+        Notes
+        -----
+        The CSE grid is constructed as follows:
+        1. Extract normalized positions n_CSE_i_u ∈ [0,1] and sort them
+        2. Convert to physical densities: n_CSE_i = nbreak + n_CSE_i_u*(nmax - nbreak)
+        3. Append final grid point at nmax with corresponding cs² value
+        4. Construct EOS by joining MetaModel (n < nbreak) and CSE (n ≥ nbreak)
+
+        Unlike the standard MetaModel, this version does not enforce causality
+        automatically since the CSE parametrization directly specifies cs²(n).
         """
         # Update with fixed parameters (currently empty)
         params.update(self.fixed_params)

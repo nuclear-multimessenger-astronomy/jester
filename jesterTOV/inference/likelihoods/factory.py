@@ -1,4 +1,4 @@
-"""Factory functions for creating likelihoods from configuration"""
+r"""Factory functions for creating likelihoods from configuration"""
 
 from ..config.schema import LikelihoodConfig
 from .combined import CombinedLikelihood, ZeroLikelihood

@@ -1,7 +1,41 @@
-"""Constraint likelihood for enforcing EOS validity.
+r"""
+Physical constraint enforcement for equation of state validity.
 
-This module provides modular constraint checking functions and a likelihood
-class that penalizes samples violating physical constraints.
+This module provides tools for checking and enforcing physical constraints on
+neutron star equations of state during inference. Constraint violations are
+detected by the transform and converted to log-likelihood penalties, allowing
+MCMC samplers to efficiently explore only the physically valid parameter space.
+
+The module implements two types of constraints:
+
+1. **EOS-level constraints** (fast, no TOV solve required):
+   - Causality: Sound speed must not exceed speed of light (cs² ≤ 1)
+   - Thermodynamic stability: Sound speed squared must be positive (cs² ≥ 0)
+   - Monotonicity: Pressure must increase with density (dp/dn > 0)
+
+2. **TOV-level constraints** (requires TOV integration):
+   - Integration validity: TOV solver must produce finite M-R-Λ values (no NaN)
+
+The modular design allows selecting only needed constraints, improving performance
+when TOV integration can be avoided (e.g., for chiEFT-only inference).
+
+Constraint Checking Strategy
+-----------------------------
+Constraints are checked in the transform (not the likelihood) to ensure JAX can
+optimize the computational graph. The transform adds violation counts to its output:
+
+- n_causality_violations: Number of grid points where cs² > 1
+- n_stability_violations: Number of grid points where cs² < 0
+- n_pressure_violations: Number of grid points where pressure decreases
+- n_tov_failures: Number of NaN values in TOV solution
+
+The likelihood then reads these counts and applies penalties using JAX-compatible
+operations (jnp.where), avoiding Python branching that would break JIT compilation.
+
+See Also
+--------
+ChiEFTLikelihood : Low-density EOS constraints from chiral effective field theory
+RadioTimingLikelihood : Maximum mass constraints from pulsar timing
 """
 
 from typing import Any

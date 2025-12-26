@@ -32,20 +32,33 @@ def sigma_func(p, e, m, r, lambda_BL, lambda_DY, lambda_HB, gamma, alpha, beta):
     - **Horava-like**: :math:`\sigma_{\mathrm{HB}} = -(\frac{1}{\lambda_{\mathrm{HB}}} - 1) \frac{r}{2} \frac{dp}{dr}`
     - **Post-Newtonian**: :math:`\sigma_{\mathrm{PN}} = \gamma \frac{2m}{r} p \tanh(\alpha(\frac{m}{r} - \beta))`
 
-    Args:
-        p (float): Pressure at current radius.
-        e (float): Energy density at current radius.
-        m (float): Enclosed mass at current radius.
-        r (float): Current radius.
-        lambda_BL (float): Bowers-Liang coupling parameter.
-        lambda_DY (float): Doneva-Yazadjiev coupling parameter.
-        lambda_HB (float): Herrera-Barreto coupling parameter.
-        gamma (float): Post-Newtonian amplitude parameter.
-        alpha (float): Post-Newtonian steepness parameter.
-        beta (float): Post-Newtonian transition point parameter.
+    Parameters
+    ----------
+    p : float
+        Pressure at current radius
+    e : float
+        Energy density at current radius
+    m : float
+        Enclosed mass at current radius
+    r : float
+        Current radius
+    lambda_BL : float
+        Bowers-Liang coupling parameter
+    lambda_DY : float
+        Doneva-Yazadjiev coupling parameter
+    lambda_HB : float
+        Herrera-Barreto coupling parameter
+    gamma : float
+        Post-Newtonian amplitude parameter
+    alpha : float
+        Post-Newtonian steepness parameter
+    beta : float
+        Post-Newtonian transition point parameter
 
-    Returns:
-        float: Total sigma correction term.
+    Returns
+    -------
+    float
+        Total sigma correction term
     """
     # Metric coefficient A = 1/(1-2m/r)
     A = 1.0 / (1.0 - 2.0 * m / r)
@@ -177,28 +190,33 @@ def tov_solver(eos, pc):
     corrections. The integration procedure is identical to the standard TOV case,
     but the differential equations include additional sigma terms.
 
-    Args:
-        eos (dict): Extended EOS interpolation data containing:
+    Parameters
+    ----------
+    eos : dict
+        Extended EOS interpolation data containing:
 
-            - **p**: Pressure array [geometric units]
-            - **h**: Enthalpy array [geometric units]
-            - **e**: Energy density array [geometric units]
-            - **dloge_dlogp**: Logarithmic derivative array
-            - **alpha, beta, gamma**: Post-Newtonian parameters
-            - **lambda_BL, lambda_DY, lambda_HB**: Theory modification parameters
+        - **p**: Pressure array [geometric units]
+        - **h**: Enthalpy array [geometric units]
+        - **e**: Energy density array [geometric units]
+        - **dloge_dlogp**: Logarithmic derivative array
+        - **alpha, beta, gamma**: Post-Newtonian parameters
+        - **lambda_BL, lambda_DY, lambda_HB**: Theory modification parameters
+    pc : float
+        Central pressure [geometric units]
 
-        pc (float): Central pressure [geometric units].
+    Returns
+    -------
+    M : float
+        Gravitational mass [geometric units]
+    R : float
+        Circumferential radius [geometric units]
+    k2 : float
+        Second Love number for tidal deformability
 
-    Returns:
-        tuple: A tuple containing:
-
-            - **M**: Gravitational mass [geometric units]
-            - **R**: Circumferential radius [geometric units]
-            - **k2**: Second Love number for tidal deformability
-
-    Note:
-        The modifications affect the stellar structure but the same integration
-        method and boundary conditions as the standard TOV case are used.
+    Notes
+    -----
+    The modifications affect the stellar structure but the same integration
+    method and boundary conditions as the standard TOV case are used.
     """
     # Extract EOS interpolation arrays
     ps = eos["p"]

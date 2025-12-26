@@ -1,4 +1,4 @@
-"""Pydantic models for inference configuration validation.
+r"""Pydantic models for inference configuration validation.
 
 IMPORTANT: When you modify these schemas, regenerate the YAML reference documentation:
     uv run python -m jesterTOV.inference.config.generate_yaml_reference
@@ -152,6 +152,10 @@ class LikelihoodConfig(BaseModel):
     def validate_likelihood_parameters(cls, v: Dict[str, Any], info) -> Dict[str, Any]:
         """Validate likelihood-specific parameters."""
         if "type" not in info.data:
+            return v
+
+        # Skip validation if likelihood is disabled
+        if "enabled" in info.data and not info.data["enabled"]:
             return v
 
         likelihood_type = info.data["type"]

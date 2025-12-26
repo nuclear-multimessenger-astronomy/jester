@@ -1,7 +1,25 @@
-"""
-Chiral Effective Field Theory likelihood implementations
+r"""
+Chiral Effective Field Theory constraints for low-density nuclear matter.
 
-TODO: need to generalize to other ways to use chiEFT information in the likelihood. For now only works with the data from Koehn et al., Phys.Rev.X 15 (2025) 2, 021014.
+This module implements likelihood functions based on chiral effective field
+theory (chiEFT) predictions for the nuclear equation of state at low densities
+(below ~2 saturation density). ChiEFT provides rigorous theoretical constraints
+on the pressure-density relationship derived from fundamental interactions,
+serving as a complementary constraint to high-density astrophysical observations.
+
+The current implementation uses the pressure bands from Koehn et al.,
+Phys. Rev. X 15, 021014 (2025), which provide upper and lower bounds on the
+allowed pressure at each density.
+
+References
+----------
+.. [1] Koehn et al., "Equation of state constraints from multi-messenger
+   observations of neutron stars," Phys. Rev. X 15, 021014 (2025).
+
+Notes
+-----
+Future extensions may include other chiEFT formulations and additional
+low-density constraints beyond the current pressure band implementation.
 """
 
 from pathlib import Path
@@ -15,38 +33,82 @@ from jesterTOV.inference.base import LikelihoodBase
 
 
 class ChiEFTLikelihood(LikelihoodBase):
-    """
-    Chiral Effective Field Theory likelihood for low-density constraints
+    """Likelihood function enforcing chiral EFT constraints on the nuclear EOS.
 
-    Constrains EOS using ChiEFT pressure-density bands at low densities.
+    This likelihood evaluates how well a candidate equation of state agrees with
+    theoretical predictions from chiral effective field theory in the low-density
+    regime (0.75 - 2.0 n_sat). The chiEFT calculations provide a band of allowed
+    pressures at each density; EOSs within the band receive higher likelihood,
+    while those outside are penalized proportional to their deviation.
+
+    The likelihood is computed as an integral over density of a penalty function
+    that assigns:
+    - Weight 1.0 for pressures within the chiEFT band
+    - Exponential penalty for pressures outside the band (slope β = 6/(p_high - p_low))
+
+    This formulation smoothly incorporates theoretical uncertainties while strongly
+    disfavoring unphysical EOSs.
 
     Parameters
     ----------
     low_filename : str | Path | None, optional
-        Path to file containing lower bound of chiEFT band.
-        Defaults to data/chiEFT/2402.04172/low.dat
+        Path to data file containing the lower boundary of the chiEFT allowed band.
+        The file should have three columns: density [fm⁻³], pressure [MeV/fm³],
+        energy density [MeV/fm³] (only first two are used).
+        If None, defaults to the Koehn et al. (2025) low band in the package data.
     high_filename : str | Path | None, optional
-        Path to file containing upper bound of chiEFT band.
-        Defaults to data/chiEFT/2402.04172/high.dat
+        Path to data file containing the upper boundary of the chiEFT allowed band.
+        Same format as low_filename.
+        If None, defaults to the Koehn et al. (2025) high band in the package data.
     nb_n : int, optional
-        Number of density points for integration (default: 100)
+        Number of density points for numerical integration of the penalty function.
+        More points provide better accuracy but increase computation time.
+        Default is 100, which provides good balance for typical applications.
 
     Attributes
     ----------
     n_low : Float[Array, " n_points"]
-        Density grid for lower bound (in nsat units)
+        Density grid for lower bound in units of n_sat (saturation density = 0.16 fm⁻³)
     p_low : Float[Array, " n_points"]
-        Pressure values for lower bound (MeV/fm^3)
+        Pressure values for lower bound in MeV/fm³
     n_high : Float[Array, " n_points"]
-        Density grid for upper bound (in nsat units)
+        Density grid for upper bound in units of n_sat
     p_high : Float[Array, " n_points"]
-        Pressure values for upper bound (MeV/fm^3)
-    EFT_low : Callable
-        Interpolation function for lower bound
-    EFT_high : Callable
-        Interpolation function for upper bound
+        Pressure values for upper bound in MeV/fm³
+    EFT_low : Callable[[Float | Float[Array, "..."]], Float | Float[Array, "..."]]
+        Interpolation function returning lower bound pressure at given density
+    EFT_high : Callable[[Float | Float[Array, "..."]], Float | Float[Array, "..."]]
+        Interpolation function returning upper bound pressure at given density
     nb_n : int
-        Number of density points for integration
+        Number of density points used for integration
+
+    Notes
+    -----
+    The penalty function f(p_sample, p_low, p_high) is defined as:
+
+    .. math::
+        f(p) = \\begin{cases}
+            1 - \\beta(p - p_{high}) & \\text{if } p > p_{high} \\\\
+            1 & \\text{if } p_{low} \\leq p \\leq p_{high} \\\\
+            1 - \\beta(p_{low} - p) & \\text{if } p < p_{low}
+        \\end{cases}
+
+    where β = 6/(p_high - p_low) controls the penalty strength.
+
+    The integration is performed from 0.75 n_sat (lower limit of chiEFT validity)
+    to nbreak (where the CSE extension begins, if present).
+
+    See Also
+    --------
+    REXLikelihood : Nuclear radius constraints from PREX/CREX experiments
+
+    Examples
+    --------
+    Create a chiEFT likelihood with default data:
+
+    >>> from jesterTOV.inference.likelihoods import ChiEFTLikelihood
+    >>> likelihood = ChiEFTLikelihood(nb_n=100)
+    >>> log_like = likelihood.evaluate(params, data={})
     """
 
     n_low: Float[Array, " n_points"]
@@ -99,6 +161,36 @@ class ChiEFTLikelihood(LikelihoodBase):
         self.nb_n = nb_n
 
     def evaluate(self, params: dict[str, Float | Array], data: dict[str, Any]) -> Float:
+        """Evaluate the log-likelihood for chiEFT constraints.
+
+        Parameters
+        ----------
+        params : dict[str, Float | Array]
+            Dictionary containing EOS quantities from the transform. Required keys:
+            - "n" : Baryon number density grid (geometric units)
+            - "p" : Pressure values on density grid (geometric units)
+            - "nbreak" : Breaking density where CSE begins (fm⁻³)
+        data : dict[str, Any]
+            Unused; included for API compatibility. All chiEFT data is loaded
+            during initialization.
+
+        Returns
+        -------
+        Float
+            Natural logarithm of the likelihood. Higher values indicate better
+            agreement with chiEFT predictions. The value is normalized by the
+            integration range so that perfect agreement gives log L ≈ 0.
+
+        Notes
+        -----
+        The integration is performed from 0.75 n_sat to nbreak using nb_n
+        equally spaced points. The EOS pressure is interpolated onto this grid
+        and compared against the chiEFT band at each point.
+
+        Unit conversions are applied automatically:
+        - Input densities converted from geometric to fm⁻³ units
+        - Input pressures converted from geometric to MeV/fm³ units
+        """
         # Import here to avoid circular dependency # FIXME: what circular dependency?
         from jesterTOV import utils as jose_utils
 

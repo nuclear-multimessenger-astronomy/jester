@@ -1,4 +1,4 @@
-"""Base class for jesterTOV EOS transforms."""
+r"""Base class for jesterTOV EOS transforms."""
 
 from abc import ABC, abstractmethod
 from typing import Any, Callable
@@ -10,6 +10,9 @@ from jaxtyping import Array, Float
 from jesterTOV.eos import construct_family
 from jesterTOV.inference.base import NtoMTransform
 from jesterTOV.inference.likelihoods.constraints import check_all_constraints
+from jesterTOV.logging_config import get_logger
+
+logger = get_logger("jester")
 
 
 class JesterTransformBase(NtoMTransform, ABC):
@@ -47,6 +50,14 @@ class JesterTransformBase(NtoMTransform, ABC):
         Maximum density in units of saturation density
     nmax : float
         Maximum density in physical units (fm^-3)
+    min_nsat_TOV : float
+        Minimum density for TOV integration in units of nsat
+    ndat_TOV : int
+        Number of data points for TOV integration
+    nb_masses : int
+        Number of masses to sample
+    crust_name : str
+        Name of crust model to use
     construct_family_lambda : Callable
         Lambda function for solving TOV equations
     """
@@ -81,6 +92,7 @@ class JesterTransformBase(NtoMTransform, ABC):
         # Store keep_names for use in forward()
         self.keep_names = keep_names
 
+        # TODO: this should be inside the crust, not here, then fetch it here
         # Validate crust_name
         if crust_name not in ["DH", "BPS", "DH_fixed"]:
             raise ValueError(
@@ -96,7 +108,7 @@ class JesterTransformBase(NtoMTransform, ABC):
         self.nb_masses = nb_masses
         self.crust_name = crust_name
 
-        print(f"Transform initialized with crust: {crust_name}")
+        # NOTE: Cannot log here - transforms may be instantiated inside JAX-traced code
 
         # Construct lambda for solving TOV equations
         self.construct_family_lambda = lambda x: construct_family(

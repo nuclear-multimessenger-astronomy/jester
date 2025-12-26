@@ -1,4 +1,4 @@
-"""Modular postprocessing script for EOS inference results.
+r"""Modular postprocessing script for EOS inference results.
 
 This script provides comprehensive visualization tools for analyzing equation of state (EOS)
 inference results. It generates various plots including cornerplots, mass-radius diagrams,
@@ -24,6 +24,9 @@ import arviz as az
 
 np.random.seed(2)
 import jesterTOV.utils as jose_utils
+from jesterTOV.logging_config import get_logger
+
+logger = get_logger("jester")
 
 # Configure matplotlib with TeX support and fallback
 def setup_matplotlib(use_tex: bool = True):
@@ -54,7 +57,7 @@ def setup_matplotlib(use_tex: bool = True):
             ax.text(0.5, 0.5, r"$\alpha$")
             plt.close(fig)
             tex_enabled = True
-            print("TeX rendering enabled")
+            logger.info("TeX rendering enabled")
         except Exception as e:
             warnings.warn(f"TeX rendering failed ({e}). Falling back to non-TeX rendering.")
             plt.rcParams.update({
@@ -184,7 +187,7 @@ def load_prior_data(prior_dir: str = PRIOR_DIR) -> Optional[Dict[str, np.ndarray
     try:
         return load_eos_data(prior_dir)
     except FileNotFoundError:
-        print(f"Warning: Prior data not found at {prior_dir}")
+        logger.warning(f"Prior data not found at {prior_dir}")
         return None
 
 
@@ -218,7 +221,7 @@ def report_credible_interval(values: np.ndarray,
     high_err = high - med
 
     if verbose:
-        print(f"\n\n\n{med:.2f} -{low_err:.2f} +{high_err:.2f} (at {hdi_prob} HDI prob)\n\n\n")
+        logger.info(f"{med:.2f} -{low_err:.2f} +{high_err:.2f} (at {hdi_prob} HDI prob)")
 
     return low_err, med, high_err
 
@@ -235,7 +238,7 @@ def make_cornerplot(data: Dict[str, Any], outdir: str, max_params: int = 10):
     max_params : int, optional
         Maximum number of parameters to include, by default 10
     """
-    print("Creating cornerplot...")
+    logger.info("Creating cornerplot...")
 
     # Collect parameters for cornerplot
     samples_dict = {}
@@ -262,12 +265,12 @@ def make_cornerplot(data: Dict[str, Any], outdir: str, max_params: int = 10):
 
     # Limit number of parameters
     if len(samples_dict) > max_params:
-        print(f"Limiting cornerplot to first {max_params} parameters")
+        logger.info(f"Limiting cornerplot to first {max_params} parameters")
         samples_dict = dict(list(samples_dict.items())[:max_params])
         labels = labels[:max_params]
 
     if len(samples_dict) == 0:
-        print("No parameters found for cornerplot")
+        logger.warning("No parameters found for cornerplot")
         return
 
     # Convert to array
@@ -291,7 +294,7 @@ def make_cornerplot(data: Dict[str, Any], outdir: str, max_params: int = 10):
     save_name = os.path.join(outdir, "cornerplot.pdf")
     plt.savefig(save_name, bbox_inches="tight")
     plt.close()
-    print(f"Cornerplot saved to {save_name}")
+    logger.info(f"Cornerplot saved to {save_name}")
 
 
 def make_mass_radius_plot(data: Dict[str, Any],
@@ -311,7 +314,7 @@ def make_mass_radius_plot(data: Dict[str, Any],
     use_crest_cmap : bool, optional
         Whether to use seaborn crest colormap, by default True
     """
-    print("Creating mass-radius plot...")
+    logger.info("Creating mass-radius plot...")
 
     plt.figure(figsize=(10, 8))
     m_min, m_max = 0.75, 3.5
@@ -331,7 +334,7 @@ def make_mass_radius_plot(data: Dict[str, Any],
     m, r, l = data['masses'], data['radii'], data['lambdas']
     log_prob = data['log_prob']
     nb_samples = np.shape(m)[0]
-    print(f"Number of samples: {nb_samples}")
+    logger.info(f"Number of samples: {nb_samples}")
 
     # Normalize probabilities for coloring
     prob = np.exp(log_prob - np.max(log_prob))  # Normalize to avoid overflow
@@ -340,7 +343,7 @@ def make_mass_radius_plot(data: Dict[str, Any],
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
 
     bad_counter = 0
-    print(f"Plotting {len(prob)} M-R curves...")
+    logger.info(f"Plotting {len(prob)} M-R curves...")
     for i in range(len(prob)):
         # Skip invalid samples
         if any(np.isnan(m[i])) or any(np.isnan(r[i])) or any(np.isnan(l[i])):
@@ -365,7 +368,7 @@ def make_mass_radius_plot(data: Dict[str, Any],
                 rasterized=True,
                 zorder=1e10 + normalized_value)
 
-    print(f"Excluded {bad_counter} invalid samples")
+    logger.info(f"Excluded {bad_counter} invalid samples")
 
     # Styling
     xlabel = r"$R$ [km]" if TEX_ENABLED else "R [km]"
@@ -396,7 +399,7 @@ def make_mass_radius_plot(data: Dict[str, Any],
     save_name = os.path.join(outdir, "mass_radius_plot.pdf")
     plt.savefig(save_name, bbox_inches="tight")
     plt.close()
-    print(f"Mass-radius plot saved to {save_name}")
+    logger.info(f"Mass-radius plot saved to {save_name}")
 
 
 def make_pressure_density_plot(data: Dict[str, Any],
@@ -416,7 +419,7 @@ def make_pressure_density_plot(data: Dict[str, Any],
     use_crest_cmap : bool, optional
         Whether to use seaborn crest colormap, by default True
     """
-    print("Creating pressure-density plot...")
+    logger.info("Creating pressure-density plot...")
 
     plt.figure(figsize=(11, 6))
 
@@ -442,7 +445,7 @@ def make_pressure_density_plot(data: Dict[str, Any],
     cmap = DEFAULT_COLORMAP if use_crest_cmap else sns.color_palette("viridis", as_cmap=True)
 
     bad_counter = 0
-    print(f"Plotting {len(prob)} p-n curves...")
+    logger.info(f"Plotting {len(prob)} p-n curves...")
     for i in range(len(prob)):
         # Skip invalid samples
         if any(np.isnan(m[i])) or any(np.isnan(r[i])) or any(np.isnan(l[i])):
@@ -468,7 +471,7 @@ def make_pressure_density_plot(data: Dict[str, Any],
                 rasterized=True,
                 zorder=1e10 + normalized_value)
 
-    print(f"Excluded {bad_counter} invalid samples")
+    logger.info(f"Excluded {bad_counter} invalid samples")
 
     xlabel = r"$n$ [$n_{\rm{sat}}$]" if TEX_ENABLED else "n [n_sat]"
     ylabel = r"$p$ [MeV fm$^{-3}$]" if TEX_ENABLED else "p [MeV fm^-3]"
@@ -487,7 +490,7 @@ def make_pressure_density_plot(data: Dict[str, Any],
     save_name = os.path.join(outdir, "pressure_density_plot.pdf")
     plt.savefig(save_name, bbox_inches="tight")
     plt.close()
-    print(f"Pressure-density plot saved to {save_name}")
+    logger.info(f"Pressure-density plot saved to {save_name}")
 
 
 def make_parameter_histograms(data: Dict[str, Any],
@@ -504,7 +507,7 @@ def make_parameter_histograms(data: Dict[str, Any],
     outdir : str
         Output directory
     """
-    print("Creating parameter histograms...")
+    logger.info("Creating parameter histograms...")
 
     m, r = data['masses'], data['radii']
     n, p = data['densities'], data['pressures']
@@ -585,7 +588,7 @@ def make_parameter_histograms(data: Dict[str, Any],
         save_name = os.path.join(outdir, f"{param_name}_histogram.pdf")
         plt.savefig(save_name, bbox_inches="tight")
         plt.close()
-        print(f"{param_name} histogram saved to {save_name}")
+        logger.info(f"{param_name} histogram saved to {save_name}")
 
 
 def make_contour_radii_plot(data: Dict[str, Any],
@@ -608,7 +611,7 @@ def make_contour_radii_plot(data: Dict[str, Any],
     m_max : float, optional
         Maximum mass, by default 2.1
     """
-    print("Creating radii contour plot...")
+    logger.info("Creating radii contour plot...")
 
     plt.figure(figsize=figsize_vertical)
 
@@ -638,7 +641,7 @@ def make_contour_radii_plot(data: Dict[str, Any],
     radii_low = np.empty_like(masses_array)
     radii_high = np.empty_like(masses_array)
 
-    print(f"Computing radii contours for {len(masses_array)} mass points...")
+    logger.info(f"Computing radii contours for {len(masses_array)} mass points...")
     for i, mass_point in enumerate(masses_array):
         # Gather all radii at this mass point
         radii_at_mass = []
@@ -669,7 +672,7 @@ def make_contour_radii_plot(data: Dict[str, Any],
     save_name = os.path.join(outdir, "radii_contour_plot.pdf")
     plt.savefig(save_name, bbox_inches="tight")
     plt.close()
-    print(f"Radii contour plot saved to {save_name}")
+    logger.info(f"Radii contour plot saved to {save_name}")
 
 
 def make_contour_pressures_plot(data: Dict[str, Any],
@@ -689,7 +692,7 @@ def make_contour_pressures_plot(data: Dict[str, Any],
     n_max : float, optional
         Maximum density, by default 6.0
     """
-    print("Creating pressures contour plot...")
+    logger.info("Creating pressures contour plot...")
 
     n, p = data['densities'], data['pressures']
 
@@ -699,7 +702,7 @@ def make_contour_pressures_plot(data: Dict[str, Any],
     press_low = np.empty_like(dens_array)
     press_high = np.empty_like(dens_array)
 
-    print(f"Computing pressure contours for {len(dens_array)} density points...")
+    logger.info(f"Computing pressure contours for {len(dens_array)} density points...")
     for i, dens in enumerate(dens_array):
         # Gather all pressures at this density point
         press_at_dens = []
@@ -730,7 +733,7 @@ def make_contour_pressures_plot(data: Dict[str, Any],
     save_name = os.path.join(outdir, "pressures_contour_plot.pdf")
     plt.savefig(save_name, bbox_inches="tight")
     plt.close()
-    print(f"Pressures contour plot saved to {save_name}")
+    logger.info(f"Pressures contour plot saved to {save_name}")
 
 
 def generate_all_plots(outdir: str,
@@ -759,19 +762,19 @@ def generate_all_plots(outdir: str,
     make_contours_flag : bool, optional
         Whether to generate contour plots, by default True
     """
-    print(f"Generating plots for directory: {outdir}")
+    logger.info(f"Generating plots for directory: {outdir}")
 
     # Create figures subdirectory
     figures_dir = os.path.join(outdir, "figures")
     os.makedirs(figures_dir, exist_ok=True)
-    print(f"Saving plots to: {figures_dir}")
+    logger.info(f"Saving plots to: {figures_dir}")
 
     # Load data
     try:
         data = load_eos_data(outdir)
-        print("Data loaded successfully!")
+        logger.info("Data loaded successfully!")
     except FileNotFoundError as e:
-        print(f"Error: {e}")
+        logger.error(f"Error: {e}")
         return
 
     # Load prior data
@@ -779,7 +782,7 @@ def generate_all_plots(outdir: str,
     if prior_dir is not None:
         prior_data = load_prior_data(prior_dir)
         if prior_data is not None:
-            print("Prior data loaded successfully!")
+            logger.info("Prior data loaded successfully!")
 
     # Create plots based on flags (pass figures_dir instead of outdir)
     if make_cornerplot_flag:
@@ -798,7 +801,7 @@ def generate_all_plots(outdir: str,
         make_contour_radii_plot(data, prior_data, figures_dir)
         make_contour_pressures_plot(data, figures_dir)
 
-    print(f"Plots generated and saved to {figures_dir}")
+    logger.info(f"All plots generated and saved to {figures_dir}")
 
 
 def main():
@@ -851,7 +854,7 @@ Examples:
 
     # Ensure output directory exists
     if not os.path.exists(args.outdir):
-        print(f"Error: Output directory {args.outdir} does not exist")
+        logger.error(f"Error: Output directory {args.outdir} does not exist")
         return
 
     # Determine which plots to make

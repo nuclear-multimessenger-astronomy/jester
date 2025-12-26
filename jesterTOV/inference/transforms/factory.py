@@ -1,4 +1,4 @@
-"""Factory for creating transforms from configuration."""
+r"""Factory for creating transforms from configuration."""
 
 from ..config.schema import TransformConfig
 from .base import JesterTransformBase

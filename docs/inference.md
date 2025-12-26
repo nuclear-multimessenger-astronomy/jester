@@ -276,35 +276,41 @@ likelihoods:
   - type: "gw"                # Gravitational wave
     enabled: true
     parameters:
-      event_name: "GW170817"
-      model_path: "./NFs/GW170817/model.eqx"
+      events:
+        - name: "GW170817"
+          model_dir: "./data/GW/GW170817/model/"
+      penalty_value: -99999.0
+      N_masses_evaluation: 20
 
   - type: "nicer"             # X-ray timing
     enabled: true
     parameters:
-      targets: ["J0030", "J0740"]
-      analysis_groups: ["amsterdam", "maryland"]
-      m_min: 1.0
-      m_max: 2.5
-      nb_masses: 100
+      pulsars:
+        - name: "J0030"
+          amsterdam_samples_file: "./data/NICER/J0030_amsterdam.npz"
+          maryland_samples_file: "./data/NICER/J0030_maryland.npz"
+      N_masses_evaluation: 100
 
   - type: "radio"             # Radio pulsar timing
     enabled: true
     parameters:
-      psr_name: "J0740+6620"
-      mass_mean: 2.08
-      mass_std: 0.07
+      pulsars:
+        - name: "J0740+6620"
+          mass_mean: 2.08
+          mass_std: 0.07
       nb_masses: 100
 
   - type: "chieft"            # Chiral EFT
     enabled: true
     parameters:
-      nb_n: 100               # Number of density points
+      low_filename: "./data/chiEFT/low.dat"
+      high_filename: "./data/chiEFT/high.dat"
+      nb_n: 100
 
-  - type: "rex"               # PREX/CREX
-    enabled: false
+  - type: "constraints"       # Physical constraints
+    enabled: true
     parameters:
-      experiment_name: "PREX"
+      penalty_tov: -1e10
 
   - type: "zero"              # Prior-only sampling
     enabled: false
@@ -323,15 +329,22 @@ sampler:
   n_eos_samples: 10000        # EOS curves to generate
   output_dir: "./outdir/"     # Results directory
 
-# Data paths (optional overrides)
-data_paths:
-  nicer_j0030_amsterdam: "./data/NICER/J0030/amsterdam.txt"
-  nicer_j0030_maryland: "./data/NICER/J0030/maryland.txt"
-  nicer_j0740_amsterdam: "./data/NICER/J0740/amsterdam.dat"
-  nicer_j0740_maryland: "./data/NICER/J0740/maryland.txt"
-  chieft_low: "./data/chieft/low.dat"
-  chieft_high: "./data/chieft/high.dat"
-  gw170817_model: "./NFs/GW170817/model.eqx"
+# Postprocessing configuration
+postprocessing:
+  enabled: true               # Run postprocessing after inference
+  make_cornerplot: true       # Generate corner plot
+  make_massradius: true       # Generate M-R diagram
+  make_pressuredensity: true  # Generate P-ρ plot
+  make_histograms: true       # Generate parameter histograms
+  make_contours: true         # Generate contour plots
+  prior_dir: null             # Optional: path to prior samples for comparison
+
+# Execution options
+dry_run: false                # Setup everything but don't run sampler
+validate_only: false          # Only validate configuration
+
+# Data paths (optional - likelihoods specify their data files directly)
+data_paths: {}
 ```
 
 ### Configuration Validation

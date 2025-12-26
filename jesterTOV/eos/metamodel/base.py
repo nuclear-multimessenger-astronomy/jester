@@ -7,6 +7,9 @@ from jaxtyping import Array, Float, Int
 from jesterTOV import utils
 from jesterTOV.eos.base import Interpolate_EOS_model
 from jesterTOV.eos.crust import load_crust
+from jesterTOV.logging_config import get_logger
+
+logger = get_logger("jester")
 
 
 class MetaModel_EOS_model(Interpolate_EOS_model):
@@ -144,7 +147,6 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         if isinstance(proton_fraction, float):
             self.proton_fraction_val = proton_fraction
             self.proton_fraction = lambda x, y: self.proton_fraction_val
-            print(f"Proton fraction fixed to {self.proton_fraction_val}")
         else:
             self.proton_fraction = lambda x, y: self.compute_proton_fraction(x, y)
 

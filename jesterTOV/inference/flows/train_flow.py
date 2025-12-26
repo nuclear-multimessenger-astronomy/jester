@@ -1,19 +1,109 @@
 """
-Train a normalizing flow to approximate GW posterior samples.
+Training script for normalizing flows on gravitational wave posterior samples.
 
-This script trains a flowjax normalizing flow on gravitational wave (GW) posterior
-samples for the component masses and tidal deformabilities. The trained flow can
-later be used for importance sampling or other inference tasks.
+This module implements the complete pipeline for training flexible normalizing
+flow models that approximate gravitational wave (GW) posteriors in the space of
+binary component masses (m1, m2) and tidal deformabilities (λ1, λ2). The trained
+flows serve as efficient proposal distributions for importance sampling in
+equation of state inference.
 
-For loading and using trained models, see jesterTOV.inference.flows.flow.Flow.
+Physical Motivation
+-------------------
+GW observations from binary neutron star mergers constrain the tidal deformability,
+which depends on the neutron star equation of state. By training a flow on the
+4D posterior from a specific GW event (e.g., GW170817), we capture the complex
+correlations between masses and tidal parameters. This flow can then accelerate
+inference for new EOS models by proposing samples from regions of parameter
+space that are consistent with the GW data.
 
-# TODO: make the final flow the default below
+Training Pipeline
+-----------------
+1. **Data Loading**: Load posterior samples from npz file (mass_1_source,
+   mass_2_source, lambda_1, lambda_2)
+2. **Physics Constraints**: Optionally apply bijections to enforce m1 ≥ m2
+   and positivity constraints
+3. **Standardization**: Optionally standardize to [0, 1] domain for numerical stability
+4. **Flow Architecture**: Create flow (triangular spline, autoregressive, coupling, etc.)
+5. **Training**: Fit flow to data using maximum likelihood with early stopping
+6. **Saving**: Save trained weights, architecture config, and metadata
+7. **Validation**: Generate diagnostic plots (corner plots, loss curves)
 
-Supported flow types:
-    - triangular_spline_flow
-    - block_neural_autoregressive_flow
-    - masked_autoregressive_flow
-    - coupling_flow
+Supported Flow Architectures
+-----------------------------
+- **triangular_spline_flow** (recommended): Rational-quadratic spline bijections
+  with triangular structure. Fast, flexible, exact sampling and density evaluation.
+- **block_neural_autoregressive_flow**: Neural autoregressive architecture with
+  block structure. Good expressiveness, analytical inverse during training.
+- **masked_autoregressive_flow**: Masked autoregressive flow with neural networks.
+  Flexible but slower due to sequential generation.
+- **coupling_flow**: Coupling layers with neural network transformations.
+  Good balance of speed and expressiveness.
+
+Physics Constraint Modes
+-------------------------
+The --constrain-physics flag enables bijective transformations that enforce
+physical constraints:
+
+1. **Simple mode** (--constrain-physics, default): Enforce positivity via
+   log transforms. Data must already satisfy m1 ≥ m2.
+2. **Chirp mass mode** (--constrain-physics --use-chirp-mass): Reparameterize
+   to (M_chirp, q, λ1, λ2) to automatically enforce m1 ≥ m2 via mass ratio q ∈ (0, 1).
+
+Command-Line Usage
+------------------
+Basic training with default settings:
+
+    python train_flow.py \\
+        --posterior-file data/gw170817_posterior.npz \\
+        --output-dir models/gw170817/
+
+Advanced training with physics constraints and standardization:
+
+    python train_flow.py \\
+        --posterior-file data/gw170817_posterior.npz \\
+        --output-dir models/gw170817/ \\
+        --flow-type triangular_spline_flow \\
+        --flow-layers 6 \\
+        --knots 16 \\
+        --num-epochs 1000 \\
+        --learning-rate 1e-3 \\
+        --constrain-physics \\
+        --use-chirp-mass \\
+        --standardize \\
+        --batch-size 256
+
+Programmatic Usage
+------------------
+For custom training workflows, use the provided functions:
+
+>>> from train_flow import load_gw_posterior, create_flow, train_flow, save_model
+>>> data, metadata = load_gw_posterior("gw170817.npz", max_samples=50000)
+>>> flow = create_flow(jax.random.key(0), flow_type="triangular_spline_flow")
+>>> trained_flow, losses = train_flow(flow, data, jax.random.key(1))
+>>> save_model(trained_flow, "models/gw170817/", flow_kwargs, metadata)
+
+Output Files
+------------
+The training script saves:
+- flow_weights.eqx: Trained model parameters (Equinox serialization)
+- flow_kwargs.json: Architecture configuration for reproducibility
+- metadata.json: Training metadata (epochs, losses, data bounds, etc.)
+- figures/losses.png: Training and validation loss curves
+- figures/corner.png: Corner plot comparing data and flow samples
+- figures/transformed_training_data.png: Visualization of transformed data
+  (if physics constraints are enabled)
+
+See Also
+--------
+jesterTOV.inference.flows.flow.Flow : High-level interface for loading trained flows
+
+Notes
+-----
+Training requires:
+- JAX with GPU support recommended for large datasets
+- flowjax for flow architectures
+- equinox for model serialization
+- Optional: matplotlib and corner for plotting
 """
 
 import argparse

@@ -6,7 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 The `jesterTOV/inference/` module provides Bayesian inference for constraining neutron star equation of state (EOS) parameters using multi-messenger observations. It implements a modular, configuration-driven architecture with normalizing flow-enhanced MCMC sampling.
 
-**Status**: Active development - Modular architecture implemented (Phases 1-6 complete)
+**Status**: Fully functional - Modular architecture complete (Phases 1-7), data infrastructure in place, ready for production use
+
+**Recent Completions**:
+- ✅ NICER data downloading and KDE construction (J0030+0451, J0740+6620)
+- ✅ GW170817 posterior data extraction and processing
+- ✅ Postprocessing module cleanup and modularization
+- ✅ Prior-only sampling debug (NaN issue resolved)
+- ✅ Comprehensive docstring improvements across all modules
+- ✅ Example configuration files for common use cases
 
 ## Running Inference
 
@@ -58,8 +66,8 @@ jesterTOV/inference/
 │   ├── rex.py           # PREX/CREX experiments
 │   ├── combined.py      # Combined likelihood
 │   └── factory.py       # Likelihood creation
-├── data/                # Data loading (FIXME: needs implementation)
-│   ├── __init__.py      # FIXME: Implement data loading functions
+├── data/                # Data loading and preprocessing
+│   ├── __init__.py      # Data loading functions (NICER, GW posteriors)
 │   └── paths.py         # Path management
 ├── samplers/            # Sampler implementations
 │   ├── jester_sampler.py  # Base sampler class
@@ -81,7 +89,7 @@ Parse .prior file → CombinePrior object
   ↓
 Create transform (factory) → JesterTransformBase
   ↓
-Load data → FIXME: Need to implement data loading functions
+Load data (NICER/GW posteriors, construct KDEs)
   ↓
 Create likelihoods (factory) → CombinedLikelihood
   ↓
@@ -231,10 +239,10 @@ Inference produces two output files in `outdir/`:
 
 ### Known Issues
 
-**Prior-only sampling with ZeroLikelihood** (December 2024) - UNRESOLVED:
-- Symptoms: NaN log probabilities, 0% acceptance rates
-- Root cause: Unknown (under investigation)
-- Workaround: Use actual likelihoods (GW, NICER, etc.) for now
+**Prior-only sampling with ZeroLikelihood** (December 2024) - ✅ RESOLVED:
+- **Issue**: NaN log probabilities and 0% acceptance rates in prior-only sampling
+- **Root cause**: Identified and fixed in sampler implementation
+- **Status**: Prior-only sampling now works correctly with ZeroLikelihood
 
 ## File Naming Conventions
 

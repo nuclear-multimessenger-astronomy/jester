@@ -1,4 +1,4 @@
-"""Gravitational wave event likelihood implementations"""
+r"""Gravitational wave event likelihood implementations"""
 
 from typing import Any
 
@@ -8,6 +8,9 @@ from jaxtyping import Array, Float
 
 from jesterTOV.inference.base.likelihood import LikelihoodBase
 from jesterTOV.inference.flows.flow import Flow
+from jesterTOV.logging_config import get_logger
+
+logger = get_logger("jester")
 
 
 class GWLikelihood(LikelihoodBase):
@@ -34,6 +37,16 @@ class GWLikelihood(LikelihoodBase):
 
     Attributes
     ----------
+    event_name : str
+        Name of the GW event
+    model_dir : str
+        Path to directory containing the trained normalizing flow model
+    penalty_value : float
+        Penalty value for samples where masses exceed Mtov
+    N_masses_evaluation : int
+        Number of mass samples per likelihood evaluation
+    N_masses_batch_size : int
+        Batch size for processing mass samples
     flow : Flow
         Normalizing flow model for this GW event
     """
@@ -61,9 +74,9 @@ class GWLikelihood(LikelihoodBase):
         self.N_masses_batch_size = N_masses_batch_size
 
         # Load Flow model for this event
-        print(f"Loading NF model for {event_name} from {model_dir}")
+        logger.info(f"Loading NF model for {event_name} from {model_dir}")
         self.flow = Flow.from_directory(model_dir)
-        print(f"Loaded NF model for {event_name}")
+        logger.info(f"Loaded NF model for {event_name}")
 
 
     def evaluate(self, params: dict[str, Float | Array], data: dict[str, Any]) -> Float:

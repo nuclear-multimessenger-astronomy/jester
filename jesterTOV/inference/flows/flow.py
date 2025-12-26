@@ -1,9 +1,46 @@
-"""
-Flow class for loading and using trained normalizing flows.
+r"""
+Wrapper for trained normalizing flows with automatic data preprocessing.
 
-This module provides the Flow class which wraps flowjax normalizing flows
-with automatic handling of data standardization for sampling and log probability
-evaluation.
+This module provides a high-level interface for loading and using pre-trained
+normalizing flow models for gravitational wave inference. The Flow class handles
+the complexities of data standardization, physics constraints, and model loading,
+allowing users to sample from or evaluate trained flows with a simple API.
+
+Normalizing flows trained on gravitational wave posterior samples can be used
+for importance sampling in EOS inference, providing efficient proposals that
+capture the correlations between binary component masses and tidal deformabilities.
+
+Key Features
+------------
+- Automatic min-max standardization and inverse transformation
+- Transparent handling of physics constraint bijections (m1 ≥ m2, λi > 0) # TODO: experimental/work in progress
+- Simple save/load interface compatible with flowjax models
+- JAX-accelerated sampling and probability evaluation
+
+Typical Workflow
+----------------
+1. Train a flow on GW posterior samples using train_flow.py
+2. Load the trained flow: flow = Flow.from_directory("path/to/model/")
+3. Sample or evaluate: samples = flow.sample(key, (1000,))
+
+See Also
+--------
+train_flow : Module for training normalizing flows on GW posteriors
+
+Examples
+--------
+Load a trained flow and generate samples:
+
+>>> from jesterTOV.inference.flows import Flow
+>>> import jax
+>>> flow = Flow.from_directory("./models/gw170817/")
+>>> samples = flow.sample(jax.random.key(0), (1000,))
+>>> print(samples.shape)  # (1000, 4) for (m1, m2, λ1, λ2)
+
+Evaluate log-probability of data points:
+
+>>> data = jnp.array([[1.4, 1.3, 100, 200]])
+>>> log_prob = flow.log_prob(data)
 """
 
 import json
@@ -14,7 +51,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jax import Array
-from flowjax.distributions import Transformed
+from flowjax.distributions import AbstractDistribution, Transformed
 from flowjax.bijections import Invert
 
 
@@ -47,7 +84,7 @@ class Flow:
 
     def __init__(
         self,
-        flow: Any,
+        flow: AbstractDistribution,
         metadata: Dict[str, Any],
         flow_kwargs: Dict[str, Any],
     ):
@@ -73,6 +110,7 @@ class Flow:
         else:
             # Trivial bounds: min=0, max=1 → operations become identity
             # Assume 4D flow (m1, m2, lambda1, lambda2)
+            # TODO: this might have to be changed in the future
             n_features = 4
             self.data_min = jnp.zeros(n_features)
             self.data_max = jnp.ones(n_features)

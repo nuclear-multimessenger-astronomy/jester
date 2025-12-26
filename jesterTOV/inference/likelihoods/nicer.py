@@ -1,4 +1,4 @@
-"""
+r"""
 NICER X-ray timing likelihood implementations
 """
 
@@ -11,6 +11,9 @@ from jax.scipy.stats import gaussian_kde
 from jaxtyping import Array, Float
 
 from jesterTOV.inference.base.likelihood import LikelihoodBase
+from jesterTOV.logging_config import get_logger
+
+logger = get_logger("jester")
 
 
 class NICERLikelihood(LikelihoodBase):
@@ -45,6 +48,14 @@ class NICERLikelihood(LikelihoodBase):
 
     Attributes
     ----------
+    psr_name : str
+        Pulsar name
+    penalty_value : float
+        Penalty value for samples where mass exceeds Mtov
+    N_masses_evaluation : int
+        Number of mass samples per likelihood evaluation
+    N_masses_batch_size : int
+        Batch size for processing mass samples
     amsterdam_masses : Float[Array, " n_amsterdam"]
         Mass samples from Amsterdam group
     maryland_masses : Float[Array, " n_maryland"]
@@ -61,8 +72,8 @@ class NICERLikelihood(LikelihoodBase):
     N_masses_batch_size: int
     amsterdam_masses: Float[Array, " n_amsterdam"]
     maryland_masses: Float[Array, " n_maryland"]
-    amsterdam_posterior: Any  # gaussian_kde type
-    maryland_posterior: Any  # gaussian_kde type
+    amsterdam_posterior: gaussian_kde
+    maryland_posterior: gaussian_kde
 
     def __init__(
         self,
@@ -80,10 +91,10 @@ class NICERLikelihood(LikelihoodBase):
         self.N_masses_batch_size = N_masses_batch_size
 
         # Load samples from npz files
-        print(f"Loading Amsterdam samples for {psr_name} from {amsterdam_samples_file}")
+        logger.info(f"Loading Amsterdam samples for {psr_name} from {amsterdam_samples_file}")
         amsterdam_data = np.load(amsterdam_samples_file, allow_pickle=True)
 
-        print(f"Loading Maryland samples for {psr_name} from {maryland_samples_file}")
+        logger.info(f"Loading Maryland samples for {psr_name} from {maryland_samples_file}")
         maryland_data = np.load(maryland_samples_file, allow_pickle=True)
 
         # Extract mass and radius samples
@@ -103,10 +114,10 @@ class NICERLikelihood(LikelihoodBase):
         maryland_mr = jnp.vstack([maryland_mass, maryland_radius])
 
         # Construct KDEs using JAX implementation
-        print(f"Constructing JAX KDEs for {psr_name}")
+        logger.info(f"Constructing JAX KDEs for {psr_name}")
         self.amsterdam_posterior = gaussian_kde(amsterdam_mr)
         self.maryland_posterior = gaussian_kde(maryland_mr)
-        print(f"Loaded JAX KDEs for {psr_name}")
+        logger.info(f"Loaded JAX KDEs for {psr_name}")
 
     def evaluate(self, params: dict[str, Float | Array], data: dict[str, Any]) -> Float:
         """

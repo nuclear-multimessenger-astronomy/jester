@@ -1,4 +1,4 @@
-"""
+r"""
 Base sampler implementation for jesterTOV.
 
 This module provides a lightweight, modular base class for sampling.
@@ -13,6 +13,9 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float, PRNGKeyArray
 
 from jesterTOV.inference.base import LikelihoodBase, Prior, BijectiveTransform, NtoMTransform
+from jesterTOV.logging_config import get_logger
+
+logger = get_logger("jester")
 
 
 class JesterSampler:
@@ -95,16 +98,16 @@ class JesterSampler:
         self.parameter_names = prior.parameter_names
 
         if len(sample_transforms) == 0:
-            print(
+            logger.debug(
                 "No sample transforms provided. Using prior parameters as sampling parameters"
             )
         else:
-            print("Using sample transforms")
+            logger.debug("Using sample transforms")
             for transform in sample_transforms:
                 self.parameter_names = transform.propagate_name(self.parameter_names)
 
         if len(likelihood_transforms) == 0:
-            print(
+            logger.debug(
                 "No likelihood transforms provided. Using prior parameters as likelihood parameters"
             )
 

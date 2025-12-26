@@ -1,4 +1,4 @@
-"""Configuration file parser for jesterTOV inference system."""
+r"""Configuration file parser for jesterTOV inference system."""
 
 # FIXME: need to add jester logger and then put debug where we show ALL of the settings that are passed, so we can check the config parsing is working correctly.
 

@@ -1,35 +1,89 @@
-"""MetaModel EOS transform (without CSE extension)."""
+r"""
+MetaModel equation of state transform for neutron star inference.
+
+This module implements the transform from nuclear empirical parameters (NEP)
+to observable neutron star properties by solving the TOV equations with the
+MetaModel EOS parametrization. The MetaModel provides a physics-informed
+interpolation between known nuclear physics constraints at saturation density
+and high-density behavior, without an explicit extension beyond ~2 n_sat.
+"""
 
 import jax.numpy as jnp
 from jaxtyping import Float
 
 from .base import JesterTransformBase
 from jesterTOV.eos import MetaModel_EOS_model
+from jesterTOV.logging_config import get_logger
+
+logger = get_logger("jester")
 
 
 class MetaModelTransform(JesterTransformBase):
-    """Transform NEP parameters to M-R-Lambda using MetaModel EOS.
+    """Transform from nuclear empirical parameters to neutron star observables.
 
-    This transform uses the MetaModel parametrization without the
-    Constant Speed Extension (CSE) for the high-density region.
+    This transform maps the 8-parameter nuclear empirical parameter (NEP) space
+    to neutron star mass-radius-tidal deformability curves by constructing an
+    equation of state and solving the Tolman-Oppenheimer-Volkoff equations. The
+    MetaModel parametrization interpolates smoothly between saturation density
+    constraints and high-density behavior up to approximately 2 n_sat, making
+    it suitable for modeling typical neutron stars without extremely high central
+    densities.
+
+    The transform enforces causality by truncating the EOS at the first point
+    where the sound speed would exceed the speed of light (cs² ≥ 1).
 
     Parameters
     ----------
     name_mapping : tuple[list[str], list[str]]
-        Tuple of (input_names, output_names) for the transform
+        Tuple of (input_names, output_names) defining the parameter transform.
+        Input names should include the 8 NEP parameters; output names typically
+        include mass, radius, and tidal deformability arrays.
     keep_names : list[str], optional
-        Names to keep in the output (default: all input names)
+        Additional parameter names to preserve in the output dictionary alongside
+        the transformed quantities. Default is to keep all input parameters.
     **kwargs
-        Additional arguments passed to JesterTransformBase
+        Additional arguments passed to JesterTransformBase, including:
+        - ndat_metamodel : int
+            Number of density grid points for EOS construction (default: 100)
+        - nmax_nsat : float
+            Maximum density in units of saturation density (default: 25.0)
+
+    Attributes
+    ----------
+    nb_CSE : int
+        Number of CSE parameters (always 0 for MetaModel without extension)
+    eos : MetaModel_EOS_model
+        The MetaModel EOS instance used for constructing p(n) curves
+
+    Notes
+    -----
+    The 8 NEP parameters are:
+    - K_sat, Q_sat, Z_sat : Symmetric matter expansion coefficients
+    - E_sym, L_sym, K_sym, Q_sym, Z_sym : Symmetry energy expansion coefficients
+
+    See Also
+    --------
+    MetaModelCSETransform : Extended version with high-density CSE parametrization
 
     Examples
     --------
+    Create a transform and apply it to a set of NEP parameters:
+
+    >>> from jesterTOV.inference.transforms import MetaModelTransform
     >>> transform = MetaModelTransform(
-    ...     name_mapping=(["K_sat", "Q_sat", ...], ["masses_EOS", "radii_EOS", ...]),
+    ...     name_mapping=(
+    ...         ["K_sat", "Q_sat", "Z_sat", "E_sym", "L_sym", "K_sym", "Q_sym", "Z_sym"],
+    ...         ["masses_EOS", "radii_EOS", "Lambdas_EOS"]
+    ...     ),
     ...     ndat_metamodel=100,
     ...     nmax_nsat=25.0
     ... )
-    >>> result = transform.forward({"K_sat": 230.0, ...})
+    >>> params = {
+    ...     "K_sat": 230.0, "Q_sat": 0.0, "Z_sat": 0.0,
+    ...     "E_sym": 32.0, "L_sym": 60.0, "K_sym": 0.0, "Q_sym": 0.0, "Z_sym": 0.0
+    ... }
+    >>> result = transform.forward(params)
+    >>> print(result["masses_EOS"])  # Array of NS masses at different central pressures
     """
 
     def __init__(
@@ -49,25 +103,29 @@ class MetaModelTransform(JesterTransformBase):
         # Set transform function
         self.transform_func = self.transform_func_MM
 
-        print("WARNING: This is a MetaModel run with no CSE parameters!")
+        # NOTE: Cannot log here - transforms may be instantiated inside JAX-traced code
 
     def get_eos_type(self) -> str:
-        """Return EOS type identifier.
+        """Return the EOS parametrization identifier.
 
         Returns
         -------
         str
-            "MM" for MetaModel only
+            The string "MM" (MetaModel) identifying this EOS parametrization.
+            This is used for logging and output file organization.
         """
         return "MM"
 
     def get_parameter_names(self) -> list[str]:
-        """Return list of expected parameter names.
+        """Return the list of nuclear empirical parameter names.
 
         Returns
         -------
         list[str]
-            List of 8 NEP parameter names
+            The 8 NEP parameter names in canonical order:
+            ["K_sat", "Q_sat", "Z_sat", "E_sym", "L_sym", "K_sym", "Q_sym", "Z_sym"].
+            These define the Taylor expansion of symmetric matter energy and
+            symmetry energy around saturation density.
         """
         return [
             "K_sat",
@@ -81,27 +139,41 @@ class MetaModelTransform(JesterTransformBase):
         ]
 
     def transform_func_MM(self, params: dict[str, Float]) -> dict[str, Float]:
-        """Core transformation: NEP → M-R-Lambda.
+        """Compute neutron star observables from nuclear empirical parameters.
+
+        This method constructs the equation of state from the NEP parameters,
+        enforces causality by truncating where cs² ≥ 1, and solves the TOV
+        equations to obtain mass-radius-tidal deformability curves.
 
         Parameters
         ----------
         params : dict[str, Float]
-            Dictionary containing NEP parameters
+            Dictionary containing the 8 NEP parameters (K_sat, Q_sat, Z_sat,
+            E_sym, L_sym, K_sym, Q_sym, Z_sym) and any additional parameters
+            specified in `keep_names`.
 
         Returns
         -------
         dict[str, Float]
-            Dictionary with:
-            - logpc_EOS: Log of central pressure
-            - masses_EOS: Neutron star masses
-            - radii_EOS: Neutron star radii
-            - Lambdas_EOS: Tidal deformabilities
-            - n: Baryon number densities
-            - p: Pressures
-            - h: Enthalpies
-            - e: Energy densities
-            - dloge_dlogp: Log derivative of e w.r.t. p
-            - cs2: Sound speeds squared
+            Dictionary containing EOS and TOV solution quantities:
+
+            - logpc_EOS : Log10 of central pressures (geometric units)
+            - masses_EOS : Neutron star masses at each central pressure (solar masses)
+            - radii_EOS : Neutron star radii at each central pressure (km)
+            - Lambdas_EOS : Dimensionless tidal deformabilities
+            - n : Baryon number density grid (geometric units)
+            - p : Pressure values on density grid (geometric units)
+            - h : Specific enthalpy values (geometric units)
+            - e : Energy density values (geometric units)
+            - dloge_dlogp : Logarithmic derivative d(log e)/d(log p)
+            - cs2 : Sound speed squared (dimensionless, cs²/c²)
+
+        Notes
+        -----
+        The EOS is automatically truncated at the first density where the sound
+        speed would become superluminal. The remaining EOS quantities are
+        re-interpolated onto a regular density grid spanning from the crust
+        to this causality limit.
         """
         # Update with fixed parameters (currently empty)
         params.update(self.fixed_params)

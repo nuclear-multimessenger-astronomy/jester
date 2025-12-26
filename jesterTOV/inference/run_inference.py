@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""
+r"""
 Modular inference script for jesterTOV
 """
 
@@ -24,7 +24,10 @@ from .priors.parser import parse_prior_file
 from .transforms.factory import create_transform
 from .likelihoods.factory import create_combined_likelihood
 from .samplers import setup_flowmc_sampler, JesterSampler
-# FIXME: DataLoader removed - need to implement data loading functions
+from jesterTOV.logging_config import get_logger
+
+# Set up logger
+logger = get_logger("jester")
 
 
 def determine_keep_names(config, prior):
@@ -64,7 +67,7 @@ def determine_keep_names(config, prior):
                 f"Current prior parameters: {prior.parameter_names}"
             )
         keep_names.append("nbreak")
-        print("ChiEFT likelihood enabled: 'nbreak' parameter will be preserved in transform output")
+        logger.info("ChiEFT likelihood enabled: 'nbreak' parameter will be preserved in transform output")
 
     # Add future likelihood parameter requirements here
     # Example:
@@ -113,7 +116,7 @@ def setup_prior(config):
 
     # Add _random_key prior if GW or NICER likelihoods are enabled
     if needs_random_key:
-        print("Adding _random_key prior for likelihood sampling")
+        logger.info("Adding _random_key prior for likelihood sampling")
         random_key_prior = UniformPrior(
             float(0), float(2**32 - 1), parameter_names=["_random_key"]
         )
@@ -185,14 +188,14 @@ def run_sampling(flowmc_sampler, seed, outdir):
     dict
         Dictionary containing samples and log probabilities
     """
-    print(f"Starting MCMC sampling with seed {seed}...")
+    logger.info(f"Starting MCMC sampling with seed {seed}...")
     start = time.time()
     flowmc_sampler.sample(jax.random.PRNGKey(seed))
     flowmc_sampler.print_summary()
     end = time.time()
     runtime = end - start
 
-    print(
+    logger.info(
         f"Sampling complete! Runtime: {int(runtime / 60)} min {int(runtime % 60)} sec"
     )
 
@@ -217,15 +220,15 @@ def run_sampling(flowmc_sampler, seed, outdir):
     total_nb_samples = nb_samples_training + nb_samples_production
 
     # Save the final results
-    print(f"Saving results to {outdir}")
+    logger.info(f"Saving results to {outdir}")
     os.makedirs(outdir, exist_ok=True)
 
     result_path = os.path.join(outdir, "results_production.npz")
     np.savez(result_path, log_prob=log_prob, **samples_named_for_saving)
 
-    print(f"Number of samples generated in training: {nb_samples_training}")
-    print(f"Number of samples generated in production: {nb_samples_production}")
-    print(f"Total number of samples: {total_nb_samples}")
+    logger.info(f"Number of samples generated in training: {nb_samples_training}")
+    logger.info(f"Number of samples generated in production: {nb_samples_production}")
+    logger.info(f"Total number of samples: {total_nb_samples}")
 
     # Save the runtime
     with open(os.path.join(outdir, "runtime.txt"), "w") as f:
@@ -266,11 +269,11 @@ def generate_eos_samples(
     # Cap n_eos_samples at available sample size
     n_available = len(log_prob)
     if n_eos_samples > n_available:
-        print(f"Warning: Requested {n_eos_samples} EOS samples but only {n_available} available.")
-        print(f"Using all {n_available} samples instead.")
+        logger.warning(f"Requested {n_eos_samples} EOS samples but only {n_available} available.")
+        logger.warning(f"Using all {n_available} samples instead.")
         n_eos_samples = n_available
 
-    print(f"Generating {n_eos_samples} EOS samples...")
+    logger.info(f"Generating {n_eos_samples} EOS samples...")
 
     # Randomly select samples
     idx = np.random.choice(np.arange(len(log_prob)), size=n_eos_samples, replace=False)
@@ -278,7 +281,7 @@ def generate_eos_samples(
     chosen_samples = {k: jnp.array(v[idx]) for k, v in samples.items()}
 
     # Generate EOS curves (with JIT compilation)
-    print("JIT compiling and running TOV solver...")
+    logger.info("JIT compiling and running TOV solver...")
     my_forward = jax.jit(transform_eos.forward)
 
     # Warm up JIT
@@ -291,7 +294,7 @@ def generate_eos_samples(
     TOV_start = time.time()
     transformed_samples = jax.vmap(my_forward)(chosen_samples)
     TOV_end = time.time()
-    print(f"TOV solve time: {TOV_end - TOV_start:.2f} s")
+    logger.info(f"TOV solve time: {TOV_end - TOV_start:.2f} s")
 
     # Combine and save
     chosen_samples.update(transformed_samples)
@@ -299,7 +302,7 @@ def generate_eos_samples(
 
     eos_path = os.path.join(outdir, "eos_samples.npz")
     np.savez(eos_path, log_prob=selected_log_prob, **chosen_samples)
-    print(f"EOS samples saved to {outdir}/eos_samples.npz")
+    logger.info(f"EOS samples saved to {outdir}/eos_samples.npz")
 
 
 def main(config_path: str):
@@ -311,17 +314,17 @@ def main(config_path: str):
         Path to YAML configuration file
     """
     # Load configuration
-    print(f"Loading configuration from {config_path}")
+    logger.info(f"Loading configuration from {config_path}")
     config = load_config(config_path)
 
     outdir = config.sampler.output_dir
 
     # Print GPU info
-    print(f"JAX devices: {jax.devices()}")
+    logger.info(f"JAX devices: {jax.devices()}")
 
     # Validation only
     if config.validate_only:
-        print("Configuration valid!")
+        logger.info("Configuration valid!")
         return
 
     # FIXME: DataLoader was removed - need to implement data loading functionality
@@ -330,25 +333,88 @@ def main(config_path: str):
     data_loader = None
 
     # Setup components
-    print("Setting up prior...")
+    logger.info("Setting up prior...")
     prior = setup_prior(config)
-    print(f"Prior parameter names: {prior.parameter_names}")
+
+    # Log detailed prior information
+    logger.info(f"Prior has {prior.n_dim} dimensions")
+    logger.info(f"Prior parameter names: {prior.parameter_names}")
+
+    # Get individual priors - CombinePrior stores them in base_prior attribute
+    if hasattr(prior, 'base_prior') and isinstance(prior.base_prior, list):
+        individual_priors = prior.base_prior
+    else:
+        # For single priors, wrap in a list
+        individual_priors = [prior]
+
+    # Flatten the list of priors (in case of nested CombinePriors)
+    def flatten_priors(priors_list):
+        result = []
+        for p in priors_list:
+            if hasattr(p, 'base_prior') and isinstance(p.base_prior, list):
+                result.extend(flatten_priors(p.base_prior))
+            else:
+                result.append(p)
+        return result
+
+    all_priors = flatten_priors(individual_priors)
+
+    # Log each prior with its parameters
+    idx = 0
+    for param_prior in all_priors:
+        for name in param_prior.parameter_names:
+            if hasattr(param_prior, 'xmin') and hasattr(param_prior, 'xmax'):
+                logger.info(f"  [{idx}] {name}: Uniform({param_prior.xmin}, {param_prior.xmax})")
+            else:
+                logger.info(f"  [{idx}] {name}: {type(param_prior).__name__}")
+            idx += 1
 
     # Determine which parameters need to be preserved in transform output
     # based on enabled likelihoods (validates required parameters exist in prior)
     keep_names = determine_keep_names(config, prior)
 
-    print("Setting up transform...")
+    logger.info("Setting up transform...")
     transform = setup_transform(config, keep_names=keep_names)
+
+    # Log transform details
+    logger.info(f"Transform type: {config.transform.type}")
+    if config.transform.type == "metamodel_cse":
+        logger.info(f"  nb_CSE: {config.transform.nb_CSE}")
+    logger.info(f"  ndat_metamodel: {config.transform.ndat_metamodel}")
+    logger.info(f"  ndat_TOV: {config.transform.ndat_TOV}")
+    logger.info(f"  nmax_nsat: {config.transform.nmax_nsat}")
+    if keep_names:
+        logger.info(f"  Preserving parameters in output: {keep_names}")
 
     # Create EOS-only transform for postprocessing
     # TODO: This needs proper implementation with keep_names
     transform_eos = setup_transform(config)
 
-    print("Setting up likelihood...")
+    logger.info("Setting up likelihood...")
     likelihood = setup_likelihood(config, transform, data_loader)
 
-    print("Setting up flowMC sampler...")
+    # Log detailed likelihood information
+    enabled_likelihoods = [lk for lk in config.likelihoods if lk.enabled]
+    logger.info(f"Number of enabled likelihoods: {len(enabled_likelihoods)}")
+    for lk in enabled_likelihoods:
+        logger.info(f"  - {lk.type.upper()}")
+        if lk.type == "gw":
+            logger.info(f"    Event: {lk.event}")
+            logger.info(f"    Data file: {lk.data_file}")
+            if hasattr(lk, 'nf_model_file') and lk.nf_model_file:
+                logger.info(f"    NF model file: {lk.nf_model_file}")
+        elif lk.type == "nicer":
+            logger.info(f"    Pulsar: {lk.pulsar}")
+            logger.info(f"    Data file: {lk.data_file}")
+            logger.info(f"    KDE samples: {lk.kde_samples}")
+            logger.info(f"    KDE bandwidth: {lk.kde_bandwidth}")
+        elif lk.type == "chieft":
+            logger.info(f"    Data file: {lk.data_file}")
+        elif lk.type == "rex":
+            logger.info(f"    Experiment: {lk.experiment}")
+            logger.info(f"    Data file: {lk.data_file}")
+
+    logger.info("Setting up flowMC sampler...")
     flowmc_sampler = setup_flowmc_sampler(
         config.sampler,
         prior,
@@ -357,31 +423,40 @@ def main(config_path: str):
         seed=config.seed,
     )
 
-    print("\n" + "=" * 60)
-    print("Configuration Summary")
-    print("=" * 60)
-    print(f"Transform type: {config.transform.type}")
-    print(f"Number of chains: {config.sampler.n_chains}")
-    print(f"Training loops: {config.sampler.n_loop_training}")
-    print(f"Production loops: {config.sampler.n_loop_production}")
-    print(f"Output directory: {outdir}")
-    print(f"Random seed: {config.seed}")
-    print("=" * 60 + "\n")
+    # Log detailed sampler configuration
+    logger.info("=" * 60)
+    logger.info("Configuration Summary")
+    logger.info("=" * 60)
+    logger.info(f"Transform: {config.transform.type}")
+    logger.info(f"Random seed: {config.seed}")
+    logger.info("Sampler Configuration:")
+    logger.info(f"  Chains: {config.sampler.n_chains}")
+    logger.info(f"  Training loops: {config.sampler.n_loop_training}")
+    logger.info(f"  Production loops: {config.sampler.n_loop_production}")
+    logger.info(f"  Local steps per loop: {config.sampler.n_local_steps}")
+    logger.info(f"  Global steps per loop: {config.sampler.n_global_steps}")
+    logger.info(f"  Training epochs: {config.sampler.n_epochs}")
+    logger.info(f"  Learning rate: {config.sampler.learning_rate}")
+    logger.info(f"  Training thinning: {config.sampler.train_thinning}")
+    logger.info(f"  Output thinning: {config.sampler.output_thinning}")
+    logger.info(f"  EOS samples to generate: {config.sampler.n_eos_samples}")
+    logger.info(f"  Output directory: {outdir}")
+    logger.info("=" * 60 + "\n")
 
     # Dry run option
     if config.dry_run:
-        print("Dry run complete!")
+        logger.info("Dry run complete!")
         return
 
     # Create output directory
     os.makedirs(outdir, exist_ok=True)
 
     # Test likelihood evaluation # FIXME: this should throw an error if a Nan is found
-    print("Testing likelihood evaluation...")
+    logger.info("Testing likelihood evaluation...")
     test_samples = prior.sample(jax.random.PRNGKey(0), 3)
     test_samples_transformed = jax.vmap(transform.forward)(test_samples)
     test_log_prob = jax.vmap(likelihood.evaluate)(test_samples_transformed, {})
-    print(f"Test log probabilities: {test_log_prob}")
+    logger.info(f"Test log probabilities: {test_log_prob}")
 
     # Run inference
     results = run_sampling(flowmc_sampler, config.seed, outdir)
@@ -392,9 +467,9 @@ def main(config_path: str):
 
     # Run postprocessing if enabled
     if config.postprocessing.enabled:
-        print("\n" + "=" * 60)
-        print("Running postprocessing...")
-        print("=" * 60)
+        logger.info("\n" + "=" * 60)
+        logger.info("Running postprocessing...")
+        logger.info("=" * 60)
         from jesterTOV.inference.postprocessing.postprocessing import generate_all_plots
 
         generate_all_plots(
@@ -406,9 +481,9 @@ def main(config_path: str):
             make_histograms_flag=config.postprocessing.make_histograms,
             make_contours_flag=config.postprocessing.make_contours,
         )
-        print(f"\nPostprocessing complete! Plots saved to {outdir}")
+        logger.info(f"\nPostprocessing complete! Plots saved to {outdir}")
 
-    print(f"\nInference complete! Results saved to {outdir}")
+    logger.info(f"\nInference complete! Results saved to {outdir}")
 
 
 def cli_entry_point():
@@ -425,11 +500,11 @@ def cli_entry_point():
 
     # Check for exactly one argument (the config file path)
     if len(sys.argv) != 2:
-        print("Usage: run_jester_inference <config.yaml>")
-        print("\nExamples:")
-        print("  run_jester_inference config.yaml")
-        print("  run_jester_inference examples/inference/full_inference/config.yaml")
-        print("\nOptions like dry_run and validate_only should be set in the YAML config file.")
+        logger.error("Usage: run_jester_inference <config.yaml>")
+        logger.info("\nExamples:")
+        logger.info("  run_jester_inference config.yaml")
+        logger.info("  run_jester_inference examples/inference/full_inference/config.yaml")
+        logger.info("\nOptions like dry_run and validate_only should be set in the YAML config file.")
         sys.exit(1)
 
     config_path = sys.argv[1]
@@ -440,7 +515,7 @@ if __name__ == "__main__":
     import sys
 
     if len(sys.argv) != 2:
-        print("Usage: python -m jesterTOV.inference.run_inference <config.yaml>")
+        logger.error("Usage: python -m jesterTOV.inference.run_inference <config.yaml>")
         sys.exit(1)
 
     main(sys.argv[1])

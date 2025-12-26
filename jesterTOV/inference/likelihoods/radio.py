@@ -1,4 +1,27 @@
-"""Radio pulsar timing likelihood implementations"""
+r"""
+Radio pulsar mass measurements from timing observations.
+
+This module implements likelihood functions for constraining the equation of
+state using precisely measured masses of radio pulsars. Pulsar timing provides
+some of the most accurate mass measurements in astrophysics, with uncertainties
+as low as 1-2% for the best-measured systems.
+
+These measurements constrain the maximum gravitational mass that can be supported
+by neutron star matter, providing a crucial lower bound on the stiffness of the
+equation of state. The most massive precisely measured pulsars (e.g., PSR J0740+6620
+at ~2.1 solar masses) rule out many soft EOS models that predict lower maximum masses.
+
+The likelihood marginalizes over the true pulsar mass (unknown but bounded by the
+maximum TOV mass) assuming a Gaussian measurement uncertainty and a uniform prior
+on the true mass.
+
+References
+----------
+.. [1] Demorest et al., "A two-solar-mass neutron star measured using Shapiro delay,"
+   Nature 467, 1081-1083 (2010).
+.. [2] Fonseca et al., "Refined Mass and Geometric Measurements of the High-Mass
+   PSR J0740+6620," ApJL 915, L12 (2021).
+"""
 
 from typing import Any
 
@@ -10,60 +33,86 @@ from jesterTOV.inference.base import LikelihoodBase
 
 
 class RadioTimingLikelihood(LikelihoodBase):
-    r"""
-    Radio pulsar timing likelihood for maximum mass constraints.
+    r"""Likelihood for radio pulsar mass measurements constraining maximum NS mass.
 
-    This likelihood constrains the maximum TOV mass (M_max) based on observed
-    pulsar masses from radio timing observations. It implements a marginalization
-    over possible true masses below M_max, assuming a Gaussian measurement uncertainty.
+    This likelihood evaluates how well an equation of state's maximum TOV mass
+    (M_TOV) is consistent with an observed pulsar mass measurement. Since we
+    observe a specific pulsar (with some measurement uncertainty) but don't know
+    its true mass relative to the theoretical maximum, we must marginalize over
+    all possible true masses between some minimum value and M_TOV.
 
-    The likelihood is computed as:
+    The marginalization assumes:
+    - The measured mass follows a Gaussian distribution: M_obs ~ N(M_true, σ)
+    - The true mass has a uniform prior: P(M_true | M_TOV) = 1/M_TOV for M_true ∈ [0, M_TOV]
 
-    TODO: double-check the math just to be sure
+    This gives the marginal likelihood:
 
     .. math::
-        \mathcal{L}(M_{\text{max}} | M_{\text{obs}}, \sigma) =
-        \frac{1}{M_{\text{max}}} \int_0^{M_{\text{max}}}
-        \mathcal{N}(m | M_{\text{obs}}, \sigma) dm
+        \mathcal{L}(M_{\text{TOV}} | M_{\text{obs}}, \sigma) =
+        \frac{1}{M_{\text{TOV}}} \int_{m_{\text{min}}}^{M_{\text{TOV}}}
+        \frac{1}{\sqrt{2\pi\sigma^2}} \exp\left[-\frac{(m - M_{\text{obs}})^2}{2\sigma^2}\right] dm
 
-    where the 1/M_max factor represents a uniform prior on the true mass.
+    where the integration is performed numerically using a discrete grid and
+    logsumexp for numerical stability.
 
     Parameters
     ----------
     psr_name : str
-        Pulsar name (e.g., "J1614-2230", "J0740+6620")
+        Pulsar designation for identification (e.g., "J1614-2230", "J0740+6620").
+        Used for logging and tracking which pulsar constraint is being applied.
     mean : float
-        Observed mass mean in solar masses (M_☉)
+        Measured pulsar mass in solar masses (M_☉). This is typically the
+        reported value from timing analysis.
     std : float
-        Observed mass standard deviation in solar masses (M_☉)
+        Measurement uncertainty (1σ) in solar masses. This combines statistical
+        and systematic uncertainties from the timing analysis.
     nb_masses : int, optional
-        Number of mass points for numerical integration. Default: 500
+        Number of grid points for numerical integration of the marginalization
+        integral. More points provide better accuracy but increase computation time.
+        Default is 500, which provides good accuracy for typical uncertainties.
     m_min : float, optional
-        Minimum mass for integration in solar masses. Default: 0.1
+        Minimum mass for the integration grid in solar masses. This should be
+        well below any physical neutron star mass to avoid truncation effects.
+        Default is 0.1 M_☉.
 
     Attributes
     ----------
     psr_name : str
-        Pulsar name
+        Pulsar designation
     mean : float
-        Observed mass mean
+        Observed mass mean in solar masses
     std : float
-        Observed mass standard deviation
+        Observed mass uncertainty in solar masses
     nb_masses : int
-        Number of integration points
+        Number of mass grid points for integration
     m_min : float
-        Minimum integration mass
+        Minimum mass for integration (solar masses)
 
     Notes
     -----
-    The integration is performed using a discrete sum with logsumexp for
-    numerical stability. The mass grid spans from m_min M_☉ to M_max.
+    Invalid TOV solutions (M_TOV ≤ m_min) receive a large negative log-likelihood
+    penalty (-1e10) to effectively exclude them from the posterior.
+
+    The implementation uses log-space arithmetic throughout to avoid numerical
+    underflow when combining with other log-likelihoods.
+
+    See Also
+    --------
+    GWLikelihood : Gravitational wave constraints on mass and tidal deformability
+    NICERLikelihood : X-ray timing constraints on mass and radius
 
     Examples
     --------
-    >>> # PSR J1614-2230: 1.94 ± 0.06 M_☉
-    >>> likelihood = RadioTimingLikelihood("J1614", 1.94, 0.06)
-    >>> log_prob = likelihood.evaluate(params, {})
+    Create a likelihood for PSR J0740+6620 (Fonseca et al. 2021: 2.08 ± 0.07 M_☉):
+
+    >>> from jesterTOV.inference.likelihoods import RadioTimingLikelihood
+    >>> likelihood = RadioTimingLikelihood("J0740+6620", mean=2.08, std=0.07)
+    >>> params = {"masses_EOS": jnp.array([1.0, 1.5, 2.0, 2.2])}  # Example TOV masses
+    >>> log_like = likelihood.evaluate(params, data={})
+
+    Create a more precise likelihood for PSR J1614-2230 (narrower uncertainty):
+
+    >>> likelihood_j1614 = RadioTimingLikelihood("J1614-2230", mean=1.94, std=0.06)
     """
 
     psr_name: str
@@ -88,20 +137,41 @@ class RadioTimingLikelihood(LikelihoodBase):
         self.m_min = m_min  # Minimum mass for integration (M_☉)
 
     def evaluate(self, params: dict[str, Float | Array], data: dict[str, Any]) -> Float:
-        """
-        Evaluate the log likelihood.
+        """Evaluate the marginalized log-likelihood for the pulsar mass measurement.
+
+        This method computes the marginal likelihood by:
+        1. Extracting the maximum TOV mass from the EOS
+        2. Creating a mass grid from m_min to M_TOV
+        3. Evaluating the Gaussian likelihood at each grid point
+        4. Numerically integrating using logsumexp for stability
+        5. Applying the 1/M_TOV normalization factor
 
         Parameters
         ----------
         params : dict[str, Float | Array]
-            Dictionary containing 'masses_EOS' key with sampled mass points
+            Dictionary containing TOV solution outputs from the transform.
+            Required keys:
+            - "masses_EOS" : Array of neutron star masses (solar masses) at
+              different central pressures. The maximum value is taken as M_TOV.
         data : dict[str, Any]
-            Unused (data is encapsulated in the likelihood object)
+            Unused; included for API compatibility. All observational data
+            (mean, std) is stored in the likelihood object during initialization.
 
         Returns
         -------
         Float
-            Log likelihood value
+            Natural logarithm of the marginalized likelihood. Returns a large
+            negative penalty (-1e10) for invalid EOSs (M_TOV ≤ m_min), which
+            indicates TOV integration failure or unphysical EOS.
+
+        Notes
+        -----
+        The numerical integration uses nb_masses grid points and evaluates
+        the Gaussian likelihood in log-space for numerical stability. The
+        logsumexp operation prevents underflow when summing small probabilities.
+
+        Any NaN or infinity values in the result are replaced with -1e10 to
+        ensure stable MCMC sampling.
         """
         # Extract maximum TOV mass from the EOS
         masses_EOS: Float[Array, " n_points"] = params["masses_EOS"]

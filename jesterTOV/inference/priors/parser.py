@@ -1,4 +1,4 @@
-"""Parser for .prior specification files in bilby-style Python format."""
+r"""Parser for .prior specification files in bilby-style Python format."""
 
 from pathlib import Path
 from typing import Union, Any

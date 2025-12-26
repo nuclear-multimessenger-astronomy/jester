@@ -1,4 +1,4 @@
-"""Prior base classes for JESTER inference system.
+r"""Prior base classes for JESTER inference system.
 
 This module contains prior classes that were originally from Jim (jimgw v0.2.0).
 They are copied here to remove the dependency on jimgw.

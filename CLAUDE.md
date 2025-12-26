@@ -4,35 +4,144 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Below, you find the next step we are working on in terms of development. Below that, you find general info on the development process and the repo structure. 
 
+# Important
+
+IMPORTANT: 
+
+When writing tests and something seems off, make a note in CLAUDE.md and start investigating: do NOT change your tests to pass, do not focus on just passing all
+tests, but also make sure the code is correct and improved by your testing!
+
+Don't do things like `cat > file.py << 'EOF'`, instead, just make the file and run it with `uv`.
+
+When writing documentation, make it clear and brief to the point, and write full sentences as if by a human researcher and not an LLM, so it is easy to read for humans.
+
 ## Next steps
 
-### NICER data
+### High Priority: Documentation
 
-Implement ways to download the NICER datasets from Zenodo, open them to get the desired mass and radius posterior samples, and construct KDEs from them to be used in inference. The idea is that we download the dataset from the given URL if it does not exist, then save a file that ONLY has the desired mass and radius samples (there might be more variables from NICER analysis, that are not useful for us, therefore, we save our own file). The idea is to put the source code that does this inside the repo as well, so we can always download the original file again and redo this process for reproducibility and users can follow that approach in case they want to save something extra. 
+**Focus on comprehensive documentation for the JESTER review:**
 
-The data handling should be stored in this dir: `/Users/Woute029/Documents/Code/projects/jester_review/jester/jesterTOV/inference/data`. 
+1. **User Documentation**
+   - Tutorial notebooks demonstrating key workflows
+   - Quickstart guide for inference with example configs
+   - API reference documentation for all modules
+   - Physics background and methodology explanations
 
-Note: we need to store the information somewhere in a README or docs: for now, do a README in the ./data dir. We can migrate later on. The info should be original link, hotspot models, paper that published this dataset, and so on. 
+2. **Developer Documentation**
+   - Contribution guidelines
+   - Testing strategy and how to add new tests
+   - Architecture overview and design decisions
+   - Adding new likelihoods, transforms, and priors
 
-For now, let's put the code there to download the NICER datasets for the 2 pulsars we are interested in. Note: these are analyzed in two groups, and therefore each PSR has two sets of posterior samples that have to be 'mixed'. Note moreover there are different "hotspot" models so different groups of posterior samples: first make a script that explores the NICER datasets to understand them and put that information in the README as well. 
-- NICER PSR J0030+0451: data can be found here: for the "Amsterdam group": https://zenodo.org/records/8239000 but also https://zenodo.org/records/7096789 for older samples, and https://zenodo.org/records/3473466 for the second group (Here, we might have to allow users to download both Amsterdam datasets, and choose which one to use, use last author names to distinguish, and the former is the more recent so use that one, but watch out for different hotspot models.)
-- NICER PSR J0740+6620: data can be found here: For Amsterdam: https://zenodo.org/records/10519473 most recent, but also https://zenodo.org/records/6827537 and originally https://zenodo.org/records/5735003. For Maryland: https://zenodo.org/records/4670689
+3. **Sphinx Documentation Enhancement**
+   - Improve existing docstrings where needed (mostly complete for inference module)
+   - Add narrative documentation pages
+   - Create example gallery
+   - Build comprehensive API docs
 
-Download the data from zenodo (src code) and use it to save the NICER mass radius posterior samples in a file we have in this repo. 
+4. **Inference Module Documentation** (✅ Mostly Complete)
+   - Module and class docstrings improved and researcher-friendly
+   - Good coverage for transforms, likelihoods, flows
+   - Ready for automated documentation generation
 
-You can find information on the KDE construction etc and data loading a bit in `/Users/Woute029/Documents/Code/projects/jester_review/jester/jesterTOV/inference/data/old_utils.py`. Note that the KDE construction should use the file we made ourselves, and also, the KDE construction has to be done on the fly when initializing the NICER likelihood in the src code (load samples, make KDE). 
+### High Priority: Testing Suite for Inference
 
-### GW170817, GW190425 data
+Develop comprehensive tests for the inference module:
+- Unit tests for individual components (priors, transforms, likelihoods)
+- Integration tests for end-to-end inference workflows
+- Test data loading and preprocessing
+- Validate configuration parsing and validation
 
-The same principle as above applies to the two BNS merger events we have so far: GW170817 and GW190425. 
+Location: `jester/tests/test_inference/` (✅ Created)
 
-Let us focus on downloading the GW170817 dataset and extracting the following keys from the posterior: `mass_1_source`, `mass_2_source`, `lambda_1`, `lambda_2`. Note that we might also need to save some metadata such as waveform model used, where the data is taken from,... 
+**Status** (as of 2024-12-25):
+- Test infrastructure created (`tests/test_inference/`)
+- Config module tests: ✅ **29/29 passing** (all issues resolved)
+- Prior module tests: ✅ **19/19 passing** (API documented, boundary issue found)
+- Transform module tests: 🚧 **4/12 passing** (investigating TOV solver and API issues)
+- Issues discovered and fixed during testing (see below)
 
-Check out the DCC page here in order to get started: https://dcc.ligo.org/LIGO-P1800061/public 
+#### Issues Found During Testing
 
-The notebook you see there to extract posterior samples might be easier to read in this format: https://nbviewer.org/urls/dcc.ligo.org/public/0150/P1800061/011/Data%20Release%20Tutorial.ipynb
+**1. LikelihoodConfig validation doesn't respect `enabled` field** ✅ **FIXED**
+- **File**: `jesterTOV/inference/config/schema.py:152` (`validate_likelihood_parameters`)
+- **Issue**: Parameter validation runs even when `enabled=False`
+- **Impact**: Cannot create disabled likelihood configs without providing all required parameters
+- **Fix applied**: Added check in validator: `if "enabled" in info.data and not info.data["enabled"]: return v`
+- **Result**: `test_disabled_likelihood` now passes
+- **Severity**: MEDIUM - Makes configs more verbose but doesn't break functionality
 
-Check out which posterior samples there are, download the samples and save as npz file for ONLY those variables listed above, then start downloading GW170817 data. 
+**2. Parser wraps ValidationError in ValueError** ✅ **DOCUMENTED**
+- **File**: `jesterTOV/inference/config/parser.py:70`
+- **Issue**: `load_config()` catches all exceptions and wraps them in ValueError
+- **Impact**: Callers can't distinguish between different error types
+- **Decision**: Keep current behavior (ValueError wrapping) for better error messages
+- **Fix applied**: Updated test to expect ValueError and added documentation in test docstring
+- **Result**: `test_load_config_missing_required_fields_fails` now passes
+- **Severity**: LOW - Error message is still informative
+
+**3. Test issue: `test_load_config_with_relative_paths` tries to copy file to itself** ✅ **FIXED**
+- **File**: `tests/test_inference/test_config.py:271`
+- **Issue**: Test tries to `shutil.copy(sample_prior_file, temp_dir / "test.prior")` but they're the same path
+- **Fix applied**: Rewrote test to create prior file with different name ("relative.prior")
+- **Result**: Test now passes and properly validates relative path resolution
+- **Severity**: TEST BUG - not a code issue
+
+**4. Prior API discovered during testing** (DOCUMENTATION ISSUE) ✅ **DOCUMENTED**
+- **File**: `jesterTOV/inference/base/prior.py` (Prior, UniformPrior, CombinePrior)
+- **Issue**: Prior `sample()` method signature is `sample(rng_key, n_samples)` not `sample(u_array)`
+- **Impact**: Tests need to use correct API with JAX PRNGKey
+- **Current behavior**: `sample(rng_key: PRNGKeyArray, n_samples: int) -> dict[str, Array]`
+- **Also discovered**: `log_prob()` returns NaN for out-of-bounds instead of -inf
+- **Fix applied**: Updated all tests to use correct API
+- **Severity**: LOW - API works correctly, just different than initial assumption
+
+**5. UniformPrior boundary values cause errors** (BUG - from Jim/jimgw)
+- **File**: `jesterTOV/inference/base/transform.py:320` (LogitTransform)
+- **Issue**: Evaluating `log_prob()` at exact boundary values causes errors:
+  - `xmin` returns NaN
+  - `xmax` raises `ZeroDivisionError` in logit transform: `log(x / (1-x))` when x=1.0
+- **Impact**: Cannot evaluate log probability at exact boundaries
+- **Root cause**: Logit transform `log(x / (1-x))` is undefined at x=0 and x=1
+- **Workaround**: Always use values strictly inside boundaries (e.g., [xmin+ε, xmax-ε])
+- **Recommended fix**: Add numerical guards in LogitTransform to return -inf at boundaries
+- **Severity**: MEDIUM - Affects sampling at boundaries, but rare in practice
+- **Status**: DOCUMENTED - Should be fixed in transform.py with proper boundary handling
+
+**6. Transform factory expects Pydantic config, not dict** (API ISSUE)
+- **File**: `jesterTOV/inference/transforms/factory.py:46`
+- **Issue**: `create_transform()` expects `TransformConfig` Pydantic object, not plain dict
+- **Impact**: Tests need to create Pydantic objects instead of dicts
+- **Current behavior**: `config.type` fails with AttributeError when passed a dict
+- **Fix needed**: Update tests to use `TransformConfig(**config_dict)` pattern
+- **Severity**: LOW - Correct API, just needs proper usage in tests
+- **Status**: TO BE FIXED in tests
+
+**7. TOV solver hits max_steps with certain EOS parameters** (PHYSICS ISSUE)
+- **File**: `jesterTOV/tov.py:187` (diffeqsolve)
+- **Issue**: TOV integration fails with "maximum number of solver steps reached" for some EOS
+- **Impact**: Cannot test transforms with all NEP parameter choices
+- **Root cause**: Some EOS configurations may be:
+  - Too soft (unstable neutron stars)
+  - Have numerical issues in MetaModel interpolation
+  - Require more solver steps for stiff ODEs
+- **Test that failed**: `test_metamodel_forward_realistic_params` with realistic_nep_stiff
+- **Recommended investigation**:
+  - Check if L_sym=90 is too high without higher-order terms
+  - Try softer EOS (L_sym=60)
+  - Increase `max_steps` in TOV solver for testing
+- **Severity**: MEDIUM - Blocks testing of transforms with realistic physics
+- **Status**: NEEDS INVESTIGATION - May be physics issue or numerical issue
+
+**8. CSE parameter count off by one** (TEST BUG)
+- **File**: `tests/test_inference/test_transforms.py:205`
+- **Issue**: Expected 26 CSE params but got 25
+- **Impact**: Test assertion fails
+- **Expected**: 8 NEP + 1 nbreak + 8*2 CSE grid + 1 final cs2 = 26
+- **Actual**: 25 parameters returned
+- **Root cause**: Need to check MetaModelCSETransform.get_parameter_names() implementation
+- **Severity**: LOW - Likely just test expectation wrong
+- **Status**: TO BE INVESTIGATED 
 
 ## Project Overview
 
@@ -434,38 +543,6 @@ Generate EOS samples (TOV solve on selected samples)
 - Quick start guide, complete reference, and architecture docs
 - Documentation maintenance guide for developers
 
-#### jimgw Dependencies (To Be Removed)
-
-**Status**: JESTER inference currently depends on jimgw for base classes and interfaces. Goal is to become fully independent.
-
-**Current Dependencies** (as of 2024-12):
-
-1. **Likelihood Interface**:
-   - `from jimgw.single_event.likelihood import LikelihoodBase`
-   - Used in: All likelihood files (`likelihoods/*.py`, `constraints/likelihood.py`)
-   - Need: Copy/reimplement LikelihoodBase ABC
-
-2. **Prior System**:
-   - `from jimgw.prior import Prior`
-   - Used in: `priors/simple_priors.py`, `priors/parser.py`, `samplers/jester_sampler.py`
-   - `from jimgw.prior import CombinePrior`
-   - Used in: `priors/parser.py`, `priors/library.py`
-   - `from jimgw.prior import UniformPrior`
-   - Used in: `priors/library.py`, `run_inference_old.py`
-   - Need: Copy/reimplement Prior, CombinePrior ABCs
-   - Note: SimpleUniformPrior already implemented as replacement for UniformPrior
-
-3. **Transform System**:
-   - `from jimgw.transforms import NtoMTransform`
-   - Used in: `transforms/base.py`, `transforms/auxiliary.py`, `transforms.py`, `samplers/jester_sampler.py`
-   - `from jimgw.transforms import BijectiveTransform`
-   - Used in: `samplers/jester_sampler.py`
-   - Need: Copy/reimplement NtoMTransform, BijectiveTransform ABCs
-
-4. **Sampler (REMOVED)**:
-   - ✅ `from jimgw.jim import Jim` - **NO LONGER USED** (replaced by JesterSampler)
-   - Old usage: `run_inference_old.py` (deprecated)
-   - New: `samplers/jester_sampler.py` - Standalone implementation with bug fixes
 
 **Dependency Summary**:
 ```python
@@ -498,43 +575,6 @@ jimgw.base.LikelihoodBase                      # Deprecated path, use single_eve
 - Cleaner stack for debugging
 - Reduced installation complexity
 
-#### Modular Architecture Benefits
-
-**📋 Full Implementation Plan**: See comprehensive refactoring plan at:
-```
-/Users/Woute029/.claude/plans/humble-weaving-wave.md
-```
-
-This plan includes:
-- Complete current state analysis
-- 7 implementation phases with code examples
-- All file paths to create/modify/remove
-- Configuration schemas and prior file formats
-- No backwards compatibility (intentional breaking change)
-
-**Key improvements** (now implemented):
-- ✅ **Configuration-driven**: YAML config files replace argparse
-- ✅ **Prior specification**: `.prior` files parsed and loaded, not hardcoded
-- ✅ **Transform hierarchy**: Base class with MetaModel and MetaModel+CSE subclasses
-- ✅ **Modular likelihoods**: Factory pattern for likelihood creation
-- ✅ **Lazy data loading**: Configurable paths, no import side effects
-- ✅ **Clean separation**: config / priors / transforms / likelihoods / data / samplers
-- ✅ **Type safety**: Pydantic validation catches configuration errors early
-- ✅ **Reproducibility**: Version-controlled config files, seed management
-
-**Structure** (implemented):
-```
-jesterTOV/inference/
-├── config/              # YAML parsing and validation (Pydantic)
-├── priors/              # Prior specification and parsing (.prior files)
-├── transforms/          # Transform base class and implementations
-├── likelihoods/         # Modular likelihood components
-├── data/                # Lazy data loading and path management
-├── samplers/            # Sampler configuration and wrappers
-├── postprocessing/      # Analysis utilities
-├── run_inference.py     # New config-driven main script
-└── cli.py               # Command-line interface
-```
 
 #### Running Inference
 
@@ -607,35 +647,19 @@ This ensures the documentation stays in sync with the actual validation rules. T
 
 #### TODOs
 
-**Completed** (Phases 1-6 + Documentation):
-- [x] Implement configuration system (YAML/Pydantic)
-- [x] Create prior specification format (.prior files)
-- [x] Refactor transforms with base class hierarchy
-- [x] Modularize likelihood system
-- [x] Implement lazy data loading
-- [x] Rewrite run_inference.py with new architecture
-- [x] Create sampler wrapper (Jim/flowMC)
-- [x] Create CLI interface
-- [x] **Comprehensive inference documentation** (quick start, reference, architecture)
-- [x] **Auto-generated YAML reference** from Pydantic schemas
-- [x] **Documentation maintenance guide** for keeping docs in sync
-
-**In Progress** (Phase 7):
-- [ ] Clean up postprocessing.py (remove hardcoded paths)
-- [ ] Split postprocessing into modular components
-- [ ] Remove old constraints/ directory structure
+**High Priority** (Next Focus):
+- [ ] **Documentation development** (user guides, tutorials, API docs)
+- [ ] **Testing suite for inference components** (unit + integration tests)
 
 **Future Work**:
-- [ ] Implement GW NF model loading in data/loader.py
 - [ ] Implement REX posterior loading in data/loader.py
-- [ ] Data downloading utilities
-- [ ] Normalizing flow training pipeline (`train_NF.py`)
-- [ ] Support for additional constraints
-- [ ] Testing suite for inference components
+- [ ] GW190425 data downloading and processing
+- [ ] Normalizing flow training pipeline improvements
+- [ ] Support for additional constraints (more experiments)
 - [ ] Tutorial notebooks for config-based inference
-- [ ] Migration guide documentation
+- [ ] Migration guide for users of old argparse interface
 
-**Note**: The modular architecture is now functional (Phases 1-6 complete). The old argparse-based interface is preserved in `run_inference_old.py` but should not be used for new work. Use the config-driven system in `run_inference.py` instead.
+**Note**: The modular architecture is now fully functional (Phases 1-7 complete). The old argparse-based interface is preserved in `run_inference_old.py` but should not be used for new work. Use the config-driven system in `run_inference.py` instead.
 
 ## Repository Status
 

@@ -1,4 +1,4 @@
-"""flowMC sampler implementation and setup"""
+r"""flowMC sampler implementation and setup"""
 
 from typing import Any
 
@@ -12,6 +12,9 @@ from flowMC.Sampler import Sampler
 from .jester_sampler import JesterSampler
 from ..config.schema import SamplerConfig
 from ..base import LikelihoodBase, Prior, BijectiveTransform, NtoMTransform
+from jesterTOV.logging_config import get_logger
+
+logger = get_logger("jester")
 
 
 class FlowMCSampler(JesterSampler):
@@ -218,34 +221,34 @@ class FlowMCSampler(JesterSampler):
         production_local_acceptance = production_summary["local_accs"]
         production_global_acceptance = production_summary["global_accs"]
 
-        print("Training summary")
-        print("=" * 10)
+        logger.info("Training summary")
+        logger.info("=" * 10)
         for key, value in training_chain.items():
-            print(f"{key}: {value.mean():.3f} +/- {value.std():.3f}")
-        print(
+            logger.info(f"{key}: {value.mean():.3f} +/- {value.std():.3f}")
+        logger.info(
             f"Log probability: {training_log_prob.mean():.3f} +/- {training_log_prob.std():.3f}"
         )
-        print(
+        logger.info(
             f"Local acceptance: {training_local_acceptance.mean():.3f} +/- {training_local_acceptance.std():.3f}"
         )
-        print(
+        logger.info(
             f"Global acceptance: {training_global_acceptance.mean():.3f} +/- {training_global_acceptance.std():.3f}"
         )
-        print(
+        logger.info(
             f"Max loss: {training_loss.max():.3f}, Min loss: {training_loss.min():.3f}"
         )
 
-        print("Production summary")
-        print("=" * 10)
+        logger.info("Production summary")
+        logger.info("=" * 10)
         for key, value in production_chain.items():
-            print(f"{key}: {value.mean():.3f} +/- {value.std():.3f}")
-        print(
+            logger.info(f"{key}: {value.mean():.3f} +/- {value.std():.3f}")
+        logger.info(
             f"Log probability: {production_log_prob.mean():.3f} +/- {production_log_prob.std():.3f}"
         )
-        print(
+        logger.info(
             f"Local acceptance: {production_local_acceptance.mean():.3f} +/- {production_local_acceptance.std():.3f}"
         )
-        print(
+        logger.info(
             f"Global acceptance: {production_global_acceptance.mean():.3f} +/- {production_global_acceptance.std():.3f}"
         )
 

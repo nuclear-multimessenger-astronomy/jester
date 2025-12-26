@@ -18,28 +18,34 @@ from diffrax import diffeqsolve, ODETerm, Dopri5, SaveAt, PIDController
 def tov_ode(h, y, eos):
     r"""
     TOV ordinary differential equation system.
-    
+
     This function defines the coupled ODE system for the TOV equations plus
     tidal deformability. The system is solved in terms of the enthalpy h as
     the independent variable (decreasing from center to surface).
-    
+
     The TOV equations are:
-    
+
     .. math::
         \frac{dr}{dh} &= -\frac{r(r-2m)}{m + 4\pi r^3 p} \\
         \frac{dm}{dh} &= 4\pi r^2 \varepsilon \frac{dr}{dh} \\
         \frac{dH}{dh} &= \beta \frac{dr}{dh} \\
         \frac{d\beta}{dh} &= -(C_0 H + C_1 \beta) \frac{dr}{dh}
-        
+
     where H and :math:`\beta` are auxiliary variables for tidal deformability.
-    
-    Args:
-        h (float): Enthalpy (independent variable).
-        y (tuple): State vector (r, m, H, β).
-        eos (dict): EOS interpolation data.
-        
-    Returns:
-        tuple: Derivatives (dr/dh, dm/dh, dH/dh, dβ/dh).
+
+    Parameters
+    ----------
+    h : float
+        Enthalpy (independent variable)
+    y : tuple
+        State vector (r, m, H, β)
+    eos : dict
+        EOS interpolation data
+
+    Returns
+    -------
+    tuple
+        Derivatives (dr/dh, dm/dh, dH/dh, dβ/dh)
     """
     # Extract EOS interpolation arrays
     ps = eos["p"]
@@ -86,14 +92,21 @@ def calc_k2(R, M, H, b):
 
     where :math:`C = M/R` is the compactness.
 
-    Args:
-        R (float): Neutron star radius [geometric units].
-        M (float): Neutron star mass [geometric units].
-        H (float): Auxiliary tidal variable at surface.
-        b (float): Auxiliary tidal variable β at surface.
+    Parameters
+    ----------
+    R : float
+        Neutron star radius [geometric units]
+    M : float
+        Neutron star mass [geometric units]
+    H : float
+        Auxiliary tidal variable at surface
+    b : float
+        Auxiliary tidal variable β at surface
 
-    Returns:
-        float: Second Love number k₂.
+    Returns
+    -------
+    float
+        Second Love number k₂
     """
     y = R * b / H
     C = M / R
@@ -138,27 +151,32 @@ def tov_solver(eos, pc):
     The solver uses the Dormand-Prince 5th order adaptive method (Dopri5)
     with proper error control for numerical stability.
 
-    Args:
-        eos (dict): EOS interpolation data containing:
+    Parameters
+    ----------
+    eos : dict
+        EOS interpolation data containing:
 
-            - **p**: Pressure array [geometric units]
-            - **h**: Enthalpy array [geometric units]
-            - **e**: Energy density array [geometric units]
-            - **dloge_dlogp**: Logarithmic derivative array
+        - **p**: Pressure array [geometric units]
+        - **h**: Enthalpy array [geometric units]
+        - **e**: Energy density array [geometric units]
+        - **dloge_dlogp**: Logarithmic derivative array
+    pc : float
+        Central pressure [geometric units]
 
-        pc (float): Central pressure [geometric units].
+    Returns
+    -------
+    M : float
+        Gravitational mass [geometric units]
+    R : float
+        Circumferential radius [geometric units]
+    k2 : float
+        Second Love number for tidal deformability
 
-    Returns:
-        tuple: A tuple containing:
-
-            - **M**: Gravitational mass [geometric units]
-            - **R**: Circumferential radius [geometric units]
-            - **k2**: Second Love number for tidal deformability
-
-    Note:
-        The integration is performed from center to surface, with the enthalpy
-        decreasing from h_center to 0. Initial conditions are set using
-        series expansions valid near the center.
+    Notes
+    -----
+    The integration is performed from center to surface, with the enthalpy
+    decreasing from h_center to 0. Initial conditions are set using
+    series expansions valid near the center.
     """
     # Extract EOS interpolation arrays
     ps = eos["p"]

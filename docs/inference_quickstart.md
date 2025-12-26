@@ -21,11 +21,12 @@ JESTER provides ready-to-use example configurations:
 ls examples/inference/
 
 # Examples include:
-# - prior/              : Prior-only sampling (no data)
-# - nicer_only/         : NICER data only
-# - gw170817_only/      : GW170817 data only
-# - full_inference/     : All constraints enabled
-# - MM_CSE/             : MetaModel + CSE extension
+# - prior/         : Prior-only sampling (no observational data)
+# - GW170817/      : Gravitational wave constraint
+# - NICER_J0030/   : NICER PSR J0030+0451 X-ray timing
+# - NICER_J0740/   : NICER PSR J0740+6620 X-ray timing
+# - radio/         : Radio pulsar timing constraints
+# - chiEFT/        : Chiral effective field theory bounds
 ```
 
 ### 2. Run Prior-Only Sampling
@@ -53,24 +54,31 @@ ls outdir/
 
 ### 3. Run With Real Data
 
-**NICER observations only:**
+**Gravitational wave constraint (GW170817):**
 
 ```bash
-cd examples/inference/nicer_only/
+cd examples/inference/GW170817/
 run_jester_inference config.yaml
 ```
 
-**GW170817 only:**
+**NICER X-ray timing (PSR J0030+0451):**
 
 ```bash
-cd examples/inference/gw170817_only/
+cd examples/inference/NICER_J0030/
 run_jester_inference config.yaml
 ```
 
-**Full multi-messenger inference:**
+**NICER X-ray timing (PSR J0740+6620):**
 
 ```bash
-cd examples/inference/full_inference/
+cd examples/inference/NICER_J0740/
+run_jester_inference config.yaml
+```
+
+**Radio pulsar timing:**
+
+```bash
+cd examples/inference/radio/
 run_jester_inference config.yaml
 ```
 
@@ -131,9 +139,14 @@ likelihoods:
   - type: "nicer"
     enabled: true
     parameters:
-      targets: ["J0030", "J0740"]
-      analysis_groups: ["amsterdam", "maryland"]
-      sample_masses: false
+      pulsars:
+        - name: "J0030"
+          amsterdam_samples_file: "data/NICER/J0030_amsterdam.npz"
+          maryland_samples_file: "data/NICER/J0030_maryland.npz"
+        - name: "J0740"
+          amsterdam_samples_file: "data/NICER/J0740_amsterdam.npz"
+          maryland_samples_file: "data/NICER/J0740_maryland.npz"
+      N_masses_evaluation: 100
 ```
 
 ### Gravitational Waves
@@ -143,8 +156,10 @@ likelihoods:
   - type: "gw"
     enabled: true
     parameters:
-      event_name: "GW170817"
-      model_path: "./NFs/GW170817/model.eqx"
+      events:
+        - name: "GW170817"
+          model_dir: "data/GW/GW170817/model/"
+      N_masses_evaluation: 20
 ```
 
 ### Radio Pulsar Timing
@@ -154,9 +169,11 @@ likelihoods:
   - type: "radio"
     enabled: true
     parameters:
-      psr_name: "J0740+6620"
-      mass_mean: 2.08  # Solar masses
-      mass_std: 0.07
+      pulsars:
+        - name: "J0740+6620"
+          mass_mean: 2.08  # Solar masses
+          mass_std: 0.07
+      nb_masses: 100
 ```
 
 ### Chiral Effective Field Theory
@@ -166,6 +183,8 @@ likelihoods:
   - type: "chieft"
     enabled: true
     parameters:
+      low_filename: "data/chiEFT/low.dat"  # Optional
+      high_filename: "data/chiEFT/high.dat"  # Optional
       nb_n: 100
 ```
 

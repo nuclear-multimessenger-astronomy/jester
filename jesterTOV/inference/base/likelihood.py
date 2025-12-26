@@ -1,4 +1,4 @@
-"""Likelihood base class for JESTER inference system.
+r"""Likelihood base class for JESTER inference system.
 
 This module contains the LikelihoodBase class, which was originally from Jim (jimgw v0.2.0).
 It is copied here to remove the dependency on jimgw.

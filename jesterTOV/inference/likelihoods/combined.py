@@ -1,4 +1,4 @@
-"""Combined and utility likelihood classes"""
+r"""Combined and utility likelihood classes"""
 
 from typing import Any
 
