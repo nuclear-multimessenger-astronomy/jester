@@ -24,9 +24,7 @@ prior:
 
 # Likelihood constraints
 likelihoods:
-  # Physical constraint likelihood - enforces EOS validity
-  # Automatically rejects samples with: TOV failures, causality violations, instabilities
-  - type: "constraints"
+  - type: "constraints_eos"
     enabled: true
 
   # NICER X-ray timing constraint (PSR J0030+0451)

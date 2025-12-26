@@ -228,9 +228,9 @@ class ConstraintEOSLikelihood(LikelihoodBase):
         penalty_pressure: float = -1e5,
     ) -> None:
         super().__init__()
-        self.penalty_causality = penalty_causality
-        self.penalty_stability = penalty_stability
-        self.penalty_pressure = penalty_pressure
+        self.penalty_causality = float(penalty_causality)
+        self.penalty_stability = float(penalty_stability)
+        self.penalty_pressure = float(penalty_pressure)
 
     def evaluate(self, params: dict[str, Float | Array], data: dict[str, Any]) -> Float:
         """
@@ -304,7 +304,7 @@ class ConstraintTOVLikelihood(LikelihoodBase):
         penalty_tov: float = -1e10,
     ):
         super().__init__()
-        self.penalty_tov = penalty_tov
+        self.penalty_tov = float(penalty_tov)
 
     def evaluate(self, params: dict[str, float], data: dict) -> Float:
         """
@@ -340,6 +340,8 @@ class ConstraintLikelihood(LikelihoodBase):
     """
     Combined constraint likelihood for enforcing EOS physical validity.
 
+    TODO: remove from src code in future commit.
+    
     DEPRECATED: Use ConstraintEOSLikelihood and ConstraintTOVLikelihood instead
     for better control and performance. This class is kept for backwards compatibility.
 

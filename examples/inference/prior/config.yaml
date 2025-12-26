@@ -24,6 +24,8 @@ prior:
 
 # Likelihood constraints: Use zero likelihood for prior-only sampling
 likelihoods:
+  - type: "constraints_eos"
+    enabled: true
   - type: "zero"
     enabled: true
     parameters: {}
@@ -31,11 +33,11 @@ likelihoods:
 # MCMC sampler configuration
 # Note: Prior-only sampling typically requires fewer production loops
 sampler:
-  n_chains: 20               # Number of parallel chains
-  n_loop_training: 2         # Training loops (fewer needed for prior sampling)
-  n_loop_production: 2       # Production loops (fewer needed for prior sampling)
-  n_local_steps: 10         # Steps per local MCMC iteration
-  n_global_steps: 10        # Steps per global MCMC iteration
+  n_chains: 1000               # Number of parallel chains
+  n_loop_training: 10         # Training loops (fewer needed for prior sampling)
+  n_loop_production: 10       # Production loops (fewer needed for prior sampling)
+  n_local_steps: 100         # Steps per local MCMC iteration
+  n_global_steps: 100        # Steps per global MCMC iteration
   n_epochs: 20               # Epochs for flow training (fewer needed)
   learning_rate: 0.001       # Learning rate for flow optimization
   output_dir: "./outdir/"

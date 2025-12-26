@@ -24,6 +24,8 @@ prior:
 
 # Likelihood constraints (only GW170817 enabled)
 likelihoods:
+  - type: "constraints_eos"
+    enabled: true
   - type: "gw"
     enabled: true
     parameters:
