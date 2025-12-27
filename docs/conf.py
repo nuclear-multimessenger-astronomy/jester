@@ -20,6 +20,7 @@ extensions = [
     "sphinx.ext.viewcode",
     "sphinx.ext.intersphinx",
     "sphinx.ext.githubpages",
+    "myst_parser",
     "nbsphinx",
     "sphinx_copybutton",
     "sphinx_autodoc_typehints",
@@ -29,6 +30,19 @@ templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 language = "en"
+
+# -- MyST Parser configuration -----------------------------------------------
+myst_enable_extensions = [
+    "dollarmath",
+    "amsmath",
+    "deflist",
+    "fieldlist",
+    "colon_fence",
+]
+source_suffix = {
+    ".rst": "restructuredtext",
+    ".md": "markdown",
+}
 
 # -- Options for HTML output -------------------------------------------------
 html_theme = "sphinx_book_theme"
