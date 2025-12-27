@@ -30,9 +30,9 @@ When writing documentation, make it clear and brief to the point, and write full
 - ✅ BlackJAX dependency from handley-lab fork
 
 **Remaining Work**:
-1. **Testing**: Comprehensive test suite for new samplers (Phase 9)
-2. **Type Checking**: Run pyright and fix any type errors
-3. **Validation**: Test BlackJAX NS-AW with real inference runs
+1. **Type Checking**: Fix 7 pyright errors in `blackjax_ns_aw.py` (see Phase 10 section below)
+2. **Testing**: Comprehensive test suite for new samplers (Phase 9)
+3. **Validation**: Test BlackJAX NS-AW with real inference runs (example configs ready)
 
 **Recently Completed**:
 - ✅ **BlackJAX NS-AW Implementation** (Phase 10 - December 2024):
@@ -68,13 +68,26 @@ When writing documentation, make it clear and brief to the point, and write full
 **Files Created** (8): `factory.py`, `transform_factory.py`, `blackjax_ns_aw.py`, `blackjax_smc.py`, `kernels/acceptance_walk_kernel.py`, `kernels/__init__.py`, + 2 example configs
 **Files Modified** (9): `schema.py`, `transform.py`, `transform_factory.py`, `factory.py`, `flowmc.py`, `run_inference.py`, `generate_yaml_reference.py`, `pyproject.toml`, YAML docs
 
-**Note**: FlowMC and BlackJAX NS-AW backends fully functional and production-ready. SMC sampler has correct structure but needs BlackJAX SMC kernel integration for production use.
+**Note**:
+- FlowMC backend: ✅ Fully functional and production-ready
+- BlackJAX NS-AW backend: 🔧 Implementation complete, needs type checking fixes before production use
+- SMC backend: Has correct structure but needs BlackJAX SMC kernel integration for production use
 
 ---
 
-### BlackJAX Nested Sampling with Acceptance Walk (Phase 10 - ✅ COMPLETE)
+### BlackJAX SMC implementation
 
-**Status**: ✅ **IMPLEMENTATION COMPLETE** - Full nested sampling with acceptance walk kernel
+HIGH PRIORITY: Nested sampling seems currently OK for running tests, for now, focus on finishing the SMC support with blackjax.
+
+The src code is at /Users/Woute029/Documents/Code/projects/jester_review/blackjax
+
+Note; add support for NUTS, but also support for Gaussian random walk, as kernels
+
+---
+
+### BlackJAX Nested Sampling with Acceptance Walk (Phase 10 - 🔧 TYPE CHECKING)
+
+**Status**: 🔧 **IMPLEMENTATION COMPLETE** - Needs type checking fixes before testing
 
 **Implementation Completed** (2024-12-27):
 - ✅ Renamed all "nested_sampling" references to "blackjax-ns-aw"
@@ -98,13 +111,96 @@ When writing documentation, make it clear and brief to the point, and write full
 - ✅ Implemented `get_log_prob()` returning log likelihoods
 - ✅ Implemented `get_n_samples()` using final_state.particles length
 - ✅ All imports verified and working
+- ✅ Example configs created for all use cases (prior-only, GW170817, NICER_J0030, NICER_J0740, chiEFT, radio)
+- ✅ Prior-only test run successful (results in `examples/inference/blackjax-ns-aw/prior/outdir/`)
 
-**What's Next**:
-- Testing with constraints-only configuration
-- Validation against FlowMC on same problem
-- Verify evidence calculation is sensible
+**Current File Status**:
+- Location: `jesterTOV/inference/samplers/blackjax_ns_aw.py`
+- Lines: 495 (full implementation)
+- All methods implemented: `sample()`, `get_samples()`, `get_log_prob()`, `get_n_samples()`
 
-**Reference Implementations**:
+**⚠️ TYPE CHECKING ERRORS** (Must fix before testing):
+
+Run: `uv run pyright jesterTOV/inference/samplers/blackjax_ns_aw.py`
+
+7 errors found (2024-12-27):
+
+1. **Line 235**: Missing `rng_key` argument in `nested_sampler.init(initial_particles)`
+   - Need to check acceptance_walk_kernel signature
+
+2. **Line 274**: Type mismatch in `transform.backward(physical_particles)`
+   - `ArrayTree | ParamDict` not assignable to `ParamDict`
+   - May need explicit type casting or annotation
+
+3. **Line 296**: Cannot use `len()` on `ArrayTree` type
+   - `len(final_info.particles)` - particles type is `ArrayTree`
+   - Need to handle dict-like structure
+
+4. **Line 297**: Cannot access `n_likelihood_evals` attribute
+   - `final_info.inner_kernel_info.n_likelihood_evals` - attribute unknown on NamedTuple
+   - Need to verify NSInfo structure from BlackJAX
+
+5. **Line 398**: Type conversion issue with `float(ns_samples.logZ())`
+   - Generic/complex type not convertible to float
+   - May need explicit `.item()` or type annotation
+
+6. **Line 399**: Cannot access `.std()` on `MethodType`
+   - `ns_samples.logZ.std()` - logZ is a method, not property
+   - Likely need `ns_samples.logZ().std()` or check anesthetic API
+
+**TODO - Type Checking Fixes**:
+- [ ] Fix all 7 pyright type errors in `blackjax_ns_aw.py`
+- [ ] Run `uv run pyright jesterTOV/inference/samplers/blackjax_ns_aw.py` until clean
+- [ ] Verify acceptance_walk_kernel signature for init() call
+- [ ] Check BlackJAX NSInfo structure for inner_kernel_info attributes
+- [ ] Verify anesthetic API for logZ evidence computation
+
+**TODO - Testing & Validation**:
+- [ ] Test prior-only sampling (already run, verify results are sensible)
+- [ ] Test with `constraints_eos` + `constraints_tov` (chiEFT example)
+- [ ] Test with GW170817 likelihood
+- [ ] Test with NICER_J0030 likelihood
+- [ ] Test with NICER_J0740 likelihood
+- [ ] Compare posterior with FlowMC on same problem (evidence cross-check)
+- [ ] Verify evidence calculation (logZ) is sensible for each test case
+- [ ] Check importance weights are properly normalized
+- [ ] Verify postprocessing works with NS samples (cornerplots, M-R curves)
+
+**Example Configs Available**:
+```bash
+# Prior-only (already tested)
+examples/inference/blackjax-ns-aw/prior/config.yaml
+
+# GW170817 constraint
+examples/inference/blackjax-ns-aw/GW170817/config.yaml
+
+# NICER constraints
+examples/inference/blackjax-ns-aw/NICER_J0030/config.yaml
+examples/inference/blackjax-ns-aw/NICER_J0740/config.yaml
+
+# ChiEFT and radio constraints
+examples/inference/blackjax-ns-aw/chiEFT/config.yaml
+examples/inference/blackjax-ns-aw/radio/config.yaml
+```
+
+**Testing Commands**:
+```bash
+# Run prior-only test
+cd examples/inference/blackjax-ns-aw/prior
+uv run run_jester_inference config.yaml
+
+# Run GW170817 test
+cd examples/inference/blackjax-ns-aw/GW170817
+uv run run_jester_inference config.yaml
+
+# Validate config only
+uv run run_jester_inference config.yaml --validate-only
+
+# Dry run (setup without sampling)
+uv run run_jester_inference config.yaml --dry-run
+```
+
+**Reference Implementations** (for debugging):
 
 Primary reference (jim-catalogue):
 - Main script: `/Users/Woute029/Documents/Code/projects/jester_review/jim-catalogue/scripts/analysis/jim/samplers/blackjax_ns_aw.py`
@@ -113,48 +209,8 @@ Primary reference (jim-catalogue):
 BlackJAX source code (handley-lab fork):
 - Root: `/Users/Woute029/Documents/Code/projects/jester_review/blackjax`
 - NS utilities: `blackjax/blackjax/ns/utils.py` (finalise function)
-- NS base: `blackjax/blackjax/ns/base.py` (NSState, PartitionedState)
+- NS base: `blackjax/blackjax/ns/base.py` (NSState, PartitionedState, NSInfo)
 - NS adaptive: `blackjax/blackjax/ns/adaptive.py` (build_kernel)
-
-**Key Implementation Details**:
-
-1. **Unit Cube Stepper**: Must handle boundary wrapping for [0,1] space
-   ```python
-   def unit_cube_stepper(position, delta, gamma):
-       """Step in unit cube with periodic boundaries."""
-       new_pos = position + gamma * delta
-       # Wrap to [0, 1] using modulo
-       return jax.tree_map(lambda x: x % 1.0, new_pos)
-   ```
-
-2. **Termination Condition**:
-   ```python
-   def terminate(state):
-       dlogz = jnp.logaddexp(0, state.logZ_live - state.logZ)
-       return jnp.isfinite(dlogz) and dlogz < config.termination_dlogz
-   ```
-
-3. **Transform Handling**:
-   - Forward: prior space → unit cube (done before NS init)
-   - Backward: unit cube → prior space (done in get_samples)
-   - Sample transforms are BoundToBound [0,1] created by transform_factory
-
-**Testing Strategy**:
-1. Start with simple 2D Gaussian (verify evidence calculation)
-2. Test with constraints-only (`constraints_eos` + `constraints_tov`)
-3. Compare posterior with FlowMC on same problem
-4. Check that logZ is sensible for the problem
-
-**Dependencies**:
-```bash
-# Already in pyproject.toml (handley-lab fork)
-blackjax @ git+https://github.com/handley-lab/blackjax@nested_sampling
-```
-
-**Current File Status**:
-- Location: `jesterTOV/inference/samplers/blackjax_ns_aw.py`
-- Lines: ~330 (with placeholder implementations)
-- Needs: Replace placeholder `sample()` with actual algorithm (~80 lines based on reference)
 
 ---
 
