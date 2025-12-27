@@ -37,8 +37,8 @@ likelihoods:
   - type: "chieft"
     enabled: true
     parameters:
-      low_filename: "../../../jesterTOV/inference/data/chiEFT/2402.04172/low.dat"
-      high_filename: "../../../jesterTOV/inference/data/chiEFT/2402.04172/high.dat"
+      low_filename: "../../../../jesterTOV/inference/data/chiEFT/2402.04172/low.dat"
+      high_filename: "../../../../jesterTOV/inference/data/chiEFT/2402.04172/high.dat"
       nb_n: 100  # Number of density points for integration
 
 

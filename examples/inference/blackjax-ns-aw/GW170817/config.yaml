@@ -31,7 +31,7 @@ likelihoods:
     parameters:
       events:
         - name: "GW170817"
-          model_dir: "../../../jesterTOV/inference/flows/models/gw_maf/gw170817/gw170817_gwtc1_lowspin_posterior"
+          model_dir: "../../../../jesterTOV/inference/flows/models/gw_maf/gw170817/gw170817_gwtc1_lowspin_posterior"
       penalty_value: -99999.0
       N_masses_evaluation: 1
       N_masses_batch_size: 1
