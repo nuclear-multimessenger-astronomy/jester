@@ -8,6 +8,10 @@ The `jesterTOV/inference/` module provides Bayesian inference for constraining n
 
 **Status**: Fully functional - Modular architecture complete (Phases 1-7), data infrastructure in place, ready for production use
 
+**Next Priority**: 📋 **Multi-Sampler Architecture** - Extend beyond FlowMC to support Nested Sampling and SMC
+- Plan location: `/Users/Woute029/.claude/plans/twinkly-crunching-seal.md`
+- See `../../CLAUDE.md` for full details on implementation phases
+
 **Recent Completions**:
 - ✅ NICER data downloading and KDE construction (J0030+0451, J0740+6620)
 - ✅ GW170817 posterior data extraction and processing

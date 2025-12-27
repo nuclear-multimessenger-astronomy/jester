@@ -323,6 +323,82 @@ class LogitTransform(BijectiveTransform):
         }
 
 
+@jaxtyped(typechecker=typechecker)
+class BoundToBound(BijectiveTransform):
+    """
+    Linear transform from [original_lower, original_upper] to [target_lower, target_upper].
+
+    Used for nested sampling to map prior bounds to unit cube [0, 1].
+
+    Note: This implementation handles per-parameter bounds, where each parameter can have
+    different original and target bounds.
+    """
+
+    original_lower_bound: dict[str, Float]
+    original_upper_bound: dict[str, Float]
+    target_lower_bound: dict[str, Float]
+    target_upper_bound: dict[str, Float]
+
+    def __init__(
+        self,
+        name_mapping: NameMapping,
+        original_lower_bound: dict[str, Float],
+        original_upper_bound: dict[str, Float],
+        target_lower_bound: dict[str, Float],
+        target_upper_bound: dict[str, Float],
+    ) -> None:
+        """
+        Parameters
+        ----------
+        name_mapping : NameMapping
+            Tuple of (input_names, output_names).
+        original_lower_bound : dict[str, Float]
+            Lower bounds in original space (per parameter).
+        original_upper_bound : dict[str, Float]
+            Upper bounds in original space (per parameter).
+        target_lower_bound : dict[str, Float]
+            Lower bounds in target space (per parameter).
+        target_upper_bound : dict[str, Float]
+            Upper bounds in target space (per parameter).
+        """
+        super().__init__(name_mapping)
+        self.original_lower_bound = original_lower_bound
+        self.original_upper_bound = original_upper_bound
+        self.target_lower_bound = target_lower_bound
+        self.target_upper_bound = target_upper_bound
+
+        # Forward: original → target
+        # y = (x - x_min) / (x_max - x_min) * (y_max - y_min) + y_min
+        def _forward(x: ParamDict) -> ParamDict:
+            result = {}
+            for i, in_name in enumerate(name_mapping[0]):
+                out_name = name_mapping[1][i]
+                x_val = x[in_name]
+                x_min = original_lower_bound[in_name]
+                x_max = original_upper_bound[in_name]
+                y_min = target_lower_bound[out_name]
+                y_max = target_upper_bound[out_name]
+                result[out_name] = (x_val - x_min) / (x_max - x_min) * (y_max - y_min) + y_min
+            return result
+
+        # Inverse: target → original
+        # x = (y - y_min) / (y_max - y_min) * (x_max - x_min) + x_min
+        def _inverse(y: ParamDict) -> ParamDict:
+            result = {}
+            for i, out_name in enumerate(name_mapping[1]):
+                in_name = name_mapping[0][i]
+                y_val = y[out_name]
+                x_min = original_lower_bound[in_name]
+                x_max = original_upper_bound[in_name]
+                y_min = target_lower_bound[out_name]
+                y_max = target_upper_bound[out_name]
+                result[in_name] = (y_val - y_min) / (y_max - y_min) * (x_max - x_min) + x_min
+            return result
+
+        self.transform_func = _forward
+        self.inverse_transform_func = _inverse
+
+
 # FIXME: remove if not used anywhere
 # @jaxtyped(typechecker=typechecker)
 # class ArcSineTransform(BijectiveTransform):

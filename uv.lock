@@ -38,6 +38,23 @@ wheels = [
 ]
 
 [[package]]
+name = "anesthetic"
+version = "2.11.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "matplotlib" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "pandas" },
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "scipy", version = "1.16.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/19/67/045bd881517a4507a403b6d82eddfdceabcc3c1339bc6d1f844e67cbee04/anesthetic-2.11.0.tar.gz", hash = "sha256:087ae5d42bc2e29671fe4e7fcae3e5c0c769e8a7bdefdc57dee9ed77959d0749", size = 103574, upload-time = "2025-12-02T02:30:17.717Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d8/3c/ed1d3e7718d321ce26f00f8c4f8eb4fc5776eff25e5586ce1b807cd9232d/anesthetic-2.11.0-py3-none-any.whl", hash = "sha256:e5fbf9ba5022a2b2e8970c6820883bc01d305420b9f34b842ce5e795914913a5", size = 78340, upload-time = "2025-12-02T02:30:16.216Z" },
+]
+
+[[package]]
 name = "annotated-types"
 version = "0.7.0"
 source = { registry = "https://pypi.org/simple" }
@@ -248,6 +265,19 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/8b/c5/ad5ca082b2610defc488679690df8137300c6bb396b24f783e3d74873fa4/bilby.cython-0.5.3-cp312-cp312-macosx_12_0_x86_64.whl", hash = "sha256:264ccd8ca1adabc794931ed6deb5082ad0ed4b52694be8158cb421a80a752bca", size = 351851, upload-time = "2024-08-23T15:22:07.895Z" },
     { url = "https://files.pythonhosted.org/packages/13/26/f0b46d56d278665b484ec421dc571fb28bdd81635137d00e0edc2c8fddc9/bilby.cython-0.5.3-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:44e5e381c2861e26a4e1fd5c591ea0c3c9a0e2f0d8c78f28f8704abf2945cd8d", size = 1014120, upload-time = "2024-08-23T15:22:09.942Z" },
     { url = "https://files.pythonhosted.org/packages/11/de/02429d598ec5ed4c70113a2c3e8b76a5b113885f85eacdcdaf19cbb6d23d/bilby.cython-0.5.3-cp312-cp312-win_amd64.whl", hash = "sha256:2758256339d7c3703014b265d3a77e0299d5c6264f962bc311c989ac453cbd60", size = 357801, upload-time = "2024-08-23T15:54:20.941Z" },
+]
+
+[[package]]
+name = "blackjax"
+version = "0.1.dev717+g95e93ed93"
+source = { git = "https://github.com/handley-lab/blackjax?rev=nested_sampling#95e93ed93e726b95143b2f4a9582888621625f52" }
+dependencies = [
+    { name = "fastprogress" },
+    { name = "jax" },
+    { name = "jaxlib" },
+    { name = "jaxopt" },
+    { name = "optax" },
+    { name = "typing-extensions" },
 ]
 
 [[package]]
@@ -820,6 +850,15 @@ wheels = [
 ]
 
 [[package]]
+name = "fastprogress"
+version = "1.0.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/95/52/77c827febdf8aac3b0840ce0edb7c34cbd330fab9bbe032c2a79ec8f2d51/fastprogress-1.0.3.tar.gz", hash = "sha256:7a17d2b438890f838c048eefce32c4ded47197ecc8ea042cecc33d3deb8022f5", size = 14920, upload-time = "2022-07-22T07:02:14.983Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a7/8f/213223fdee199c55db81e2d0c669f30e8285c5be2526c4ed924de39247da/fastprogress-1.0.3-py3-none-any.whl", hash = "sha256:6dfea88f7a4717b0a8d6ee2048beae5dbed369f932a368c5dd9caff34796f7c5", size = 12744, upload-time = "2022-07-22T07:02:12.547Z" },
+]
+
+[[package]]
 name = "filelock"
 version = "3.20.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1239,6 +1278,23 @@ wheels = [
 ]
 
 [[package]]
+name = "jaxopt"
+version = "0.8.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "jax" },
+    { name = "jaxlib" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "scipy", version = "1.16.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f9/af/73f7514ea14d6aba0a851e03afbdd532a7af896577c708c6ce405917ce80/jaxopt-0.8.3.tar.gz", hash = "sha256:4b06dfa6f915a4f3291699606245af6069371a48dc5c92d4c507840d62990646", size = 121236, upload-time = "2024-01-10T12:04:13.487Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/64/a4/fc292a90a9c51d1b633cdffe2df30c702e1e0b3e0b568c7b81004cac0a06/jaxopt-0.8.3-py3-none-any.whl", hash = "sha256:4be2f82798393682529c9ca5046e5397ac6c8657b8acb6bf275e773b28df15b6", size = 172264, upload-time = "2024-01-10T12:04:11.354Z" },
+]
+
+[[package]]
 name = "jaxtyping"
 version = "0.3.3"
 source = { registry = "https://pypi.org/simple" }
@@ -1267,8 +1323,10 @@ name = "jestertov"
 version = "0.1.1"
 source = { editable = "." }
 dependencies = [
+    { name = "anesthetic" },
     { name = "arviz" },
     { name = "beartype" },
+    { name = "blackjax" },
     { name = "corner" },
     { name = "diffrax" },
     { name = "equinox" },
@@ -1328,10 +1386,12 @@ test = [
 
 [package.metadata]
 requires-dist = [
+    { name = "anesthetic", specifier = ">=2.0.0" },
     { name = "arviz", specifier = ">=0.15.0" },
     { name = "astropy", marker = "extra == 'dev'", specifier = ">=5.0.0" },
     { name = "beartype", specifier = ">=0.10.0" },
     { name = "bilby", marker = "extra == 'dev'", specifier = ">=2.0.0" },
+    { name = "blackjax", git = "https://github.com/handley-lab/blackjax?rev=nested_sampling" },
     { name = "corner", specifier = ">=2.2.0" },
     { name = "diffrax" },
     { name = "equinox", specifier = ">=0.11.0" },

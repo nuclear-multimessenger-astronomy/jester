@@ -4,13 +4,14 @@ from typing import Any
 
 import jax
 import jax.numpy as jnp
+from jaxtyping import Array
 from flowMC.nfmodel.rqSpline import MaskedCouplingRQSpline
 from flowMC.proposal.MALA import MALA
 from flowMC.proposal.Gaussian_random_walk import GaussianRandomWalk
 from flowMC.Sampler import Sampler
 
 from .jester_sampler import JesterSampler
-from ..config.schema import SamplerConfig
+from ..config.schema import FlowMCSamplerConfig
 from ..base import LikelihoodBase, Prior, BijectiveTransform, NtoMTransform
 from jesterTOV.logging_config import get_logger
 
@@ -74,21 +75,17 @@ class FlowMCSampler(JesterSampler):
         self,
         likelihood: LikelihoodBase,
         prior: Prior,
-        sample_transforms: list[BijectiveTransform] | None = None,
-        likelihood_transforms: list[NtoMTransform] | None = None,
-        local_sampler_name: str = "GaussianRandomWalk",
+        sample_transforms: list[BijectiveTransform],
+        likelihood_transforms: list[NtoMTransform],
+        config: FlowMCSamplerConfig,
         seed: int = 0,
+        local_sampler_name: str = "GaussianRandomWalk",
         local_sampler_arg: dict[str, Any] | None = None,
         num_layers: int = 10,
         hidden_size: list[int] | None = None,
         num_bins: int = 8,
-        **kwargs: Any,
     ) -> None:
         # Handle None defaults
-        if sample_transforms is None:
-            sample_transforms = []
-        if likelihood_transforms is None:
-            likelihood_transforms = []
         if local_sampler_arg is None:
             local_sampler_arg = {}
         if hidden_size is None:
@@ -96,6 +93,9 @@ class FlowMCSampler(JesterSampler):
 
         # Initialize base class (sets up transforms and parameter names)
         super().__init__(likelihood, prior, sample_transforms, likelihood_transforms)
+
+        # Store config
+        self.config = config
 
         # FlowMC-specific initialization
         rng_key = jax.random.PRNGKey(seed)
@@ -123,14 +123,22 @@ class FlowMCSampler(JesterSampler):
             self.prior.n_dim, num_layers, hidden_size, num_bins, subkey
         )
 
-        # Create flowMC sampler
+        # Create flowMC sampler with config parameters
         self.sampler = Sampler(
             self.prior.n_dim,
             rng_key,
             None,  # type: ignore
             local_sampler,
             model,
-            **kwargs,
+            n_loop_training=config.n_loop_training,
+            n_loop_production=config.n_loop_production,
+            n_chains=config.n_chains,
+            n_local_steps=config.n_local_steps,
+            n_global_steps=config.n_global_steps,
+            n_epochs=config.n_epochs,
+            learning_rate=config.learning_rate,
+            train_thinning=config.train_thinning,
+            output_thinning=config.output_thinning,
         )
 
     def sample(self, key, initial_position=jnp.array([])):
@@ -277,9 +285,47 @@ class FlowMCSampler(JesterSampler):
             chains = jax.vmap(sample_transform.backward)(chains)
         return chains
 
+    def get_log_prob(self, training: bool = False) -> Array:
+        """
+        Get log probabilities from flowMC sampler.
+
+        Parameters
+        ----------
+        training : bool, optional
+            Whether to get training or production log probs (default: False)
+
+        Returns
+        -------
+        Array
+            Log posterior probability values (1D array, flattened across chains)
+        """
+        if training:
+            sampler_state = self.sampler.get_sampler_state(training=True)
+        else:
+            sampler_state = self.sampler.get_sampler_state(training=False)
+
+        return sampler_state["log_prob"].flatten()
+
+    def get_n_samples(self, training: bool = False) -> int:
+        """
+        Get number of samples from flowMC sampler.
+
+        Parameters
+        ----------
+        training : bool, optional
+            Whether to count training or production samples (default: False)
+
+        Returns
+        -------
+        int
+            Number of samples (total across all chains)
+        """
+        log_prob = self.get_log_prob(training=training)
+        return len(log_prob)
+
 
 def setup_flowmc_sampler(
-    config: SamplerConfig,
+    config: FlowMCSamplerConfig,
     prior,
     likelihood,
     transform,
@@ -292,8 +338,8 @@ def setup_flowmc_sampler(
 
     Parameters
     ----------
-    config : SamplerConfig
-        Sampler configuration
+    config : FlowMCSamplerConfig
+        FlowMC sampler configuration
     prior : CombinePrior
         Combined prior object
     likelihood : LikelihoodBase

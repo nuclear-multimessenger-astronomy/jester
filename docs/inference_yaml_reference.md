@@ -47,19 +47,10 @@ likelihoods:
     parameters:
       # Likelihood-specific parameters (see section below)
 
-# Sampler configuration
+# Sampler configuration (choose one type)
 sampler:
-  n_chains: 20
-  n_loop_training: 3
-  n_loop_production: 3
-  n_local_steps: 100
-  n_global_steps: 100
-  n_epochs: 30
-  learning_rate: 0.001
-  output_dir: "./outdir/"
-  train_thinning: 1
-  output_thinning: 5
-  n_eos_samples: 10000
+  type: "flowmc"  # or "nested_sampling", "smc"
+  # See sampler-specific fields below
 
 # Data paths (optional overrides)
 data_paths: {}
@@ -80,7 +71,7 @@ data_paths: {}
 
 - `likelihoods`: `list[LikelihoodConfig]` (**required**)
 
-- `sampler`: `SamplerConfig` (**required**)
+- `sampler`: `typing.Union[jesterTOV.inference.config.schema.FlowMCSamplerConfig, jesterTOV.inference.config.schema.NestedSamplingConfig, jesterTOV.inference.config.schema.SMCSamplerConfig]` (**required**)
 
 - `postprocessing`: `PostprocessingConfig` (optional)
   - Default: `enabled=True make_cornerplot=True make_massradius=True make_pressuredensity=True make_histograms=True make_contours=True prior_dir=None`
@@ -206,7 +197,20 @@ List of observational constraints. Each likelihood has:
 
 ### Sampler Configuration (`sampler:`)
 
-Controls MCMC sampling via flowMC.
+The sampler configuration uses a discriminated union based on the `type` field. Choose one of:
+
+#### FlowMC Sampler (`type: "flowmc"`)
+
+Normalizing flow-enhanced MCMC with local and global sampling phases.
+
+- `type`: `"flowmc"` (optional)
+  - Default: `"flowmc"`
+
+- `output_dir`: `str` (optional)
+  - Default: `"./outdir/"`
+
+- `n_eos_samples`: `int` (optional)
+  - Default: `10000`
 
 - `n_chains`: `int` (optional)
   - Default: `20`
@@ -229,24 +233,87 @@ Controls MCMC sampling via flowMC.
 - `learning_rate`: `float` (optional)
   - Default: `0.001`
 
-- `output_dir`: `str` (optional)
-  - Default: `"./outdir/"`
-
 - `train_thinning`: `int` (optional)
   - Default: `1`
 
 - `output_thinning`: `int` (optional)
   - Default: `5`
 
-- `n_eos_samples`: `int` (optional)
-  - Default: `10000`
 **Sampling Phases**:
 - **Training**: `n_loop_training` loops of `n_local_steps` MCMC + NF training for `n_epochs`
 - **Production**: `n_loop_production` loops of `n_local_steps` MCMC + `n_global_steps` NF proposals
 
-**Total samples** (approximate):
-- Training: `n_chains × n_loop_training × n_local_steps ÷ train_thinning`
-- Production: `n_chains × n_loop_production × (n_local_steps + n_global_steps) ÷ output_thinning`
+#### Nested Sampling (`type: "nested_sampling"`)
+
+BlackJAX nested sampling with acceptance walk for Bayesian evidence estimation.
+
+- `type`: `"nested_sampling"` (optional)
+  - Default: `"nested_sampling"`
+
+- `output_dir`: `str` (optional)
+  - Default: `"./outdir/"`
+
+- `n_eos_samples`: `int` (optional)
+  - Default: `10000`
+
+- `n_live`: `int` (optional)
+  - Default: `1000`
+
+- `n_delete_frac`: `float` (optional)
+  - Default: `0.5`
+
+- `n_target`: `int` (optional)
+  - Default: `60`
+
+- `max_mcmc`: `int` (optional)
+  - Default: `5000`
+
+- `max_proposals`: `int` (optional)
+  - Default: `1000`
+
+- `termination_dlogz`: `float` (optional)
+  - Default: `0.1`
+
+**Output**: Evidence (logZ ± error) and posterior samples with importance weights.
+
+#### Sequential Monte Carlo (`type: "smc"`)
+
+BlackJAX SMC with adaptive tempering and NUTS kernel.
+
+- `type`: `"smc"` (optional)
+  - Default: `"smc"`
+
+- `output_dir`: `str` (optional)
+  - Default: `"./outdir/"`
+
+- `n_eos_samples`: `int` (optional)
+  - Default: `10000`
+
+- `n_particles`: `int` (optional)
+  - Default: `10000`
+
+- `n_mcmc_steps`: `int` (optional)
+  - Default: `1`
+
+- `target_ess`: `float` (optional)
+  - Default: `0.9`
+
+- `init_step_size`: `float` (optional)
+  - Default: `0.01`
+
+- `mass_matrix_base`: `float` (optional)
+  - Default: `0.2`
+
+- `mass_matrix_param_scales`: `dict[str, float]` (optional)
+  - Default: `{}`
+
+- `target_acceptance`: `float` (optional)
+  - Default: `0.7`
+
+- `adaptation_rate`: `float` (optional)
+  - Default: `0.3`
+
+**Output**: Posterior samples and effective sample size (ESS) statistics.
 
 ### Data Paths (`data_paths:`)
 

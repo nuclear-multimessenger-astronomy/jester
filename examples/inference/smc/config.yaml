@@ -1,0 +1,61 @@
+# Sequential Monte Carlo (SMC) Configuration Example
+# Uses BlackJAX SMC with adaptive tempering and NUTS kernel
+
+seed: 42
+
+# Execution options
+dry_run: false        # Set to true to setup everything but not run sampler
+validate_only: false  # Set to true to only validate configuration
+
+# Transform configuration: MetaModel for EOS curves
+transform:
+  type: "metamodel"
+  ndat_metamodel: 100        # Number of data points for MetaModel interpolation
+  nmax_nsat: 25.0            # Maximum density (in units of nsat) for MetaModel
+  nb_CSE: 0                  # No CSE for this example (set to 8 for metamodel_cse)
+  min_nsat_TOV: 0.75         # Minimum density for TOV integration
+  ndat_TOV: 100              # Number of points for TOV integration
+  nb_masses: 100             # Number of mass samples for M-R curve
+  crust_name: "DH"           # Crust model (Douchin-Haensel)
+
+# Prior specification file
+prior:
+  specification_file: "../../priors/specifications/nep_standard.prior"
+
+# Likelihood constraints
+likelihoods:
+  - type: "constraints_eos"
+    enabled: true
+    parameters:
+      penalty_causality: -1.0e10
+      penalty_stability: -1.0e5
+      penalty_pressure: -1.0e5
+  - type: "constraints_tov"
+    enabled: true
+    parameters:
+      penalty_tov: -1.0e10
+
+# SMC configuration
+sampler:
+  type: "smc"
+  n_particles: 10000         # Number of particles
+  n_mcmc_steps: 1            # MCMC steps per tempering level
+  target_ess: 0.9            # Target effective sample size (90%)
+  init_step_size: 0.01       # Initial step size for NUTS
+  mass_matrix_base: 0.2      # Base value for diagonal mass matrix
+  mass_matrix_param_scales:  # Per-parameter scaling (if needed)
+    {}                       # Empty for uniform scaling
+  target_acceptance: 0.7     # Target acceptance rate for NUTS
+  adaptation_rate: 0.3       # Adaptation rate for step size tuning
+  n_eos_samples: 10000       # Number of EOS samples to generate after inference
+  output_dir: "./outdir/"
+
+# Postprocessing configuration
+postprocessing:
+  enabled: true
+  make_cornerplot: true
+  make_massradius: true
+  make_pressuredensity: true
+
+# Data paths (none needed for constraints-only)
+data_paths: {}

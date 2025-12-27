@@ -23,7 +23,9 @@ from .schema import (
     TransformConfig,
     PriorConfig,
     LikelihoodConfig,
-    SamplerConfig,
+    FlowMCSamplerConfig,
+    NestedSamplingConfig,
+    SMCSamplerConfig,
 )
 
 
@@ -234,14 +236,10 @@ The JESTER inference system uses YAML configuration files validated by Pydantic 
     doc += "    parameters:\n"
     doc += "      # Likelihood-specific parameters (see section below)\n"
 
-    doc += "\n# Sampler configuration\n"
+    doc += "\n# Sampler configuration (choose one type)\n"
     doc += "sampler:\n"
-    sampler_fields = extract_field_info(SamplerConfig)
-    for field in sampler_fields:
-        default = field['default'] if field['default'] is not None else '...'
-        if isinstance(default, str):
-            default = f'"{default}"'
-        doc += f"  {field['name']}: {default}\n"
+    doc += "  type: \"flowmc\"  # or \"nested_sampling\", \"smc\"\n"
+    doc += "  # See sampler-specific fields below\n"
 
     doc += "\n# Data paths (optional overrides)\n"
     doc += "data_paths: {}\n"
@@ -336,18 +334,32 @@ The JESTER inference system uses YAML configuration files validated by Pydantic 
     doc += "  parameters: {}  # No parameters needed\n"
     doc += "```\n\n"
 
-    # Sampler fields
+    # Sampler fields - discriminated union
     doc += "### Sampler Configuration (`sampler:`)\n\n"
-    doc += "Controls MCMC sampling via flowMC.\n\n"
-    doc += generate_field_docs(sampler_fields)
+    doc += "The sampler configuration uses a discriminated union based on the `type` field. Choose one of:\n\n"
 
-    doc += "**Sampling Phases**:\n"
+    # FlowMC
+    doc += "#### FlowMC Sampler (`type: \"flowmc\"`)\n\n"
+    doc += "Normalizing flow-enhanced MCMC with local and global sampling phases.\n\n"
+    flowmc_fields = extract_field_info(FlowMCSamplerConfig)
+    doc += generate_field_docs(flowmc_fields)
+    doc += "\n**Sampling Phases**:\n"
     doc += "- **Training**: `n_loop_training` loops of `n_local_steps` MCMC + NF training for `n_epochs`\n"
     doc += "- **Production**: `n_loop_production` loops of `n_local_steps` MCMC + `n_global_steps` NF proposals\n\n"
 
-    doc += "**Total samples** (approximate):\n"
-    doc += "- Training: `n_chains × n_loop_training × n_local_steps ÷ train_thinning`\n"
-    doc += "- Production: `n_chains × n_loop_production × (n_local_steps + n_global_steps) ÷ output_thinning`\n\n"
+    # Nested Sampling
+    doc += "#### Nested Sampling (`type: \"nested_sampling\"`)\n\n"
+    doc += "BlackJAX nested sampling with acceptance walk for Bayesian evidence estimation.\n\n"
+    ns_fields = extract_field_info(NestedSamplingConfig)
+    doc += generate_field_docs(ns_fields)
+    doc += "\n**Output**: Evidence (logZ ± error) and posterior samples with importance weights.\n\n"
+
+    # SMC
+    doc += "#### Sequential Monte Carlo (`type: \"smc\"`)\n\n"
+    doc += "BlackJAX SMC with adaptive tempering and NUTS kernel.\n\n"
+    smc_fields = extract_field_info(SMCSamplerConfig)
+    doc += generate_field_docs(smc_fields)
+    doc += "\n**Output**: Posterior samples and effective sample size (ESS) statistics.\n\n"
 
     # Data paths
     doc += "### Data Paths (`data_paths:`)\n\n"

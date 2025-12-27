@@ -23,7 +23,8 @@ from .config.parser import load_config
 from .priors.parser import parse_prior_file
 from .transforms.factory import create_transform
 from .likelihoods.factory import create_combined_likelihood
-from .samplers import setup_flowmc_sampler, JesterSampler
+from .samplers.factory import create_sampler
+from .samplers.jester_sampler import JesterSampler
 from jesterTOV.logging_config import get_logger
 
 # Set up logger
@@ -170,14 +171,14 @@ def setup_likelihood(config, transform, data_loader=None):
     )
 
 
-def run_sampling(flowmc_sampler, seed, outdir):
+def run_sampling(sampler, seed, outdir):
     """
     Run MCMC sampling and save results
 
     Parameters
     ----------
-    flowmc_sampler : JesterSampler
-        JesterSampler instance configured with flowMC backend
+    sampler : JesterSampler
+        JesterSampler instance (FlowMC, BlackJAX NS, or BlackJAX SMC)
     seed : int
         Random seed for sampling
     outdir : str or Path
@@ -190,8 +191,8 @@ def run_sampling(flowmc_sampler, seed, outdir):
     """
     logger.info(f"Starting MCMC sampling with seed {seed}...")
     start = time.time()
-    flowmc_sampler.sample(jax.random.PRNGKey(seed))
-    flowmc_sampler.print_summary()
+    sampler.sample(jax.random.PRNGKey(seed))
+    sampler.print_summary()
     end = time.time()
     runtime = end - start
 
@@ -201,23 +202,21 @@ def run_sampling(flowmc_sampler, seed, outdir):
 
     ### POSTPROCESSING ###
 
-    # Training (just to count number of samples)
-    sampler_state = flowmc_sampler.sampler.get_sampler_state(training=True)
-    log_prob_train = sampler_state["log_prob"].flatten()
-    nb_samples_training = len(log_prob_train)
+    # Get samples from sampler using unified interface
+    # All samplers now implement get_samples(), get_log_prob(), get_n_samples()
 
-    # Production (for saving and plotting)
-    sampler_state = flowmc_sampler.sampler.get_sampler_state(training=False)
+    # Get sample counts (FlowMC has train/production split, others don't)
+    nb_samples_training = sampler.get_n_samples(training=True)
+    nb_samples_production = sampler.get_n_samples(training=False)
+    total_nb_samples = nb_samples_training + nb_samples_production
 
-    # Get the samples as a dictionary
-    samples_named = flowmc_sampler.get_samples()
+    # Get the samples as a dictionary (production/final samples)
+    samples_named = sampler.get_samples(training=False)
     samples_named_for_saving = {k: np.array(v) for k, v in samples_named.items()}
     samples_named_flat = {k: np.array(v).flatten() for k, v in samples_named.items()}
 
-    # Get the log prob
-    log_prob = np.array(sampler_state["log_prob"]).flatten()
-    nb_samples_production = len(log_prob)
-    total_nb_samples = nb_samples_training + nb_samples_production
+    # Get the log probabilities (production/final samples)
+    log_prob = np.array(sampler.get_log_prob(training=False))
 
     # Save the final results
     logger.info(f"Saving results to {outdir}")
@@ -414,12 +413,12 @@ def main(config_path: str):
             logger.info(f"    Experiment: {lk.experiment}")
             logger.info(f"    Data file: {lk.data_file}")
 
-    logger.info("Setting up flowMC sampler...")
-    flowmc_sampler = setup_flowmc_sampler(
-        config.sampler,
-        prior,
-        likelihood,
-        transform,
+    logger.info(f"Setting up {config.sampler.type} sampler...")
+    sampler = create_sampler(
+        config=config.sampler,
+        prior=prior,
+        likelihood=likelihood,
+        likelihood_transforms=[transform],
         seed=config.seed,
     )
 
@@ -429,16 +428,31 @@ def main(config_path: str):
     logger.info("=" * 60)
     logger.info(f"Transform: {config.transform.type}")
     logger.info(f"Random seed: {config.seed}")
+    logger.info(f"Sampler type: {config.sampler.type}")
     logger.info("Sampler Configuration:")
-    logger.info(f"  Chains: {config.sampler.n_chains}")
-    logger.info(f"  Training loops: {config.sampler.n_loop_training}")
-    logger.info(f"  Production loops: {config.sampler.n_loop_production}")
-    logger.info(f"  Local steps per loop: {config.sampler.n_local_steps}")
-    logger.info(f"  Global steps per loop: {config.sampler.n_global_steps}")
-    logger.info(f"  Training epochs: {config.sampler.n_epochs}")
-    logger.info(f"  Learning rate: {config.sampler.learning_rate}")
-    logger.info(f"  Training thinning: {config.sampler.train_thinning}")
-    logger.info(f"  Output thinning: {config.sampler.output_thinning}")
+
+    # Log sampler-specific config fields
+    if config.sampler.type == "flowmc":
+        logger.info(f"  Chains: {config.sampler.n_chains}")
+        logger.info(f"  Training loops: {config.sampler.n_loop_training}")
+        logger.info(f"  Production loops: {config.sampler.n_loop_production}")
+        logger.info(f"  Local steps per loop: {config.sampler.n_local_steps}")
+        logger.info(f"  Global steps per loop: {config.sampler.n_global_steps}")
+        logger.info(f"  Training epochs: {config.sampler.n_epochs}")
+        logger.info(f"  Learning rate: {config.sampler.learning_rate}")
+        logger.info(f"  Training thinning: {config.sampler.train_thinning}")
+        logger.info(f"  Output thinning: {config.sampler.output_thinning}")
+    elif config.sampler.type == "nested_sampling":
+        logger.info(f"  Live points: {config.sampler.n_live}")
+        logger.info(f"  Delete fraction: {config.sampler.n_delete_frac}")
+        logger.info(f"  Target MCMC steps: {config.sampler.n_target}")
+        logger.info(f"  Termination dlogZ: {config.sampler.termination_dlogz}")
+    elif config.sampler.type == "smc":
+        logger.info(f"  Particles: {config.sampler.n_particles}")
+        logger.info(f"  MCMC steps: {config.sampler.n_mcmc_steps}")
+        logger.info(f"  Target ESS: {config.sampler.target_ess}")
+
+    # Log shared sampler config fields
     logger.info(f"  EOS samples to generate: {config.sampler.n_eos_samples}")
     logger.info(f"  Output directory: {outdir}")
     logger.info("=" * 60 + "\n")
@@ -459,7 +473,7 @@ def main(config_path: str):
     logger.info(f"Test log probabilities: {test_log_prob}")
 
     # Run inference
-    results = run_sampling(flowmc_sampler, config.seed, outdir)
+    results = run_sampling(sampler, config.seed, outdir)
 
     # Generate EOS samples
     n_eos_samples = config.sampler.n_eos_samples

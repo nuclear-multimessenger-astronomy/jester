@@ -209,6 +209,7 @@ class JesterSampler:
         ----------
         training : bool, optional
             Whether to get training or production samples (default: False)
+            Note: Only FlowMC has train/production split. Other samplers ignore this.
 
         Returns
         -------
@@ -222,4 +223,62 @@ class JesterSampler:
         """
         raise NotImplementedError(
             "get_samples() must be implemented by backend-specific subclass"
+        )
+
+    def get_log_prob(self, training: bool = False) -> Array:
+        """
+        Get log probabilities for samples.
+
+        This method must be implemented by backend-specific subclasses.
+
+        Parameters
+        ----------
+        training : bool, optional
+            Whether to get training or production log probs (default: False)
+            Note: Only FlowMC has train/production split. Other samplers ignore this.
+
+        Returns
+        -------
+        Array
+            Log probability values (1D array)
+
+        Raises
+        ------
+        NotImplementedError
+            This is an abstract method that must be implemented by subclasses
+
+        Notes
+        -----
+        - FlowMC: Returns log posterior from sampler state
+        - Nested Sampling: Returns log likelihood (use weights separately)
+        - SMC: Returns log posterior (uniform weights at λ=1)
+        """
+        raise NotImplementedError(
+            "get_log_prob() must be implemented by backend-specific subclass"
+        )
+
+    def get_n_samples(self, training: bool = False) -> int:
+        """
+        Get number of samples.
+
+        This method must be implemented by backend-specific subclasses.
+
+        Parameters
+        ----------
+        training : bool, optional
+            Whether to count training or production samples (default: False)
+            Note: Only FlowMC has train/production split. Other samplers ignore this.
+
+        Returns
+        -------
+        int
+            Number of samples
+
+        Raises
+        ------
+        NotImplementedError
+            This is an abstract method that must be implemented by subclasses
+        """
+        raise NotImplementedError(
+            "get_n_samples() must be implemented by backend-specific subclass"
         )
