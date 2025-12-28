@@ -278,7 +278,12 @@ def generate_eos_samples(
     # Randomly select samples
     idx = np.random.choice(np.arange(len(log_prob)), size=n_eos_samples, replace=False)
 
-    chosen_samples = {k: jnp.array(v[idx]) for k, v in samples.items()}
+    # Filter out metadata fields (weights, ess) that aren't transform parameters
+    # Only keep fields that are per-particle parameter samples
+    metadata_keys = {'weights', 'ess'}
+    param_samples = {k: v for k, v in samples.items() if k not in metadata_keys}
+
+    chosen_samples = {k: jnp.array(v[idx]) for k, v in param_samples.items()}
 
     # Generate EOS curves (with JIT compilation)
     logger.info("JIT compiling and running TOV solver...")
@@ -287,7 +292,7 @@ def generate_eos_samples(
     # Warm up JIT
     warmup_size = min(100, n_available)
     test_idx = np.random.choice(np.arange(len(log_prob)), size=warmup_size, replace=False)
-    test_samples = {k: jnp.array(v[test_idx]) for k, v in samples.items()}
+    test_samples = {k: jnp.array(v[test_idx]) for k, v in param_samples.items()}
     _ = jax.vmap(my_forward)(test_samples)
 
     # Run full batch

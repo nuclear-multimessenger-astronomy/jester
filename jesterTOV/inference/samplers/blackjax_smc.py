@@ -525,18 +525,20 @@ class BlackJAXSMCSampler(JesterSampler):
             raise RuntimeError("No samples available - run sample() first")
 
         # For SMC at λ=1, we have log posterior values
-        # These are stored in the final state
-        # Placeholder: compute from particles using self.posterior
-        logger.warning("get_log_prob() for SMC: computing from particles")
+        # Compute from particles using self.posterior
+        logger.info("Computing log probabilities from particles using jax.lax.map (memory-safe batching)...")
 
-        # Compute log posterior for each particle (guaranteed non-None after check above)
+        # Compute log posterior for each particle using jax.lax.map
+        # This is memory-safe for large numbers of particles (processes one at a time but compiled)
         assert self._particles_flat is not None
-        log_probs = []
-        for particle in self._particles_flat:
-            log_prob = self.posterior(particle, {})
-            log_probs.append(log_prob)
 
-        return jnp.array(log_probs)
+        def compute_log_prob(particle):
+            return self.posterior(particle, {})
+
+        log_probs = jax.lax.map(compute_log_prob, self._particles_flat)
+        logger.info(f"Computed {len(log_probs)} log probability values")
+
+        return log_probs
 
     def get_n_samples(self, training: bool = False) -> int:
         """Get number of particles from SMC.
