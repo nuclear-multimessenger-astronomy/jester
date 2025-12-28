@@ -190,7 +190,11 @@ class MetaModelTransform(JesterTransformBase):
 
         # Limit cs2 so that it is causal (cs2 < 1)
         # Find first index where cs2 >= 1
+        # Note: argmax returns 0 if all values are False, so we need to check if any are True
+        has_non_causal = jnp.any(cs2 >= 1.0)
         idx = jnp.argmax(cs2 >= 1.0)
+        # If EOS is everywhere causal, use last index; otherwise use first non-causal index
+        idx = jnp.where(has_non_causal, idx, len(ns) - 1)
         final_n = ns.at[idx].get()
         first_n = ns.at[0].get()
 
