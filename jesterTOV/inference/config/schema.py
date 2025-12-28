@@ -410,6 +410,8 @@ class SMCSamplerConfig(BaseSamplerConfig):
     ----------
     type : Literal["smc"]
         Sampler type identifier
+    kernel_type : Literal["nuts", "random_walk"]
+        Type of MCMC kernel to use (default: "nuts")
     n_particles : int
         Number of particles (default: 10000)
     n_mcmc_steps : int
@@ -418,10 +420,12 @@ class SMCSamplerConfig(BaseSamplerConfig):
         Target effective sample size for adaptive tempering (default: 0.9)
     init_step_size : float
         Initial NUTS step size (default: 1e-2)
+    random_walk_sigma : float
+        Sigma for Gaussian random walk kernel (default: 0.1, only used with kernel_type="random_walk")
     mass_matrix_base : float
-        Base value for diagonal mass matrix (default: 2e-1)
+        Base value for diagonal mass matrix (default: 2e-1, only used with kernel_type="nuts")
     mass_matrix_param_scales : dict[str, float]
-        Per-parameter scaling for mass matrix (default: {})
+        Per-parameter scaling for mass matrix (default: {}, only used with kernel_type="nuts")
     target_acceptance : float
         Target acceptance rate for NUTS (default: 0.7)
     adaptation_rate : float
@@ -433,10 +437,12 @@ class SMCSamplerConfig(BaseSamplerConfig):
     """
 
     type: Literal["smc"] = "smc"
+    kernel_type: Literal["nuts", "random_walk"] = "nuts"
     n_particles: int = 10000
     n_mcmc_steps: int = 1
     target_ess: float = 0.9
     init_step_size: float = 1e-2
+    random_walk_sigma: float = 0.1
     mass_matrix_base: float = 2e-1
     mass_matrix_param_scales: Dict[str, float] = Field(default_factory=dict)
     target_acceptance: float = 0.7

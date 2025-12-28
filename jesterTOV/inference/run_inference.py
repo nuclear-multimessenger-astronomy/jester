@@ -398,20 +398,28 @@ def main(config_path: str):
     for lk in enabled_likelihoods:
         logger.info(f"  - {lk.type.upper()}")
         if lk.type == "gw":
-            logger.info(f"    Event: {lk.event}")
-            logger.info(f"    Data file: {lk.data_file}")
-            if hasattr(lk, 'nf_model_file') and lk.nf_model_file:
-                logger.info(f"    NF model file: {lk.nf_model_file}")
+            events = lk.parameters.get("events", [])
+            logger.info(f"    Events: {[e['name'] for e in events]}")
+            logger.info(f"    N masses evaluation: {lk.parameters.get('N_masses_evaluation', 20)}")
         elif lk.type == "nicer":
-            logger.info(f"    Pulsar: {lk.pulsar}")
-            logger.info(f"    Data file: {lk.data_file}")
-            logger.info(f"    KDE samples: {lk.kde_samples}")
-            logger.info(f"    KDE bandwidth: {lk.kde_bandwidth}")
+            pulsars = lk.parameters.get("pulsars", [])
+            logger.info(f"    Pulsars: {[p['name'] for p in pulsars]}")
+            logger.info(f"    N masses evaluation: {lk.parameters.get('N_masses_evaluation', 100)}")
+            logger.info(f"    KDE bandwidth: {lk.parameters.get('kde_bandwidth', 0.02)}")
+        elif lk.type == "radio":
+            pulsars = lk.parameters.get("pulsars", [])
+            logger.info(f"    Pulsars: {[p['name'] for p in pulsars]}")
         elif lk.type == "chieft":
-            logger.info(f"    Data file: {lk.data_file}")
+            logger.info(f"    Low bound file: {lk.parameters.get('low_filename', 'default')}")
+            logger.info(f"    High bound file: {lk.parameters.get('high_filename', 'default')}")
+            logger.info(f"    Integration points: {lk.parameters.get('nb_n', 100)}")
         elif lk.type == "rex":
-            logger.info(f"    Experiment: {lk.experiment}")
-            logger.info(f"    Data file: {lk.data_file}")
+            logger.info(f"    Experiment: {lk.parameters.get('experiment_name', 'PREX')}")
+        elif lk.type == "constraints_eos":
+            logger.info(f"    Causality penalty: {lk.parameters.get('penalty_causality', -1e10)}")
+            logger.info(f"    Stability penalty: {lk.parameters.get('penalty_stability', -1e5)}")
+        elif lk.type == "constraints_tov":
+            logger.info(f"    TOV failure penalty: {lk.parameters.get('penalty_tov', -1e10)}")
 
     logger.info(f"Setting up {config.sampler.type} sampler...")
     sampler = create_sampler(

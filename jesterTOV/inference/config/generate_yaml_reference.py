@@ -24,7 +24,7 @@ from .schema import (
     PriorConfig,
     LikelihoodConfig,
     FlowMCSamplerConfig,
-    NestedSamplingConfig,
+    BlackJAXNSAWConfig,
     SMCSamplerConfig,
 )
 
@@ -350,7 +350,7 @@ The JESTER inference system uses YAML configuration files validated by Pydantic 
     # Nested Sampling
     doc += "#### Nested Sampling (`type: \"nested_sampling\"`)\n\n"
     doc += "BlackJAX nested sampling with acceptance walk for Bayesian evidence estimation.\n\n"
-    ns_fields = extract_field_info(NestedSamplingConfig)
+    ns_fields = extract_field_info(BlackJAXNSAWConfig)
     doc += generate_field_docs(ns_fields)
     doc += "\n**Output**: Evidence (logZ ± error) and posterior samples with importance weights.\n\n"
 

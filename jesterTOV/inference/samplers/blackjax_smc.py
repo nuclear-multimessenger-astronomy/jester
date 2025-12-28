@@ -1,7 +1,9 @@
 """BlackJAX Sequential Monte Carlo (SMC) sampler for JESTER inference.
 
 This module provides SMC with adaptive tempering using the BlackJAX library.
-Uses NUTS kernel with Hessian-based mass matrix adaptation for efficient sampling.
+Supports two MCMC kernels:
+- NUTS (No-U-Turn Sampler) with Hessian-based mass matrix adaptation
+- Gaussian Random Walk Metropolis-Hastings
 """
 
 from typing import Any
@@ -26,8 +28,12 @@ class BlackJAXSMCSampler(JesterSampler):
     """BlackJAX Sequential Monte Carlo with adaptive tempering.
 
     This sampler implements SMC for Bayesian posterior sampling using adaptive
-    tempering (λ: 0 → 1) with NUTS kernel. Works in prior space (no unit cube
-    transforms needed).
+    tempering (λ: 0 → 1) with configurable MCMC kernels. Works in prior space
+    (no unit cube transforms needed).
+
+    Supported kernels:
+    - NUTS: No-U-Turn Sampler with Hessian-based mass matrix adaptation
+    - Random Walk: Gaussian random walk Metropolis-Hastings
 
     Parameters
     ----------
@@ -40,7 +46,7 @@ class BlackJAXSMCSampler(JesterSampler):
     likelihood_transforms : list[NtoMTransform]
         N-to-M transforms applied before likelihood evaluation
     config : SMCSamplerConfig
-        SMC configuration
+        SMC configuration (includes kernel_type selection)
     seed : int, optional
         Random seed (default: 0)
 
@@ -100,6 +106,7 @@ class BlackJAXSMCSampler(JesterSampler):
             )
 
         logger.info("Initializing BlackJAX SMC sampler")
+        logger.info(f"Kernel type: {config.kernel_type}")
         logger.info(f"Configuration: {config.n_particles} particles, "
                     f"{config.n_mcmc_steps} MCMC steps per tempering stage")
         logger.info(f"Target ESS: {config.target_ess}")
@@ -145,6 +152,7 @@ class BlackJAXSMCSampler(JesterSampler):
         # Import BlackJAX SMC
         try:
             from blackjax import inner_kernel_tuning, adaptive_tempered_smc, nuts
+            from blackjax.mcmc import random_walk
             from blackjax.smc import extend_params
             from blackjax.smc.resampling import systematic
         except ImportError as e:
@@ -207,81 +215,139 @@ class BlackJAXSMCSampler(JesterSampler):
 
             return self.likelihood.evaluate(x_dict, {})
 
-        # Create posterior and Hessian functions
+        # Create posterior for kernel initialization
         logposterior_fn = lambda x: logprior_fn(x) + loglikelihood_fn(x)
-        hessian_fn = jax.jit(jax.hessian(logposterior_fn))
 
-        # Build initial mass matrix
-        init_inverse_mass_matrix = self._build_mass_matrix()
+        # Setup kernel-specific parameters and functions
+        if self.config.kernel_type == "nuts":
+            logger.info("Initializing SMC with NUTS kernel...")
 
-        # Initial parameters for NUTS
-        init_params = {
-            "step_size": self.config.init_step_size,
-            "inverse_mass_matrix": init_inverse_mass_matrix,
-        }
+            # Hessian for NUTS mass matrix adaptation
+            hessian_fn = jax.jit(jax.hessian(logposterior_fn))
 
-        # Track current step size for adaptation
-        current_step_size = {"value": self.config.init_step_size}
+            # Build initial mass matrix
+            init_inverse_mass_matrix = self._build_mass_matrix()
 
-        # Define parameter update function for Hessian-based adaptation
-        def mcmc_parameter_update_fn(key, state, info):
-            """Adapt mass matrix and step size using Hessian at best particle."""
-            # Extract log posteriors from NUTS trajectory endpoints
-            last_step_info = jax.tree.map(lambda x: x[-1], info.update_info)
-            log_posteriors_left = last_step_info.trajectory_leftmost_state.logdensity
-            log_posteriors_right = last_step_info.trajectory_rightmost_state.logdensity
+            # Initial parameters for NUTS
+            init_params = {
+                "step_size": self.config.init_step_size,
+                "inverse_mass_matrix": init_inverse_mass_matrix,
+            }
 
-            # Take maximum logdensity between endpoints
-            log_posteriors = jnp.maximum(log_posteriors_left, log_posteriors_right)
+            # Track current step size for adaptation
+            current_step_size = {"value": self.config.init_step_size}
 
-            # Find particle with highest log posterior
-            best_idx = jnp.argmax(log_posteriors)
+            # Define parameter update function for Hessian-based adaptation
+            def mcmc_parameter_update_fn(key, state, info):
+                """Adapt mass matrix and step size using Hessian at best particle."""
+                # Extract log posteriors from NUTS trajectory endpoints
+                last_step_info = jax.tree.map(lambda x: x[-1], info.update_info)
+                log_posteriors_left = last_step_info.trajectory_leftmost_state.logdensity
+                log_posteriors_right = last_step_info.trajectory_rightmost_state.logdensity
 
-            # Get position from best endpoint
-            best_particle = jnp.where(
-                log_posteriors_left[best_idx] > log_posteriors_right[best_idx],
-                last_step_info.trajectory_leftmost_state.position[best_idx],
-                last_step_info.trajectory_rightmost_state.position[best_idx],
-            )
+                # Take maximum logdensity between endpoints
+                log_posteriors = jnp.maximum(log_posteriors_left, log_posteriors_right)
 
-            # Compute Hessian at best particle
-            hessian = hessian_fn(best_particle)
+                # Find particle with highest log posterior
+                best_idx = jnp.argmax(log_posteriors)
 
-            # Eigen decomposition with SoftAbs regularization
-            lambdas, V = jnp.linalg.eigh(-hessian)
-            soft_lambdas = lambdas / jnp.tanh(5e-3 * lambdas)
+                # Get position from best endpoint
+                best_particle = jnp.where(
+                    log_posteriors_left[best_idx] > log_posteriors_right[best_idx],
+                    last_step_info.trajectory_leftmost_state.position[best_idx],
+                    last_step_info.trajectory_rightmost_state.position[best_idx],
+                )
 
-            # Reconstruct metric
-            G = V @ jnp.diag(soft_lambdas) @ V.T
-            adapted_inverse_mass_matrix = jnp.linalg.inv(G)
+                # Compute Hessian at best particle
+                hessian = hessian_fn(best_particle)
 
-            # Adapt step size using dual averaging
-            mean_acceptance = last_step_info.acceptance_rate.mean()
-            log_step_size = jnp.log(current_step_size["value"])
-            log_step_size += self.config.adaptation_rate * (
-                mean_acceptance - self.config.target_acceptance
-            )
-            adapted_step_size = jnp.exp(log_step_size)
-            adapted_step_size = jnp.clip(adapted_step_size, 1e-10, 1e0)
+                # Eigen decomposition with SoftAbs regularization
+                lambdas, V = jnp.linalg.eigh(-hessian)
+                soft_lambdas = lambdas / jnp.tanh(5e-3 * lambdas)
 
-            # Update tracked step size
-            current_step_size["value"] = adapted_step_size
+                # Reconstruct metric
+                G = V @ jnp.diag(soft_lambdas) @ V.T
+                adapted_inverse_mass_matrix = jnp.linalg.inv(G)
 
-            return extend_params(
-                {
-                    "step_size": adapted_step_size,
-                    "inverse_mass_matrix": adapted_inverse_mass_matrix,
-                }
-            )
+                # Adapt step size using dual averaging
+                mean_acceptance = last_step_info.acceptance_rate.mean()
+                log_step_size = jnp.log(current_step_size["value"])
+                log_step_size += self.config.adaptation_rate * (
+                    mean_acceptance - self.config.target_acceptance
+                )
+                adapted_step_size = jnp.exp(log_step_size)
+                adapted_step_size = jnp.clip(adapted_step_size, 1e-10, 1e0)
 
-        # Initialize SMC algorithm
-        logger.info("Initializing SMC with NUTS kernel...")
+                # Update tracked step size
+                current_step_size["value"] = adapted_step_size
+
+                return extend_params(
+                    {
+                        "step_size": adapted_step_size,
+                        "inverse_mass_matrix": adapted_inverse_mass_matrix,
+                    }
+                )
+
+            # Setup NUTS kernel
+            mcmc_step_fn = nuts.build_kernel()
+            mcmc_init_fn = nuts.init
+
+        elif self.config.kernel_type == "random_walk":
+            logger.info("Initializing SMC with Gaussian Random Walk kernel...")
+
+            # Create random step function for Gaussian random walk
+            random_step_fn = random_walk.normal(jnp.ones(self.prior.n_dim) * self.config.random_walk_sigma)
+
+            # Initial parameters for random walk
+            init_params = {}  # Random walk doesn't need parameters
+
+            # Track current sigma for adaptation
+            current_sigma = {"value": self.config.random_walk_sigma}
+
+            # Define parameter update function for sigma adaptation
+            def mcmc_parameter_update_fn(key, state, info):
+                """Adapt step size (sigma) based on acceptance rate."""
+                # Extract acceptance rates from last step
+                last_step_info = jax.tree.map(lambda x: x[-1], info.update_info)
+                mean_acceptance = last_step_info.acceptance_rate.mean()
+
+                # Adapt sigma using dual averaging
+                log_sigma = jnp.log(current_sigma["value"])
+                log_sigma += self.config.adaptation_rate * (
+                    mean_acceptance - self.config.target_acceptance
+                )
+                adapted_sigma = jnp.exp(log_sigma)
+                adapted_sigma = jnp.clip(adapted_sigma, 1e-10, 1e1)
+
+                # Update tracked sigma
+                current_sigma["value"] = adapted_sigma
+
+                # Return empty params (random walk doesn't use them in the same way)
+                return extend_params({})
+
+            # Setup random walk kernel with additive step
+            kernel = random_walk.build_additive_step()
+
+            # Wrap kernel to match expected signature
+            def mcmc_step_fn(rng_key, state, logdensity_fn, **params):
+                """Random walk step function matching NUTS signature."""
+                # Update random step with current sigma
+                step_fn = random_walk.normal(jnp.ones(self.prior.n_dim) * current_sigma["value"])
+                return kernel(rng_key, state, logdensity_fn, step_fn)
+
+            # Init function for random walk
+            mcmc_init_fn = random_walk.init
+
+        else:
+            raise ValueError(f"Unknown kernel type: {self.config.kernel_type}")
+
+        # Initialize SMC algorithm with selected kernel
         smc_alg = inner_kernel_tuning(
             smc_algorithm=adaptive_tempered_smc,
             logprior_fn=logprior_fn,
             loglikelihood_fn=loglikelihood_fn,
-            mcmc_step_fn=nuts.build_kernel(),
-            mcmc_init_fn=nuts.init,
+            mcmc_step_fn=mcmc_step_fn,
+            mcmc_init_fn=mcmc_init_fn,
             resampling_fn=systematic,
             mcmc_parameter_update_fn=mcmc_parameter_update_fn,
             initial_parameter_value=extend_params(init_params),
@@ -343,6 +409,7 @@ class BlackJAXSMCSampler(JesterSampler):
         # Store metadata
         self.metadata = {
             'sampler': 'blackjax_smc',
+            'kernel_type': self.config.kernel_type,
             'n_particles': self.config.n_particles,
             'n_mcmc_steps': self.config.n_mcmc_steps,
             'target_ess': self.config.target_ess,
