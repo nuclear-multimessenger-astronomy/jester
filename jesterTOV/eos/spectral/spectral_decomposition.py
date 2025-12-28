@@ -1,0 +1,390 @@
+r"""
+Spectral decomposition equation of state model.
+
+This module implements the spectral decomposition EOS following Lindblom (2010) PRD 82, 103011
+and Lackey & Wade (2018) PRD 98, 063004, exactly matching the LALSuite implementation.
+
+The implementation uses 10-point Gauss-Legendre quadrature for numerical integration and
+stitches a low-density SLy crust to the high-density spectral expansion.
+"""
+
+import jax.numpy as jnp
+from jax import jit, vmap
+from jaxtyping import Array, Float
+from typing import Tuple
+
+from jesterTOV import utils
+from jesterTOV.eos.base import Interpolate_EOS_model
+from jesterTOV.eos.crust import load_crust
+from jesterTOV.logging_config import get_logger
+
+logger = get_logger("jester")
+
+
+# Gauss-Legendre 10-point quadrature nodes and weights
+# From Abramowitz & Stegun, matches LALSuite implementation
+GL_NODES_10 = jnp.array([
+    -0.9739065285171717,
+    -0.8650633666889845,
+    -0.6794095682990244,
+    -0.4333953941292472,
+    -0.1488743389816312,
+     0.1488743389816312,
+     0.4333953941292472,
+     0.6794095682990244,
+     0.8650633666889845,
+     0.9739065285171717
+])
+
+GL_WEIGHTS_10 = jnp.array([
+    0.0666713443086881,
+    0.1494513491505806,
+    0.2190863625159820,
+    0.2692667193099963,
+    0.2955242247147529,
+    0.2955242247147529,
+    0.2692667193099963,
+    0.2190863625159820,
+    0.1494513491505806,
+    0.0666713443086881
+])
+
+
+def gauss_legendre_quad(
+    func,
+    a: float,
+    b: float,
+    *args
+) -> float:
+    """
+    Compute integral of func from a to b using 10-point Gauss-Legendre quadrature.
+
+    This implements the transformation from [-1, 1] to [a, b]:
+        ∫ₐᵇ f(x) dx = ((b-a)/2) Σᵢ wᵢ f((b-a)/2 * xᵢ + (b+a)/2)
+
+    Args:
+        func: Function to integrate (must accept extra args)
+        a: Lower integration limit
+        b: Upper integration limit
+        *args: Additional arguments to pass to func
+
+    Returns:
+        Integral value
+    """
+    # Map nodes from [-1, 1] to [a, b]
+    midpoint = (b + a) / 2.0
+    half_width = (b - a) / 2.0
+
+    # Transform nodes to integration interval
+    nodes = midpoint + half_width * GL_NODES_10
+
+    # Evaluate function at all nodes using Python loop
+    # (JAX vmap doesn't work well with function arguments)
+    result = 0.0
+    for i in range(len(GL_NODES_10)):
+        result += GL_WEIGHTS_10[i] * func(nodes[i], *args)
+
+    result *= half_width
+
+    return result
+
+
+class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
+    r"""
+    Spectral decomposition equation of state model.
+
+    This class implements the spectral decomposition EOS parametrization following
+    Lindblom (2010) PRD 82, 103011 and Lackey & Wade (2018) PRD 98, 063004.
+    The implementation matches LALSuite's XLALSimNeutronStarEOS4ParameterSpectralDecomposition
+    exactly.
+
+    The adiabatic index is parametrized as:
+        log Γ(x) = γ₀ + γ₁·x + γ₂·x² + γ₃·x³
+    where x = log(p/p₀) is the dimensionless log-pressure.
+
+    Reference values (geometric units):
+        e₀ = 9.54629006×10⁻¹¹ m⁻²
+        p₀ = 4.43784199×10⁻¹³ m⁻²
+
+    Thermodynamic relations from PRD 82, 103011 (2010):
+        μ(x) = exp[-∫₀ˣ (1/Γ(x')) dx']
+        ε(x) = e₀ · exp[∫₀ˣ μ(x')/(1+μ(x')) dx']
+        p(x) = p₀ · exp(x)
+    """
+
+    # Reference values in geometric units (from LALSuite)
+    e0_geom = 9.54629006e-11  # m^-2
+    p0_geom = 4.43784199e-13  # m^-2
+
+    # Maximum dimensionless pressure for high-density EOS
+    xmax = 12.3081  # Corresponds to pmax/p0
+
+    def __init__(
+        self,
+        crust_name: str = 'SLy',
+        n_points_high: int = 500,
+    ):
+        r"""
+        Initialize spectral decomposition EOS model.
+
+        Args:
+            crust_name: Name of crust model to use ('SLy', 'DH', 'BPS').
+                       Default 'SLy' for LALSuite compatibility.
+            n_points_high: Number of high-density points to generate.
+                          Default 500 to match LALSuite.
+        """
+        super().__init__()
+        self.crust_name = crust_name
+        self.n_points_high = n_points_high
+
+        logger.info(f"Initialized SpectralDecomposition_EOS_model with crust={crust_name}, "
+                   f"n_points={n_points_high}")
+
+    @staticmethod
+    @jit
+    def _log_gamma(x: float, gamma: Float[Array, "4"]) -> float:
+        """
+        Compute log Γ(x) from spectral expansion.
+
+        Args:
+            x: Dimensionless log-pressure log(p/p₀)
+            gamma: Spectral coefficients [γ₀, γ₁, γ₂, γ₃]
+
+        Returns:
+            log Γ(x) = γ₀ + γ₁·x + γ₂·x² + γ₃·x³
+        """
+        return gamma[0] + gamma[1]*x + gamma[2]*x**2 + gamma[3]*x**3
+
+    @staticmethod
+    @jit
+    def _adiabatic_index(x: float, gamma: Float[Array, "4"]) -> float:
+        """
+        Compute adiabatic index Γ(x) = exp(log Γ(x)).
+
+        This matches LALSuite's AdiabaticIndex function.
+
+        Args:
+            x: Dimensionless log-pressure log(p/p₀)
+            gamma: Spectral coefficients [γ₀, γ₁, γ₂, γ₃]
+
+        Returns:
+            Γ(x) = exp(γ₀ + γ₁·x + γ₂·x² + γ₃·x³)
+        """
+        log_gamma_val = SpectralDecomposition_EOS_model._log_gamma(x, gamma)
+        return jnp.exp(log_gamma_val)
+
+    @staticmethod
+    def _compute_mu(x: float, gamma: Float[Array, "4"]) -> float:
+        """
+        Compute μ(x) = exp[-∫₀ˣ (1/Γ(x')) dx'].
+
+        This implements the integral in Eq. 8 of PRD 82, 103011 (2010) using
+        10-point Gauss-Legendre quadrature, exactly matching LALSuite.
+
+        Args:
+            x: Dimensionless log-pressure log(p/p₀)
+            gamma: Spectral coefficients [γ₀, γ₁, γ₂, γ₃]
+
+        Returns:
+            μ(x) value
+        """
+        # Integrand: 1/Γ(x')
+        def integrand(xprime, gamma_arr):
+            return 1.0 / SpectralDecomposition_EOS_model._adiabatic_index(xprime, gamma_arr)
+
+        # Compute ∫₀ˣ 1/Γ(x') dx' using Gauss-Legendre quadrature
+        integral = gauss_legendre_quad(integrand, 0.0, x, gamma)
+
+        # μ(x) = exp(-integral)
+        return jnp.exp(-integral)
+
+    @staticmethod
+    def _compute_energy_density_geom(x: float, gamma: Float[Array, "4"]) -> float:
+        """
+        Compute energy density ε(x) in geometric units.
+
+        This implements Eq. 7 of PRD 82, 103011 (2010) as coded in LALSuite:
+            ε(x) = ε₀/μ(x) + (p₀/μ(x)) · Integral
+
+        where:
+            Integral = ∫₀ˣ μ(x') exp(x') / Γ(x') dx'
+
+        The implementation uses nested Gauss-Legendre quadrature exactly as in LALSuite,
+        where μ(x') must be recomputed for each evaluation point in the outer integral.
+
+        This is the most computationally intensive function, with O(n²) evaluations
+        due to the nested integration structure.
+
+        Args:
+            x: Dimensionless log-pressure log(p/p₀)
+            gamma: Spectral coefficients [γ₀, γ₁, γ₂, γ₃]
+
+        Returns:
+            Energy density ε(x) in geometric units [m⁻²]
+        """
+        e0 = SpectralDecomposition_EOS_model.e0_geom
+        p0 = SpectralDecomposition_EOS_model.p0_geom
+
+        # Compute μ(x)
+        mu = SpectralDecomposition_EOS_model._compute_mu(x, gamma)
+
+        # Integrand: μ(x') * exp(x') / Γ(x')
+        def integrand(xprime, gamma_arr):
+            mu_prime = SpectralDecomposition_EOS_model._compute_mu(xprime, gamma_arr)
+            gamma_prime = SpectralDecomposition_EOS_model._adiabatic_index(xprime, gamma_arr)
+            return mu_prime * jnp.exp(xprime) / gamma_prime
+
+        # Compute ∫₀ˣ μ(x') exp(x') / Γ(x') dx'
+        integral = gauss_legendre_quad(integrand, 0.0, x, gamma)
+
+        # ε(x) = ε₀/μ(x) + (p₀/μ(x)) · Integral
+        return e0 / mu + (p0 / mu) * integral
+
+    def _validate_gamma(self, gamma: Float[Array, "4"]) -> bool:
+        """
+        Validate spectral parameters.
+
+        This implements XLALSimNeutronStarEOS4ParamSDGammaCheck from LALSuite.
+        Checks that Γ(x) ∈ [0.6, 4.5] for all x ∈ [0, xmax] as required for
+        TOV solver stability.
+
+        Args:
+            gamma: Spectral coefficients [γ₀, γ₁, γ₂, γ₃]
+
+        Returns:
+            True if valid, False otherwise
+        """
+        # Sample Γ(x) at 100 points as in LALSuite
+        x_test = jnp.linspace(0.0, self.xmax, 100)
+        gamma_vals = vmap(lambda x: self._adiabatic_index(x, gamma))(x_test)
+
+        # Check bounds
+        valid = jnp.all((gamma_vals >= 0.6) & (gamma_vals <= 4.5))
+
+        return bool(valid)
+
+    def construct_eos(
+        self,
+        gamma: Float[Array, "4"]
+    ) -> Tuple[Float[Array, "n_points"], Float[Array, "n_points"],
+               Float[Array, "n_points"], Float[Array, "n_points"],
+               Float[Array, "n_points"]]:
+        """
+        Construct full EOS from spectral parameters.
+
+        This method:
+        1. Validates parameters
+        2. Loads low-density crust (69 points)
+        3. Generates high-density spectral region (500 points by default)
+        4. Stitches them together
+        5. Converts to geometric units and computes auxiliary quantities
+
+        Args:
+            gamma: Spectral coefficients [γ₀, γ₁, γ₂, γ₃]
+
+        Returns:
+            Tuple of (ns, ps, hs, es, dloge_dlogps) in geometric units
+
+        Raises:
+            ValueError: If gamma parameters fail validation
+        """
+        # Validate parameters
+        if not self._validate_gamma(gamma):
+            raise ValueError(
+                f"Gamma parameters {gamma} fail validation. "
+                f"Adiabatic index must be in [0.6, 4.5] for all pressures."
+            )
+
+        logger.info(f"Constructing spectral EOS with gamma={gamma}")
+
+        # Load low-density crust data
+        n_crust, p_crust, e_crust = load_crust(self.crust_name)
+
+        # For SLy crust from LALSuite, take first 69 points
+        # (LALSuite hardcodes this)
+        if self.crust_name == 'SLy':
+            n_crust = n_crust[:69]
+            p_crust = p_crust[:69]
+            e_crust = e_crust[:69]
+
+        # Filter out zero pressure points (causes issues with log in enthalpy calculation)
+        nonzero_mask = p_crust > 0
+        n_crust = n_crust[nonzero_mask]
+        p_crust = p_crust[nonzero_mask]
+        e_crust = e_crust[nonzero_mask]
+
+        logger.info(f"Loaded {len(n_crust)} crust points from {self.crust_name}")
+
+        # Generate high-density spectral region
+        n_high, p_high, e_high = self._generate_spectral_region(gamma, p_crust[-1])
+
+        logger.info(f"Generated {len(n_high)} high-density spectral points")
+
+        # Stitch together
+        n_full = jnp.concatenate([n_crust, n_high])
+        p_full = jnp.concatenate([p_crust, p_high])
+        e_full = jnp.concatenate([e_crust, e_high])
+
+        # Convert to geometric units and compute auxiliary quantities
+        ns, ps, hs, es, dloge_dlogps = self.interpolate_eos(n_full, p_full, e_full)
+
+        logger.info(f"Final EOS: {len(ns)} points, "
+                   f"p: [{ps.min():.3e}, {ps.max():.3e}] geom, "
+                   f"e: [{es.min():.3e}, {es.max():.3e}] geom")
+
+        return ns, ps, hs, es, dloge_dlogps
+
+    def _generate_spectral_region(
+        self,
+        gamma: Float[Array, "4"],
+        p_stitch_nuclear: float
+    ) -> Tuple[Float[Array, "n_high"], Float[Array, "n_high"], Float[Array, "n_high"]]:
+        """
+        Generate high-density EOS points from spectral expansion.
+
+        This matches LALSuite's implementation:
+        1. Generate logarithmically-spaced pressure grid from p0 to pmax
+        2. Compute x = log(p/p0) for each pressure
+        3. Compute ε(x) using spectral decomposition
+        4. Estimate number density n ≈ ε / m_nucleon
+
+        Args:
+            gamma: Spectral coefficients [γ₀, γ₁, γ₂, γ₃]
+            p_stitch_nuclear: Stitching pressure from crust [MeV fm⁻³]
+
+        Returns:
+            Tuple of (n, p, e) in nuclear units [fm⁻³, MeV fm⁻³, MeV fm⁻³]
+        """
+        # Convert reference pressure to nuclear units
+        p0_nuclear = self.p0_geom / utils.MeV_fm_inv3_to_geometric
+        pmax_nuclear = self.p0_geom * jnp.exp(self.xmax) / utils.MeV_fm_inv3_to_geometric
+
+        # Generate logarithmically-spaced pressure grid
+        # Start from p0, not from stitching point, to match LALSuite
+        logp0 = jnp.log(p0_nuclear)
+        logpmax = jnp.log(pmax_nuclear)
+        dlogp = (logpmax - logp0) / self.n_points_high
+
+        # Pressure grid
+        log_p_high = logp0 + dlogp * jnp.arange(self.n_points_high)
+        p_high = jnp.exp(log_p_high)
+
+        # Compute x = log(p/p0) for each pressure
+        x_high = log_p_high - logp0  # = log(p/p0)
+
+        # Compute energy density for each x using spectral decomposition
+        # This is the expensive step: nested integration for each point
+        logger.info("Computing energy densities (this may take a moment)...")
+        e_high_geom = vmap(
+            lambda x: self._compute_energy_density_geom(x, gamma)
+        )(x_high)
+
+        # Convert to nuclear units
+        e_high = e_high_geom / utils.MeV_fm_inv3_to_geometric
+
+        # Compute number density from e ≈ n * m_nucleon
+        # This is an approximation, but matches what LALSuite uses
+        m_nucleon_MeV = 939.0  # MeV
+        n_high = e_high / m_nucleon_MeV
+
+        return n_high, p_high, e_high
