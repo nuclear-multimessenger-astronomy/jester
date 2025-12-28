@@ -111,7 +111,7 @@ def load_eos_data(outdir: str) -> Dict[str, np.ndarray]:
     Parameters
     ----------
     outdir : str
-        Path to output directory containing eos_samples.npz
+        Path to output directory containing results.h5
 
     Returns
     -------
@@ -121,41 +121,49 @@ def load_eos_data(outdir: str) -> Dict[str, np.ndarray]:
     Raises
     ------
     FileNotFoundError
-        If eos_samples.npz is not found in the specified directory
+        If results.h5 is not found in the specified directory
     """
-    filename = os.path.join(outdir, "eos_samples.npz")
-    if not os.path.exists(filename):
-        raise FileNotFoundError(f"EOS samples file not found: {filename}")
+    from jesterTOV.inference.result import InferenceResult
 
-    data = np.load(filename)
+    filename = os.path.join(outdir, "results.h5")
+    if not os.path.exists(filename):
+        raise FileNotFoundError(f"Results file not found: {filename}")
+
+    # Load HDF5 results
+    result = InferenceResult.load(filename)
 
     # Load macroscopic quantities
-    m, r, l = data["masses_EOS"], data["radii_EOS"], data["Lambdas_EOS"]
-    n, p, e, cs2 = data["n"], data["p"], data["e"], data["cs2"]
+    m = result.posterior["masses_EOS"]
+    r = result.posterior["radii_EOS"]
+    l = result.posterior["Lambdas_EOS"]
+    n = result.posterior["n"]
+    p = result.posterior["p"]
+    e = result.posterior["e"]
+    cs2 = result.posterior["cs2"]
 
     # Convert units
     n = n / jose_utils.fm_inv3_to_geometric / 0.16
     p = p / jose_utils.MeV_fm_inv3_to_geometric
     e = e / jose_utils.MeV_fm_inv3_to_geometric
 
-    log_prob = data["log_prob"]
+    log_prob = result.posterior["log_prob"]
 
     # Load NEP parameters if available (for cornerplot)
     nep_params = {}
     nep_keys = ["K_sat", "L_sym", "Q_sat", "Q_sym", "Z_sat", "Z_sym", "E_sym", "K_sym"]
     for key in nep_keys:
-        if key in data:
-            nep_params[key] = data[key]
+        if key in result.posterior:
+            nep_params[key] = result.posterior[key]
 
     # Load CSE parameters if available
     cse_params = {}
-    if "nbreak" in data:
-        cse_params["nbreak"] = data["nbreak"]
-    for key in data.keys():
+    if "nbreak" in result.posterior:
+        cse_params["nbreak"] = result.posterior["nbreak"]
+    for key in result.posterior.keys():
         if key.startswith("cs2_CSE_") or key.startswith("n_CSE_"):
-            cse_params[key] = data[key]
+            cse_params[key] = result.posterior[key]
 
-    result = {
+    output = {
         'masses': m,
         'radii': r,
         'lambdas': l,
@@ -168,7 +176,7 @@ def load_eos_data(outdir: str) -> Dict[str, np.ndarray]:
         'cse_params': cse_params
     }
 
-    return result
+    return output
 
 
 def load_prior_data(prior_dir: str = PRIOR_DIR) -> Optional[Dict[str, np.ndarray]]:

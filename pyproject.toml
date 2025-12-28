@@ -35,6 +35,7 @@ dependencies = [
     "equinox>=0.11.0",
     "flowmc>=0.3.4",
     "blackjax @ git+https://github.com/handley-lab/blackjax@nested_sampling",
+    "h5py>=3.0",
     "anesthetic>=2.0.0",
     "beartype>=0.10.0",
     "matplotlib>=3.10.7",

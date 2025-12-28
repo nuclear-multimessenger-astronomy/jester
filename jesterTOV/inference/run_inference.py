@@ -25,6 +25,7 @@ from .transforms.factory import create_transform
 from .likelihoods.factory import create_combined_likelihood
 from .samplers.factory import create_sampler
 from .samplers.jester_sampler import JesterSampler
+from .result import InferenceResult
 from jesterTOV.logging_config import get_logger
 
 # Set up logger
@@ -172,9 +173,9 @@ def setup_likelihood(config, transform, data_loader=None):
     )
 
 
-def run_sampling(sampler, seed, outdir):
+def run_sampling(sampler, seed, config, outdir):
     """
-    Run MCMC sampling and save results
+    Run MCMC sampling and create InferenceResult
 
     Parameters
     ----------
@@ -182,13 +183,15 @@ def run_sampling(sampler, seed, outdir):
         JesterSampler instance (FlowMC, BlackJAX NS, or BlackJAX SMC)
     seed : int
         Random seed for sampling
+    config : InferenceConfig
+        Configuration object
     outdir : str or Path
         Output directory
 
     Returns
     -------
-    dict
-        Dictionary containing samples and log probabilities
+    InferenceResult
+        Result object containing samples, metadata, and histories
     """
     logger.info(f"Starting MCMC sampling with seed {seed}...")
     start = time.time()
@@ -209,59 +212,46 @@ def run_sampling(sampler, seed, outdir):
 
     ### POSTPROCESSING ###
 
-    # Get samples from sampler using unified interface
-    # All samplers now implement get_samples(), get_log_prob(), get_n_samples()
-
     # Get sample counts (FlowMC has train/production split, others don't)
     nb_samples_training = sampler.get_n_samples(training=True)
     nb_samples_production = sampler.get_n_samples(training=False)
     total_nb_samples = nb_samples_training + nb_samples_production
 
-    # Get the samples as a dictionary (production/final samples)
-    samples_named = sampler.get_samples(training=False)
-    samples_named_for_saving = {k: np.array(v) for k, v in samples_named.items()}
-    samples_named_flat = {k: np.array(v).flatten() for k, v in samples_named.items()}
-
-    # Get the log probabilities (production/final samples)
-    log_prob = np.array(sampler.get_log_prob(training=False))
-
-    # Save the final results
-    logger.info(f"Saving results to {outdir}")
-    os.makedirs(outdir, exist_ok=True)
-
-    result_path = os.path.join(outdir, "results_production.npz")
-    np.savez(result_path, log_prob=log_prob, **samples_named_for_saving)
-
     logger.info(f"Number of samples generated in training: {nb_samples_training}")
     logger.info(f"Number of samples generated in production: {nb_samples_production}")
     logger.info(f"Total number of samples: {total_nb_samples}")
 
-    # Save the runtime
+    # Create InferenceResult from sampler output
+    logger.info("Creating InferenceResult from sampler output...")
+    result = InferenceResult.from_sampler(
+        sampler=sampler,
+        config=config,
+        runtime=runtime,
+        training=False,  # Use production/final samples
+    )
+
+    # Save the runtime info to text file for backward compatibility
+    os.makedirs(outdir, exist_ok=True)
     with open(os.path.join(outdir, "runtime.txt"), "w") as f:
         f.write(f"{runtime}\n")
         f.write(f"Training samples: {nb_samples_training}\n")
         f.write(f"Production samples: {nb_samples_production}\n")
 
-    return {
-        "samples": samples_named_flat,
-        "samples_for_saving": samples_named_for_saving,
-        "log_prob": log_prob,
-        "runtime": runtime,
-    }
+    return result
 
 
 def generate_eos_samples(
-    config, samples_dict, transform_eos, outdir, n_eos_samples=10_000
+    config, result, transform_eos, outdir, n_eos_samples=10_000
 ):
     """
-    Generate EOS curves from sampled parameters
+    Generate EOS curves from sampled parameters and add to InferenceResult
 
     Parameters
     ----------
     config : InferenceConfig
         Configuration object
-    samples_dict : dict
-        Dictionary of sampled parameters
+    result : InferenceResult
+        Result object with posterior samples
     transform_eos : JesterTransformBase
         Transform for generating full EOS quantities
     outdir : str or Path
@@ -269,8 +259,8 @@ def generate_eos_samples(
     n_eos_samples : int, optional
         Number of EOS samples to generate
     """
-    samples = samples_dict["samples"]
-    log_prob = samples_dict["log_prob"]
+    # Get log_prob from result
+    log_prob = result.posterior["log_prob"]
 
     # Cap n_eos_samples at available sample size
     n_available = len(log_prob)
@@ -284,10 +274,11 @@ def generate_eos_samples(
     # Randomly select samples
     idx = np.random.choice(np.arange(len(log_prob)), size=n_eos_samples, replace=False)
 
-    # Filter out metadata fields (weights, ess) that aren't transform parameters
-    # Only keep fields that are per-particle parameter samples
-    metadata_keys = {'weights', 'ess'}
-    param_samples = {k: v for k, v in samples.items() if k not in metadata_keys}
+    # Filter out metadata fields and derived EOS quantities that aren't transform parameters
+    # Only keep fields that are NEP/CSE parameters for the transform
+    exclude_keys = {'weights', 'ess', 'logL', 'logL_birth', 'log_prob', '_sampler_specific',
+                    'masses_EOS', 'radii_EOS', 'Lambdas_EOS', 'n', 'p', 'e', 'cs2'}
+    param_samples = {k: v for k, v in result.posterior.items() if k not in exclude_keys}
 
     chosen_samples = {k: jnp.array(v[idx]) for k, v in param_samples.items()}
 
@@ -307,13 +298,9 @@ def generate_eos_samples(
     TOV_end = time.time()
     logger.info(f"TOV solve time: {TOV_end - TOV_start:.2f} s")
 
-    # Combine and save
-    chosen_samples.update(transformed_samples)
-    selected_log_prob = log_prob[idx]
-
-    eos_path = os.path.join(outdir, "eos_samples.npz")
-    np.savez(eos_path, log_prob=selected_log_prob, **chosen_samples)
-    logger.info(f"EOS samples saved to {outdir}/eos_samples.npz")
+    # Add derived EOS quantities to result
+    result.add_derived_eos(transformed_samples)
+    logger.info("Derived EOS quantities added to InferenceResult")
 
 
 def main(config_path: str):
@@ -493,11 +480,16 @@ def main(config_path: str):
     logger.info(f"Test log probabilities: {test_log_prob}")
 
     # Run inference
-    results = run_sampling(sampler, config.seed, outdir)
+    result = run_sampling(sampler, config.seed, config, outdir)
 
     # Generate EOS samples
     n_eos_samples = config.sampler.n_eos_samples
-    generate_eos_samples(config, results, transform_eos, outdir, n_eos_samples)
+    generate_eos_samples(config, result, transform_eos, outdir, n_eos_samples)
+
+    # Save unified HDF5 file
+    result_path = os.path.join(outdir, "results.h5")
+    result.save(result_path)
+    logger.info(f"Results saved to {result_path}")
 
     # Run postprocessing if enabled
     if config.postprocessing.enabled:
