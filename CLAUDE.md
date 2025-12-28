@@ -257,6 +257,9 @@ Goal: Keep flowMC as only external sampler dependency.
 - ✅ Transform factory expects Pydantic config, not dict
 
 ### Open Issues
+- **SMC get_log_prob parameter ordering bug**: `ravel_pytree` uses alphabetical ordering but `add_name` uses `prior.parameter_names` ordering, causing scrambled parameters → NaN log_prob
+  - Location: `jesterTOV/inference/samplers/blackjax_smc.py` line 536
+  - Fix: Use `self._unflatten_fn(particle)` instead of relying on `self.posterior(particle, {})`
 - **UniformPrior boundaries**: `log_prob()` at exact boundaries causes errors (NaN at xmin, ZeroDivision at xmax)
   - Workaround: Use values strictly inside boundaries
   - Fix: Add numerical guards in LogitTransform

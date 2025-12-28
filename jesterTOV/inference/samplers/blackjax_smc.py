@@ -525,15 +525,20 @@ class BlackJAXSMCSampler(JesterSampler):
             raise RuntimeError("No samples available - run sample() first")
 
         # For SMC at λ=1, we have log posterior values
-        # Compute from particles using self.posterior
+        # Compute from particles using correct parameter ordering
         logger.info("Computing log probabilities from particles using jax.lax.map (memory-safe batching)...")
 
         # Compute log posterior for each particle using jax.lax.map
         # This is memory-safe for large numbers of particles (processes one at a time but compiled)
+        # CRITICAL: Must use _unflatten_fn because ravel_pytree uses alphabetical ordering,
+        # which differs from self.parameter_names ordering used by add_name()
         assert self._particles_flat is not None
 
-        def compute_log_prob(particle):
-            return self.posterior(particle, {})
+        def compute_log_prob(particle_flat):
+            # Convert from flat array (alphabetical order) to dict using _unflatten_fn
+            x_dict = self._unflatten_fn(particle_flat)
+            # Use base class method to compute posterior from dict
+            return self.posterior_from_dict(x_dict, {})
 
         log_probs = jax.lax.map(compute_log_prob, self._particles_flat)
         logger.info(f"Computed {len(log_probs)} log probability values")

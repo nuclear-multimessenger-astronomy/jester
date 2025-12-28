@@ -130,9 +130,34 @@ class JesterSampler:
         """
         return dict(zip(self.parameter_names, x))
 
+    def posterior_from_dict(self, named_params: dict[str, Float], data: dict[str, Any]) -> Float:
+        """
+        Evaluate posterior log probability from parameter dict.
+
+        Parameters
+        ----------
+        named_params : dict
+            Parameter dictionary
+        data : dict
+            Data dictionary (unused in JESTER, pass {})
+
+        Returns
+        -------
+        Float
+            Log posterior probability
+        """
+        transform_jacobian = 0.0
+        for transform in reversed(self.sample_transforms):
+            named_params, jacobian = transform.inverse(named_params)
+            transform_jacobian += jacobian
+        prior = self.prior.log_prob(named_params) + transform_jacobian
+        for transform in self.likelihood_transforms:
+            named_params = transform.forward(named_params)
+        return self.likelihood.evaluate(named_params, data) + prior
+
     def posterior(self, params: Float[Array, " n_dim"], data: dict[str, Any]) -> Float:
         """
-        Evaluate posterior log probability.
+        Evaluate posterior log probability from flat array.
 
         Parameters
         ----------
@@ -147,14 +172,7 @@ class JesterSampler:
             Log posterior probability
         """
         named_params = self.add_name(params)
-        transform_jacobian = 0.0
-        for transform in reversed(self.sample_transforms):
-            named_params, jacobian = transform.inverse(named_params)
-            transform_jacobian += jacobian
-        prior = self.prior.log_prob(named_params) + transform_jacobian
-        for transform in self.likelihood_transforms:
-            named_params = transform.forward(named_params)
-        return self.likelihood.evaluate(named_params, data) + prior
+        return self.posterior_from_dict(named_params, data)
 
     def sample(self, key: PRNGKeyArray, initial_position: Array = jnp.array([])) -> None:
         """
