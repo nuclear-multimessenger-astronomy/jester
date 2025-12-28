@@ -1,249 +1,423 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code when working with the JESTER repository.
+
+## Important Guidelines
+
+**Testing Philosophy**: When tests fail, investigate root causes rather than modifying tests to pass. Make notes in CLAUDE.md and fix underlying code issues.
+
+**Documentation Style**: Write clear, concise documentation in full sentences as if by a human researcher. Avoid LLM-like verbosity.
+
+**File Operations**: Use proper tools (Write, Edit, Read) instead of bash heredocs or cat redirection.
+
+---
+
+## Current Status (December 2024)
+
+### Multi-Sampler Architecture ✅ COMPLETE
+
+Three sampler backends are now available for Bayesian inference:
+
+1. **FlowMC** (Production Ready) - Normalizing flow-enhanced MCMC
+2. **BlackJAX SMC** (Production Ready) - Sequential Monte Carlo with adaptive tempering
+   - NUTS kernel with Hessian-based mass matrix adaptation
+   - Gaussian Random Walk kernel with sigma adaptation
+   - ✅ All type errors fixed (0 errors)
+   - ✅ Example configs created
+   - ✅ Dry run validation passed
+3. **BlackJAX NS-AW** (Needs Type Checking) - Nested Sampling with Acceptance Walk
+   - ⚠️ Has 7 pyright type errors to fix
+   - Example configs created
+   - Prior-only test run successful
+
+### Unified HDF5 Results Storage ✅ COMPLETE
+
+Single `results.h5` file replaces separate NPZ files:
+
+- ✅ `InferenceResult` class for save/load operations (`jesterTOV/inference/result.py`)
+- ✅ Hierarchical HDF5 structure: `/posterior`, `/metadata`, `/histories`
+- ✅ Supports all samplers (FlowMC, SMC, NS-AW) with sampler-specific metadata
+- ✅ Stores parameters + derived EOS quantities + sampler diagnostics
+- ✅ Postprocessing updated to use HDF5 format
+- ✅ Type checking passes (0 errors)
+- ⚠️ **Needs tests**: See Next Priority Tasks #4
+
+**Example Configs Available**:
+```bash
+# FlowMC (production ready)
+examples/inference/smc-nuts/config.yaml
+examples/inference/smc-random-walk/config.yaml
+
+# BlackJAX NS-AW (needs type fixes)
+examples/inference/blackjax-ns-aw/prior/config.yaml
+examples/inference/blackjax-ns-aw/GW170817/config.yaml
+examples/inference/blackjax-ns-aw/NICER_J0030/config.yaml
+```
+
+### Next Priority Tasks
+
+**CRITICAL** (before next release):
+
+1. **⚠️ Add tests for InferenceResult class** (HDF5 results storage) - URGENT
+   - File: `tests/test_inference/test_result.py` (DOES NOT EXIST)
+   - 516 lines of production code with ZERO test coverage
+   - See "Testing Coverage Assessment" section below for details
+
+2. **Fix BlackJAX NS-AW type errors** (7 errors in `blackjax_ns_aw.py`)
+   - Run: `uv run pyright jesterTOV/inference/samplers/blackjax_ns_aw.py`
+   - See type error details in "Testing Coverage Assessment" section
+
+3. **Document data loading status** - `jesterTOV/inference/data/__init__.py`
+   - Has FIXME comment about missing DataLoader implementation
+   - Either implement missing functions or update documentation
+
+**HIGH PRIORITY**:
+
+4. **Add postprocessing tests** - `tests/test_inference/test_postprocessing.py`
+   - 893 lines of visualization code with NO tests
+   - Critical for publication-quality figures
+
+5. **Validate SMC with actual sampling runs**
+   - Test prior-only sampling (not just dry run)
+   - Test with real likelihoods (GW170817, NICER)
+   - Test evidence calculation (recent bug fix in commit 7854188)
+   - Test batching behavior (commit cbda19f notes "needs further investigating")
+
+**See full testing assessment below for comprehensive analysis.**
+
+---
 
 ## Project Overview
 
-JESTER (**J**ax-based **E**o**S** and **T**ov solv**ER**) is a scientific computing library for solving the Tolman-Oppenheimer-Volkoff (TOV) equations for neutron star physics. It provides hardware-accelerated computations via JAX with automatic differentiation capabilities.
+**JESTER** (**J**ax-based **E**o**S** and **T**ov solv**ER**) is a scientific computing library for neutron star physics using JAX for hardware acceleration and automatic differentiation.
 
-## ⚡ IMPORTANT: Use `uv` for All Python Operations
+### Core Modules
+- `jesterTOV/eos/` - Equation of state models
+- `jesterTOV/tov.py` - TOV equation solver
+- `jesterTOV/inference/` - Bayesian inference system
+- `jesterTOV/utils.py` - Physical constants and unit conversions
 
-**ALWAYS use `uv` for running Python commands and managing dependencies:**
-- Use `uv run <command>` instead of running commands directly
-- Use `uv pip install` instead of `pip install`
-- Use `uv run pytest` instead of `pytest`
-- Use `uv run pre-commit` instead of `pre-commit`
+### Key Design Principles
+- **JAX-first**: Hardware acceleration with automatic differentiation
+- **Geometric units**: All physics calculations use geometric units
+- **Type safety**: Comprehensive type hints with `jaxtyping` for arrays
+- **64-bit precision**: Enabled by default for numerical accuracy
 
-This ensures consistent dependency management and environment handling across all development tasks.
+---
 
 ## Development Commands
 
-### Installation and Setup
+### Always Use `uv`
 ```bash
-# Development install
-uv pip install -e .
+# Run Python commands
+uv run <command>
 
-# Install pre-commit hooks
-uv run pre-commit install
+# Install dependencies
+uv pip install <package>
 
-# For GPU support (optional)
-uv pip install "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+# Run tests
+uv run pytest tests/
+
+# Pre-commit checks
+uv run pre-commit run --all-files
 ```
 
 ### Code Quality
 ```bash
-# Run all pre-commit checks
-uv run pre-commit run --all-files
+# Format and lint
+uv run black .
+uv run ruff check --fix .
 
-# Manual formatting and linting
-uv run black .                    # Format code
-uv run ruff check --fix .         # Lint and fix issues
-
-# Type checking (install if needed: npm install -g pyright)
-uv run pyright                    # Type checking all files
-uv run pyright jesterTOV/         # Type check specific directory
+# Type checking
+uv run pyright                 # All files
+uv run pyright jesterTOV/      # Specific directory
 ```
 
 ### Testing
 ```bash
-# Run tests
+# Run all tests
 uv run pytest tests/
+
+# Run specific test file
+uv run pytest tests/test_inference/test_config.py
+
+# Run with verbose output
+uv run pytest -v tests/
 ```
 
-**TESTING PHILOSOPHY**: Focus on understanding physics and fixing root causes rather than modifying tests to pass. Debug with print statements to understand failures, then fix underlying issues in source code.
+**Test Status**: 291 tests total, all passing ✅
 
 **Key Testing Insights**:
-- Geometric units require careful handling (realistic NS: M~2000m, R~12000m, P~1e-11 m^-2)
-- TOV integration direction: enthalpy decreases center→surface, so dm/dh < 0 is correct
-- Use realistic polytropic EOSs, not linear ones, for neutron star tests
-- **MetaModel EOS density limits**: MetaModel should only be tested up to ~2 nsat (causality issues at higher densities)
-- **MetaModel+CSE**: CSE extension can safely go to 6+ nsat (designed for high-density regions)
-- **Stiff EOS parameters**: Use L_sym ≥ 90, Q_sat = 0, K_sym = 0 for realistic neutron star masses
+- Use realistic polytropic EOSs, not linear ones
+- MetaModel tested up to ~2 nsat; MetaModel+CSE can go to 6+ nsat
+- Stiff EOS: L_sym ≥ 90, Q_sat = 0, K_sym = 0 for realistic NS masses
 
-### Test Suite Status
-**All 97 tests passing** - No skipped tests!
+---
 
-### Documentation Development
-```bash
-# Install documentation dependencies
-uv pip install -e ".[docs]"
+## Testing Coverage Assessment (December 2024)
 
-# Build documentation locally
-uv run sphinx-build docs docs/_build/html
+**CRITICAL TESTING GAPS** - The following areas have NO or INSUFFICIENT test coverage:
 
-# Build with warnings as errors (strict mode, same as CI)
-uv run sphinx-build -W --keep-going docs docs/_build/html
+### 1. **InferenceResult Class (HDF5 Storage) - ❌ ZERO TESTS**
+   - **File**: `jesterTOV/inference/result.py` (516 lines)
+   - **Recent Change**: Complete rewrite from NPZ to HDF5 format (commit c1c3f18, Dec 2024)
+   - **Risk**: HIGH - Core data persistence layer with no validation
+   - **Missing Coverage**:
+     - Save/load roundtrip for all sampler types (FlowMC, SMC, NS-AW)
+     - Scalar vs array dataset handling in sampler_specific data
+     - Metadata serialization/deserialization
+     - Backward compatibility (if needed)
+     - Edge cases (empty histories, missing fields, corrupt HDF5 files)
+     - Config JSON round-trip
+   - **Location for tests**: `tests/test_inference/test_result.py` (DOES NOT EXIST)
+   - **Priority**: URGENT - This is production infrastructure
 
-# View documentation in browser
-open docs/_build/html/index.html  # macOS
-xdg-open docs/_build/html/index.html  # Linux
+### 2. **Postprocessing Module - ❌ ZERO TESTS**
+   - **File**: `jesterTOV/inference/postprocessing/postprocessing.py` (893 lines)
+   - **Risk**: MEDIUM-HIGH - Used for publication-quality figures
+   - **Missing Coverage**:
+     - Cornerplot generation
+     - Mass-radius diagram generation
+     - Pressure-density plots
+     - HDF5 result loading in postprocessing context
+     - Error handling for missing data
+     - TeX rendering fallback
+   - **Location for tests**: `tests/test_inference/test_postprocessing.py` (DOES NOT EXIST)
+   - **Priority**: HIGH - Scientific visualization is critical
 
-# Clean build artifacts
-rm -rf docs/_build
-```
+### 3. **Data Loading Functions - ⚠️ INCOMPLETE IMPLEMENTATION**
+   - **File**: `jesterTOV/inference/data/__init__.py`
+   - **Status**: Has FIXME comment - "DataLoader class was removed. Need to implement data loading functionality"
+   - **Risk**: MEDIUM - Unclear what functionality exists
+   - **Missing Functions** (per FIXME):
+     - `load_nicer_kde(psr_name, analysis_group, n_samples)`
+     - `load_chieft_bands()`
+     - `load_rex_posterior(experiment_name)`
+     - `load_gw_nf_model(event_name, model_path)`
+   - **Priority**: MEDIUM - Need to clarify implementation status
 
-**Documentation Structure**:
-```
-docs/
-├── conf.py              # Sphinx configuration (theme, extensions, settings)
-├── index.rst            # Main documentation page with table of contents
-├── api/                 # Auto-generated API documentation
-│   ├── jesterTOV.rst
-│   ├── eos.rst
-│   ├── tov.rst
-│   ├── ptov.rst
-│   └── utils.rst
-└── _static/             # Static assets (CSS, logos, images)
-    ├── style.css        # Custom CSS overrides
-    ├── logo_light.svg   # Logo for light mode
-    ├── logo_dark.svg    # Logo for dark mode
-    └── icon.svg         # Favicon
-```
+### 4. **BlackJAX NS-AW Sampler - ⚠️ TYPE ERRORS**
+   - **File**: `jesterTOV/inference/samplers/blackjax_ns_aw.py` (503 lines)
+   - **Status**: 7 pyright type errors (see below)
+   - **Test Coverage**: Basic initialization tests exist, but type safety not verified
+   - **Priority**: MEDIUM - Marked as experimental, but should be type-safe
 
-**Theme and Styling**:
-- **Theme**: `sphinx-book-theme` (matching flowjax style)
-- **Custom CSS**: `docs/_static/style.css` for theme overrides
-- **Logo customization**: Update SVG files in `docs/_static/` or modify `conf.py` logo paths
-- **Theme options**: Edit `html_theme_options` in `docs/conf.py`
-
-**Adding New Documentation Pages**:
-1. Create `.rst` or `.md` file in `docs/` directory
-2. Add the file to a `toctree` directive in `index.rst` or parent page
-3. Example:
-   ```rst
-   .. toctree::
-      :maxdepth: 2
-
-      new_page
-      tutorials/tutorial_1
+   **Type Errors** (from `uv run pyright jesterTOV/inference/samplers/blackjax_ns_aw.py`):
+   ```
+   Line 240: Argument missing for parameter "rng_key"
+   Line 279: Argument type mismatch (ArrayTree vs ParamDict)
+   Line 301: Cannot get len() of ArrayTree
+   Line 302: Cannot access attribute "n_likelihood_evals" for NamedTuple
+   Line 403: Type conversion issue (2 errors)
+   Line 404: Cannot access attribute "std" for MethodType
    ```
 
-**Working with LaTeX in Docstrings**:
-- Always use raw strings: `r"""..."""` to avoid escape sequence warnings
-- Inline math: `$E = mc^2$` or `\(E = mc^2\)`
-- Display math: `$$E = mc^2$$` or `\[E = mc^2\]`
-- MathJax is configured in `conf.py` to handle both formats
+### 5. **BlackJAX SMC Sampler - ⚠️ LIMITED TESTING**
+   - **File**: `jesterTOV/inference/samplers/blackjax_smc.py` (783 lines)
+   - **Test Coverage**: Basic initialization + 2 slow integration tests
+   - **Recent Activity**: Multiple bug fixes (commits a5c863e, f65827d, e083bd2)
+   - **Missing Coverage**:
+     - Evidence calculation (commit 7854188 "Attempt to fix blackjax evidence calculation")
+     - Mass matrix building with custom scales
+     - Sigma adaptation for random walk kernel
+     - Batching behavior (commit cbda19f mentions "needs further investigating")
+   - **Priority**: MEDIUM - Experimental, but under active development
 
-**Documentation Deployment**:
-- **Automatic**: Pushes to `main` branch trigger GitHub Actions workflow (`.github/workflows/docs.yml`)
-- **Manual**: Can trigger via GitHub Actions "Run workflow" button
-- **URL**: https://nuclear-multimessenger-astronomy.github.io/jester/
-- **Build time**: ~2-3 minutes from push to live
+### 6. **Test Distribution by Module**
+   ```
+   Likelihoods:       44 tests ✅ EXCELLENT
+   Base classes:      40 tests ✅ EXCELLENT
+   Samplers:          33 tests ✅ GOOD (but missing NS-AW/SMC edge cases)
+   Config:            29 tests ✅ GOOD
+   Priors:            19 tests ✅ ADEQUATE
+   Integration:       17 tests ✅ ADEQUATE
+   Transforms:        12 tests ⚠️ COULD BE BETTER
 
-**Troubleshooting**:
-- **Import errors during build**: Ensure all dependencies are in `pyproject.toml` `[project.optional-dependencies.docs]`
-- **Missing modules**: Run `uv pip install -e ".[docs]"` to reinstall
-- **Broken links**: Check `toctree` directives reference existing files
-- **Theme not loading**: Verify `sphinx-book-theme` is installed and `html_static_path` includes `_static`
-- **Logo not showing**: Check SVG file paths in `conf.py` match files in `docs/_static/`
+   Result class:       0 tests ❌ CRITICAL GAP
+   Postprocessing:     0 tests ❌ CRITICAL GAP
+   Data loading:       0 tests ❌ CRITICAL GAP
+   ```
 
-**Documentation Best Practices**:
-- Build locally before committing to catch errors early
-- Use `sphinx-build -W` (warnings as errors) to match CI behavior
-- Keep docstrings concise but complete with type hints
-- Add examples to docstrings for complex functions
-- Update API docs when adding new modules or public functions
+### Recommendations
 
-## Architecture
+**IMMEDIATE ACTIONS** (before next release):
+1. **Create `tests/test_inference/test_result.py`** - Test HDF5 save/load for all sampler types
+2. **Fix NS-AW type errors** - Run `uv run pyright` and resolve all 7 errors
+3. **Document data loading status** - Either implement missing functions or update FIXME
 
-### Core Modules
-- **`jesterTOV/eos.py`** - Equation of state models and crust data loading
-- **`jesterTOV/tov.py`** - Standard TOV equation solver
-- **`jesterTOV/ptov.py`** - Post-TOV solver with extended physics
-- **`jesterTOV/utils.py`** - Physical constants and unit conversions
-- **`jesterTOV/crust/`** - Neutron star crust models (BPS, DH data files)
+**SHORT-TERM** (next sprint):
+4. **Create `tests/test_inference/test_postprocessing.py`** - Basic smoke tests for plotting
+5. **Expand SMC tests** - Add tests for evidence calculation, batching behavior
+6. **Expand transform tests** - More edge cases for MetaModel and MetaModel+CSE
 
-### Key Design Principles
-- **JAX-first:** All computations designed for hardware acceleration and automatic differentiation
-- **Geometric units:** Physics calculations use geometric unit system throughout
-- **Type safety:** Strong typing with `jaxtyping` for array shapes and dtypes
-- **64-bit precision:** Enabled by default in `__init__.py` for numerical accuracy
+**LONG-TERM**:
+7. **Add integration tests with real data** - Test full workflow with actual GW/NICER data
+8. **Performance regression tests** - Track sampling efficiency over time
+9. **Documentation tests** - Verify all examples in docs actually run
 
-### Development Notes
-- The codebase is specialized for astrophysics/neutron star modeling
-- Pre-commit hooks enforce code quality with black and ruff
-- Examples in `examples/` directory demonstrate basic and advanced usage
-- Comprehensive test suite with 95 tests covering all major functionality
-- **LaTeX in docstrings**: Use raw strings (`r"""..."""`) for math expressions to avoid Pylance warnings
+---
 
-### Python Support
-Supports Python 3.10-3.12 with JAX ecosystem dependencies.
+## Code Quality Standards
 
-## Repository Status
-
-### ✅ PyPI Package Release - COMPLETED
-**Status**: v0.1.0 published to PyPI - Package available for installation
-
-**IMPORTANT**: Future PyPI releases MUST be done through pull requests, not direct commits to main. This ensures:
-- Proper code review before publishing
-- Clean git history
-- Adherence to branch protection rules
-- CI/CD validation before release
-
-**Release Workflow for Future Versions**:
-1. Create a feature branch for version bump and changelog
-2. Update `version` in pyproject.toml
-3. Build with `uv build` to verify
-4. Create PR to main branch
-5. After PR approval and merge, tag the merge commit: `git tag v0.x.x`
-6. Push tag: `git push origin v0.x.x`
-7. Publish to PyPI: `uv publish --token <token>`
-
-**v0.1.0 Release Info**:
-- Package available: `pip install jesterTOV`
-- PyPI page: https://pypi.org/project/jesterTOV/
-- Git tag: v0.1.0
-- Build system: hatchling with flat package layout
-
-### ✅ Phase 1: Testing Infrastructure - COMPLETED
-**Status**: All 97 tests passing with no skipped tests
-
-### ✅ Phase 2: CI/CD & Code Quality - COMPLETED
-**Status**: GitHub Actions CI operational with automated testing
-
-### ✅ Phase 3: Documentation System - COMPLETED
-**Status**: Sphinx documentation with GitHub Pages deployment operational
-
-**Documentation Details**:
-- **Site URL**: https://nuclear-multimessenger-astronomy.github.io/jester/
-- **Theme**: sphinx-book-theme (matching flowjax style)
-- **Deployment**: Automated via GitHub Actions on push to main
-- **Features**: Copy buttons, dark/light mode, responsive design
-- **Build Tool**: uv for dependency management
-
-**Local Documentation Build**:
+### Documentation
 ```bash
-# Install documentation dependencies
+# Build docs locally
 uv pip install -e ".[docs]"
-
-# Build documentation
 uv run sphinx-build docs docs/_build/html
-
-# View locally
 open docs/_build/html/index.html
+
+# Strict mode (same as CI)
+uv run sphinx-build -W --keep-going docs docs/_build/html
 ```
 
-**Achievements**:
-- ✅ **Documentation site** - GitHub Pages with flowjax-style theme
-- ✅ **GitHub Actions CI/CD** - Automated testing and docs deployment
-- ✅ **Code quality** - Pre-commit hooks with black, ruff, comprehensive test suite
-- ✅ **Type safety** - Reduced pyright errors from 23 to 10 (57% improvement)
+**Docs URL**: https://nuclear-multimessenger-astronomy.github.io/jester/
 
-### ✅ Type Safety Issues - RESOLVED
-**Status**: All major type issues resolved
+---
 
-**Recent Fixes**:
-- ✅ Fixed interpax import issue (`from interpax._spline import interp1d`)
-- ✅ Resolved JAX array type annotations in eos.py
-- ✅ Added guidance for LaTeX docstrings (use raw strings `r"""..."""`)
+## Inference System
 
-### Testing Commands
+**Status**: Fully functional modular architecture (config-driven, replaces old argparse interface)
+
+### Running Inference
 ```bash
-# Run all tests
-uv run pytest
+# Run inference
+uv run run_jester_inference config.yaml
 
-# Run specific categories
-uv run pytest -m unit          # Unit tests only
-uv run pytest -m integration   # Integration tests only
-uv run pytest -m "not slow"    # Skip slow tests
+# Validate config only
+# (set validate_only: true in config.yaml)
+
+# Dry run without sampling
+# (set dry_run: true in config.yaml)
+```
+
+### Key Concepts
+
+**Transforms**: Convert parameter spaces
+- Sample transforms: Applied during sampling with Jacobian (bijective)
+- Likelihood transforms: Applied before likelihood evaluation (N-to-M)
+- JESTER uses likelihood transforms: NEP → M-R-Λ via TOV solver
+
+**Priors**: Bilby-style Python syntax in `.prior` files
+```python
+K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
+L_sym = UniformPrior(10.0, 200.0, parameter_names=["L_sym"])
+```
+
+**Samplers**: Three backends available
+- `type: "flowmc"` - Flow-enhanced MCMC (production ready)
+- `type: "smc"` - Sequential Monte Carlo (production ready)
+  - `kernel_type: "nuts"` or `"random_walk"`
+- `type: "blackjax-ns-aw"` - Nested sampling (needs type fixes)
+
+**YAML Config Auto-Generation**:
+```bash
+# When modifying config/schema.py, regenerate docs
+uv run python -m jesterTOV.inference.config.generate_yaml_reference
+```
+
+### Inference Documentation
+- `docs/inference_index.md` - Navigation hub
+- `docs/inference_quickstart.md` - Quick start guide
+- `docs/inference.md` - Complete reference
+- `docs/inference_yaml_reference.md` - Auto-generated YAML reference
+
+Full details in `jesterTOV/inference/CLAUDE.md`
+
+---
+
+## Type Hinting Standards
+
+**All new code MUST include comprehensive type hints.**
+
+```python
+# Standard library types (Python 3.10+ syntax)
+def process_data(values: list[float], threshold: float | None = None) -> dict[str, float]:
+    ...
+
+# JAX arrays with jaxtyping
+from jaxtyping import Array, Float
+def solve_tov(pressure: Float[Array, "n_points"]) -> Float[Array, "n_points"]:
+    ...
+
+# Pydantic for configs
+from pydantic import BaseModel, Field
+class SamplerConfig(BaseModel):
+    n_chains: int = Field(gt=0, description="Number of MCMC chains")
+
+# Type aliases for complex types
+from typing import TypeAlias
+ParameterDict: TypeAlias = dict[str, float]
+```
+
+**Type checking**: `uv run pyright jesterTOV/inference/`
+
+---
+
+## Architecture Notes
+
+### Inference Module Structure
+```
+jesterTOV/inference/
+├── config/          # YAML parsing, Pydantic validation
+├── priors/          # Prior specification system
+├── transforms/      # EOS parameter transforms
+├── likelihoods/     # Observational constraints
+├── data/            # Data loading and caching
+├── samplers/        # FlowMC, SMC, NS-AW implementations
+├── base/            # Base classes (copied from Jim v0.2.0)
+└── run_inference.py # Main entry point
+```
+
+### Base Classes (jimgw Independence)
+The `base/` module contains copies of Jim v0.2.0 base classes to remove dependency on jimgw:
+- `LikelihoodBase` - Abstract likelihood interface
+- `Prior`, `CombinePrior`, `UniformPrior` - Prior system
+- `NtoMTransform`, `BijectiveTransform` - Transform interfaces
+
+Goal: Keep flowMC as only external sampler dependency.
+
+### Critical Design Notes
+- **JAX NaN handling**: Use `jnp.inf` instead of `jnp.nan` for initialization
+- **flowMC data argument**: Always pass empty dict `{}`, not `None`
+- **Geometric units**: Realistic NS: M~2000m, R~12000m, P~1e-11 m^-2
+- **LaTeX in docstrings**: Use raw strings `r"""..."""` to avoid warnings
+
+---
+
+## Known Issues & Workarounds
+
+### Testing Issues (Fixed)
+- ✅ LikelihoodConfig validation respects `enabled` field
+- ✅ Prior API uses `sample(rng_key, n_samples)` not `sample(u_array)`
+- ✅ Transform factory expects Pydantic config, not dict
+
+### Open Issues
+- **SMC get_log_prob parameter ordering bug**: `ravel_pytree` uses alphabetical ordering but `add_name` uses `prior.parameter_names` ordering, causing scrambled parameters → NaN log_prob
+  - Location: `jesterTOV/inference/samplers/blackjax_smc.py` line 536
+  - Fix: Use `self._unflatten_fn(particle)` instead of relying on `self.posterior(particle, {})`
+- **UniformPrior boundaries**: `log_prob()` at exact boundaries causes errors (NaN at xmin, ZeroDivision at xmax)
+  - Workaround: Use values strictly inside boundaries
+  - Fix: Add numerical guards in LogitTransform
+- **TOV solver max_steps**: Some stiff EOS configs hit solver limits
+  - May need to increase `max_steps` or adjust EOS parameters
+
+---
+
+## Release Workflow
+
+```bash
+# 1. Feature branch for version bump
+git checkout -b release/v0.x.x
+
+# 2. Update version in pyproject.toml
+# 3. Build and verify
+uv build
+
+# 4. Create PR to main
+# 5. After merge, tag the commit
+git tag v0.x.x
+git push origin v0.x.x
+
+# 6. Publish to PyPI
+uv publish --token <token>
 ```

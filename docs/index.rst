@@ -53,9 +53,24 @@ Contents
 
 .. toctree::
    :maxdepth: 2
+   :caption: User Guide
+
+   inference_index
+   inference_quickstart
+   inference
+
+.. toctree::
+   :maxdepth: 2
    :caption: API Reference
 
    api/jesterTOV
+   api/inference
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Developer Guide
+
+   inference_architecture
 
 Indices and tables
 ==================

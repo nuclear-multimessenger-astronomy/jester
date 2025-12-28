@@ -7,6 +7,9 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float, Int
 
 from jesterTOV import utils, tov, ptov, STtov
+from jesterTOV.logging_config import get_logger
+
+logger = get_logger("jester")
 
 
 def locate_lowest_non_causal_point(cs2):
