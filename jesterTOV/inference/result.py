@@ -204,6 +204,8 @@ class InferenceResult:
                 'mean_ess': float(smc_metadata['mean_ess']),
                 'min_ess': float(smc_metadata['min_ess']),
                 'mean_acceptance': float(smc_metadata['mean_acceptance']),
+                'logZ': float(smc_metadata['logZ']),
+                'logZ_err': float(smc_metadata['logZ_err']),
             })
 
             # Extract histories
@@ -487,6 +489,8 @@ class InferenceResult:
             lines.append(f"  Annealing steps: {self.metadata.get('annealing_steps', '?')}")
             lines.append(f"  Final ESS: {self.metadata.get('final_ess_percent', '?'):.1f}%")
             lines.append(f"  Mean acceptance: {self.metadata.get('mean_acceptance', '?'):.3f}")
+            if 'logZ' in self.metadata:
+                lines.append(f"  Evidence: log(Z) = {self.metadata.get('logZ', 0):.2f}")
 
         elif self.sampler_type == "blackjax_ns_aw":
             lines.append(f"\nBlackJAX Nested Sampling Configuration:")

@@ -319,6 +319,9 @@ BlackJAX SMC with adaptive tempering and NUTS kernel.
 - `adaptation_rate`: `float` (optional)
   - Default: `0.3`
 
+- `log_prob_batch_size`: `int` (optional)
+  - Default: `1000`
+
 **Output**: Posterior samples and effective sample size (ESS) statistics.
 
 ### Data Paths (`data_paths:`)

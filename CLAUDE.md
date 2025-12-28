@@ -30,6 +30,18 @@ Three sampler backends are now available for Bayesian inference:
    - Example configs created
    - Prior-only test run successful
 
+### Unified HDF5 Results Storage ✅ COMPLETE
+
+Single `results.h5` file replaces separate NPZ files:
+
+- ✅ `InferenceResult` class for save/load operations (`jesterTOV/inference/result.py`)
+- ✅ Hierarchical HDF5 structure: `/posterior`, `/metadata`, `/histories`
+- ✅ Supports all samplers (FlowMC, SMC, NS-AW) with sampler-specific metadata
+- ✅ Stores parameters + derived EOS quantities + sampler diagnostics
+- ✅ Postprocessing updated to use HDF5 format
+- ✅ Type checking passes (0 errors)
+- ⚠️ **Needs tests**: See Next Priority Tasks #4
+
 **Example Configs Available**:
 ```bash
 # FlowMC (production ready)
@@ -56,6 +68,14 @@ examples/inference/blackjax-ns-aw/NICER_J0030/config.yaml
 3. **Expand test suite for samplers**
    - Unit tests for SMC and NS-AW
    - Integration tests with real inference workflows
+
+4. **Add tests for InferenceResult class** (HDF5 results storage)
+   - Test save/load roundtrip for all sampler types (FlowMC, SMC, NS-AW)
+   - Test scalar vs array dataset handling in sampler_specific data
+   - Test metadata serialization/deserialization
+   - Test backward compatibility (if needed)
+   - Test edge cases (empty histories, missing fields, etc.)
+   - Location: `tests/test_inference/test_result.py`
 
 ---
 

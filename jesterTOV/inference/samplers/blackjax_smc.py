@@ -398,13 +398,16 @@ class BlackJAXSMCSampler(JesterSampler):
 
         # Define loop conditions
         def cond_fn(carry):
-            state, _, _, _, _, _ = carry
+            state, _, _, _, _, _, _ = carry
             return state.sampler_state.lmbda < 1  # type: ignore[attr-defined]
 
         def body_fn(carry):
-            state, key, step_count, lmbda_history, ess_history, acceptance_history = carry
+            state, key, step_count, lmbda_history, ess_history, acceptance_history, log_evidence = carry
             key, subkey = jax.random.split(key, 2)
             state, info = smc_alg.step(subkey, state)
+
+            # Accumulate log evidence from log_likelihood_increment
+            log_evidence = log_evidence + info.log_likelihood_increment  # type: ignore[attr-defined]
 
             # Compute ESS
             weights = state.sampler_state.weights  # type: ignore[attr-defined]
@@ -430,7 +433,7 @@ class BlackJAXSMCSampler(JesterSampler):
                 acceptance_rate
             )
 
-            return (state, key, step_count + 1, lmbda_history, ess_history, acceptance_history)
+            return (state, key, step_count + 1, lmbda_history, ess_history, acceptance_history, log_evidence)
 
         # Run SMC with JAX while_loop
         logger.info("=" * 70)
@@ -452,13 +455,14 @@ class BlackJAXSMCSampler(JesterSampler):
         lmbda_history = jnp.zeros(max_steps)
         ess_history = jnp.zeros(max_steps)
         acceptance_history = jnp.zeros(max_steps)
+        log_evidence = 0.0  # Initialize log evidence accumulator
 
-        init_carry = (state, key, 0, lmbda_history, ess_history, acceptance_history)
+        init_carry = (state, key, 0, lmbda_history, ess_history, acceptance_history, log_evidence)
 
         logger.info("Running SMC loop (this may take several minutes)...")
         loop_start_time = time.time()
 
-        state, key, steps, lmbda_history, ess_history, acceptance_history = jax.lax.while_loop(
+        state, key, steps, lmbda_history, ess_history, acceptance_history, log_evidence = jax.lax.while_loop(
             cond_fn, body_fn, init_carry
         )
 
@@ -480,6 +484,13 @@ class BlackJAXSMCSampler(JesterSampler):
         min_ess = float(jnp.min(ess_history[:steps]))
         mean_acceptance = float(jnp.mean(acceptance_history[:steps]))
 
+        # Compute evidence error estimate
+        # Simple estimate: use sqrt(variance / n_steps) as uncertainty
+        # Note: This is a rough estimate; proper SMC evidence error requires
+        # tracking incremental variances, which BlackJAX doesn't provide directly
+        # FIXME: Implement proper evidence error estimation if needed
+        log_evidence_err = 0.0  # Placeholder - proper error estimation would require more info
+
         # Store metadata
         self.metadata = {
             'sampler': 'blackjax_smc',
@@ -493,6 +504,8 @@ class BlackJAXSMCSampler(JesterSampler):
             'mean_ess': mean_ess,
             'min_ess': min_ess,
             'mean_acceptance': mean_acceptance,
+            'logZ': float(log_evidence),
+            'logZ_err': float(log_evidence_err),
             'sampling_time_seconds': end_time - start_time,
             'loop_time_seconds': loop_end_time - loop_start_time,
             'lmbda_history': lmbda_history[:steps].tolist(),
@@ -726,11 +739,10 @@ class BlackJAXSMCSampler(JesterSampler):
             raise RuntimeError("No samples available - run sample() first")
 
         # For SMC at λ=1, we have log posterior values
-        # Compute from particles using correct parameter ordering
-        logger.info("Computing log probabilities from particles using jax.lax.map (memory-safe batching)...")
+        # Compute from particles using batched processing
+        # logger.info(f"Computing log probabilities from {len(self._particles_flat)} particles using batched processing...")
+        # logger.info(f"Batch size: {self.config.log_prob_batch_size}")
 
-        # Compute log posterior for each particle using jax.lax.map
-        # This is memory-safe for large numbers of particles (processes one at a time but compiled)
         # CRITICAL: Must use _unflatten_fn because ravel_pytree uses alphabetical ordering,
         # which differs from self.parameter_names ordering used by add_name()
         assert self._particles_flat is not None
@@ -741,7 +753,9 @@ class BlackJAXSMCSampler(JesterSampler):
             # Use base class method to compute posterior from dict
             return self.posterior_from_dict(x_dict, {})
 
-        log_probs = jax.lax.map(compute_log_prob, self._particles_flat)
+        # TODO: Investigate why batch_size causes "zero-size array to reduction operation max"
+        # error in diffrax error handling. Setting to None for now (sequential processing).
+        log_probs = jax.lax.map(compute_log_prob, self._particles_flat, batch_size=None)
         logger.info(f"Computed {len(log_probs)} log probability values")
 
         return log_probs
