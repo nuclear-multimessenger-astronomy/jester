@@ -107,6 +107,14 @@ class BlackJAXSMCSampler(JesterSampler):
 
         logger.info("Initializing BlackJAX SMC sampler")
         logger.info(f"Kernel type: {config.kernel_type}")
+
+        # Warn about experimental NUTS kernel
+        if config.kernel_type == "nuts":
+            logger.warning(
+                "NUTS kernel is experimental and has not been thoroughly tested yet. "
+                "Use with caution and validate results carefully."
+            )
+
         logger.info(f"Configuration: {config.n_particles} particles, "
                     f"{config.n_mcmc_steps} MCMC steps per tempering stage")
         logger.info(f"Target ESS: {config.target_ess}")
@@ -231,6 +239,8 @@ class BlackJAXSMCSampler(JesterSampler):
 
         # Setup kernel-specific parameters and functions
         if self.config.kernel_type == "nuts":
+            # TODO: Thoroughly test NUTS kernel with real inference problems to validate
+            # correctness of Hessian-based mass matrix adaptation and convergence properties
             logger.info("Initializing SMC with NUTS kernel...")
 
             # Hessian for NUTS mass matrix adaptation
