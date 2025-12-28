@@ -56,26 +56,34 @@ examples/inference/blackjax-ns-aw/NICER_J0030/config.yaml
 
 ### Next Priority Tasks
 
-1. **Fix BlackJAX NS-AW type errors** (7 errors in `blackjax_ns_aw.py`)
-   - Run: `uv run pyright jesterTOV/inference/samplers/blackjax_ns_aw.py`
-   - See `jesterTOV/inference/CLAUDE.md` for detailed error list
+**CRITICAL** (before next release):
 
-2. **Validate SMC with actual sampling runs**
+1. **⚠️ Add tests for InferenceResult class** (HDF5 results storage) - URGENT
+   - File: `tests/test_inference/test_result.py` (DOES NOT EXIST)
+   - 516 lines of production code with ZERO test coverage
+   - See "Testing Coverage Assessment" section below for details
+
+2. **Fix BlackJAX NS-AW type errors** (7 errors in `blackjax_ns_aw.py`)
+   - Run: `uv run pyright jesterTOV/inference/samplers/blackjax_ns_aw.py`
+   - See type error details in "Testing Coverage Assessment" section
+
+3. **Document data loading status** - `jesterTOV/inference/data/__init__.py`
+   - Has FIXME comment about missing DataLoader implementation
+   - Either implement missing functions or update documentation
+
+**HIGH PRIORITY**:
+
+4. **Add postprocessing tests** - `tests/test_inference/test_postprocessing.py`
+   - 893 lines of visualization code with NO tests
+   - Critical for publication-quality figures
+
+5. **Validate SMC with actual sampling runs**
    - Test prior-only sampling (not just dry run)
    - Test with real likelihoods (GW170817, NICER)
-   - Compare NUTS vs Random Walk performance
+   - Test evidence calculation (recent bug fix in commit 7854188)
+   - Test batching behavior (commit cbda19f notes "needs further investigating")
 
-3. **Expand test suite for samplers**
-   - Unit tests for SMC and NS-AW
-   - Integration tests with real inference workflows
-
-4. **Add tests for InferenceResult class** (HDF5 results storage)
-   - Test save/load roundtrip for all sampler types (FlowMC, SMC, NS-AW)
-   - Test scalar vs array dataset handling in sampler_specific data
-   - Test metadata serialization/deserialization
-   - Test backward compatibility (if needed)
-   - Test edge cases (empty histories, missing fields, etc.)
-   - Location: `tests/test_inference/test_result.py`
+**See full testing assessment below for comprehensive analysis.**
 
 ---
 
@@ -137,12 +145,119 @@ uv run pytest tests/test_inference/test_config.py
 uv run pytest -v tests/
 ```
 
-**Test Status**: All 97 tests passing ✅
+**Test Status**: 291 tests total, all passing ✅
 
 **Key Testing Insights**:
 - Use realistic polytropic EOSs, not linear ones
 - MetaModel tested up to ~2 nsat; MetaModel+CSE can go to 6+ nsat
 - Stiff EOS: L_sym ≥ 90, Q_sat = 0, K_sym = 0 for realistic NS masses
+
+---
+
+## Testing Coverage Assessment (December 2024)
+
+**CRITICAL TESTING GAPS** - The following areas have NO or INSUFFICIENT test coverage:
+
+### 1. **InferenceResult Class (HDF5 Storage) - ❌ ZERO TESTS**
+   - **File**: `jesterTOV/inference/result.py` (516 lines)
+   - **Recent Change**: Complete rewrite from NPZ to HDF5 format (commit c1c3f18, Dec 2024)
+   - **Risk**: HIGH - Core data persistence layer with no validation
+   - **Missing Coverage**:
+     - Save/load roundtrip for all sampler types (FlowMC, SMC, NS-AW)
+     - Scalar vs array dataset handling in sampler_specific data
+     - Metadata serialization/deserialization
+     - Backward compatibility (if needed)
+     - Edge cases (empty histories, missing fields, corrupt HDF5 files)
+     - Config JSON round-trip
+   - **Location for tests**: `tests/test_inference/test_result.py` (DOES NOT EXIST)
+   - **Priority**: URGENT - This is production infrastructure
+
+### 2. **Postprocessing Module - ❌ ZERO TESTS**
+   - **File**: `jesterTOV/inference/postprocessing/postprocessing.py` (893 lines)
+   - **Risk**: MEDIUM-HIGH - Used for publication-quality figures
+   - **Missing Coverage**:
+     - Cornerplot generation
+     - Mass-radius diagram generation
+     - Pressure-density plots
+     - HDF5 result loading in postprocessing context
+     - Error handling for missing data
+     - TeX rendering fallback
+   - **Location for tests**: `tests/test_inference/test_postprocessing.py` (DOES NOT EXIST)
+   - **Priority**: HIGH - Scientific visualization is critical
+
+### 3. **Data Loading Functions - ⚠️ INCOMPLETE IMPLEMENTATION**
+   - **File**: `jesterTOV/inference/data/__init__.py`
+   - **Status**: Has FIXME comment - "DataLoader class was removed. Need to implement data loading functionality"
+   - **Risk**: MEDIUM - Unclear what functionality exists
+   - **Missing Functions** (per FIXME):
+     - `load_nicer_kde(psr_name, analysis_group, n_samples)`
+     - `load_chieft_bands()`
+     - `load_rex_posterior(experiment_name)`
+     - `load_gw_nf_model(event_name, model_path)`
+   - **Priority**: MEDIUM - Need to clarify implementation status
+
+### 4. **BlackJAX NS-AW Sampler - ⚠️ TYPE ERRORS**
+   - **File**: `jesterTOV/inference/samplers/blackjax_ns_aw.py` (503 lines)
+   - **Status**: 7 pyright type errors (see below)
+   - **Test Coverage**: Basic initialization tests exist, but type safety not verified
+   - **Priority**: MEDIUM - Marked as experimental, but should be type-safe
+
+   **Type Errors** (from `uv run pyright jesterTOV/inference/samplers/blackjax_ns_aw.py`):
+   ```
+   Line 240: Argument missing for parameter "rng_key"
+   Line 279: Argument type mismatch (ArrayTree vs ParamDict)
+   Line 301: Cannot get len() of ArrayTree
+   Line 302: Cannot access attribute "n_likelihood_evals" for NamedTuple
+   Line 403: Type conversion issue (2 errors)
+   Line 404: Cannot access attribute "std" for MethodType
+   ```
+
+### 5. **BlackJAX SMC Sampler - ⚠️ LIMITED TESTING**
+   - **File**: `jesterTOV/inference/samplers/blackjax_smc.py` (783 lines)
+   - **Test Coverage**: Basic initialization + 2 slow integration tests
+   - **Recent Activity**: Multiple bug fixes (commits a5c863e, f65827d, e083bd2)
+   - **Missing Coverage**:
+     - Evidence calculation (commit 7854188 "Attempt to fix blackjax evidence calculation")
+     - Mass matrix building with custom scales
+     - Sigma adaptation for random walk kernel
+     - Batching behavior (commit cbda19f mentions "needs further investigating")
+   - **Priority**: MEDIUM - Experimental, but under active development
+
+### 6. **Test Distribution by Module**
+   ```
+   Likelihoods:       44 tests ✅ EXCELLENT
+   Base classes:      40 tests ✅ EXCELLENT
+   Samplers:          33 tests ✅ GOOD (but missing NS-AW/SMC edge cases)
+   Config:            29 tests ✅ GOOD
+   Priors:            19 tests ✅ ADEQUATE
+   Integration:       17 tests ✅ ADEQUATE
+   Transforms:        12 tests ⚠️ COULD BE BETTER
+
+   Result class:       0 tests ❌ CRITICAL GAP
+   Postprocessing:     0 tests ❌ CRITICAL GAP
+   Data loading:       0 tests ❌ CRITICAL GAP
+   ```
+
+### Recommendations
+
+**IMMEDIATE ACTIONS** (before next release):
+1. **Create `tests/test_inference/test_result.py`** - Test HDF5 save/load for all sampler types
+2. **Fix NS-AW type errors** - Run `uv run pyright` and resolve all 7 errors
+3. **Document data loading status** - Either implement missing functions or update FIXME
+
+**SHORT-TERM** (next sprint):
+4. **Create `tests/test_inference/test_postprocessing.py`** - Basic smoke tests for plotting
+5. **Expand SMC tests** - Add tests for evidence calculation, batching behavior
+6. **Expand transform tests** - More edge cases for MetaModel and MetaModel+CSE
+
+**LONG-TERM**:
+7. **Add integration tests with real data** - Test full workflow with actual GW/NICER data
+8. **Performance regression tests** - Track sampling efficiency over time
+9. **Documentation tests** - Verify all examples in docs actually run
+
+---
+
+## Code Quality Standards
 
 ### Documentation
 ```bash

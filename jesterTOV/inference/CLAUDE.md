@@ -19,6 +19,14 @@ The `jesterTOV/inference/` module provides Bayesian inference for constraining n
 - ✅ Prior-only sampling debug (NaN issue resolved)
 - ✅ Comprehensive docstring improvements across all modules
 - ✅ Example configuration files for common use cases
+- ✅ HDF5-based result storage (InferenceResult class) - replacing NPZ format
+
+**⚠️ CRITICAL TESTING GAPS**:
+- ❌ **InferenceResult class (result.py)** - 516 lines, ZERO tests (see `../../CLAUDE.md`)
+- ❌ **Postprocessing module** - 893 lines, ZERO tests
+- ⚠️ **BlackJAX NS-AW sampler** - 7 type errors need fixing
+- ⚠️ **BlackJAX SMC sampler** - Limited test coverage, recent bug fixes need validation
+- See `../../CLAUDE.md` "Testing Coverage Assessment" section for full details
 
 ## Running Inference
 

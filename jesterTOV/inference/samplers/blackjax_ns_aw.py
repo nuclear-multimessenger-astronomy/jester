@@ -237,7 +237,8 @@ class BlackJAXNSAWSampler(JesterSampler):
         )
 
         # Initialize sampler state
-        state = nested_sampler.init(initial_particles)
+        key, subkey = jax.random.split(key)
+        state = nested_sampler.init(initial_particles, rng_key=subkey)
 
         def terminate(state):
             """Termination condition: stop when remaining evidence is small."""
@@ -264,19 +265,20 @@ class BlackJAXNSAWSampler(JesterSampler):
 
         # Store evidence from state before finalization
         # (NSState has logZ, but NSInfo from finalise does not)
-        logZ = float(state.logZ)
+        logZ = float(state.logZ)  # type: ignore[attr-defined]
         # Estimate uncertainty from remaining evidence in live points
-        logZ_err = float(jnp.logaddexp(0, state.logZ_live - state.logZ))
+        logZ_err = float(jnp.logaddexp(0, state.logZ_live - state.logZ))  # type: ignore[attr-defined]
 
         # Finalize nested sampling results
         logger.info("Finalizing nested sampling results...")
-        final_info = self._finalise(state, dead)
+        final_info = self._finalise(state, dead)  # type: ignore[arg-type]
 
         # Transform particles back to prior space
         logger.info("Transforming samples back to prior space...")
         physical_particles = final_info.particles
         for transform in reversed(self.sample_transforms):
-            physical_particles = jax.vmap(transform.backward)(physical_particles)
+            # Type note: vmap preserves PyTree structure; physical_particles remains ArrayTree
+            physical_particles = jax.vmap(transform.backward)(physical_particles)  # type: ignore[arg-type]
 
         # Store final info with physical parameters
         # Note: final_info is NSInfo (not NSState), so we store it with replaced particles
@@ -298,8 +300,8 @@ class BlackJAXNSAWSampler(JesterSampler):
             'sampling_time_seconds': sampling_time,
             'sampling_time_minutes': sampling_time / 60,
             'n_iterations': n_iterations,
-            'n_samples': len(final_info.particles),
-            'n_likelihood_evaluations': int(jnp.sum(final_info.inner_kernel_info.n_likelihood_evals)),
+            'n_samples': int(final_info.particles.shape[0]),  # type: ignore[union-attr]
+            'n_likelihood_evaluations': int(jnp.sum(final_info.inner_kernel_info.n_likelihood_evals)),  # type: ignore[attr-defined]
             'logZ': logZ,
             'logZ_err': logZ_err,
         }
@@ -400,8 +402,12 @@ class BlackJAXNSAWSampler(JesterSampler):
 
             # Store evidence from anesthetic computation (more accurate than our estimate)
             try:
-                logZ_anesthetic = float(ns_samples.logZ())
-                logZ_err_anesthetic = float(ns_samples.logZ.std())
+                # Note: logZ() returns the evidence value; std() is accessed on the samples
+                logZ_result = ns_samples.logZ()
+                logZ_anesthetic = float(logZ_result)  # type: ignore[arg-type]
+                # Get standard deviation from the logZ samples
+                # Note: anesthetic stores logZ values in the samples dataframe
+                logZ_err_anesthetic = float(ns_samples.logZ().std())  # type: ignore[union-attr]
                 # Only set if both succeed
                 self.metadata['logZ_anesthetic'] = logZ_anesthetic
                 self.metadata['logZ_err_anesthetic'] = logZ_err_anesthetic

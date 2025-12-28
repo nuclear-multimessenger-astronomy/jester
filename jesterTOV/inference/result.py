@@ -296,8 +296,8 @@ class InferenceResult:
             derived_keys = {'masses_EOS', 'radii_EOS', 'Lambdas_EOS', 'n', 'p', 'e', 'cs2'}
             sampler_specific_keys = {'weights', 'ess', 'logL', 'logL_birth'}
 
-            # Get sampler-specific data if present
-            sampler_specific_data = self.posterior.pop('_sampler_specific', {})
+            # Get sampler-specific data if present (use .get() to avoid mutating self.posterior)
+            sampler_specific_data = self.posterior.get('_sampler_specific', {})
             if isinstance(sampler_specific_data, np.ndarray):
                 sampler_specific_data = {}
 
@@ -308,7 +308,10 @@ class InferenceResult:
 
             # Distribute datasets to appropriate groups
             for key, value in self.posterior.items():
-                if key == 'log_prob':
+                if key == '_sampler_specific':
+                    # Skip - handled separately below
+                    continue
+                elif key == 'log_prob':
                     # log_prob goes directly in /posterior
                     posterior_grp.create_dataset('log_prob', data=value)
                 elif key in derived_keys:
@@ -326,12 +329,15 @@ class InferenceResult:
             # Create /metadata group
             metadata_grp = f.create_group('metadata')
 
-            # Store config as JSON dataset
-            config_json = self.metadata.pop('config_json', '{}')
+            # Store config as JSON dataset (use .get() to avoid mutating self.metadata)
+            config_json = self.metadata.get('config_json', '{}')
             metadata_grp.create_dataset('config', data=config_json)
 
             # Store all other metadata as HDF5 attributes
             for key, value in self.metadata.items():
+                if key == 'config_json':
+                    # Skip - already stored as dataset above
+                    continue
                 # HDF5 attributes must be scalars or small arrays
                 if isinstance(value, (int, float, str, bool)):
                     metadata_grp.attrs[key] = value
