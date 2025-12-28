@@ -287,11 +287,22 @@ class BaseSamplerConfig(BaseModel):
         Directory to save results
     n_eos_samples : int
         Number of EOS samples to generate after inference (default: 10000)
+    log_prob_batch_size : int
+        Batch size for computing log probabilities and generating EOS samples (default: 1000)
     """
 
     type: str
     output_dir: str = "./outdir/"
     n_eos_samples: int = 10_000
+    log_prob_batch_size: int = 1000
+
+    @field_validator("n_eos_samples", "log_prob_batch_size")
+    @classmethod
+    def validate_base_positive(cls, v: int) -> int:
+        """Validate that value is positive."""
+        if v <= 0:
+            raise ValueError(f"Value must be positive, got: {v}")
+        return v
 
 
 class FlowMCSamplerConfig(BaseSamplerConfig):
@@ -430,12 +441,6 @@ class SMCSamplerConfig(BaseSamplerConfig):
         Target acceptance rate for NUTS (default: 0.7)
     adaptation_rate : float
         Adaptation rate for step size tuning (default: 0.3)
-    log_prob_batch_size : int
-        Batch size for computing log probabilities at the end of SMC (default: 1000)
-    output_dir : str
-        Directory to save results
-    n_eos_samples : int
-        Number of EOS samples to generate after inference (default: 10000)
     """
 
     type: Literal["smc"] = "smc"
@@ -449,9 +454,8 @@ class SMCSamplerConfig(BaseSamplerConfig):
     mass_matrix_param_scales: Dict[str, float] = Field(default_factory=dict)
     target_acceptance: float = 0.7
     adaptation_rate: float = 0.3
-    log_prob_batch_size: int = 1000
 
-    @field_validator("n_particles", "n_mcmc_steps", "log_prob_batch_size")
+    @field_validator("n_particles", "n_mcmc_steps")
     @classmethod
     def validate_positive(cls, v: int) -> int:
         """Validate that value is positive."""
