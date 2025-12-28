@@ -41,14 +41,14 @@ likelihoods:
 # SMC configuration with Random Walk kernel
 sampler:
   type: "smc"
-  kernel_type: "random_walk"
-  n_particles: 1000
-  n_mcmc_steps: 10
-  target_ess: 0.9
-  random_walk_sigma: 0.1
-  target_acceptance: 0.5
-  adaptation_rate: 0.3
-  n_eos_samples: 1000
+  kernel_type: "random_walk"  # Gaussian random walk kernel with sigma adaptation
+  n_particles: 2000           # Number of particles for full inference
+  n_mcmc_steps: 20            # MCMC steps per tempering level (more than NUTS)
+  target_ess: 0.9             # Target effective sample size (90%)
+  random_walk_sigma: 0.1      # Initial sigma for Gaussian random walk
+  target_acceptance: 0.5      # Target acceptance rate (lower than NUTS)
+  adaptation_rate: 0.3        # Adaptation rate for sigma tuning
+  n_eos_samples: 2000         # Number of EOS samples to generate after inference
   output_dir: "./outdir/"
 
 # Postprocessing configuration

@@ -2,7 +2,7 @@
 # Uses BlackJAX SMC with adaptive tempering and NUTS kernel
 # Sample from the prior for testing
 
-seed: 42
+seed: 43
 
 # Execution options
 dry_run: false        # Set to true to setup everything but not run sampler
@@ -23,29 +23,25 @@ transform:
 prior:
   specification_file: "prior.prior"
 
-# Likelihood constraints
+# Likelihood constraints: Use zero likelihood for prior-only sampling
 likelihoods:
   - type: "constraints_eos"
     enabled: true
-    parameters:
-      penalty_causality: -1.0e10
-      penalty_stability: -1.0e5
-      penalty_pressure: -1.0e5
   - type: "zero"
     enabled: true
     parameters: {}
 
 # SMC configuration with NUTS kernel
+# Note: Prior-only sampling typically requires fewer particles and steps
 sampler:
   type: "smc"
   kernel_type: "nuts"        # Use NUTS kernel with Hessian adaptation
-  n_particles: 1000          # Number of particles (reduced for testing)
+  n_particles: 1000          # Number of particles for prior sampling
   n_mcmc_steps: 5            # MCMC steps per tempering level
   target_ess: 0.9            # Target effective sample size (90%)
   init_step_size: 0.01       # Initial step size for NUTS
   mass_matrix_base: 0.2      # Base value for diagonal mass matrix
-  mass_matrix_param_scales:  # Per-parameter scaling (if needed)
-    {}                       # Empty for uniform scaling
+  mass_matrix_param_scales: {}  # Per-parameter scaling (empty for uniform)
   target_acceptance: 0.7     # Target acceptance rate for NUTS
   adaptation_rate: 0.3       # Adaptation rate for step size tuning
   n_eos_samples: 1000        # Number of EOS samples to generate after inference
