@@ -16,7 +16,7 @@ for dir in */; do
     if [ -f "$dir/submit.sh" ]; then
         echo "Submitting $dir"
         cd "$dir"
-        bash submit.sh
+        sbatch submit.sh
         cd ..
     fi
 done
