@@ -41,7 +41,7 @@ likelihoods:
 sampler:
   type: "smc"
   kernel_type: "random_walk"  # Gaussian random walk kernel with sigma adaptation
-  n_particles: 1000          # Number of particles for full inference (AGGRESSIVE)
+  n_particles: 2000          # Number of particles for full inference (AGGRESSIVE)
   n_mcmc_steps: 10            # MCMC steps per tempering level (AGGRESSIVE)
   target_ess: 0.9             # Target effective sample size (90%)
   random_walk_sigma: 0.1      # Initial sigma for Gaussian random walk

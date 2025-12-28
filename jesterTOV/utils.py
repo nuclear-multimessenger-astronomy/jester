@@ -403,6 +403,7 @@ def calculate_rest_mass_density(e: Float[Array, "n"], p: Float[Array, "n"]):
         y0=rho0,  # Initial rest-mass density
         saveat=SaveAt(ts=e),  # Save at input grid points
         stepsize_controller=PIDController(rtol=1e-5, atol=1e-6),
+        throw=False,
     )
 
     return solution.ys

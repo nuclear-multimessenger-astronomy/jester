@@ -234,8 +234,8 @@ class InferenceResult:
                 'logZ_err': float(ns_metadata['logZ_err']),
             })
 
-            # Optional anesthetic evidence
-            if 'logZ_anesthetic' in ns_metadata:
+            # Optional anesthetic evidence (only add if both are present)
+            if 'logZ_anesthetic' in ns_metadata and 'logZ_err_anesthetic' in ns_metadata:
                 metadata['logZ_anesthetic'] = float(ns_metadata['logZ_anesthetic'])
                 metadata['logZ_err_anesthetic'] = float(ns_metadata['logZ_err_anesthetic'])
 

@@ -282,21 +282,19 @@ def generate_eos_samples(
 
     chosen_samples = {k: jnp.array(v[idx]) for k, v in param_samples.items()}
 
-    # Generate EOS curves (with JIT compilation)
-    logger.info("JIT compiling and running TOV solver...")
+    # Generate EOS curves with batched processing
+    logger.info("Running TOV solver with batched processing...")
     my_forward = jax.jit(transform_eos.forward)
 
-    # Warm up JIT
-    warmup_size = min(100, n_available)
-    test_idx = np.random.choice(np.arange(len(log_prob)), size=warmup_size, replace=False)
-    test_samples = {k: jnp.array(v[test_idx]) for k, v in param_samples.items()}
-    _ = jax.vmap(my_forward)(test_samples)
+    # Get batch size from config
+    batch_size = config.sampler.log_prob_batch_size
+    logger.info(f"Using batch size: {batch_size}")
 
-    # Run full batch
+    # Run with batched processing (JIT compilation happens on first batch)
     TOV_start = time.time()
-    transformed_samples = jax.vmap(my_forward)(chosen_samples)
+    transformed_samples = jax.lax.map(my_forward, chosen_samples, batch_size=batch_size)
     TOV_end = time.time()
-    logger.info(f"TOV solve time: {TOV_end - TOV_start:.2f} s")
+    logger.info(f"TOV solve time: {TOV_end - TOV_start:.2f} s ({n_eos_samples} samples)")
 
     # Add derived EOS quantities to result
     result.add_derived_eos(transformed_samples)

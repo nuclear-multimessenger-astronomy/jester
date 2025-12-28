@@ -400,8 +400,11 @@ class BlackJAXNSAWSampler(JesterSampler):
 
             # Store evidence from anesthetic computation (more accurate than our estimate)
             try:
-                self.metadata['logZ_anesthetic'] = float(ns_samples.logZ())
-                self.metadata['logZ_err_anesthetic'] = float(ns_samples.logZ.std())
+                logZ_anesthetic = float(ns_samples.logZ())
+                logZ_err_anesthetic = float(ns_samples.logZ.std())
+                # Only set if both succeed
+                self.metadata['logZ_anesthetic'] = logZ_anesthetic
+                self.metadata['logZ_err_anesthetic'] = logZ_err_anesthetic
             except Exception as e:
                 logger.warning(f"Could not compute anesthetic evidence: {e}")
 

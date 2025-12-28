@@ -753,9 +753,8 @@ class BlackJAXSMCSampler(JesterSampler):
             # Use base class method to compute posterior from dict
             return self.posterior_from_dict(x_dict, {})
 
-        # TODO: Investigate why batch_size causes "zero-size array to reduction operation max"
-        # error in diffrax error handling. Setting to None for now (sequential processing).
-        log_probs = jax.lax.map(compute_log_prob, self._particles_flat, batch_size=None)
+        # Use batched processing for efficiency
+        log_probs = jax.lax.map(compute_log_prob, self._particles_flat, batch_size=self.config.log_prob_batch_size)
         logger.info(f"Computed {len(log_probs)} log probability values")
 
         return log_probs

@@ -175,7 +175,7 @@ class TestSamplerConfig:
 
     def test_valid_sampler_config(self):
         """Test valid sampler configuration."""
-        config = schema.SamplerConfig(
+        config = schema.FlowMCSamplerConfig(
             n_chains=20,
             n_loop_training=2,
             n_loop_production=2,
@@ -191,7 +191,7 @@ class TestSamplerConfig:
     def test_negative_chains_fails(self):
         """Test that negative number of chains fails validation."""
         with pytest.raises(ValidationError):
-            schema.SamplerConfig(
+            schema.FlowMCSamplerConfig(
                 n_chains=-1,  # Should fail
                 n_loop_training=2,
                 n_loop_production=2,
@@ -200,7 +200,7 @@ class TestSamplerConfig:
     def test_zero_chains_fails(self):
         """Test that zero chains fails validation."""
         with pytest.raises(ValidationError):
-            schema.SamplerConfig(
+            schema.FlowMCSamplerConfig(
                 n_chains=0,  # Should fail
                 n_loop_training=2,
                 n_loop_production=2,
@@ -209,7 +209,7 @@ class TestSamplerConfig:
     def test_negative_learning_rate_fails(self):
         """Test that negative learning rate fails validation."""
         with pytest.raises(ValidationError):
-            schema.SamplerConfig(
+            schema.FlowMCSamplerConfig(
                 n_chains=4,
                 learning_rate=-0.001,  # Should fail
             )

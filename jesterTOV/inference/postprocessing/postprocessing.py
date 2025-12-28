@@ -805,9 +805,11 @@ def generate_all_plots(outdir: str,
     if make_histograms_flag:
         make_parameter_histograms(data, prior_data, figures_dir)
 
-    if make_contours_flag:
-        make_contour_radii_plot(data, prior_data, figures_dir)
-        make_contour_pressures_plot(data, figures_dir)
+    # TODO: Decide whether to keep mass-radius and pressure-density contour plots
+    # These are currently commented out pending decision on their utility
+    # if make_contours_flag:
+    #     make_contour_radii_plot(data, prior_data, figures_dir)
+    #     make_contour_pressures_plot(data, figures_dir)
 
     logger.info(f"All plots generated and saved to {figures_dir}")
 
