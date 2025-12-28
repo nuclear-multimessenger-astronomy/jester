@@ -112,10 +112,17 @@ def create_unit_cube_transforms(prior: Prior) -> list[BijectiveTransform]:
     for component_prior in prior.base_prior:
         # Validate that each component is a UniformPrior
         if not isinstance(component_prior, UniformPrior):
-            raise ValueError(
+            error_msg = (
                 f"BlackJAX NS-AW requires UniformPrior components, got {type(component_prior).__name__}. "
-                f"Parameter: {component_prior.parameter_names[0]}"
+                f"Parameter: {component_prior.parameter_names[0]}\n"
             )
+            if isinstance(component_prior, CombinePrior):
+                error_msg += (
+                    "Hint: Nested CombinePrior detected. This likely means a CombinePrior was wrapped "
+                    "in another CombinePrior. Instead of CombinePrior([prior1, prior2]), use "
+                    "CombinePrior(prior1.base_prior + prior2.base_prior) to flatten the structure."
+                )
+            raise ValueError(error_msg)
 
         # Extract bounds (UniformPrior has xmin, xmax attributes)
         param_name = component_prior.parameter_names[0]

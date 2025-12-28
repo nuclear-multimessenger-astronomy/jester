@@ -186,6 +186,11 @@ The `base/` module contains copies of Jim v0.2.0 base classes to remove dependen
 - Uses `jnp.inf` instead of `jnp.nan` for initialization (avoids NaN propagation)
 - Preserves parameter ordering when converting dict → array
 
+**Critical prior handling for blackjax-ns-aw**:
+- The blackjax-ns-aw sampler requires a flat `CombinePrior` structure (list of `UniformPrior` only)
+- When adding `_random_key` prior for GW/NICER likelihoods, the code flattens the structure to avoid nested `CombinePrior` objects
+- See `run_inference.py:125` for implementation
+
 ## Common Development Tasks
 
 ### Adding a New Likelihood
@@ -247,6 +252,12 @@ Inference produces two output files in `outdir/`:
 - **Issue**: NaN log probabilities and 0% acceptance rates in prior-only sampling
 - **Root cause**: Identified and fixed in sampler implementation
 - **Status**: Prior-only sampling now works correctly with ZeroLikelihood
+
+**Nested CombinePrior with blackjax-ns-aw** (December 2024) - ✅ RESOLVED:
+- **Issue**: ValueError when using blackjax-ns-aw with GW or NICER likelihoods: "BlackJAX NS-AW requires UniformPrior components, got CombinePrior"
+- **Root cause**: When adding `_random_key` prior for GW/NICER likelihoods, the code wrapped an existing `CombinePrior` inside another `CombinePrior`, creating nested structure
+- **Fix**: Modified `run_inference.py:125` to flatten the structure: `CombinePrior(prior.base_prior + [random_key_prior])` instead of `CombinePrior([prior, random_key_prior])`
+- **Status**: blackjax-ns-aw now works correctly with all likelihood combinations
 
 ## File Naming Conventions
 

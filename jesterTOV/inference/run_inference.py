@@ -121,7 +121,8 @@ def setup_prior(config):
         random_key_prior = UniformPrior(
             float(0), float(2**32 - 1), parameter_names=["_random_key"]
         )
-        prior = CombinePrior([prior, random_key_prior])
+        # Flatten the prior structure to avoid nested CombinePrior
+        prior = CombinePrior(prior.base_prior + [random_key_prior])
 
     return prior
 
