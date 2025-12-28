@@ -8,12 +8,14 @@ Supports two MCMC kernels:
 
 from typing import Any
 import time
+from pathlib import Path
 
 import jax
 import jax.numpy as jnp
 import jax.random
 from jax.flatten_util import ravel_pytree
 from jax.tree_util import tree_map
+from jax.experimental import io_callback
 from jaxtyping import Array, PRNGKeyArray
 
 from ..base import LikelihoodBase, Prior, BijectiveTransform, NtoMTransform
@@ -380,6 +382,20 @@ class BlackJAXSMCSampler(JesterSampler):
         key, subkey = jax.random.split(key)
         state = smc_alg.init(initial_position_flat, subkey)
 
+        # Progress callback for live updates during sampling
+        def progress_callback(step: int, lmbda: float, ess: float, acceptance: float) -> None:
+            """Print progress update during sampling (called via io_callback)."""
+            # Create progress bar
+            bar_length = 30
+            filled = int(lmbda * bar_length)
+            bar = "█" * filled + "░" * (bar_length - filled)
+
+            # Print update
+            logger.info(
+                f"Step {step:4d} | λ={lmbda:.6f} | ESS={ess*100:5.1f}% | "
+                f"Accept={acceptance*100:5.1f}% | {bar}"
+            )
+
         # Define loop conditions
         def cond_fn(carry):
             state, _, _, _, _, _ = carry
@@ -404,20 +420,49 @@ class BlackJAXSMCSampler(JesterSampler):
             ess_history = ess_history.at[step_count].set(ess_value)
             acceptance_history = acceptance_history.at[step_count].set(acceptance_rate)
 
+            # Print progress update using io_callback
+            io_callback(
+                progress_callback,
+                None,  # No return value
+                step_count,
+                state.sampler_state.lmbda,  # type: ignore[attr-defined]
+                ess_value,
+                acceptance_rate
+            )
+
             return (state, key, step_count + 1, lmbda_history, ess_history, acceptance_history)
 
         # Run SMC with JAX while_loop
-        logger.info("Running adaptive tempering...")
+        logger.info("=" * 70)
+        logger.info("STARTING ADAPTIVE TEMPERING")
+        logger.info("=" * 70)
+        logger.info(f"Kernel: {self.config.kernel_type.upper()}")
+        logger.info(f"Particles: {self.config.n_particles}")
+        logger.info(f"MCMC steps per tempering: {self.config.n_mcmc_steps}")
+        logger.info(f"Target ESS: {self.config.target_ess * 100:.0f}%")
+        logger.info(f"Target acceptance: {self.config.target_acceptance * 100:.0f}%")
+        if self.config.kernel_type == "random_walk":
+            logger.info(f"Initial sigma: {self.config.random_walk_sigma}")
+            logger.info(f"Adaptation rate: {self.config.adaptation_rate}")
+        logger.info("Temperature progression: lambda = 0 (prior) -> 1 (posterior)")
+        logger.info("Progress updates will be shown after each annealing step")
+        logger.info("=" * 70)
+
         max_steps = 1000
         lmbda_history = jnp.zeros(max_steps)
         ess_history = jnp.zeros(max_steps)
         acceptance_history = jnp.zeros(max_steps)
 
         init_carry = (state, key, 0, lmbda_history, ess_history, acceptance_history)
+
+        logger.info("Running SMC loop (this may take several minutes)...")
+        loop_start_time = time.time()
+
         state, key, steps, lmbda_history, ess_history, acceptance_history = jax.lax.while_loop(
             cond_fn, body_fn, init_carry
         )
 
+        loop_end_time = time.time()
         steps = int(steps)
         end_time = time.time()
 
@@ -430,6 +475,11 @@ class BlackJAXSMCSampler(JesterSampler):
         assert self._weights is not None
         ess = jnp.sum(self._weights) ** 2 / jnp.sum(self._weights**2)
 
+        # Compute summary statistics
+        mean_ess = float(jnp.mean(ess_history[:steps]))
+        min_ess = float(jnp.min(ess_history[:steps]))
+        mean_acceptance = float(jnp.mean(acceptance_history[:steps]))
+
         # Store metadata
         self.metadata = {
             'sampler': 'blackjax_smc',
@@ -440,15 +490,82 @@ class BlackJAXSMCSampler(JesterSampler):
             'annealing_steps': steps,
             'final_ess': float(ess),
             'final_ess_percent': float(ess / self.config.n_particles * 100),
+            'mean_ess': mean_ess,
+            'min_ess': min_ess,
+            'mean_acceptance': mean_acceptance,
             'sampling_time_seconds': end_time - start_time,
+            'loop_time_seconds': loop_end_time - loop_start_time,
             'lmbda_history': lmbda_history[:steps].tolist(),
             'ess_history': ess_history[:steps].tolist(),
             'acceptance_history': acceptance_history[:steps].tolist(),
         }
 
-        logger.info(f"SMC sampling completed in {end_time - start_time:.2f}s")
-        logger.info(f"Annealing steps: {steps}")
-        logger.info(f"Final ESS: {ess:.1f} ({ess/self.config.n_particles*100:.1f}%)")
+        # Display progress summary table only
+        logger.info("")
+        self._print_progress_summary(steps, lmbda_history, ess_history, acceptance_history)
+
+    def _print_progress_summary(
+        self,
+        steps: int,
+        lmbda_history: Array,
+        ess_history: Array,
+        acceptance_history: Array
+    ) -> None:
+        """Print a progress summary table showing annealing progression.
+
+        Parameters
+        ----------
+        steps : int
+            Number of annealing steps completed
+        lmbda_history : Array
+            Temperature (lambda) values at each step
+        ess_history : Array
+            ESS values at each step
+        acceptance_history : Array
+            Acceptance rates at each step
+        """
+        logger.info("")
+        logger.info("=" * 70)
+        logger.info("ANNEALING PROGRESS SUMMARY")
+        logger.info("=" * 70)
+
+        # Determine how many rows to show
+        # Show first, last, and evenly spaced intermediate steps
+        max_rows = 15
+        if steps <= max_rows:
+            # Show all steps
+            indices = list(range(steps))
+        else:
+            # Show first, last, and evenly spaced intermediate
+            n_intermediate = max_rows - 2
+            step_size = (steps - 2) / n_intermediate
+            indices = [0]  # First step
+            indices.extend([int(1 + i * step_size) for i in range(n_intermediate)])
+            indices.append(steps - 1)  # Last step
+
+        # Print table header
+        logger.info(f"{'Step':<8} {'Lambda':<12} {'ESS (%)':<12} {'Accept (%)':<12} {'Progress':<20}")
+        logger.info("-" * 70)
+
+        # Print table rows
+        for idx in indices:
+            step_num = idx
+            lmbda = float(lmbda_history[idx])
+            ess_pct = float(ess_history[idx]) * 100
+            acc_pct = float(acceptance_history[idx]) * 100
+
+            # Create progress bar (20 chars)
+            bar_length = 20
+            filled = int(lmbda * bar_length)
+            bar = "█" * filled + "░" * (bar_length - filled)
+
+            logger.info(f"{step_num:<8} {lmbda:<12.6f} {ess_pct:<12.1f} {acc_pct:<12.1f} {bar}")
+
+        logger.info("-" * 70)
+        logger.info(f"Total steps: {steps}")
+        logger.info(f"Temperature range: λ = 0.000000 (prior) → {float(lmbda_history[steps-1]):.6f} (posterior)")
+        logger.info("=" * 70)
+        logger.info("")
 
     def print_summary(self, transform: bool = True) -> None:
         """Print summary of SMC run.
@@ -457,20 +574,94 @@ class BlackJAXSMCSampler(JesterSampler):
         ----------
         transform : bool, optional
             Not used for SMC
-        """
-        logger.info("=" * 70)
-        logger.info("SMC SUMMARY")
-        logger.info("=" * 70)
 
+        Notes
+        -----
+        Summary information is already displayed during and after sampling,
+        so this method does nothing to avoid redundancy.
+        """
+        # Summary already displayed during sampling - no need to repeat
+        pass
+
+    def plot_diagnostics(self, outdir: str | Path = ".", filename: str = "smc_diagnostics.png") -> None:
+        """Generate diagnostic plots for SMC sampling run.
+
+        Creates a 3-panel figure showing:
+        - Temperature (lambda) progression from 0 to 1
+        - Effective Sample Size (ESS) evolution
+        - Acceptance rate evolution
+
+        Parameters
+        ----------
+        outdir : str or Path, optional
+            Output directory for saving the plot (default: current directory)
+        filename : str, optional
+            Filename for the diagnostic plot (default: "smc_diagnostics.png")
+
+        Notes
+        -----
+        This method requires matplotlib to be installed. It should be called after
+        sampling is complete (after calling `sample()`).
+        """
         if self.final_state is None:
             logger.warning("No samples yet - run sample() first")
             return
 
-        logger.info(f"Particles: {self.config.n_particles}")
-        logger.info(f"Annealing steps: {self.metadata['annealing_steps']}")
-        logger.info(f"Final ESS: {self.metadata['final_ess']:.1f} "
-                    f"({self.metadata['final_ess_percent']:.1f}%)")
-        logger.info(f"Sampling time: {self.metadata['sampling_time_seconds']:.1f}s")
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError:
+            logger.warning("matplotlib not found. Install with: pip install matplotlib")
+            return
+
+        # Extract histories from metadata
+        lmbda_history = self.metadata['lmbda_history']
+        ess_history = self.metadata['ess_history']
+        acceptance_history = self.metadata['acceptance_history']
+        n_steps = self.metadata['annealing_steps']
+
+        # Create figure with 3 subplots
+        fig, axes = plt.subplots(3, 1, figsize=(10, 9), sharex=True)
+        fig.suptitle(f"SMC Diagnostics ({self.config.kernel_type.upper()} kernel)",
+                     fontsize=14, fontweight='bold')
+
+        # Plot 1: Lambda (temperature) progression
+        axes[0].plot(range(n_steps), lmbda_history, 'b-o', linewidth=2)
+        axes[0].set_ylabel(r'Temperature $\lambda$', fontsize=12)
+        axes[0].grid(True, alpha=0.3)
+        axes[0].set_ylim(-0.05, 1.05)
+        axes[0].axhline(y=0, color='black', linestyle='--', alpha=0.3, linewidth=1)
+        axes[0].axhline(y=1, color='black', linestyle='--', alpha=0.3, linewidth=1)
+
+        # Plot 2: ESS evolution
+        ess_percent = [ess * 100 for ess in ess_history]
+        axes[1].plot(range(n_steps), ess_percent, 'g-o', linewidth=2)
+        axes[1].axhline(y=self.config.target_ess * 100, color='black', linestyle='--',
+                       alpha=0.5, linewidth=1.5, label=f'Target ({self.config.target_ess*100:.0f}%)')
+        axes[1].set_ylabel('ESS (%)', fontsize=12)
+        axes[1].grid(True, alpha=0.3)
+        axes[1].legend(loc='best', fontsize=10)
+        axes[1].set_ylim(0, 105)
+
+        # Plot 3: Acceptance rate evolution
+        acceptance_percent = [acc * 100 for acc in acceptance_history]
+        axes[2].plot(range(n_steps), acceptance_percent, 'orange', linestyle='-', marker='o', linewidth=2)
+        axes[2].axhline(y=self.config.target_acceptance * 100, color='black', linestyle='--',
+                       alpha=0.5, linewidth=1.5, label=f'Target ({self.config.target_acceptance*100:.0f}%)')
+        axes[2].set_ylabel('Acceptance Rate (%)', fontsize=12)
+        axes[2].set_xlabel('Annealing Step', fontsize=12)
+        axes[2].grid(True, alpha=0.3)
+        axes[2].legend(loc='best', fontsize=10)
+        axes[2].set_ylim(0, 105)
+
+        plt.tight_layout()
+
+        # Save figure
+        outdir_path = Path(outdir)
+        outdir_path.mkdir(parents=True, exist_ok=True)
+        output_path = outdir_path / filename
+        plt.savefig(output_path, dpi=150, bbox_inches='tight')
+        logger.info(f"Saved diagnostic plot to {output_path}")
+        plt.close(fig)
 
     def get_samples(self, training: bool = False) -> dict:
         """Return final particle positions.

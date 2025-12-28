@@ -201,6 +201,12 @@ def run_sampling(sampler, seed, outdir):
         f"Sampling complete! Runtime: {int(runtime / 60)} min {int(runtime % 60)} sec"
     )
 
+    # Generate diagnostic plots for SMC sampler
+    from .samplers.blackjax_smc import BlackJAXSMCSampler
+    if isinstance(sampler, BlackJAXSMCSampler):
+        logger.info("Generating SMC diagnostic plots...")
+        sampler.plot_diagnostics(outdir=outdir, filename="smc_diagnostics.png")
+
     ### POSTPROCESSING ###
 
     # Get samples from sampler using unified interface
