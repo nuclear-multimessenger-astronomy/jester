@@ -23,7 +23,8 @@ def create_sampler(
     config: Union[FlowMCSamplerConfig, BlackJAXNSAWConfig, SMCSamplerConfig],
     prior: Prior,
     likelihood: LikelihoodBase,
-    likelihood_transforms: list[NtoMTransform],
+    likelihood_transforms: list[NtoMTransform] | None = None,
+    sample_transforms: list | None = None,
     seed: int = 0,
 ) -> JesterSampler:
     """Create sampler instance based on config.type.
@@ -39,8 +40,12 @@ def create_sampler(
         Prior distribution
     likelihood : LikelihoodBase
         Likelihood object
-    likelihood_transforms : list[NtoMTransform]
-        N-to-M transforms applied before likelihood evaluation
+    likelihood_transforms : list[NtoMTransform], optional
+        N-to-M transforms applied before likelihood evaluation.
+        If None, defaults to empty list.
+    sample_transforms : list, optional
+        Sample transforms to use. If None, automatically creates transforms
+        based on sampler type. Providing this parameter overrides automatic creation.
     seed : int, optional
         Random seed (default: 0)
 
@@ -63,11 +68,18 @@ def create_sampler(
     """
     logger.info(f"Creating {config.type} sampler...")
 
-    # Create sample transforms based on sampler type
-    # - blackjax-ns-aw: BoundToBound [0,1] for all parameters
-    # - smc: No transforms (empty list)
-    # - flowmc: No transforms (current behavior)
-    sample_transforms = create_sample_transforms(config, prior)
+    # Use provided transforms or create defaults
+    if likelihood_transforms is None:
+        likelihood_transforms = []
+
+    if sample_transforms is None:
+        # Create sample transforms based on sampler type
+        # - blackjax-ns-aw: BoundToBound [0,1] for all parameters
+        # - smc: No transforms (empty list)
+        # - flowmc: No transforms (current behavior)
+        sample_transforms = create_sample_transforms(config, prior)
+    else:
+        logger.debug(f"Using provided sample_transforms (overriding automatic creation)")
 
     logger.debug(f"Created {len(sample_transforms)} sample transforms for {config.type}")
 

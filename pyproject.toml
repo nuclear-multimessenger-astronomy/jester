@@ -72,8 +72,23 @@ run_jester_postprocessing = "jesterTOV.inference.postprocessing.postprocessing:m
 cuda12 = ["jax[cuda12]"]
 cuda13 = ["jax[cuda13]"]
 cpu = []  # CPU-only (default jax dependency)
-test = ["pytest>=7.0", "pytest-cov>=4.0", "pytest-xdist>=3.0", "hypothesis>=6.0"]
-dev = ["pytest>=7.0", "pytest-cov>=4.0", "pytest-xdist>=3.0", "hypothesis>=6.0", "pre-commit>=4.5.0", "bilby>=2.0.0", "astropy>=5.0.0"]
+test = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-xdist>=3.0",
+    "hypothesis>=6.0",
+    "pytest-timeout>=2.1.0",  # For timeout control in slow tests
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-xdist>=3.0",
+    "hypothesis>=6.0",
+    "pytest-timeout>=2.1.0",
+    "pre-commit>=4.5.0",
+    "bilby>=2.0.0",
+    "astropy>=5.0.0",
+]
 examples = ["ipykernel>=7.1.0"]
 docs = [
     "sphinx>=7.0",
@@ -111,12 +126,13 @@ include = ["jesterTOV"]
 # pyproject.toml
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "-ra -q --strict-markers --strict-config"
+addopts = "-ra -q --strict-markers --strict-config --timeout=300"
 testpaths = ["tests"]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
-    "unit: marks tests as unit tests"
+    "unit: marks tests as unit tests",
+    "blackjax: marks tests that require blackjax (SMC, NS-AW samplers)",
 ]
 
 [tool.coverage.run]

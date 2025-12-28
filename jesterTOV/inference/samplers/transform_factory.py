@@ -93,11 +93,15 @@ def create_unit_cube_transforms(prior: Prior) -> list[BijectiveTransform]:
     >>> transforms = create_unit_cube_transforms(prior)
     >>> # transforms[0] maps K_sat: [150,300] → [0,1], L_sym: [10,200] → [0,1]
     """
-    # Validate that prior is a CombinePrior
-    if not isinstance(prior, CombinePrior):
+    # Handle both single UniformPrior and CombinePrior
+    if isinstance(prior, UniformPrior):
+        # Wrap single prior in CombinePrior for uniform handling
+        from ..base import CombinePrior as CombinePriorClass
+        prior = CombinePriorClass([prior])
+    elif not isinstance(prior, CombinePrior):
         raise ValueError(
-            f"BlackJAX NS-AW requires CombinePrior, got {type(prior).__name__}. "
-            "Ensure your prior is a combination of UniformPrior distributions."
+            f"BlackJAX NS-AW requires UniformPrior or CombinePrior, got {type(prior).__name__}. "
+            "Ensure your prior is a (combination of) UniformPrior distribution(s)."
         )
 
     # Extract bounds from all component priors

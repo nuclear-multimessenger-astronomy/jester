@@ -71,7 +71,7 @@ data_paths: {}
 
 - `likelihoods`: `list[LikelihoodConfig]` (**required**)
 
-- `sampler`: `typing.Union[jesterTOV.inference.config.schema.FlowMCSamplerConfig, jesterTOV.inference.config.schema.NestedSamplingConfig, jesterTOV.inference.config.schema.SMCSamplerConfig]` (**required**)
+- `sampler`: `typing.Union[jesterTOV.inference.config.schema.FlowMCSamplerConfig, jesterTOV.inference.config.schema.BlackJAXNSAWConfig, jesterTOV.inference.config.schema.SMCSamplerConfig]` (**required**)
 
 - `postprocessing`: `PostprocessingConfig` (optional)
   - Default: `enabled=True make_cornerplot=True make_massradius=True make_pressuredensity=True make_histograms=True make_contours=True prior_dir=None`
@@ -247,8 +247,8 @@ Normalizing flow-enhanced MCMC with local and global sampling phases.
 
 BlackJAX nested sampling with acceptance walk for Bayesian evidence estimation.
 
-- `type`: `"nested_sampling"` (optional)
-  - Default: `"nested_sampling"`
+- `type`: `"blackjax-ns-aw"` (optional)
+  - Default: `"blackjax-ns-aw"`
 
 - `output_dir`: `str` (optional)
   - Default: `"./outdir/"`
@@ -289,6 +289,9 @@ BlackJAX SMC with adaptive tempering and NUTS kernel.
 - `n_eos_samples`: `int` (optional)
   - Default: `10000`
 
+- `kernel_type`: `"nuts" | "random_walk"` (optional)
+  - Default: `"nuts"`
+
 - `n_particles`: `int` (optional)
   - Default: `10000`
 
@@ -300,6 +303,9 @@ BlackJAX SMC with adaptive tempering and NUTS kernel.
 
 - `init_step_size`: `float` (optional)
   - Default: `0.01`
+
+- `random_walk_sigma`: `float` (optional)
+  - Default: `0.1`
 
 - `mass_matrix_base`: `float` (optional)
   - Default: `0.2`

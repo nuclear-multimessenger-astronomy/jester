@@ -1,0 +1,59 @@
+# Sequential Monte Carlo (SMC) with Random Walk Kernel Configuration Example
+# Uses BlackJAX SMC with adaptive tempering and Gaussian Random Walk kernel
+# Sample from the prior for testing
+
+seed: 42
+
+# Execution options
+dry_run: false        # Set to true to setup everything but not run sampler
+validate_only: false  # Set to true to only validate configuration
+
+# Transform configuration: MetaModel+CSE for EOS curves
+transform:
+  type: "metamodel_cse"
+  ndat_metamodel: 100        # Number of data points for MetaModel interpolation
+  nmax_nsat: 25.0            # Maximum density (in units of nsat) for MetaModel
+  nb_CSE: 8                  # CSE extension with 8 parameters
+  min_nsat_TOV: 0.75         # Minimum density for TOV integration
+  ndat_TOV: 100              # Number of points for TOV integration
+  nb_masses: 100             # Number of mass samples for M-R curve
+  crust_name: "DH"           # Crust model (Douchin-Haensel)
+
+# Prior specification file
+prior:
+  specification_file: "prior.prior"
+
+# Likelihood constraints
+likelihoods:
+  - type: "constraints_eos"
+    enabled: true
+    parameters:
+      penalty_causality: -1.0e10
+      penalty_stability: -1.0e5
+      penalty_pressure: -1.0e5
+  - type: "zero"
+    enabled: true
+    parameters: {}
+
+# SMC configuration with Random Walk kernel
+sampler:
+  type: "smc"
+  kernel_type: "random_walk"  # Use Gaussian random walk instead of NUTS
+  n_particles: 1000           # Number of particles (reduced for testing)
+  n_mcmc_steps: 10            # More MCMC steps needed for random walk
+  target_ess: 0.9             # Target effective sample size (90%)
+  random_walk_sigma: 0.1      # Sigma for Gaussian random walk kernel
+  target_acceptance: 0.5      # Target acceptance rate (lower than NUTS)
+  adaptation_rate: 0.3        # Adaptation rate for sigma tuning
+  n_eos_samples: 1000         # Number of EOS samples to generate after inference
+  output_dir: "./outdir/"
+
+# Postprocessing configuration
+postprocessing:
+  enabled: true
+  make_cornerplot: true
+  make_massradius: true
+  make_pressuredensity: true
+
+# Data paths (none needed for prior-only sampling)
+data_paths: {}

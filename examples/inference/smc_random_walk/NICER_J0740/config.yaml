@@ -1,0 +1,59 @@
+# NICER PSR J0740+6620-only inference configuration
+# SMC with Random Walk kernel for constraining EOS using NICER X-ray timing
+
+seed: 45
+
+# Execution options
+dry_run: false
+validate_only: false
+
+# Transform configuration: MetaModel + CSE for high-density region
+transform:
+  type: "metamodel_cse"
+  ndat_metamodel: 100
+  nmax_nsat: 25.0
+  nb_CSE: 8
+  min_nsat_TOV: 0.75
+  ndat_TOV: 100
+  nb_masses: 100
+  crust_name: "DH"
+
+# Prior specification file
+prior:
+  specification_file: "prior.prior"
+
+# Likelihood constraints
+likelihoods:
+  - type: "constraints_eos"
+    enabled: true
+
+  # NICER X-ray timing constraint (PSR J0740+6620)
+  - type: "nicer"
+    enabled: true
+    parameters:
+      pulsars:
+        - name: "J0740"
+          amsterdam_samples_file: "../../../../jesterTOV/inference/data/NICER/J07406620_amsterdam_gamma_NICERXMM_equal_weights_recent.npz"
+          maryland_samples_file: "../../../../jesterTOV/inference/data/NICER/J07406620_maryland_unknown_NICERXMM_RM.npz"
+      N_masses_evaluation: 20
+      N_masses_batch_size: 10
+
+# SMC configuration with Random Walk kernel
+sampler:
+  type: "smc"
+  kernel_type: "random_walk"
+  n_particles: 1000
+  n_mcmc_steps: 10
+  target_ess: 0.9
+  random_walk_sigma: 0.1
+  target_acceptance: 0.5
+  adaptation_rate: 0.3
+  n_eos_samples: 1000
+  output_dir: "./outdir/"
+
+# Postprocessing configuration
+postprocessing:
+  enabled: true
+  make_cornerplot: true
+  make_massradius: true
+  make_pressuredensity: true

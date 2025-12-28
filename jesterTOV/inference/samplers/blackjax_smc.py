@@ -162,35 +162,44 @@ class BlackJAXSMCSampler(JesterSampler):
 
         # Sample initial particles from prior
         key, subkey = jax.random.split(key)
-        initial_position = self.prior.sample(subkey, self.config.n_particles)
+        initial_position_dict: dict[str, Array] = self.prior.sample(subkey, self.config.n_particles)
 
         # Apply sample transforms if any
         for transform in self.sample_transforms:
             initial_position_list = []
             for i in range(self.config.n_particles):
                 particle_dict = {
-                    name: initial_position[name][i]
+                    name: initial_position_dict[name][i]
                     for name in self.prior.parameter_names
                 }
                 transformed_dict, _ = transform.transform(particle_dict)
                 initial_position_list.append(transformed_dict)
             # Reconstruct dict of arrays
-            initial_position = {
+            initial_position_dict = {
                 name: jnp.array([p[name] for p in initial_position_list])
                 for name in initial_position_list[0].keys()
             }
 
         # Flatten particles to arrays for BlackJAX SMC
         # NOTE: ravel_pytree uses alphabetical key ordering (deterministic)
-        single_sample_dict = tree_map(lambda x: x[0], initial_position)
+        single_sample_dict = tree_map(lambda x: x[0], initial_position_dict)
         single_sample_flat, self._unflatten_fn = ravel_pytree(single_sample_dict)
 
         # Flatten all particles
-        initial_position_flat = jax.vmap(lambda x: ravel_pytree(x)[0])(initial_position)
+        initial_position_flat = jax.vmap(lambda x: ravel_pytree(x)[0])(initial_position_dict)
+
+        # Ensure float dtype for NUTS compatibility
+        if not jnp.issubdtype(initial_position_flat.dtype, jnp.floating):
+            logger.warning(f"Converting initial_position_flat from {initial_position_flat.dtype} to float64")
+            initial_position_flat = initial_position_flat.astype(jnp.float64)
 
         # Create logprior and loglikelihood functions that work with flat arrays
+        # NOTE: BlackJAX adaptive_tempered_smc will vmap these internally for ESS solver
+        # So these should work on SINGLE particles, not batches
         def logprior_fn(x_flat: Array) -> float:
-            """Log prior in flattened space."""
+            """Log prior for single particle in flattened space."""
+            # Ensure x_flat is at least 1D (vmap may reduce scalar to ())
+            x_flat = jnp.atleast_1d(x_flat)
             x_dict = self._unflatten_fn(x_flat)
 
             # Apply inverse sample transforms if any
@@ -202,7 +211,9 @@ class BlackJAXSMCSampler(JesterSampler):
             return self.prior.log_prob(x_dict) + transform_jacobian
 
         def loglikelihood_fn(x_flat: Array) -> float:
-            """Log likelihood in flattened space."""
+            """Log likelihood for single particle in flattened space."""
+            # Ensure x_flat is at least 1D (vmap may reduce scalar to ())
+            x_flat = jnp.atleast_1d(x_flat)
             x_dict = self._unflatten_fn(x_flat)
 
             # Apply inverse sample transforms if any
@@ -215,7 +226,7 @@ class BlackJAXSMCSampler(JesterSampler):
 
             return self.likelihood.evaluate(x_dict, {})
 
-        # Create posterior for kernel initialization
+        # Create posterior for NUTS Hessian initialization (single particle)
         logposterior_fn = lambda x: logprior_fn(x) + loglikelihood_fn(x)
 
         # Setup kernel-specific parameters and functions
@@ -279,7 +290,7 @@ class BlackJAXSMCSampler(JesterSampler):
                 adapted_step_size = jnp.clip(adapted_step_size, 1e-10, 1e0)
 
                 # Update tracked step size
-                current_step_size["value"] = adapted_step_size
+                current_step_size["value"] = adapted_step_size  # type: ignore[assignment]
 
                 return extend_params(
                     {
@@ -320,7 +331,7 @@ class BlackJAXSMCSampler(JesterSampler):
                 adapted_sigma = jnp.clip(adapted_sigma, 1e-10, 1e1)
 
                 # Update tracked sigma
-                current_sigma["value"] = adapted_sigma
+                current_sigma["value"] = adapted_sigma  # type: ignore[assignment]
 
                 # Return empty params (random walk doesn't use them in the same way)
                 return extend_params({})
@@ -355,12 +366,14 @@ class BlackJAXSMCSampler(JesterSampler):
             num_mcmc_steps=self.config.n_mcmc_steps,
         )
 
-        state = smc_alg.init(initial_position_flat)
+        # Initialize SMC state
+        key, subkey = jax.random.split(key)
+        state = smc_alg.init(initial_position_flat, subkey)
 
         # Define loop conditions
         def cond_fn(carry):
             state, _, _, _, _, _ = carry
-            return state.sampler_state.lmbda < 1
+            return state.sampler_state.lmbda < 1  # type: ignore[attr-defined]
 
         def body_fn(carry):
             state, key, step_count, lmbda_history, ess_history, acceptance_history = carry
@@ -368,16 +381,16 @@ class BlackJAXSMCSampler(JesterSampler):
             state, info = smc_alg.step(subkey, state)
 
             # Compute ESS
-            weights = state.sampler_state.weights
+            weights = state.sampler_state.weights  # type: ignore[attr-defined]
             ess_value = (
                 jnp.sum(weights) ** 2 / jnp.sum(weights**2) / self.config.n_particles
             )
 
             # Extract acceptance rate
-            acceptance_rate = info.update_info.acceptance_rate.mean()
+            acceptance_rate = info.update_info.acceptance_rate.mean()  # type: ignore[attr-defined]
 
             # Update histories
-            lmbda_history = lmbda_history.at[step_count].set(state.sampler_state.lmbda)
+            lmbda_history = lmbda_history.at[step_count].set(state.sampler_state.lmbda)  # type: ignore[attr-defined]
             ess_history = ess_history.at[step_count].set(ess_value)
             acceptance_history = acceptance_history.at[step_count].set(acceptance_rate)
 
@@ -399,11 +412,12 @@ class BlackJAXSMCSampler(JesterSampler):
         end_time = time.time()
 
         # Extract final particles
-        self._particles_flat = state.sampler_state.particles
-        self._weights = state.sampler_state.weights
+        self._particles_flat = state.sampler_state.particles  # type: ignore[attr-defined]
+        self._weights = state.sampler_state.weights  # type: ignore[attr-defined]
         self.final_state = state
 
-        # Compute final ESS
+        # Compute final ESS (weights guaranteed non-None after assignment above)
+        assert self._weights is not None
         ess = jnp.sum(self._weights) ** 2 / jnp.sum(self._weights**2)
 
         # Store metadata
@@ -464,10 +478,12 @@ class BlackJAXSMCSampler(JesterSampler):
             - 'weights': particle weights
             - 'ess': effective sample size
         """
-        if self.final_state is None or self._particles_flat is None:
+        if self.final_state is None or self._particles_flat is None or self._weights is None:
             raise RuntimeError("No samples available - run sample() first")
 
-        # Transform particles back to structured format
+        # Transform particles back to structured format (guaranteed non-None after check above)
+        assert self._particles_flat is not None
+        assert self._weights is not None
         particles_dict = jax.vmap(self._unflatten_fn)(self._particles_flat)
 
         # Apply inverse sample transforms if any
@@ -505,7 +521,7 @@ class BlackJAXSMCSampler(JesterSampler):
             Note: At λ=1 (final tempering), these are true posterior values.
             Weights are approximately uniform at convergence.
         """
-        if self.final_state is None:
+        if self.final_state is None or self._particles_flat is None:
             raise RuntimeError("No samples available - run sample() first")
 
         # For SMC at λ=1, we have log posterior values
@@ -513,7 +529,8 @@ class BlackJAXSMCSampler(JesterSampler):
         # Placeholder: compute from particles using self.posterior
         logger.warning("get_log_prob() for SMC: computing from particles")
 
-        # Compute log posterior for each particle
+        # Compute log posterior for each particle (guaranteed non-None after check above)
+        assert self._particles_flat is not None
         log_probs = []
         for particle in self._particles_flat:
             log_prob = self.posterior(particle, {})

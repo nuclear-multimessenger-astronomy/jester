@@ -1,0 +1,54 @@
+# BlackJAX SMC with NUTS Kernel Configuration Example
+# Uses Sequential Monte Carlo with adaptive tempering and NUTS kernel
+# Sample from the prior for now
+
+seed: 42
+
+# Execution options
+dry_run: true         # Set to true to setup everything but not run sampler
+validate_only: false  # Set to true to only validate configuration
+
+# Transform configuration: MetaModel for EOS curves
+transform:
+  type: "metamodel_cse"
+  ndat_metamodel: 100        # Number of data points for MetaModel interpolation
+  nmax_nsat: 25.0            # Maximum density (in units of nsat) for MetaModel
+  nb_CSE: 8                  # Usual CSE
+  min_nsat_TOV: 0.75         # Minimum density for TOV integration
+  ndat_TOV: 100              # Number of points for TOV integration
+  nb_masses: 100             # Number of mass samples for M-R curve
+  crust_name: "DH"           # Crust model (Douchin-Haensel)
+
+# Prior specification file
+prior:
+  specification_file: "prior.prior"
+
+# Likelihood constraints
+likelihoods:
+  - type: "constraints_eos"
+    enabled: true
+  - type: "zero"
+    enabled: true
+    parameters: {}
+
+# BlackJAX SMC with NUTS kernel configuration
+sampler:
+  type: "smc"
+  kernel_type: "nuts"        # Use NUTS kernel (Hessian-based adaptation)
+  n_particles: 100           # Number of SMC particles (reduced for quick test)
+  n_mcmc_steps: 5            # MCMC steps per tempering level
+  target_ess: 0.9            # Target effective sample size (0.9 = 90%)
+  init_step_size: 1.0e-2     # Initial NUTS step size
+  mass_matrix_base: 2.0e-1   # Base value for diagonal mass matrix
+  mass_matrix_param_scales: {}  # Per-parameter scaling (empty = all 1.0)
+  target_acceptance: 0.7     # Target acceptance rate for NUTS
+  adaptation_rate: 0.3       # Adaptation rate for step size tuning
+  n_eos_samples: 100         # Number of EOS samples to generate after inference (reduced)
+  output_dir: "./outdir/"
+
+# Postprocessing configuration
+postprocessing:
+  enabled: true
+  make_cornerplot: true
+  make_massradius: true
+  make_pressuredensity: true

@@ -87,12 +87,17 @@ class BlackJAXNSAWSampler(JesterSampler):
         self._seed = seed
         self._filtered_samples_cache = None
 
-        # Validate that we have unit cube transforms
+        # Nested sampling requires unit cube transforms
+        # If not provided, create them automatically
         if len(sample_transforms) == 0:
-            raise ValueError(
-                "Nested sampling requires unit cube transforms. "
-                "Use transform_factory.create_sample_transforms() with BlackJAXNSAWConfig."
-            )
+            logger.info("No sample transforms provided - creating unit cube transforms for NS-AW")
+            from .transform_factory import create_sample_transforms
+            sample_transforms = create_sample_transforms(config, prior)
+            # Update the sample_transforms in the parent class
+            self.sample_transforms = sample_transforms
+            # Recompute parameter names after adding transforms
+            for transform in self.sample_transforms:
+                self.parameter_names = transform.propagate_name(self.parameter_names)
 
         logger.info("Initializing BlackJAX Nested Sampling (Acceptance Walk) sampler")
         logger.info(f"Configuration: {config.n_live} live points, "
