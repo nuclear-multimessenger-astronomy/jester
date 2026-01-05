@@ -1,0 +1,25 @@
+{
+  "n_samples_total": 9117,
+  "n_samples_used": 9117,
+  "filepath": "../../../../../data/gw170817/gw170817_high_spin_posterior.npz",
+  "flow_type": "masked_autoregressive_flow",
+  "num_epochs": 3000,
+  "learning_rate": 0.0001,
+  "max_patience": 500,
+  "val_prop": 0.2,
+  "standardize": true,
+  "constrain_physics": false,
+  "use_chirp_mass": false,
+  "data_bounds_min": [
+    1.361790002655541,
+    0.739335399595211,
+    0.01222474814779595,
+    0.09296248470609214
+  ],
+  "data_bounds_max": [
+    2.7310913359719406,
+    1.3697753338880796,
+    2638.191948129514,
+    4993.662303957473
+  ]
+}
