@@ -4,6 +4,8 @@ Download XP-NRTV3 samples for GW170817 and GW190425 from neural_priors repositor
 
 This script downloads the full samples.npz files, extracts only the relevant
 tidal parameters, and saves them to the data directory.
+
+Paper reference: https://inspirehep.net/literature/3087529
 """
 
 import urllib.request
