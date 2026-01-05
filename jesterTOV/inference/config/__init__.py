@@ -6,7 +6,8 @@ from .schema import (
     TransformConfig,
     PriorConfig,
     LikelihoodConfig,
-    SamplerConfig, # TODO: check classs/type inconsistencies: should this be made a base class?
+    BaseSamplerConfig,
+    SamplerConfig,
 )
 
 __all__ = [
@@ -15,5 +16,6 @@ __all__ = [
     "TransformConfig",
     "PriorConfig",
     "LikelihoodConfig",
+    "BaseSamplerConfig",
     "SamplerConfig",
 ]

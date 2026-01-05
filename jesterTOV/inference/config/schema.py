@@ -8,7 +8,8 @@ This ensures the user documentation stays in sync with the actual validation rul
 """
 
 from pydantic import BaseModel, Field, field_validator, ValidationInfo
-from typing import Literal, Dict, Any, Union
+from typing import Literal, Dict, Any, Union, Annotated
+from pydantic import Discriminator
 
 
 class TransformConfig(BaseModel):
@@ -281,10 +282,12 @@ class LikelihoodConfig(BaseModel):
 class BaseSamplerConfig(BaseModel):
     """Base configuration for all samplers.
 
+    This base class provides common fields shared by all sampler types.
+    Each subclass must define its own 'type' field with a specific literal value
+    for use as a discriminator in the SamplerConfig union.
+
     Attributes
     ----------
-    type : str
-        Type of sampler (discriminator field)
     output_dir : str
         Directory to save results
     n_eos_samples : int
@@ -293,7 +296,6 @@ class BaseSamplerConfig(BaseModel):
         Batch size for computing log probabilities and generating EOS samples (default: 1000)
     """
 
-    type: str
     output_dir: str = "./outdir/"
     n_eos_samples: int = 10_000
     log_prob_batch_size: int = 1000
@@ -474,9 +476,12 @@ class SMCSamplerConfig(BaseSamplerConfig):
         return v
 
 
-# TODO: is it perhaps not better to make, e.g. the BaseSamplerConfig a root model with a discriminator field rather than doing this union?
-# Type alias for discriminated union
-SamplerConfig = Union[FlowMCSamplerConfig, BlackJAXNSAWConfig, SMCSamplerConfig]
+# Discriminated union for sampler configurations
+# This allows Pydantic to automatically select the correct config class based on the 'type' field
+SamplerConfig = Annotated[
+    Union[FlowMCSamplerConfig, BlackJAXNSAWConfig, SMCSamplerConfig],
+    Discriminator("type")
+]
 
 
 class PostprocessingConfig(BaseModel):

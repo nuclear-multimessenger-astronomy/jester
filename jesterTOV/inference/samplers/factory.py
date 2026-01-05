@@ -4,14 +4,8 @@ This module provides a central factory function that creates the appropriate
 sampler instance based on the configuration type (flowmc, nested_sampling, or smc).
 """
 
-from typing import Union
-
 from ..base import LikelihoodBase, Prior, NtoMTransform
-from ..config.schema import (
-    FlowMCSamplerConfig,
-    BlackJAXNSAWConfig,
-    SMCSamplerConfig,
-)
+from ..config.schema import SamplerConfig
 from .transform_factory import create_sample_transforms
 from .jester_sampler import JesterSampler
 from jesterTOV.logging_config import get_logger
@@ -20,7 +14,7 @@ logger = get_logger("jester")
 
 
 def create_sampler(
-    config: Union[FlowMCSamplerConfig, BlackJAXNSAWConfig, SMCSamplerConfig], # TODO: see if a base class works here
+    config: SamplerConfig,
     prior: Prior,
     likelihood: LikelihoodBase,
     likelihood_transforms: list[NtoMTransform] | None = None,
@@ -34,8 +28,8 @@ def create_sampler(
 
     Parameters
     ----------
-    config : Union[FlowMCSamplerConfig, BlackJAXNSAWConfig, SMCSamplerConfig]
-        Sampler configuration (discriminated by type field)
+    config : SamplerConfig
+        Sampler configuration (discriminated union by type field)
     prior : Prior
         Prior distribution
     likelihood : LikelihoodBase

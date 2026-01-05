@@ -6,20 +6,13 @@ This module creates appropriate transforms based on the sampler type:
 - FlowMC: No transforms (current behavior)
 """
 
-from typing import Union
-
-from ..config.schema import (
-    BaseSamplerConfig, # TODO: not used, but check the todo there, we might make this base class and avoid other samplers here explicitly?
-    FlowMCSamplerConfig,
-    BlackJAXNSAWConfig,
-    SMCSamplerConfig,
-)
+from ..config.schema import SamplerConfig
 from ..base.prior import Prior, CombinePrior, UniformPrior
 from ..base.transform import BijectiveTransform, BoundToBound
 
 
 def create_sample_transforms(
-    sampler_config: Union[FlowMCSamplerConfig, BlackJAXNSAWConfig, SMCSamplerConfig], # TODO: see above for base class
+    sampler_config: SamplerConfig,
     prior: Prior,
 ) -> list[BijectiveTransform]:
     """Create sample transforms based on sampler type.
@@ -31,8 +24,8 @@ def create_sample_transforms(
 
     Parameters
     ----------
-    sampler_config : Union[FlowMCSamplerConfig, BlackJAXNSAWConfig, SMCSamplerConfig]
-        Sampler configuration determining transform strategy.
+    sampler_config : SamplerConfig
+        Sampler configuration determining transform strategy (discriminated union).
     prior : Prior
         Prior distribution (must be CombinePrior of UniformPrior for NS).
 
@@ -57,7 +50,7 @@ def create_sample_transforms(
         # (could optionally add BoundToUnbound here in future)
         return []
     else:
-        raise ValueError(f"Unknown sampler type: {sampler_config.type}") # .type not recognized here?
+        raise ValueError(f"Unknown sampler type: {sampler_config.type}")
 
 
 def create_unit_cube_transforms(prior: Prior) -> list[BijectiveTransform]:
