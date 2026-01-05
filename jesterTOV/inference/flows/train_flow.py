@@ -5,12 +5,13 @@ The trained flows serve as efficient proposal distributions for EOS inference.
 
 Training Pipeline
 -----------------
-1. Load posterior samples from npz file
-2. Apply optional physics constraints and standardization
-3. Create flow architecture (triangular spline, autoregressive, coupling)
-4. Fit flow using maximum likelihood with early stopping
-5. Save trained weights, config, and metadata
-6. Generate validation plots
+1. Load configuration from YAML file
+2. Load posterior samples from npz file
+3. Apply optional physics constraints and standardization
+4. Create flow architecture (triangular spline, autoregressive, coupling)
+5. Fit flow using maximum likelihood with early stopping
+6. Save trained weights, config, and metadata
+7. Generate validation plots
 
 Supported Architectures
 -----------------------
@@ -19,43 +20,39 @@ Supported Architectures
 - block_neural_autoregressive_flow: Good expressiveness
 - masked_autoregressive_flow: Flexible but slower
 
-Notes
------
-- Physics constraint modes (--constrain-physics) are experimental
-- TODO: remove physics constraint modes entirely (see inline comments)
-- TODO: replace argparse with Pydantic schema for better type safety
+Configuration-Driven Usage
+---------------------------
+Create a YAML config file (e.g., config.yaml):
 
-For detailed documentation on flow training, physical motivation, and usage examples,
-see the JESTER documentation: docs/flows.md (to be created)
+    posterior_file: data/gw170817_posterior.npz
+    output_dir: models/gw170817/
+    flow_type: triangular_spline_flow
+    num_epochs: 1000
+    learning_rate: 1.0e-3
+    standardize: true
+    plot_corner: true
+    plot_losses: true
 
-Command-Line Usage
-------------------
-Basic training:
+Then run:
 
-    python train_flow.py \\
-        --posterior-file data/gw170817_posterior.npz \\
-        --output-dir models/gw170817/
+    uv run python -m jesterTOV.inference.flows.train_flow config.yaml
 
-Advanced training with physics constraints and standardization:
+Or use the bash scripts for batch training:
 
-    python train_flow.py \\
-        --posterior-file data/gw170817_posterior.npz \\
-        --output-dir models/gw170817/ \\
-        --flow-type triangular_spline_flow \\
-        --flow-layers 6 \\
-        --knots 16 \\
-        --num-epochs 1000 \\
-        --learning-rate 1e-3 \\
-        --constrain-physics \\
-        --use-chirp-mass \\
-        --standardize \\
-        --batch-size 256
+    bash train_all_flows.sh
 
 Programmatic Usage
 ------------------
 For custom training workflows, use the provided functions:
 
->>> from train_flow import load_gw_posterior, create_flow, train_flow, save_model
+>>> from jesterTOV.inference.flows.train_flow import train_flow_from_config
+>>> from jesterTOV.inference.flows.config import FlowTrainingConfig
+>>> config = FlowTrainingConfig.from_yaml("config.yaml")
+>>> train_flow_from_config(config)
+
+Or use the lower-level functions directly:
+
+>>> from jesterTOV.inference.flows.train_flow import load_gw_posterior, create_flow, train_flow, save_model
 >>> data, metadata = load_gw_posterior("gw170817.npz", max_samples=50000)
 >>> flow = create_flow(jax.random.key(0), flow_type="triangular_spline_flow")
 >>> trained_flow, losses = train_flow(flow, data, jax.random.key(1))
@@ -75,6 +72,7 @@ The training script saves:
 See Also
 --------
 jesterTOV.inference.flows.flow.Flow : High-level interface for loading trained flows
+jesterTOV.inference.flows.config.FlowTrainingConfig : Configuration schema
 
 Notes
 -----
@@ -82,12 +80,16 @@ Training requires:
 - JAX with GPU support recommended for large datasets
 - flowjax for flow architectures
 - equinox for model serialization
+- PyYAML for configuration loading
 - Optional: matplotlib and corner for plotting
+
+Physics constraint modes (constrain_physics, use_chirp_mass) are experimental.
 """
 
-import argparse
 import json
 import os
+import sys
+from pathlib import Path
 from typing import Any, Dict, Tuple
 
 import equinox as eqx
@@ -113,6 +115,8 @@ from flowjax.bijections import (
     Invert,
 )
 from flowjax.train import fit_to_data
+
+from .config import FlowTrainingConfig
 
 # # TODO: decide later on if this is necessary, but this might be much faster
 # # # Enable 64-bit precision for numerical accuracy
@@ -206,182 +210,6 @@ class MassesAndLambdasToChirpMassRatio(AbstractBijection):
 
         return x, log_det_inverse
 
-# TODO: perhaps inside ./flows dir, also make a small Pydantic config schema for this? But isolate from the rest of inference, therefore put it here. 
-def parse_arguments() -> argparse.Namespace:
-    """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(
-        description="Train a normalizing flow on GW posterior samples"
-    )
-    parser.add_argument(
-        "--posterior-file",
-        type=str,
-        required=True,
-        help=f"Path to .npz file with GW posterior samples (must contain: {', '.join(REQUIRED_KEYS)})",
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=str,
-        required=True,
-        help="Directory to save model weights, kwargs, and plots",
-    )
-    parser.add_argument(
-        "--num-epochs",
-        type=int,
-        default=600,
-        help="Number of training epochs (default: 600)",
-    )
-    parser.add_argument(
-        "--learning-rate",
-        type=float,
-        default=1e-3,
-        help="Learning rate for training (default: 1e-3)",
-    )
-    parser.add_argument(
-        "--max-patience",
-        type=int,
-        default=50,
-        help="Early stopping patience (default: 50)",
-    )
-    parser.add_argument(
-        "--nn-depth",
-        type=int,
-        default=5,
-        help="Depth of neural network blocks (default: 5)",
-    )
-    parser.add_argument(
-        "--nn-block-dim",
-        type=int,
-        default=8,
-        help="Dimension of neural network blocks (default: 8)",
-    )
-    parser.add_argument(
-        "--flow-layers",
-        type=int,
-        default=1,
-        help="Number of flow layers (default: 1)",
-    )
-    parser.add_argument(
-        "--invert",
-        type=lambda x: str(x).lower() == "true",
-        default=True,
-        help="Whether to invert the flow (default: True). Must be True for block_neural_autoregressive_flow to enable analytical inverse during training.",
-    )
-    parser.add_argument(
-        "--cond-dim",
-        type=int,
-        default=None,
-        help="Conditional dimension for conditional flows (default: None)",
-    )
-    parser.add_argument(
-        "--max-samples",
-        type=int,
-        default=50_000,
-        help="Maximum number of samples to use for training (default: 50,000)",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=0,
-        help="Random seed for reproducibility (default: 0)",
-    )
-    parser.add_argument(
-        "--plot-corner",
-        action="store_true",
-        default=True,
-        help="Generate corner plot comparison (requires corner package, default: True)",
-    )
-    parser.add_argument(
-        "--plot-losses",
-        action="store_true",
-        default=True,
-        help="Plot training and validation losses (default: True)"
-    )
-    parser.add_argument(
-        "--flow-type",
-        type=str,
-        default="triangular_spline_flow",
-        choices=[
-            "block_neural_autoregressive_flow",
-            "masked_autoregressive_flow",
-            "coupling_flow",
-            "triangular_spline_flow",
-        ],
-        help="Type of normalizing flow to use (default: triangular_spline_flow)",
-    )
-    parser.add_argument(
-        "--nn-width",
-        type=int,
-        default=50,
-        help="Width of neural network hidden layers (for masked_autoregressive_flow and coupling_flow, default: 50)",
-    )
-    parser.add_argument(
-        "--knots",
-        type=int,
-        default=8,
-        help="Number of knots in splines (for triangular_spline_flow, default: 8)",
-    )
-    parser.add_argument(
-        "--tanh-max-val",
-        type=float,
-        default=3.0,
-        help="Maximum absolute value for tanh tails (for triangular_spline_flow, default: 3.0)",
-    )
-    parser.add_argument(
-        "--standardize",
-        action="store_true",
-        default=False,
-        help="Standardize input data to [0,1] domain using min-max scaling (default: False)",
-    )
-    parser.add_argument(
-        "--transformer",
-        type=str,
-        default="affine",
-        choices=["affine", "rational_quadratic_spline"],
-        help="Transformer type for masked_autoregressive_flow and coupling_flow (default: affine)",
-    )
-    parser.add_argument(
-        "--transformer-knots",
-        type=int,
-        default=8,
-        help="Number of knots for RationalQuadraticSpline transformer (default: 8)",
-    )
-    parser.add_argument(
-        "--transformer-interval",
-        type=float,
-        default=4.0,
-        help="Interval for RationalQuadraticSpline transformer (default: 4.0)",
-    )
-    parser.add_argument(
-        "--val-prop",
-        type=float,
-        default=0.2,
-        help="Proportion of data to use for validation (default: 0.2)",
-    )
-    parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=128,
-        help="Batch size for training (default: 128)",
-    )
-    parser.add_argument(
-        "--constrain-physics",
-        action="store_true",
-        default=False,
-        help="Apply physics constraints (m1>m2, lambdas>0) via bijections (default: True)",
-    )
-    parser.add_argument(
-        "--no-constrain-physics",
-        action="store_false",
-        dest="constrain_physics",
-        help="Disable physics constraints",
-    )
-    parser.add_argument(
-        "--use-chirp-mass",
-        action="store_true",
-        default=False,
-        help="Use chirp mass reparameterization (default: False, just enforce positivity)",
-    )
-    return parser.parse_args()
 
 
 def load_gw_posterior(
@@ -917,38 +745,41 @@ def plot_corner(data: np.ndarray, flow_samples: np.ndarray, output_path: str) ->
     print(f"Saved corner plot to {output_path}")
 
 
-def main():
-    """Main training script."""
-    args = parse_arguments()
+def train_flow_from_config(config: FlowTrainingConfig) -> None:
+    """
+    Train a normalizing flow using a configuration object.
 
+    Args:
+        config: FlowTrainingConfig with all training parameters
+    """
     # Print configuration
     print("=" * 60)
     print("GW Normalizing Flow Training")
     print("=" * 60)
-    print(f"Posterior file: {args.posterior_file}")
-    print(f"Output directory: {args.output_dir}")
-    print(f"Max samples: {args.max_samples}")
-    print(f"Flow type: {args.flow_type}")
-    print(f"NN depth: {args.nn_depth}")
-    print(f"NN block dim: {args.nn_block_dim}")
-    print(f"NN width: {args.nn_width}")
-    print(f"Flow layers: {args.flow_layers}")
-    print(f"Knots: {args.knots}")
-    print(f"Tanh max val: {args.tanh_max_val}")
-    print(f"Invert: {args.invert}")
-    print(f"Cond dim: {args.cond_dim}")
-    print(f"Transformer: {args.transformer}")
-    print(f"Transformer knots: {args.transformer_knots}")
-    print(f"Transformer interval: {args.transformer_interval}")
-    print(f"Standardize: {args.standardize}")
-    print(f"Max epochs: {args.num_epochs}")
-    print(f"Learning rate: {args.learning_rate}")
-    print(f"Patience: {args.max_patience}")
-    print(f"Val proportion: {args.val_prop}")
-    print(f"Seed: {args.seed}")
-    print(f"Constrain physics: {args.constrain_physics}")
-    if args.constrain_physics:
-        print(f"Use chirp mass: {args.use_chirp_mass}")
+    print(f"Posterior file: {config.posterior_file}")
+    print(f"Output directory: {config.output_dir}")
+    print(f"Max samples: {config.max_samples}")
+    print(f"Flow type: {config.flow_type}")
+    print(f"NN depth: {config.nn_depth}")
+    print(f"NN block dim: {config.nn_block_dim}")
+    print(f"NN width: {config.nn_width}")
+    print(f"Flow layers: {config.flow_layers}")
+    print(f"Knots: {config.knots}")
+    print(f"Tanh max val: {config.tanh_max_val}")
+    print(f"Invert: {config.invert}")
+    print(f"Cond dim: {config.cond_dim}")
+    print(f"Transformer: {config.transformer}")
+    print(f"Transformer knots: {config.transformer_knots}")
+    print(f"Transformer interval: {config.transformer_interval}")
+    print(f"Standardize: {config.standardize}")
+    print(f"Max epochs: {config.num_epochs}")
+    print(f"Learning rate: {config.learning_rate}")
+    print(f"Patience: {config.max_patience}")
+    print(f"Val proportion: {config.val_prop}")
+    print(f"Seed: {config.seed}")
+    print(f"Constrain physics: {config.constrain_physics}")
+    if config.constrain_physics:
+        print(f"Use chirp mass: {config.use_chirp_mass}")
     print("=" * 60)
 
     # Check for GPU
@@ -956,7 +787,7 @@ def main():
 
     # Load data
     print("\n[1/5] Loading posterior samples...")
-    data, load_metadata = load_gw_posterior(args.posterior_file, args.max_samples)
+    data, load_metadata = load_gw_posterior(config.posterior_file, config.max_samples)
     print(f"Data shape: {data.shape}")
     print("Original data ranges:")
     for i, name in enumerate(["m1", "m2", "lambda1", "lambda2"]):
@@ -965,9 +796,9 @@ def main():
     # Apply physics constraints if requested
     physics_bijection = None
     original_data = data.copy()  # Keep original for plotting
-    if args.constrain_physics:
+    if config.constrain_physics:
         print("\nApplying physics constraints via bijections...")
-        if args.use_chirp_mass:
+        if config.use_chirp_mass:
             print("  - Enforcing m1 >= m2 via chirp mass + mass ratio")
             print("  - Enforcing λ1, λ2 > 0 via log transform")
             print("  - Transforming to unbounded R^4 space")
@@ -979,7 +810,7 @@ def main():
         data = clip_data_for_bijection(data)
 
         # Create bijection
-        physics_bijection = create_physics_constraint_bijection(args.use_chirp_mass)
+        physics_bijection = create_physics_constraint_bijection(config.use_chirp_mass)
 
         # Transform data to unbounded space
         data_jax = jnp.array(data)
@@ -987,7 +818,7 @@ def main():
         data = np.array(data_unbounded)
 
         print("Unbounded data ranges:")
-        if args.use_chirp_mass:
+        if config.use_chirp_mass:
             labels = ["log(M_chirp)", "logit(q)", "log(λ1)", "log(λ2)"]
         else:
             labels = ["log(m1)", "log(m2)", "log(λ1)", "log(λ2)"]
@@ -995,13 +826,13 @@ def main():
             print(f"  {name}: [{data[:, i].min():.3f}, {data[:, i].max():.3f}]")
 
         # Plot transformed data to visualize what the flow will train on
-        figures_dir = os.path.join(args.output_dir, "figures")
+        figures_dir = os.path.join(config.output_dir, "figures")
         os.makedirs(figures_dir, exist_ok=True)
         transformed_plot_path = os.path.join(figures_dir, "transformed_training_data.png")
         print(f"\nSaving transformed data visualization to {transformed_plot_path}")
 
         # Set appropriate labels based on transformation mode
-        if args.use_chirp_mass:
+        if config.use_chirp_mass:
             plot_labels = [
                 r"$\log(\mathcal{M}_c)$",
                 r"$\mathrm{logit}(q)$",
@@ -1015,7 +846,7 @@ def main():
 
     # Standardize data if requested
     data_bounds = None
-    if args.standardize:
+    if config.standardize:
         print("\nStandardizing data to [0, 1] domain...")
         data, data_bounds = standardize_data(data)
         print("Standardized data ranges:")
@@ -1025,21 +856,21 @@ def main():
 
     # Create flow
     print("\n[2/5] Creating flow architecture...")
-    flow_key, train_key, sample_key = jax.random.split(jax.random.key(args.seed), 3)
+    flow_key, train_key, sample_key = jax.random.split(jax.random.key(config.seed), 3)
     flow = create_flow(
         key=flow_key,
-        flow_type=args.flow_type,
-        nn_depth=args.nn_depth,
-        nn_block_dim=args.nn_block_dim,
-        nn_width=args.nn_width,
-        flow_layers=args.flow_layers,
-        knots=args.knots,
-        tanh_max_val=args.tanh_max_val,
-        invert=args.invert,
-        cond_dim=args.cond_dim,
-        transformer_type=args.transformer,
-        transformer_knots=args.transformer_knots,
-        transformer_interval=args.transformer_interval,
+        flow_type=config.flow_type,
+        nn_depth=config.nn_depth,
+        nn_block_dim=config.nn_block_dim,
+        nn_width=config.nn_width,
+        flow_layers=config.flow_layers,
+        knots=config.knots,
+        tanh_max_val=config.tanh_max_val,
+        invert=config.invert,
+        cond_dim=config.cond_dim,
+        transformer_type=config.transformer,
+        transformer_knots=config.transformer_knots,
+        transformer_interval=config.transformer_interval,
     )
 
     # Train flow
@@ -1049,17 +880,17 @@ def main():
         flow,
         data,
         train_key,
-        learning_rate=args.learning_rate,
-        max_epochs=args.num_epochs,
-        max_patience=args.max_patience,
-        val_prop=args.val_prop,
-        batch_size=args.batch_size,
+        learning_rate=config.learning_rate,
+        max_epochs=config.num_epochs,
+        max_patience=config.max_patience,
+        val_prop=config.val_prop,
+        batch_size=config.batch_size,
     )
     print(f"Final train loss: {losses['train'][-1]:.4f}")
     print(f"Final val loss: {losses['val'][-1]:.4f}")
 
     # Wrap flow with inverse bijection if physics constraints were applied
-    if args.constrain_physics and physics_bijection is not None:
+    if config.constrain_physics and physics_bijection is not None:
         print("\nWrapping flow with inverse physics bijection...")
         print("  Flow now samples in physical space: (m1, m2, λ1, λ2)")
         # Create inverse bijection: unbounded -> physical space
@@ -1073,60 +904,60 @@ def main():
     # Save model
     print("\n[4/5] Saving model...")
     flow_kwargs = {
-        "flow_type": args.flow_type,
-        "nn_depth": args.nn_depth,
-        "nn_block_dim": args.nn_block_dim,
-        "nn_width": args.nn_width,
-        "flow_layers": args.flow_layers,
-        "knots": args.knots,
-        "tanh_max_val": args.tanh_max_val,
-        "invert": args.invert,
-        "cond_dim": args.cond_dim,
-        "seed": args.seed,
-        "standardize": args.standardize,
-        "constrain_physics": args.constrain_physics,
-        "use_chirp_mass": args.use_chirp_mass,
-        "transformer_type": args.transformer,
-        "transformer_knots": args.transformer_knots,
-        "transformer_interval": args.transformer_interval,
+        "flow_type": config.flow_type,
+        "nn_depth": config.nn_depth,
+        "nn_block_dim": config.nn_block_dim,
+        "nn_width": config.nn_width,
+        "flow_layers": config.flow_layers,
+        "knots": config.knots,
+        "tanh_max_val": config.tanh_max_val,
+        "invert": config.invert,
+        "cond_dim": config.cond_dim,
+        "seed": config.seed,
+        "standardize": config.standardize,
+        "constrain_physics": config.constrain_physics,
+        "use_chirp_mass": config.use_chirp_mass,
+        "transformer_type": config.transformer,
+        "transformer_knots": config.transformer_knots,
+        "transformer_interval": config.transformer_interval,
     }
 
     # Add data bounds if standardization was used
-    if args.standardize and data_bounds is not None:
+    if config.standardize and data_bounds is not None:
         flow_kwargs["data_bounds_min"] = data_bounds["min"].tolist()
         flow_kwargs["data_bounds_max"] = data_bounds["max"].tolist()
 
     metadata = {
         **load_metadata,
-        "flow_type": args.flow_type,
+        "flow_type": config.flow_type,
         "num_epochs": len(losses["train"]),
-        "learning_rate": args.learning_rate,
-        "max_patience": args.max_patience,
-        "val_prop": args.val_prop,
-        "standardize": args.standardize,
-        "constrain_physics": args.constrain_physics,
-        "use_chirp_mass": args.use_chirp_mass,
+        "learning_rate": config.learning_rate,
+        "max_patience": config.max_patience,
+        "val_prop": config.val_prop,
+        "standardize": config.standardize,
+        "constrain_physics": config.constrain_physics,
+        "use_chirp_mass": config.use_chirp_mass,
     }
 
     # Add data bounds to metadata if standardization was used
-    if args.standardize and data_bounds is not None:
+    if config.standardize and data_bounds is not None:
         metadata["data_bounds_min"] = data_bounds["min"].tolist()
         metadata["data_bounds_max"] = data_bounds["max"].tolist()
 
-    save_model(trained_flow, args.output_dir, flow_kwargs, metadata)
+    save_model(trained_flow, config.output_dir, flow_kwargs, metadata)
 
     # Generate plots
     print("\n[5/5] Generating plots...")
 
     # Create figures subdirectory
-    figures_dir = os.path.join(args.output_dir, "figures")
+    figures_dir = os.path.join(config.output_dir, "figures")
     os.makedirs(figures_dir, exist_ok=True)
 
-    if args.plot_losses:
+    if config.plot_losses:
         loss_path = os.path.join(figures_dir, "losses.png")
         plot_losses(losses, loss_path)
 
-    if args.plot_corner:
+    if config.plot_corner:
         try:
             # Sample from trained flow
             n_plot_samples = min(10_000, data.shape[0])
@@ -1134,7 +965,7 @@ def main():
             flow_samples_np = np.array(flow_samples)
 
             # Inverse transform samples if data was standardized
-            if args.standardize and data_bounds is not None:
+            if config.standardize and data_bounds is not None:
                 flow_samples_np = inverse_standardize_data(flow_samples_np, data_bounds)
 
             corner_path = os.path.join(figures_dir, "corner.png")
@@ -1145,16 +976,31 @@ def main():
 
     print("\n" + "=" * 60)
     print("Training complete!")
-    print(f"Model saved to: {args.output_dir}")
-    print(f"Figures saved to: {os.path.join(args.output_dir, 'figures')}")
+    print(f"Model saved to: {config.output_dir}")
+    print(f"Figures saved to: {os.path.join(config.output_dir, 'figures')}")
     print("=" * 60)
     print("\nTo use the trained flow:")
     print(">>> from jesterTOV.inference.flows.flow import Flow")
-    print(f">>> flow = Flow.from_directory('{args.output_dir}')")
+    print(f">>> flow = Flow.from_directory('{config.output_dir}')")
     print(">>> samples = flow.sample(jax.random.key(0), (1000,))")
-    if args.standardize:
+    if config.standardize:
         print(">>> # Samples are automatically rescaled to original domain")
     print("=" * 60)
+
+
+def main():
+    """Main entry point for training script."""
+    if len(sys.argv) < 2:
+        print("Usage: python -m jesterTOV.inference.flows.train_flow <config.yaml>")
+        sys.exit(1)
+
+    config_path = Path(sys.argv[1])
+
+    # Load config from YAML
+    config = FlowTrainingConfig.from_yaml(config_path)
+
+    # Train flow
+    train_flow_from_config(config)
 
 
 if __name__ == "__main__":

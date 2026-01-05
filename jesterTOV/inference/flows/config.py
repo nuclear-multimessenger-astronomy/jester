@@ -5,8 +5,11 @@ on gravitational wave posterior samples, replacing the argparse interface
 in train_flow.py.
 """
 
-from pydantic import BaseModel, Field, field_validator
+from pathlib import Path
 from typing import Literal
+
+import yaml
+from pydantic import BaseModel, Field, field_validator
 
 
 class FlowTrainingConfig(BaseModel):
@@ -124,3 +127,21 @@ class FlowTrainingConfig(BaseModel):
         if v <= 0 or v >= 1:
             raise ValueError(f"val_prop must be in (0, 1), got: {v}")
         return v
+
+    @classmethod
+    def from_yaml(cls, filepath: str | Path) -> "FlowTrainingConfig":
+        """
+        Load configuration from a YAML file.
+
+        Args:
+            filepath: Path to YAML configuration file
+
+        Returns:
+            FlowTrainingConfig instance with loaded configuration
+
+        Example:
+            >>> config = FlowTrainingConfig.from_yaml("config.yaml")
+        """
+        with open(filepath, "r") as f:
+            config_dict = yaml.safe_load(f)
+        return cls(**config_dict)

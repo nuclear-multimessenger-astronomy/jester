@@ -25,98 +25,54 @@ echo "=========================================="
 echo "Training Normalizing Flows for GW Events"
 echo "=========================================="
 
-# Base directories
-DATA_DIR="../data"
-MODELS_DIR="./models/gw_maf"
+# Base directory for configs
+CONFIG_DIR="./configs"
 
-# Training hyperparameters (matching test.sh configuration)
-NUM_EPOCHS=3000
-LEARNING_RATE=1e-4
-MAX_PATIENCE=500
-FLOW_TYPE="masked_autoregressive_flow"
-TRANSFORMER="rational_quadratic_spline"
-TRANSFORMER_KNOTS=8
-TRANSFORMER_INTERVAL=4
-NN_DEPTH=4
-
-# GW170817 posterior files
+# GW170817 config files
 echo ""
 echo "Training flows for GW170817..."
 echo "------------------------------------------"
 
-GW170817_FILES=(
-    "gw170817_low_spin_posterior.npz"
-    "gw170817_high_spin_posterior.npz"
-    "gw170817_gwtc1_lowspin_posterior.npz"
-    "gw170817_gwtc1_highspin_posterior.npz"
+GW170817_CONFIGS=(
+    "gw170817/low_spin.yaml"
+    "gw170817/high_spin.yaml"
+    "gw170817/gwtc1_lowspin.yaml"
+    "gw170817/gwtc1_highspin.yaml"
 )
 
-for posterior_file in "${GW170817_FILES[@]}"; do
-    # Extract model name from filename (remove .npz extension)
-    model_name="${posterior_file%.npz}"
-
+for config_file in "${GW170817_CONFIGS[@]}"; do
     echo ""
-    echo "Training: $model_name"
+    echo "Training from config: $config_file"
     echo "----------------------------------------"
 
-    uv run python -m jesterTOV.inference.flows.train_flow \
-        --posterior-file "${DATA_DIR}/gw170817/${posterior_file}" \
-        --output-dir "${MODELS_DIR}/gw170817/${model_name}" \
-        --num-epochs ${NUM_EPOCHS} \
-        --learning-rate ${LEARNING_RATE} \
-        --max-patience ${MAX_PATIENCE} \
-        --flow-type ${FLOW_TYPE} \
-        --transformer ${TRANSFORMER} \
-        --transformer-knots ${TRANSFORMER_KNOTS} \
-        --transformer-interval ${TRANSFORMER_INTERVAL} \
-        --nn-depth ${NN_DEPTH} \
-        --standardize \
-        --plot-corner \
-        --plot-losses
+    uv run python -m jesterTOV.inference.flows.train_flow "${CONFIG_DIR}/${config_file}"
 
-    echo "✓ Completed: $model_name"
+    echo "✓ Completed: $config_file"
     echo ""
 done
 
-# GW190425 posterior files
+# GW190425 config files
 echo ""
 echo "Training flows for GW190425..."
 echo "------------------------------------------"
 
-GW190425_FILES=(
-    "gw190425_phenomdnrt-hs_posterior.npz"
-    "gw190425_phenomdnrt-ls_posterior.npz"
-    "gw190425_phenompnrt-hs_posterior.npz"
-    "gw190425_phenompnrt-ls_posterior.npz"
-    "gw190425_taylorf2-hs_posterior.npz"
-    "gw190425_taylorf2-ls_posterior.npz"
+GW190425_CONFIGS=(
+    "gw190425/phenomdnrt_hs.yaml"
+    "gw190425/phenomdnrt_ls.yaml"
+    "gw190425/phenompnrt_hs.yaml"
+    "gw190425/phenompnrt_ls.yaml"
+    "gw190425/taylorf2_hs.yaml"
+    "gw190425/taylorf2_ls.yaml"
 )
 
-for posterior_file in "${GW190425_FILES[@]}"; do
-    # Extract model name from filename (remove .npz extension)
-    model_name="${posterior_file%.npz}"
-
+for config_file in "${GW190425_CONFIGS[@]}"; do
     echo ""
-    echo "Training: $model_name"
+    echo "Training from config: $config_file"
     echo "----------------------------------------"
 
-    uv run python -m jesterTOV.inference.flows.train_flow \
-        --posterior-file "${DATA_DIR}/gw190425/${posterior_file}" \
-        --output-dir "${MODELS_DIR}/gw190425/${model_name}" \
-        --num-epochs ${NUM_EPOCHS} \
-        --learning-rate ${LEARNING_RATE} \
-        --max-patience ${MAX_PATIENCE} \
-        --flow-type ${FLOW_TYPE} \
-        --transformer ${TRANSFORMER} \
-        --transformer-knots ${TRANSFORMER_KNOTS} \
-        --transformer-interval ${TRANSFORMER_INTERVAL} \
-        --nn-depth ${NN_DEPTH} \
-        --max-samples ${MAX_SAMPLES} \
-        --standardize \
-        --plot-corner \
-        --plot-losses
+    uv run python -m jesterTOV.inference.flows.train_flow "${CONFIG_DIR}/${config_file}"
 
-    echo "✓ Completed: $model_name"
+    echo "✓ Completed: $config_file"
     echo ""
 done
 
