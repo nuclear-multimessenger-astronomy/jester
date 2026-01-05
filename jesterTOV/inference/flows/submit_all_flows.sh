@@ -10,7 +10,7 @@ echo "==========================================="
 mkdir -p ./logs
 
 # Base directory for configs
-CONFIG_DIR="./configs"
+CONFIG_DIR="./models/configs"
 
 # GW170817 config files
 GW170817_CONFIGS=(
