@@ -1,5 +1,7 @@
 r"""Factory functions for creating likelihoods from configuration"""
 
+from pathlib import Path
+
 from ..config.schema import LikelihoodConfig
 from .combined import CombinedLikelihood, ZeroLikelihood
 from .gw import GWLikelihood
@@ -8,6 +10,67 @@ from .radio import RadioTimingLikelihood
 from .chieft import ChiEFTLikelihood
 from .rex import REXLikelihood # TODO: not implemented yet error
 from .constraints import ConstraintEOSLikelihood, ConstraintTOVLikelihood
+from jesterTOV.logging_config import get_logger
+
+logger = get_logger("jester")
+
+# Preset flow model directories for GW events with trained flows
+# Paths are relative to jesterTOV/inference/ directory
+GW_EVENT_PRESETS = {
+    "GW170817": "flows/models/gw_maf/gw170817/gw170817_xp_nrtv3",
+    "GW190425": "flows/models/gw_maf/gw190425/gw190425_xp_nrtv3",
+}
+
+
+def get_gw_model_dir(event_name: str, model_dir: str | None) -> str:
+    """
+    Get model directory for GW event, using presets if path is not provided.
+
+    Parameters
+    ----------
+    event_name : str
+        Name of the GW event (case-insensitive)
+    model_dir : str | None
+        User-provided model directory, or None/empty string to use preset
+
+    Returns
+    -------
+    str
+        Absolute path to model directory
+
+    Raises
+    ------
+    ValueError
+        If model_dir is not provided and event is not in presets
+    """
+    # Normalize event name to uppercase for preset lookup
+    event_name_upper = event_name.upper()
+
+    # If model_dir is provided and not empty, use it directly
+    if model_dir:
+        return str(Path(model_dir).resolve())
+
+    # Check if event is in presets
+    if event_name_upper not in GW_EVENT_PRESETS:
+        raise ValueError(
+            f"No model_dir provided for event '{event_name}' and event is not in presets. "
+            f"Available presets: {list(GW_EVENT_PRESETS.keys())}. "
+            f"Please provide model_dir explicitly in the configuration."
+        )
+
+    # Get preset path and convert to absolute
+    preset_path = GW_EVENT_PRESETS[event_name_upper]
+    # Resolve relative to jesterTOV/inference directory
+    inference_dir = Path(__file__).parent.parent
+    model_dir_abs = (inference_dir / preset_path).resolve()
+
+    # Log warning that we're using default path
+    logger.warning(
+        f"No model_dir provided for event '{event_name}'. "
+        f"Using default preset path: {model_dir_abs}"
+    )
+
+    return str(model_dir_abs)
 
 
 def create_likelihood(
@@ -129,9 +192,15 @@ def create_combined_likelihood(
 
             # Create one GWLikelihood per event
             for event in events:
+                # Get model directory (use preset if not provided)
+                model_dir = get_gw_model_dir(
+                    event_name=event["name"],
+                    model_dir=event.get("model_dir")
+                )
+
                 gw_likelihood = GWLikelihood(
                     event_name=event["name"],
-                    model_dir=event["model_dir"],
+                    model_dir=model_dir,
                     penalty_value=penalty_value,
                     N_masses_evaluation=N_masses_evaluation,
                     N_masses_batch_size=N_masses_batch_size,

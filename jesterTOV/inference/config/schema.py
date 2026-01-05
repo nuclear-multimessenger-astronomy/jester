@@ -177,11 +177,10 @@ class LikelihoodConfig(BaseModel):
             # Validate each event
             for i, event in enumerate(events):
                 if not isinstance(event, dict):
-                    raise ValueError(f"Event {i} must be a dict with 'name' and 'model_dir' keys")
+                    raise ValueError(f"Event {i} must be a dict with 'name' and optional 'model_dir' keys")
                 if "name" not in event:
                     raise ValueError(f"Event {i} missing required 'name' field")
-                if "model_dir" not in event:
-                    raise ValueError(f"Event {i} missing required 'model_dir' field")
+                # model_dir is now optional - will use presets if not provided
 
             # Set defaults for optional parameters
             v.setdefault("penalty_value", -99999.0)

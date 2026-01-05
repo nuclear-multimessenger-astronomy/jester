@@ -10,7 +10,6 @@ from jesterTOV.inference.likelihoods.combined import ZeroLikelihood, CombinedLik
 from jesterTOV.inference.likelihoods.constraints import (
     ConstraintEOSLikelihood,
     ConstraintTOVLikelihood,
-    ConstraintLikelihood,
     check_tov_validity,
     check_causality_violation,
     check_stability,
@@ -584,6 +583,121 @@ class TestCombinedLikelihoodFactory:
 
         # Single radio likelihood should be returned directly
         assert isinstance(likelihood, RadioTimingLikelihood)
+
+
+class TestGWEventPresets:
+    """Test GW event preset path functionality."""
+
+    def test_get_gw_model_dir_gw170817_preset(self):
+        """Test that GW170817 uses preset path when model_dir not provided."""
+        result = factory.get_gw_model_dir("GW170817", None)
+
+        # Should contain the expected path components
+        assert "gw170817_xp_nrtv3" in result
+        assert result.endswith("gw170817_xp_nrtv3")
+
+    def test_get_gw_model_dir_gw190425_preset(self):
+        """Test that GW190425 uses preset path when model_dir not provided."""
+        result = factory.get_gw_model_dir("GW190425", None)
+
+        # Should contain the expected path components
+        assert "gw190425_xp_nrtv3" in result
+        assert result.endswith("gw190425_xp_nrtv3")
+
+    def test_get_gw_model_dir_case_insensitive(self):
+        """Test that event name matching is case-insensitive."""
+        # Lowercase should work
+        result_lower = factory.get_gw_model_dir("gw170817", None)
+        assert "gw170817_xp_nrtv3" in result_lower
+
+        # Mixed case should work
+        result_mixed = factory.get_gw_model_dir("Gw170817", None)
+        assert "gw170817_xp_nrtv3" in result_mixed
+
+        # Uppercase should work
+        result_upper = factory.get_gw_model_dir("GW170817", None)
+        assert "gw170817_xp_nrtv3" in result_upper
+
+    def test_get_gw_model_dir_custom_path(self):
+        """Test that custom model_dir takes precedence over preset."""
+        custom_path = "/custom/path/to/model"
+        result = factory.get_gw_model_dir("GW170817", custom_path)
+
+        # Should use the custom path, not preset
+        assert "custom/path/to/model" in result
+        assert "gw170817_xp_nrtv3" not in result
+
+    def test_get_gw_model_dir_empty_string_uses_preset(self):
+        """Test that empty string for model_dir triggers preset."""
+        result = factory.get_gw_model_dir("GW170817", "")
+
+        # Empty string should trigger preset
+        assert "gw170817_xp_nrtv3" in result
+
+    def test_get_gw_model_dir_unknown_event_raises_error(self):
+        """Test that unknown event without model_dir raises ValueError."""
+        with pytest.raises(ValueError, match="not in presets"):
+            factory.get_gw_model_dir("GW999999", None)
+
+        # Error message should list available presets
+        with pytest.raises(ValueError, match="GW170817.*GW190425"):
+            factory.get_gw_model_dir("GW999999", None)
+
+    def test_get_gw_model_dir_returns_absolute_path(self):
+        """Test that preset paths are resolved to absolute paths."""
+        result = factory.get_gw_model_dir("GW170817", None)
+
+        # Should be an absolute path
+        from pathlib import Path
+        assert Path(result).is_absolute()
+
+    def test_gw_preset_paths_exist(self):
+        """Test that preset flow model directories actually exist."""
+        from pathlib import Path
+
+        for event_name in ["GW170817", "GW190425"]:
+            model_dir = factory.get_gw_model_dir(event_name, None)
+            model_path = Path(model_dir)
+
+            # Directory should exist
+            assert model_path.exists(), f"Preset path does not exist: {model_dir}"
+            assert model_path.is_dir(), f"Preset path is not a directory: {model_dir}"
+
+            # Required flow files should exist
+            required_files = ["flow_weights.eqx", "flow_kwargs.json", "metadata.json"]
+            for fname in required_files:
+                file_path = model_path / fname
+                assert file_path.exists(), f"Missing required file: {file_path}"
+
+    def test_load_flow_from_preset_gw170817(self):
+        """Test that Flow can actually be loaded from GW170817 preset path."""
+        from jesterTOV.inference.flows.flow import Flow
+
+        model_dir = factory.get_gw_model_dir("GW170817", None)
+
+        # Should load without errors
+        flow = Flow.from_directory(model_dir)
+
+        # Verify flow is properly initialized
+        assert flow is not None
+        assert hasattr(flow, 'flow')
+        assert hasattr(flow, 'metadata')
+        assert hasattr(flow, 'standardize')
+
+    def test_load_flow_from_preset_gw190425(self):
+        """Test that Flow can actually be loaded from GW190425 preset path."""
+        from jesterTOV.inference.flows.flow import Flow
+
+        model_dir = factory.get_gw_model_dir("GW190425", None)
+
+        # Should load without errors
+        flow = Flow.from_directory(model_dir)
+
+        # Verify flow is properly initialized
+        assert flow is not None
+        assert hasattr(flow, 'flow')
+        assert hasattr(flow, 'metadata')
+        assert hasattr(flow, 'standardize')
 
 
 class TestLikelihoodIntegration:
