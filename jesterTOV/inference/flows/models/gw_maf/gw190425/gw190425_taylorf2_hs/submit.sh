@@ -12,7 +12,7 @@
 now=$(date)
 echo "$now"
 echo "Training flow for: gw190425_taylorf2_hs"
-source activate /home/twouters2/projects/jester_review/jester/.venv/bin/activate
+source /home/twouters2/projects/jester_review/jester/.venv/bin/activate
 nvidia-smi --query-gpu=name --format=csv,noheader
 train_jester_gw_flow "./config.yaml"
 echo "DONE"

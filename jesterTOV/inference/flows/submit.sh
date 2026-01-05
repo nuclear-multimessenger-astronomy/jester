@@ -28,7 +28,7 @@ echo "Config file: $CONFIG_FILE"
 # Loading modules
 # module load 2024
 # module load Python/3.10.4-GCCcore-11.3.0
-source activate /home/twouters2/projects/jester_review/jester/.venv/bin/activate
+source /home/twouters2/projects/jester_review/jester/.venv/bin/activate
 
 # Display GPU name
 nvidia-smi --query-gpu=name --format=csv,noheader
