@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # This script submits individual SLURM jobs for training all normalizing flows
+# Each dataset has its own directory with config.yaml and submit.sh
 
 echo "==========================================="
 echo "Submitting Flow Training Jobs"
@@ -9,55 +10,53 @@ echo "==========================================="
 # Create logs directory if it doesn't exist
 mkdir -p ./logs
 
-# Base directory for configs
-CONFIG_DIR="./models/configs"
+# Base directory for dataset configs
+MODELS_DIR="./models/gw_maf"
 
-# GW170817 config files
-GW170817_CONFIGS=(
-    "gw170817/low_spin.yaml"
-    "gw170817/high_spin.yaml"
-    "gw170817/gwtc1_lowspin.yaml"
-    "gw170817/gwtc1_highspin.yaml"
-)
+# Find all config.yaml files in the models directory
+CONFIG_DIRS=$(find "$MODELS_DIR" -type f -name "config.yaml" -exec dirname {} \; | sort)
 
-# GW190425 config files
-GW190425_CONFIGS=(
-    "gw190425/phenomdnrt_hs.yaml"
-    "gw190425/phenomdnrt_ls.yaml"
-    "gw190425/phenompnrt_hs.yaml"
-    "gw190425/phenompnrt_ls.yaml"
-    "gw190425/taylorf2_hs.yaml"
-    "gw190425/taylorf2_ls.yaml"
-)
-
-# Combine all configs
-ALL_CONFIGS=("${GW170817_CONFIGS[@]}" "${GW190425_CONFIGS[@]}")
+# Count total configs
+TOTAL_CONFIGS=$(echo "$CONFIG_DIRS" | wc -l | tr -d ' ')
 
 echo ""
-echo "Found ${#ALL_CONFIGS[@]} configurations to train"
+echo "Found $TOTAL_CONFIGS dataset configurations to train"
 echo ""
 
 # Submit jobs for all configs
-for config_file in "${ALL_CONFIGS[@]}"; do
-    config_path="${CONFIG_DIR}/${config_file}"
+for config_dir in $CONFIG_DIRS; do
+    # Extract dataset name from directory path
+    dataset_name=$(basename "$config_dir")
+    event=$(basename "$(dirname "$config_dir")")
 
-    # Extract a job name from the config file path
-    # e.g., gw170817/low_spin.yaml -> gw170817_low_spin
-    job_name=$(echo "$config_file" | sed 's/\//_/g' | sed 's/.yaml//')
+    echo "Submitting job for: $event/$dataset_name"
+    echo "  Directory: $config_dir"
 
-    echo "Submitting job for: $config_file"
-    echo "  Job name: $job_name"
-    echo "  Config path: $config_path"
+    # cd into the dataset directory and submit the job
+    (
+        cd "$config_dir" || exit 1
 
-    # Submit the job with the config file as an environment variable
-    sbatch --job-name="$job_name" --export=CONFIG_FILE="$config_path" submit.sh
+        # Check if submit.sh exists
+        if [ ! -f "submit.sh" ]; then
+            echo "  ✗ ERROR: submit.sh not found in $config_dir"
+            exit 1
+        fi
 
-    echo "  ✓ Job submitted"
+        # Submit the job
+        sbatch submit.sh
+
+        if [ $? -eq 0 ]; then
+            echo "  ✓ Job submitted successfully"
+        else
+            echo "  ✗ Job submission failed"
+        fi
+    )
+
     echo ""
 done
 
 echo "==========================================="
-echo "All jobs submitted successfully!"
+echo "All jobs submitted!"
 echo "==========================================="
 echo ""
 echo "Monitor jobs with: squeue -u \$USER"

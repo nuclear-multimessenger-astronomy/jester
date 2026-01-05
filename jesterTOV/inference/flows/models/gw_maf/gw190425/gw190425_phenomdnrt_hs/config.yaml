@@ -1,0 +1,43 @@
+# Configuration for training normalizing flow on GW190425 PhenomDNRT high spin posterior
+posterior_file: "../../../../../data/gw190425/gw190425_phenomdnrt-hs_posterior.npz"
+output_dir: "."
+
+# Training parameters
+num_epochs: 3000
+learning_rate: 1.0e-4
+max_patience: 500
+batch_size: 128
+val_prop: 0.2
+seed: 0
+
+# Flow architecture
+flow_type: "masked_autoregressive_flow"
+flow_layers: 1
+nn_depth: 4
+nn_width: 50
+nn_block_dim: 8
+invert: true
+
+# Transformer settings
+transformer: "rational_quadratic_spline"
+transformer_knots: 8
+transformer_interval: 4.0
+
+# Spline settings (for triangular_spline_flow)
+knots: 8
+tanh_max_val: 3.0
+
+# Data preprocessing
+max_samples: 50000
+standardize: true
+
+# Physics constraints (experimental)
+constrain_physics: false
+use_chirp_mass: false
+
+# Plotting
+plot_corner: true
+plot_losses: true
+
+# Conditional flow settings
+cond_dim: null
