@@ -1,6 +1,6 @@
 # Configuration for training normalizing flow on GW170817 GWTC-1 lowspin posterior
-posterior_file: "../data/gw170817/gw170817_gwtc1_lowspin_posterior.npz"
-output_dir: "./models/gw_maf/gw170817/gw170817_gwtc1_lowspin_posterior"
+posterior_file: "../../../../data/gw170817/gw170817_gwtc1_lowspin_posterior.npz"
+output_dir: "../../../models/gw_maf/gw170817/gw170817_gwtc1_lowspin_posterior"
 
 # Training parameters
 num_epochs: 3000

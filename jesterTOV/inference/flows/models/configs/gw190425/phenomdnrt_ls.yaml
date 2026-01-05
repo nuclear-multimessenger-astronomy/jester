@@ -1,6 +1,6 @@
 # Configuration for training normalizing flow on GW190425 PhenomDNRT low spin posterior
-posterior_file: "../data/gw190425/gw190425_phenomdnrt-ls_posterior.npz"
-output_dir: "./models/gw_maf/gw190425/gw190425_phenomdnrt-ls_posterior"
+posterior_file: "../../../../data/gw190425/gw190425_phenomdnrt-ls_posterior.npz"
+output_dir: "../../../models/gw_maf/gw190425/gw190425_phenomdnrt-ls_posterior"
 
 # Training parameters
 num_epochs: 3000

@@ -1,6 +1,6 @@
 # Configuration for training normalizing flow on GW190425 TaylorF2 high spin posterior
-posterior_file: "../data/gw190425/gw190425_taylorf2-hs_posterior.npz"
-output_dir: "./models/gw_maf/gw190425/gw190425_taylorf2-hs_posterior"
+posterior_file: "../../../../data/gw190425/gw190425_taylorf2-hs_posterior.npz"
+output_dir: "../../../models/gw_maf/gw190425/gw190425_taylorf2-hs_posterior"
 
 # Training parameters
 num_epochs: 3000
