@@ -270,8 +270,6 @@ class JesterTransformBase(NtoMTransform, ABC):
         dict[str, Float]
             Transformed parameter dictionary with keep_names preserved
         """
-        import jax
-
         # Save parameters that should be kept
         kept_params = {name: x[name] for name in self.keep_names if name in x}
 

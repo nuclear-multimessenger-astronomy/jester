@@ -6,13 +6,12 @@ from .gw import GWLikelihood
 from .nicer import NICERLikelihood
 from .radio import RadioTimingLikelihood
 from .chieft import ChiEFTLikelihood
-from .rex import REXLikelihood
-from .constraints import ConstraintLikelihood, ConstraintEOSLikelihood, ConstraintTOVLikelihood
+from .rex import REXLikelihood # TODO: not implemented yet error
+from .constraints import ConstraintEOSLikelihood, ConstraintTOVLikelihood
 
 
 def create_likelihood(
     config: LikelihoodConfig,
-    data_loader=None,
 ):
     """
     Create likelihood from configuration
@@ -21,8 +20,6 @@ def create_likelihood(
     ----------
     config : LikelihoodConfig
         Likelihood configuration
-    data_loader : None
-        DEPRECATED - data loading will be handled differently
 
     Returns
     -------
@@ -76,14 +73,6 @@ def create_likelihood(
             f"Need to implement load_rex_posterior('{experiment_name}') -> gaussian_kde"
         )
 
-    elif config.type == "constraints":
-        return ConstraintLikelihood(
-            penalty_tov=params.get("penalty_tov", -1e10),
-            penalty_causality=params.get("penalty_causality", -1e10),
-            penalty_stability=params.get("penalty_stability", -1e5),
-            penalty_pressure=params.get("penalty_pressure", -1e5),
-        )
-
     elif config.type == "constraints_eos":
         return ConstraintEOSLikelihood(
             penalty_causality=params.get("penalty_causality", -1e10),
@@ -105,7 +94,6 @@ def create_likelihood(
 
 def create_combined_likelihood(
     likelihood_configs: list[LikelihoodConfig],
-    data_loader=None,
 ):
     """
     Create combined likelihood from list of configs
@@ -114,8 +102,6 @@ def create_combined_likelihood(
     ----------
     likelihood_configs : list[LikelihoodConfig]
         List of likelihood configurations
-    data_loader : None
-        DEPRECATED - data loading will be handled differently
 
     Returns
     -------
@@ -188,7 +174,7 @@ def create_combined_likelihood(
 
         else:
             # For other likelihoods, use standard creation
-            likelihood = create_likelihood(config, data_loader)
+            likelihood = create_likelihood(config)
             if likelihood is not None:
                 likelihoods.append(likelihood)
 

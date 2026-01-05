@@ -2,6 +2,8 @@
 
 This module provides nested sampling using the BlackJAX library (handley-lab fork)
 with acceptance walk kernel for efficient exploration of the parameter space.
+
+# FIXME: this is still being tested, use with care!
 """
 
 from typing import Any

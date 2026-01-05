@@ -58,16 +58,36 @@ examples/inference/blackjax-ns-aw/NICER_J0030/config.yaml
 
 **CRITICAL** (before next release):
 
-1. **⚠️ Add tests for InferenceResult class** (HDF5 results storage) - URGENT
-   - File: `tests/test_inference/test_result.py` (DOES NOT EXIST)
-   - 516 lines of production code with ZERO test coverage
-   - See "Testing Coverage Assessment" section below for details
+1. **⚠️ TODO: Eliminate redundant TOV solver calls via caching**
+   - **Problem**: TOV solver runs TWICE on same samples - once during sampling (for likelihoods),
+     once for saving results. This wastes computation time (5-10 seconds per call).
+   - **Root cause**: Transform during sampling "forgets" parameters (only returns TOV outputs for likelihood).
+     Final result needs BOTH parameters AND TOV outputs, so TOV solver is run again on the same samples.
+   - **Goal**: Cache TOV outputs during sampling, reuse them when generating results (zero redundant calls).
+   - **Current status**:
+     - ✅ **Infrastructure**: Caching infrastructure added to `JesterSampler` base class (sampler-agnostic)
+     - ✅ **Fallback**: `InferenceResult.add_eos_from_transform()` checks cache first, falls back to recomputation
+     - ❌ **Blocker**: JAX tracing issue - cannot hash/cache inside JAX-compiled functions (e.g., `jax.lax.map`)
+     - ⚠️ **All samplers TODO**: Need to implement caching OUTSIDE JAX trace context:
+       - **FlowMC**: Cache during production phase (outside JAX compilation)
+       - **BlackJAX SMC**: Cache final temperature samples (outside `get_log_prob()`)
+       - **BlackJAX NS-AW**: Cache all samples (outside JAX compilation)
+   - **Location**:
+     - Cache infrastructure: `jesterTOV/inference/samplers/jester_sampler.py:117-438`
+     - Cache usage: `jesterTOV/inference/result.py:271-390`
+     - Currently DISABLED: `jesterTOV/inference/run_inference.py:491-498`
+   - **Status**: Infrastructure complete, but DISABLED due to JAX tracing issues - all samplers need custom implementation
+   - **Impact**: Would eliminate ALL redundant TOV solver calls (currently falls back to one recomputation)
 
-2. **Fix BlackJAX NS-AW type errors** (7 errors in `blackjax_ns_aw.py`)
+2. **⚠️ Add tests for InferenceResult class** (HDF5 results storage) - ✅ COMPLETE (December 2024)
+   - Comprehensive tests added in `tests/test_inference/test_result.py` (599 lines)
+   - See "Testing Coverage Assessment" section for details
+
+3. **Fix BlackJAX NS-AW type errors** (7 errors in `blackjax_ns_aw.py`)
    - Run: `uv run pyright jesterTOV/inference/samplers/blackjax_ns_aw.py`
    - See type error details in "Testing Coverage Assessment" section
 
-3. **Document data loading status** - `jesterTOV/inference/data/__init__.py`
+4. **Document data loading status** - `jesterTOV/inference/data/__init__.py`
    - Has FIXME comment about missing DataLoader implementation
    - Either implement missing functions or update documentation
 
@@ -158,19 +178,19 @@ uv run pytest -v tests/
 
 **CRITICAL TESTING GAPS** - The following areas have NO or INSUFFICIENT test coverage:
 
-### 1. **InferenceResult Class (HDF5 Storage) - ❌ ZERO TESTS**
+### 1. **InferenceResult Class (HDF5 Storage) - ✅ TESTS ADDED (December 2024)**
    - **File**: `jesterTOV/inference/result.py` (516 lines)
    - **Recent Change**: Complete rewrite from NPZ to HDF5 format (commit c1c3f18, Dec 2024)
-   - **Risk**: HIGH - Core data persistence layer with no validation
-   - **Missing Coverage**:
-     - Save/load roundtrip for all sampler types (FlowMC, SMC, NS-AW)
-     - Scalar vs array dataset handling in sampler_specific data
-     - Metadata serialization/deserialization
-     - Backward compatibility (if needed)
-     - Edge cases (empty histories, missing fields, corrupt HDF5 files)
-     - Config JSON round-trip
-   - **Location for tests**: `tests/test_inference/test_result.py` (DOES NOT EXIST)
-   - **Priority**: URGENT - This is production infrastructure
+   - **Test Coverage** (599 lines in `tests/test_inference/test_result.py`):
+     - ✅ Save/load roundtrip for all sampler types (FlowMC, SMC, NS-AW)
+     - ✅ Scalar vs array dataset handling in sampler_specific data
+     - ✅ Metadata serialization/deserialization
+     - ✅ Edge cases (empty histories, missing fields, pathlib vs string paths)
+     - ✅ Config JSON round-trip
+     - ✅ add_derived_eos() method
+     - ✅ Summary generation for all sampler types
+   - **Additional Coverage**: EOS sample generation filtering (see "Testing Issues (Fixed)" above)
+   - **Status**: COMPREHENSIVE - Production infrastructure now well-tested
 
 ### 2. **Postprocessing Module - ❌ ZERO TESTS**
    - **File**: `jesterTOV/inference/postprocessing/postprocessing.py` (893 lines)
@@ -390,6 +410,16 @@ Goal: Keep flowMC as only external sampler dependency.
 - ✅ LikelihoodConfig validation respects `enabled` field
 - ✅ Prior API uses `sample(rng_key, n_samples)` not `sample(u_array)`
 - ✅ Transform factory expects Pydantic config, not dict
+- ✅ **EOS sample generation log_prob filtering bug** (December 2024):
+  - **Bug**: When generating fewer EOS samples than posterior samples (e.g., 5000 EOS from 10000 posterior),
+    `log_prob` was not filtered to match the randomly selected samples, causing index out of bounds errors
+    in postprocessing when trying to color M-R curves by probability
+  - **Root Cause**: `generate_eos_samples()` used random selection (`np.random.choice`) for parameters but
+    excluded `log_prob` from filtering (line 279), leaving full 10000 `log_prob` values with only 5000 EOS curves
+  - **Fix** (commit XXXX): Filter `log_prob` and other sampler-specific fields (`weights`, `ess`, `logL`, `logL_birth`)
+    to match selected samples; backup full arrays as `*_full`
+  - **Location**: `jesterTOV/inference/run_inference.py:285-298`, `jesterTOV/inference/postprocessing/postprocessing.py:347-352, 458-463`
+  - **Regression test**: `tests/test_inference/test_integration.py::TestEOSSampleGeneration`
 
 ### Open Issues
 - **SMC get_log_prob parameter ordering bug**: `ravel_pytree` uses alphabetical ordering but `add_name` uses `prior.parameter_names` ordering, causing scrambled parameters → NaN log_prob

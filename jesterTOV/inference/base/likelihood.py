@@ -44,6 +44,8 @@ class LikelihoodBase(ABC):
     def data(self) -> Any:
         """
         The data for the likelihood.
+        
+        Note: The data is usually left empty, but we keep it to mimic jimgw as closely as possible.
 
         Returns
         -------

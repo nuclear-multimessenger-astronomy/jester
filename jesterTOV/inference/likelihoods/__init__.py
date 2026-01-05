@@ -6,7 +6,7 @@ from .nicer import NICERLikelihood
 from .radio import RadioTimingLikelihood
 from .chieft import ChiEFTLikelihood
 from .rex import REXLikelihood
-from .constraints import ConstraintLikelihood, ConstraintEOSLikelihood, ConstraintTOVLikelihood
+from .constraints import ConstraintEOSLikelihood, ConstraintTOVLikelihood
 from .factory import create_likelihood, create_combined_likelihood
 
 __all__ = [
@@ -17,7 +17,6 @@ __all__ = [
     "RadioTimingLikelihood",
     "ChiEFTLikelihood",
     "REXLikelihood",
-    "ConstraintLikelihood",
     "ConstraintEOSLikelihood",
     "ConstraintTOVLikelihood",
     "create_likelihood",

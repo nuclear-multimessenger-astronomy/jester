@@ -6,7 +6,7 @@ from .schema import (
     TransformConfig,
     PriorConfig,
     LikelihoodConfig,
-    SamplerConfig,
+    SamplerConfig, # TODO: check classs/type inconsistencies: should this be made a base class?
 )
 
 __all__ = [

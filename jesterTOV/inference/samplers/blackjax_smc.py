@@ -121,10 +121,9 @@ class BlackJAXSMCSampler(JesterSampler):
                     f"{config.n_mcmc_steps} MCMC steps per tempering stage")
         logger.info(f"Target ESS: {config.target_ess}")
 
-        # Note: The actual SMC sampler is created in sample() method
-
     def _build_mass_matrix(self) -> Array:
         """Create diagonal mass matrix with per-parameter scaling.
+        TODO: need to check if there are ways to make a better mass matrix?
 
         Returns
         -------
@@ -193,42 +192,42 @@ class BlackJAXSMCSampler(JesterSampler):
         # Flatten particles to arrays for BlackJAX SMC
         # NOTE: ravel_pytree uses alphabetical key ordering (deterministic)
         single_sample_dict = tree_map(lambda x: x[0], initial_position_dict)
-        single_sample_flat, self._unflatten_fn = ravel_pytree(single_sample_dict)
+        _, self._unflatten_fn = ravel_pytree(single_sample_dict)
+        self._flatten_fn = lambda x: ravel_pytree(x)[0]
 
-        # Flatten all particles
-        initial_position_flat = jax.vmap(lambda x: ravel_pytree(x)[0])(initial_position_dict)
+        # Flatten all particles using the flatten function
+        initial_position_flat = jax.vmap(self._flatten_fn)(initial_position_dict)
 
         # Ensure float dtype for NUTS compatibility
         if not jnp.issubdtype(initial_position_flat.dtype, jnp.floating):
             logger.warning(f"Converting initial_position_flat from {initial_position_flat.dtype} to float64")
             initial_position_flat = initial_position_flat.astype(jnp.float64)
 
+        # Helper function to unflatten and apply inverse transforms
+        def _unflatten_and_inverse_transform(x_flat: Array, return_jacobian: bool = False):
+            """Unflatten particle and apply inverse sample transforms."""
+            x_flat = jnp.atleast_1d(x_flat)
+            x_dict = self._unflatten_fn(x_flat)
+
+            transform_jacobian = 0.0
+            for transform in reversed(self.sample_transforms):
+                x_dict, jacobian = transform.inverse(x_dict)
+                if return_jacobian:
+                    transform_jacobian += jacobian
+
+            return (x_dict, transform_jacobian) if return_jacobian else x_dict
+
         # Create logprior and loglikelihood functions that work with flat arrays
         # NOTE: BlackJAX adaptive_tempered_smc will vmap these internally for ESS solver
         # So these should work on SINGLE particles, not batches
         def logprior_fn(x_flat: Array) -> float:
             """Log prior for single particle in flattened space."""
-            # Ensure x_flat is at least 1D (vmap may reduce scalar to ())
-            x_flat = jnp.atleast_1d(x_flat)
-            x_dict = self._unflatten_fn(x_flat)
-
-            # Apply inverse sample transforms if any
-            transform_jacobian = 0.0
-            for transform in reversed(self.sample_transforms):
-                x_dict, jacobian = transform.inverse(x_dict)
-                transform_jacobian += jacobian
-
+            x_dict, transform_jacobian = _unflatten_and_inverse_transform(x_flat, return_jacobian=True)
             return self.prior.log_prob(x_dict) + transform_jacobian
 
         def loglikelihood_fn(x_flat: Array) -> float:
             """Log likelihood for single particle in flattened space."""
-            # Ensure x_flat is at least 1D (vmap may reduce scalar to ())
-            x_flat = jnp.atleast_1d(x_flat)
-            x_dict = self._unflatten_fn(x_flat)
-
-            # Apply inverse sample transforms if any
-            for transform in reversed(self.sample_transforms):
-                x_dict, _ = transform.inverse(x_dict)
+            x_dict = _unflatten_and_inverse_transform(x_flat, return_jacobian=False)
 
             # Apply likelihood transforms
             for transform in self.likelihood_transforms:
@@ -318,9 +317,6 @@ class BlackJAXSMCSampler(JesterSampler):
         elif self.config.kernel_type == "random_walk":
             logger.info("Initializing SMC with Gaussian Random Walk kernel...")
 
-            # Create random step function for Gaussian random walk
-            random_step_fn = random_walk.normal(jnp.ones(self.prior.n_dim) * self.config.random_walk_sigma)
-
             # Initial parameters for random walk
             init_params = {}  # Random walk doesn't need parameters
 
@@ -406,7 +402,7 @@ class BlackJAXSMCSampler(JesterSampler):
             key, subkey = jax.random.split(key, 2)
             state, info = smc_alg.step(subkey, state)
 
-            # Accumulate log evidence from log_likelihood_increment
+            # Accumulate log evidence from log_likelihood_increment TODO: double check the maths here
             log_evidence = log_evidence + info.log_likelihood_increment  # type: ignore[attr-defined]
 
             # Compute ESS

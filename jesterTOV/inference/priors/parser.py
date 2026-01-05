@@ -1,7 +1,7 @@
 r"""Parser for .prior specification files in bilby-style Python format."""
 
 from pathlib import Path
-from typing import Union, Any
+from typing import Union, Any, Dict
 from jesterTOV.inference.base import CombinePrior, Prior, UniformPrior
 
 
@@ -75,7 +75,7 @@ def parse_prior_file(
 
     # Extract all Prior objects from the namespace
     excluded_keys = {"__builtins__", "UniformPrior"}
-    all_priors = {}
+    all_priors: Dict[str, Prior] = {}
 
     for key, value in namespace.items():
         if key not in excluded_keys and isinstance(value, Prior):

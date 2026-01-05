@@ -99,7 +99,7 @@ class Flow:
         self.flow = flow
         self.metadata = metadata
         self.flow_kwargs = flow_kwargs
-        self.standardize = metadata["standardize"] # TODO: this behavior should be changed in the future
+        self.standardize = metadata["standardize"] # TODO: this is a bit redunant, only used below, simplify
 
         # Always store bounds as JAX arrays
         # If standardization is disabled, use trivial bounds (min=0, range=1)
@@ -110,7 +110,7 @@ class Flow:
         else:
             # Trivial bounds: min=0, max=1 → operations become identity
             # Assume 4D flow (m1, m2, lambda1, lambda2)
-            # TODO: this might have to be changed in the future
+            # TODO: this might have to be changed in the future, but keep for now
             n_features = 4
             self.data_min = jnp.zeros(n_features)
             self.data_max = jnp.ones(n_features)

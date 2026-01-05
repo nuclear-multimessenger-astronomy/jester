@@ -103,8 +103,6 @@ class MetaModelTransform(JesterTransformBase):
         # Set transform function
         self.transform_func = self.transform_func_MM
 
-        # NOTE: Cannot log here - transforms may be instantiated inside JAX-traced code
-
     def get_eos_type(self) -> str:
         """Return the EOS parametrization identifier.
 
@@ -175,7 +173,7 @@ class MetaModelTransform(JesterTransformBase):
         re-interpolated onto a regular density grid spanning from the crust
         to this causality limit.
         """
-        # Update with fixed parameters (currently empty)
+        # Update with fixed parameters (currently empty) # TODO: this needs to be handled in the base class, so it is always done?
         params.update(self.fixed_params)
 
         # Extract NEP parameters
@@ -195,8 +193,8 @@ class MetaModelTransform(JesterTransformBase):
         idx = jnp.argmax(cs2 >= 1.0)
         # If EOS is everywhere causal, use last index; otherwise use first non-causal index
         idx = jnp.where(has_non_causal, idx, len(ns) - 1)
-        final_n = ns.at[idx].get()
-        first_n = ns.at[0].get()
+        final_n = ns.at[idx].get()  # .at[].get() is correct for dynamic indexing in JIT
+        first_n = ns[0]  # Constant index, can use direct indexing
 
         # Re-interpolate to ensure causal EOS
         ns_interp = jnp.linspace(first_n, final_n, len(ns))

@@ -92,9 +92,6 @@ DEFAULT_COLORMAP = sns.color_palette("crest", as_cmap=True)
 # Constants
 COLORS_DICT = {
     "prior": "gray",
-    "GW170817": "orange",
-    "GW231109": "teal",
-    "GW231109_only": "red",
     "posterior": "blue"
 }
 ALPHA = 0.3
@@ -344,6 +341,13 @@ def make_mass_radius_plot(data: Dict[str, Any],
     nb_samples = np.shape(m)[0]
     logger.info(f"Number of samples: {nb_samples}")
 
+    # Verify log_prob matches EOS sample count
+    if len(log_prob) != nb_samples:
+        raise ValueError(
+            f"Mismatch between log_prob ({len(log_prob)}) and EOS samples ({nb_samples}). "
+            "This indicates a bug in the EOS sample generation code."
+        )
+
     # Normalize probabilities for coloring
     prob = np.exp(log_prob - np.max(log_prob))  # Normalize to avoid overflow
     norm = plt.Normalize(vmin=np.min(prob), vmax=np.max(prob))
@@ -446,6 +450,14 @@ def make_pressure_density_plot(data: Dict[str, Any],
     m, r, l = data['masses'], data['radii'], data['lambdas']
     n, p = data['densities'], data['pressures']
     log_prob = data['log_prob']
+    nb_samples = np.shape(m)[0]
+
+    # Verify log_prob matches EOS sample count
+    if len(log_prob) != nb_samples:
+        raise ValueError(
+            f"Mismatch between log_prob ({len(log_prob)}) and EOS samples ({nb_samples}). "
+            "This indicates a bug in the EOS sample generation code."
+        )
 
     # Normalize probabilities for coloring
     prob = np.exp(log_prob - np.max(log_prob))
@@ -500,7 +512,7 @@ def make_pressure_density_plot(data: Dict[str, Any],
     plt.close()
     logger.info(f"Pressure-density plot saved to {save_name}")
 
-
+# TODO: Make hdi_prob a variable at the top of the script, fill histograms between the two edges and not fill outside of it, and put the hdi_prob in the title of the histogram)
 def make_parameter_histograms(data: Dict[str, Any],
                               prior_data: Optional[Dict[str, Any]],
                               outdir: str):
@@ -749,8 +761,7 @@ def generate_all_plots(outdir: str,
                       make_cornerplot_flag: bool = True,
                       make_massradius_flag: bool = True,
                       make_pressuredensity_flag: bool = True,
-                      make_histograms_flag: bool = True,
-                      make_contours_flag: bool = True):
+                      make_histograms_flag: bool = True):
     """Generate selected plots for the specified output directory.
 
     Parameters
@@ -767,8 +778,6 @@ def generate_all_plots(outdir: str,
         Whether to generate pressure-density plot, by default True
     make_histograms_flag : bool, optional
         Whether to generate parameter histograms, by default True
-    make_contours_flag : bool, optional
-        Whether to generate contour plots, by default True
     """
     logger.info(f"Generating plots for directory: {outdir}")
 
@@ -847,8 +856,6 @@ Examples:
                        help='Generate pressure-density plot')
     parser.add_argument('--make-histograms', action='store_true',
                        help='Generate parameter histograms')
-    parser.add_argument('--make-contours', action='store_true',
-                       help='Generate contour plots')
 
     # Additional options
     parser.add_argument('--m-min', type=float, default=0.6,
@@ -873,8 +880,7 @@ Examples:
         args.make_cornerplot,
         args.make_massradius,
         args.make_pressuredensity,
-        args.make_histograms,
-        args.make_contours
+        args.make_histograms
     ])
 
     # Generate plots
@@ -884,8 +890,7 @@ Examples:
         make_cornerplot_flag=make_all or args.make_cornerplot,
         make_massradius_flag=make_all or args.make_massradius,
         make_pressuredensity_flag=make_all or args.make_pressuredensity,
-        make_histograms_flag=make_all or args.make_histograms,
-        make_contours_flag=make_all or args.make_contours
+        make_histograms_flag=make_all or args.make_histograms
     )
 
 

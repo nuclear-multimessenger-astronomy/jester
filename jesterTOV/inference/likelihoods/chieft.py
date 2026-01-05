@@ -29,6 +29,7 @@ import jax.numpy as jnp
 import numpy as np
 from jaxtyping import Array, Float
 
+from jesterTOV import utils
 from jesterTOV.inference.base import LikelihoodBase
 
 
@@ -191,17 +192,14 @@ class ChiEFTLikelihood(LikelihoodBase):
         - Input densities converted from geometric to fm⁻³ units
         - Input pressures converted from geometric to MeV/fm³ units
         """
-        # Import here to avoid circular dependency # FIXME: what circular dependency?
-        from jesterTOV import utils as jose_utils
-
         # Get relevant parameters
         n, p = params["n"], params["p"]
         nbreak = params["nbreak"]
 
         # Convert to nsat for convenience
         nbreak = nbreak / 0.16
-        n = n / jose_utils.fm_inv3_to_geometric / 0.16
-        p = p / jose_utils.MeV_fm_inv3_to_geometric
+        n = n / utils.fm_inv3_to_geometric / 0.16
+        p = p / utils.MeV_fm_inv3_to_geometric
 
         # Lower limit is at 0.12 fm-3
         this_n_array = jnp.linspace(0.75, nbreak, self.nb_n)

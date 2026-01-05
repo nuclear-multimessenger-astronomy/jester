@@ -5,7 +5,6 @@ inference results from all sampler types (FlowMC, BlackJAX SMC, BlackJAX NS-AW).
 """
 
 import json
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Literal
@@ -267,6 +266,126 @@ class InferenceResult:
             self.posterior[key] = np.array(value)
 
         logger.info(f"Added {len(eos_dict)} derived EOS quantities")
+
+    def add_eos_from_transform(
+        self,
+        transform,
+        n_eos_samples: int | None = None,
+        batch_size: int = 1000,
+        sampler=None,
+    ) -> None:
+        """Apply transform to posterior samples to add EOS quantities.
+
+        This method avoids redundant TOV solver calls by:
+        1. First checking if transforms are cached in the sampler (from sampling)
+        2. If cached, uses those (zero recomputation!)
+        3. If not cached, applies transform to posterior samples (one recomputation)
+
+        Parameters
+        ----------
+        transform : JesterTransformBase
+            Transform to apply (should be TOV solver transform)
+        n_eos_samples : int, optional
+            Number of EOS samples to generate. If None or greater than available samples,
+            generates EOS for all samples. If less than total samples, randomly selects
+            a subset and filters log_prob/sampler fields to match.
+        batch_size : int, optional
+            Batch size for JAX computation, by default 1000
+        sampler : JesterSampler, optional
+            Sampler instance to check for cached transforms. If provided and caching
+            was enabled during sampling, will use cached transforms instead of recomputing.
+
+        Notes
+        -----
+        When n_eos_samples < total samples:
+        - Randomly selects n_eos_samples from posterior
+        - Applies transform to selected samples (or retrieves from cache)
+        - Filters log_prob and sampler-specific fields (weights, ess, logL, logL_birth)
+          to match selected samples
+        - Backs up full arrays as *_full before filtering
+        """
+        import jax
+        import jax.numpy as jnp
+
+        logger.info("=" * 60)
+        logger.info("Generating EOS from posterior samples")
+        logger.info("=" * 60)
+
+        # Get current log_prob for sample count
+        log_prob = self.posterior["log_prob"]
+        n_available = len(log_prob)
+
+        # Determine how many EOS samples to generate
+        if n_eos_samples is None or n_eos_samples >= n_available:
+            n_eos_samples = n_available
+            logger.info(f"Generating EOS for all {n_available} posterior samples")
+            idx = None  # Use all samples
+        else:
+            logger.info(f"Generating EOS for {n_eos_samples} of {n_available} posterior samples")
+            # Randomly select subset
+            idx = np.random.choice(np.arange(n_available), size=n_eos_samples, replace=False)
+
+        # Extract parameter samples (exclude metadata and sampler-specific fields)
+        exclude_keys = {
+            'log_prob', 'log_prob_full', 'weights', 'weights_full',
+            'ess', 'ess_full', 'logL', 'logL_full', 'logL_birth', 'logL_birth_full',
+            '_sampler_specific', 'masses_EOS', 'radii_EOS', 'Lambdas_EOS',
+            'n', 'p', 'e', 'cs2'
+        }
+        param_samples = {k: v for k, v in self.posterior.items() if k not in exclude_keys}
+
+        # Select subset if needed
+        if idx is not None:
+            chosen_samples = {k: v[idx] for k, v in param_samples.items()}
+        else:
+            chosen_samples = param_samples
+
+        # Try to get cached transforms first (zero recomputation!)
+        transformed_samples = None
+        if sampler is not None:
+            logger.info("Checking for cached transforms from sampling...")
+            transformed_samples = sampler.get_cached_transforms(chosen_samples)
+
+        # If cache miss or no sampler provided, recompute
+        if transformed_samples is None:
+            logger.info("Cache miss or unavailable, recomputing transforms...")
+            chosen_samples_jax = {k: jnp.array(v) for k, v in chosen_samples.items()}
+
+            # Apply transform with batched processing
+            logger.info(f"Applying transform to {n_eos_samples} samples...")
+            logger.info(f"Using batch size: {batch_size}")
+            my_forward = jax.jit(transform.forward)
+
+            import time
+            TOV_start = time.time()
+            transformed_samples = jax.lax.map(my_forward, chosen_samples_jax, batch_size=batch_size)
+            TOV_end = time.time()
+            logger.info(f"TOV solve time: {TOV_end - TOV_start:.2f} s ({n_eos_samples} samples)")
+        else:
+            logger.info("✓ Using cached transforms - zero recomputation!")
+
+        # Add transformed outputs to posterior
+        self.add_derived_eos(transformed_samples)
+
+        # If we selected a subset, filter log_prob and sampler fields to match
+        if idx is not None:
+            logger.info("Filtering log_prob and sampler fields to match EOS samples...")
+
+            # Filter log_prob
+            self.posterior['log_prob_full'] = self.posterior['log_prob'].copy()
+            self.posterior['log_prob'] = self.posterior['log_prob'][idx]
+
+            # Filter other sampler-specific fields if present
+            sampler_fields = ['weights', 'ess', 'logL', 'logL_birth']
+            for field in sampler_fields:
+                if field in self.posterior:
+                    self.posterior[f'{field}_full'] = self.posterior[field].copy()
+                    self.posterior[field] = self.posterior[field][idx]
+
+            logger.info(f"Filtered from {n_available} to {n_eos_samples} samples")
+
+        logger.info("EOS generation complete!")
+        logger.info("=" * 60)
 
     def save(self, filepath: str | Path) -> None:
         """Save to HDF5 file.

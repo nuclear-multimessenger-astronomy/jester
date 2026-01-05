@@ -449,3 +449,182 @@ class TestConfigValidationIntegration:
                 enabled=True,
                 parameters={},  # Missing 'events' - should fail
             )
+
+
+class TestEOSSampleGeneration:
+    """Test EOS sample generation from posterior samples."""
+
+    def test_log_prob_filtered_when_fewer_eos_samples(self, temp_dir):
+        """Test that log_prob is correctly filtered when generating fewer EOS samples.
+
+        This is a regression test for the bug where log_prob was not filtered
+        to match the randomly selected EOS samples, causing index out of bounds
+        errors in postprocessing.
+        """
+        import numpy as np
+        from jesterTOV.inference.result import InferenceResult
+        from jesterTOV.inference.config.schema import InferenceConfig
+        from jesterTOV.inference.transforms import factory as transform_factory
+
+        # Create a mock result with 100 posterior samples
+        n_full_samples = 100
+        posterior = {
+            'K_sat': np.random.uniform(150, 300, n_full_samples),
+            'L_sym': np.random.uniform(10, 200, n_full_samples),
+            'Q_sat': np.random.uniform(100, 300, n_full_samples),
+            'Q_sym': np.random.uniform(-200, 200, n_full_samples),
+            'Z_sat': np.random.uniform(-100, 100, n_full_samples),
+            'Z_sym': np.random.uniform(-200, 200, n_full_samples),
+            'E_sym': np.ones(n_full_samples) * 31.6,
+            'K_sym': np.ones(n_full_samples) * -100.0,
+            'log_prob': np.random.uniform(-100, -10, n_full_samples),
+        }
+        metadata = {
+            'sampler': 'flowmc',
+            'n_samples': n_full_samples,
+            'seed': 42,
+        }
+
+        result = InferenceResult(
+            sampler_type='flowmc',
+            posterior=posterior,
+            metadata=metadata,
+        )
+
+        # Create minimal config for generate_eos_samples
+        config_dict = {
+            'seed': 42,
+            'transform': {'type': 'metamodel', 'nb_CSE': 0},
+            'prior': {'specification_file': 'dummy.prior'},
+            'likelihoods': [],
+            'sampler': {
+                'type': 'flowmc',
+                'n_chains': 10,
+                'n_loop_training': 2,
+                'n_loop_production': 2,
+                'n_local_steps': 50,
+                'n_global_steps': 50,
+                'learning_rate': 0.01,
+                'momentum': 0.9,
+                'batch_size': 10000,
+                'use_global': True,
+                'output_dir': str(temp_dir),
+                'n_eos_samples': 50,  # Request only 50 EOS samples
+                'log_prob_batch_size': 10,
+            },
+        }
+        config = InferenceConfig(**config_dict)
+
+        # Create transform (factory auto-generates name_mapping for metamodel)
+        transform = transform_factory.create_transform(config.transform)
+
+        # Store original log_prob length
+        original_log_prob_len = len(result.posterior['log_prob'])
+        assert original_log_prob_len == 100
+
+        # Generate 50 EOS samples from 100 posterior samples using new method
+        n_eos_samples = 50
+        result.add_eos_from_transform(
+            transform=transform,
+            n_eos_samples=n_eos_samples,
+            batch_size=10,
+        )
+
+        # CRITICAL: log_prob should now be filtered to match EOS sample count
+        assert len(result.posterior['log_prob']) == n_eos_samples, \
+            f"log_prob should have {n_eos_samples} entries, got {len(result.posterior['log_prob'])}"
+
+        # Verify EOS quantities were added and have correct length
+        assert 'masses_EOS' in result.posterior
+        assert len(result.posterior['masses_EOS']) == n_eos_samples
+
+        assert 'radii_EOS' in result.posterior
+        assert len(result.posterior['radii_EOS']) == n_eos_samples
+
+        assert 'Lambdas_EOS' in result.posterior
+        assert len(result.posterior['Lambdas_EOS']) == n_eos_samples
+
+        # Verify full log_prob was backed up
+        assert 'log_prob_full' in result.posterior
+        assert len(result.posterior['log_prob_full']) == original_log_prob_len
+
+        # Verify filtered log_prob is a subset of original
+        # (values should be from the original array, though possibly reordered due to random selection)
+        for val in result.posterior['log_prob']:
+            # Each filtered value should be close to at least one original value
+            assert np.any(np.isclose(val, result.posterior['log_prob_full'])), \
+                f"Filtered log_prob value {val} not found in original log_prob"
+
+    def test_sampler_specific_fields_also_filtered(self, temp_dir):
+        """Test that sampler-specific fields (weights, ess) are also filtered."""
+        import numpy as np
+        from jesterTOV.inference.result import InferenceResult
+        from jesterTOV.inference.config.schema import InferenceConfig
+        from jesterTOV.inference.transforms import factory as transform_factory
+
+        # Create a mock SMC result with weights and ess
+        n_full_samples = 100
+        posterior = {
+            'K_sat': np.random.uniform(150, 300, n_full_samples),
+            'L_sym': np.random.uniform(10, 200, n_full_samples),
+            'Q_sat': np.random.uniform(100, 300, n_full_samples),
+            'Q_sym': np.random.uniform(-200, 200, n_full_samples),
+            'Z_sat': np.random.uniform(-100, 100, n_full_samples),
+            'Z_sym': np.random.uniform(-200, 200, n_full_samples),
+            'E_sym': np.ones(n_full_samples) * 31.6,
+            'K_sym': np.ones(n_full_samples) * -100.0,
+            'log_prob': np.random.uniform(-100, -10, n_full_samples),
+            'weights': np.ones(n_full_samples) / n_full_samples,  # SMC weights
+            'ess': np.random.uniform(0.7, 0.95, n_full_samples),  # SMC ESS
+        }
+        metadata = {
+            'sampler': 'blackjax_smc',
+            'n_samples': n_full_samples,
+            'seed': 123,
+        }
+
+        result = InferenceResult(
+            sampler_type='blackjax_smc',
+            posterior=posterior,
+            metadata=metadata,
+        )
+
+        # Create minimal config
+        config_dict = {
+            'seed': 123,
+            'transform': {'type': 'metamodel', 'nb_CSE': 0},
+            'prior': {'specification_file': 'dummy.prior'},
+            'likelihoods': [],
+            'sampler': {
+                'type': 'smc',
+                'kernel_type': 'nuts',
+                'n_particles': 100,
+                'n_mcmc_steps': 10,
+                'target_ess': 0.9,
+                'output_dir': str(temp_dir),
+                'n_eos_samples': 40,
+                'log_prob_batch_size': 10,
+            },
+        }
+        config = InferenceConfig(**config_dict)
+
+        # Create transform (factory auto-generates name_mapping for metamodel)
+        transform = transform_factory.create_transform(config.transform)
+
+        # Generate 40 EOS samples from 100 posterior samples using new method
+        n_eos_samples = 40
+        result.add_eos_from_transform(
+            transform=transform,
+            n_eos_samples=n_eos_samples,
+            batch_size=10,
+        )
+
+        # Verify all sampler-specific fields are filtered
+        assert len(result.posterior['log_prob']) == n_eos_samples
+        assert len(result.posterior['weights']) == n_eos_samples
+        assert len(result.posterior['ess']) == n_eos_samples
+
+        # Verify full versions were backed up
+        assert len(result.posterior['log_prob_full']) == n_full_samples
+        assert len(result.posterior['weights_full']) == n_full_samples
+        assert len(result.posterior['ess_full']) == n_full_samples

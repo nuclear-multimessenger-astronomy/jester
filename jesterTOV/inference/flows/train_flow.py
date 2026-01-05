@@ -1,57 +1,36 @@
-"""
-Training script for normalizing flows on gravitational wave posterior samples.
+"""Training script for normalizing flows on gravitational wave posterior samples.
 
-This module implements the complete pipeline for training flexible normalizing
-flow models that approximate gravitational wave (GW) posteriors in the space of
-binary component masses (m1, m2) and tidal deformabilities (λ1, λ2). The trained
-flows serve as efficient proposal distributions for importance sampling in
-equation of state inference.
-
-Physical Motivation
--------------------
-GW observations from binary neutron star mergers constrain the tidal deformability,
-which depends on the neutron star equation of state. By training a flow on the
-4D posterior from a specific GW event (e.g., GW170817), we capture the complex
-correlations between masses and tidal parameters. This flow can then accelerate
-inference for new EOS models by proposing samples from regions of parameter
-space that are consistent with the GW data.
+Trains normalizing flow models to approximate GW posteriors in (m1, m2, λ1, λ2) space.
+The trained flows serve as efficient proposal distributions for EOS inference.
 
 Training Pipeline
 -----------------
-1. **Data Loading**: Load posterior samples from npz file (mass_1_source,
-   mass_2_source, lambda_1, lambda_2)
-2. **Physics Constraints**: Optionally apply bijections to enforce m1 ≥ m2
-   and positivity constraints
-3. **Standardization**: Optionally standardize to [0, 1] domain for numerical stability
-4. **Flow Architecture**: Create flow (triangular spline, autoregressive, coupling, etc.)
-5. **Training**: Fit flow to data using maximum likelihood with early stopping
-6. **Saving**: Save trained weights, architecture config, and metadata
-7. **Validation**: Generate diagnostic plots (corner plots, loss curves)
+1. Load posterior samples from npz file
+2. Apply optional physics constraints and standardization
+3. Create flow architecture (triangular spline, autoregressive, coupling)
+4. Fit flow using maximum likelihood with early stopping
+5. Save trained weights, config, and metadata
+6. Generate validation plots
 
-Supported Flow Architectures
------------------------------
-- **triangular_spline_flow** (recommended): Rational-quadratic spline bijections
-  with triangular structure. Fast, flexible, exact sampling and density evaluation.
-- **block_neural_autoregressive_flow**: Neural autoregressive architecture with
-  block structure. Good expressiveness, analytical inverse during training.
-- **masked_autoregressive_flow**: Masked autoregressive flow with neural networks.
-  Flexible but slower due to sequential generation.
-- **coupling_flow**: Coupling layers with neural network transformations.
-  Good balance of speed and expressiveness.
+Supported Architectures
+-----------------------
+- coupling_flow: Balanced speed and expressiveness
+- triangular_spline_flow: Fast, flexible, exact sampling
+- block_neural_autoregressive_flow: Good expressiveness
+- masked_autoregressive_flow: Flexible but slower
 
-Physics Constraint Modes
--------------------------
-The --constrain-physics flag enables bijective transformations that enforce
-physical constraints:
+Notes
+-----
+- Physics constraint modes (--constrain-physics) are experimental
+- TODO: remove physics constraint modes entirely (see inline comments)
+- TODO: replace argparse with Pydantic schema for better type safety
 
-1. **Simple mode** (--constrain-physics, default): Enforce positivity via
-   log transforms. Data must already satisfy m1 ≥ m2.
-2. **Chirp mass mode** (--constrain-physics --use-chirp-mass): Reparameterize
-   to (M_chirp, q, λ1, λ2) to automatically enforce m1 ≥ m2 via mass ratio q ∈ (0, 1).
+For detailed documentation on flow training, physical motivation, and usage examples,
+see the JESTER documentation: docs/flows.md (to be created)
 
 Command-Line Usage
 ------------------
-Basic training with default settings:
+Basic training:
 
     python train_flow.py \\
         --posterior-file data/gw170817_posterior.npz \\
@@ -132,7 +111,6 @@ from flowjax.bijections import (
     Exp,
     Sigmoid,
     Invert,
-    Identity,
 )
 from flowjax.train import fit_to_data
 
@@ -140,6 +118,7 @@ from flowjax.train import fit_to_data
 # # # Enable 64-bit precision for numerical accuracy
 # jax.config.update("jax_enable_x64", True)
 
+# TODO: this is for now: we assume the NF is only for vanilla GW inference which has these 4 keys, later on, we could generalize this...
 # Required keys in the posterior file
 REQUIRED_KEYS = ["mass_1_source", "mass_2_source", "lambda_1", "lambda_2"]
 
@@ -201,7 +180,6 @@ class MassesAndLambdasToChirpMassRatio(AbstractBijection):
         def transform_fn(x_single):
             return self.transform(x_single, condition)
 
-        # TODO: this might break jitting - check later
         # Handle batched input
         if x.ndim == 1:
             jac = jax.jacobian(transform_fn)(x)
@@ -228,7 +206,7 @@ class MassesAndLambdasToChirpMassRatio(AbstractBijection):
 
         return x, log_det_inverse
 
-
+# TODO: perhaps inside ./flows dir, also make a small Pydantic config schema for this? But isolate from the rest of inference, therefore put it here. 
 def parse_arguments() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
@@ -805,9 +783,6 @@ def save_model(
     print(f"Saving metadata to {metadata_path}")
     with open(metadata_path, "w") as f:
         json.dump(metadata, f, indent=2)
-
-
-# Flow class and load_model moved to jesterTOV.inference.flows.flow
 
 
 def plot_losses(losses: Dict[str, np.ndarray], output_path: str) -> None:

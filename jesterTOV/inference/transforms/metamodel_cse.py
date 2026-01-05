@@ -133,8 +133,6 @@ class MetaModelCSETransform(JesterTransformBase):
         # Set transform function
         self.transform_func = self.transform_func_MM_CSE
 
-        # NOTE: Cannot log here - transforms may be instantiated inside JAX-traced code
-
     def get_eos_type(self) -> str:
         """Return the EOS parametrization identifier.
 

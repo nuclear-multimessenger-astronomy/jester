@@ -23,11 +23,11 @@ data/
 
 ### GW170817 - Binary Neutron Star Merger
 
-TODO: clean up this AI mess.
-
-Links: https://dcc.ligo.org/LIGO-P1800061/public for Properties samples, https://dcc.ligo.org/LIGO-P1800370/public for GWTC-1 results
-
 **Event**: First detected binary neutron star merger (August 17, 2017)
+
+**Data Release Links**:
+- Properties samples: https://dcc.ligo.org/LIGO-P1800061/public
+- GWTC-1 results: https://dcc.ligo.org/LIGO-P1800370/public
 
 **Data Source**: LIGO-Virgo Collaboration Data Release
 - **DCC Page**: https://dcc.ligo.org/LIGO-P1800061/public
@@ -49,8 +49,6 @@ We provide **four** posterior sample sets for GW170817, from two different data 
 - Includes tidal deformability effects (lambda1, lambda2)
 
 **Spin Priors**:
-
-TODO: need to double check these values
 
 - **Low Spin** (3,952 samples): Dimensionless spin magnitudes restricted to [0, 0.05]
   - More conservative assumption based on observed pulsars

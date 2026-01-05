@@ -149,7 +149,7 @@ def setup_transform(config, keep_names=None):
     return transform
 
 
-def setup_likelihood(config, transform, data_loader=None):
+def setup_likelihood(config, transform):
     """
     Setup combined likelihood from configuration
 
@@ -159,18 +159,13 @@ def setup_likelihood(config, transform, data_loader=None):
         Configuration object
     transform : JesterTransformBase
         Transform instance
-    data_loader : None
-        DEPRECATED - data loading will be handled differently
 
     Returns
     -------
     LikelihoodBase
         Combined likelihood instance
     """
-    # FIXME: data_loader parameter is deprecated, pass None for now
-    return create_combined_likelihood(
-        config.likelihoods, data_loader
-    )
+    return create_combined_likelihood(config.likelihoods)
 
 
 def run_sampling(sampler, seed, config, outdir):
@@ -282,6 +277,21 @@ def generate_eos_samples(
 
     chosen_samples = {k: jnp.array(v[idx]) for k, v in param_samples.items()}
 
+    # CRITICAL: Also filter sampler-specific fields to match the selected samples
+    # These fields (log_prob, weights, ess, etc.) must be filtered to match the EOS samples
+    # Store the original full log_prob for reference, then update with filtered version
+    result.posterior['log_prob_full'] = result.posterior['log_prob'].copy()
+    result.posterior['log_prob'] = result.posterior['log_prob'][idx]
+
+    # Filter other sampler-specific fields if present
+    sampler_fields_to_filter = ['weights', 'ess', 'logL', 'logL_birth']
+    for field in sampler_fields_to_filter:
+        if field in result.posterior:
+            result.posterior[f'{field}_full'] = result.posterior[field].copy()
+            result.posterior[field] = result.posterior[field][idx]
+
+    logger.info(f"Filtered log_prob and sampler fields from {len(log_prob)} to {len(result.posterior['log_prob'])} samples")
+
     # Generate EOS curves with batched processing
     logger.info("Running TOV solver with batched processing...")
     my_forward = jax.jit(transform_eos.forward)
@@ -322,11 +332,6 @@ def main(config_path: str):
     if config.validate_only:
         logger.info("Configuration valid!")
         return
-
-    # FIXME: DataLoader was removed - need to implement data loading functionality
-    # The data_paths from config should be used to configure data loading functions
-    # For now, set data_loader to None
-    data_loader = None
 
     # Setup components
     logger.info("Setting up prior...")
@@ -382,12 +387,8 @@ def main(config_path: str):
     if keep_names:
         logger.info(f"  Preserving parameters in output: {keep_names}")
 
-    # Create EOS-only transform for postprocessing
-    # TODO: This needs proper implementation with keep_names
-    transform_eos = setup_transform(config)
-
     logger.info("Setting up likelihood...")
-    likelihood = setup_likelihood(config, transform, data_loader)
+    likelihood = setup_likelihood(config, transform)
 
     # Log detailed likelihood information
     enabled_likelihoods = [lk for lk in config.likelihoods if lk.enabled]
@@ -477,12 +478,27 @@ def main(config_path: str):
     test_log_prob = jax.vmap(likelihood.evaluate)(test_samples_transformed, {})
     logger.info(f"Test log probabilities: {test_log_prob}")
 
+    # TODO: Enable transform caching to avoid redundant TOV solver calls
+    # Caching infrastructure exists but has JAX tracing issues (see CLAUDE.md)
+    # Need to implement caching outside JAX trace context for all samplers:
+    # - FlowMC: Cache during production phase
+    # - BlackJAX SMC: Cache final temperature samples
+    # - BlackJAX NS-AW: Cache all samples
+    # For now, caching is DISABLED and we fall back to recomputation
+    # sampler.enable_transform_caching()  # DISABLED
+
     # Run inference
     result = run_sampling(sampler, config.seed, config, outdir)
 
-    # Generate EOS samples
-    n_eos_samples = config.sampler.n_eos_samples
-    generate_eos_samples(config, result, transform_eos, outdir, n_eos_samples)
+    # Generate EOS quantities from cached transforms (if available) or recompute
+    # With caching: zero TOV solver calls (uses cached outputs from sampling)
+    # Without caching: one TOV solver call (fallback to recomputation)
+    result.add_eos_from_transform(
+        transform=transform,  # Use the same transform from sampling
+        n_eos_samples=config.sampler.n_eos_samples,
+        batch_size=config.sampler.log_prob_batch_size,
+        sampler=sampler,  # Pass sampler to check for cached transforms
+    )
 
     # Save unified HDF5 file
     result_path = os.path.join(outdir, "results.h5")
@@ -503,7 +519,6 @@ def main(config_path: str):
             make_massradius_flag=config.postprocessing.make_massradius,
             make_pressuredensity_flag=config.postprocessing.make_pressuredensity,
             make_histograms_flag=config.postprocessing.make_histograms,
-            make_contours_flag=config.postprocessing.make_contours,
         )
         logger.info(f"\nPostprocessing complete! Plots saved to {outdir}")
 

@@ -71,7 +71,7 @@ class FlowMCSampler(JesterSampler):
         sample_transforms: list[BijectiveTransform] | None = None,
         likelihood_transforms: list[NtoMTransform] | None = None,
         seed: int = 0,
-        local_sampler_name: str = "GaussianRandomWalk",
+        local_sampler_name: str = "GaussianRandomWalk", # TODO: use literal here, MALA and GaussianRandomWalk for now
         local_sampler_arg: dict[str, Any] | None = None,
         num_layers: int = 10,
         hidden_size: list[int] | None = None,
@@ -105,7 +105,7 @@ class FlowMCSampler(JesterSampler):
             local_sampler = MALA(self.posterior, True, **local_sampler_arg)
         elif local_sampler_name == "GaussianRandomWalk":
             # GaussianRandomWalk uses element-wise multiplication, so convert matrix to diagonal
-            step_size = local_sampler_arg.get("step_size")
+            step_size: Array | None = local_sampler_arg.get("step_size")  # Can be 1D or 2D array
             if step_size is None:
                 # Provide default step_size if not given
                 step_size = jnp.ones(self.prior.n_dim) * 1e-3
@@ -126,7 +126,8 @@ class FlowMCSampler(JesterSampler):
             self.prior.n_dim, num_layers, hidden_size, num_bins, subkey
         )
 
-        # Create flowMC sampler with config parameters
+        # Create flowMC sampler with config parameters, we do not use data dict (therefore, None)
+        # TODO: in the future, we need to pass along all kwargs and ensure the kwarg names are correct, etc.
         self.sampler = Sampler(
             self.prior.n_dim,
             rng_key,
@@ -157,7 +158,7 @@ class FlowMCSampler(JesterSampler):
 
         Notes
         -----
-        This method includes the critical bug fix: parameter ordering is preserved
+        This method includes a critical bug fix: parameter ordering is preserved
         when converting from dictionary to array using a list comprehension instead
         of jax.tree.leaves().
         """

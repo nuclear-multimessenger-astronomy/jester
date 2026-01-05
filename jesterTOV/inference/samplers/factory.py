@@ -20,7 +20,7 @@ logger = get_logger("jester")
 
 
 def create_sampler(
-    config: Union[FlowMCSamplerConfig, BlackJAXNSAWConfig, SMCSamplerConfig],
+    config: Union[FlowMCSamplerConfig, BlackJAXNSAWConfig, SMCSamplerConfig], # TODO: see if a base class works here
     prior: Prior,
     likelihood: LikelihoodBase,
     likelihood_transforms: list[NtoMTransform] | None = None,

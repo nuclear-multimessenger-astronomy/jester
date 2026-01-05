@@ -7,10 +7,9 @@ This module creates appropriate transforms based on the sampler type:
 """
 
 from typing import Union
-import jax.numpy as jnp
 
 from ..config.schema import (
-    BaseSamplerConfig,
+    BaseSamplerConfig, # TODO: not used, but check the todo there, we might make this base class and avoid other samplers here explicitly?
     FlowMCSamplerConfig,
     BlackJAXNSAWConfig,
     SMCSamplerConfig,
@@ -20,7 +19,7 @@ from ..base.transform import BijectiveTransform, BoundToBound
 
 
 def create_sample_transforms(
-    sampler_config: Union[FlowMCSamplerConfig, BlackJAXNSAWConfig, SMCSamplerConfig],
+    sampler_config: Union[FlowMCSamplerConfig, BlackJAXNSAWConfig, SMCSamplerConfig], # TODO: see above for base class
     prior: Prior,
 ) -> list[BijectiveTransform]:
     """Create sample transforms based on sampler type.
@@ -58,7 +57,7 @@ def create_sample_transforms(
         # (could optionally add BoundToUnbound here in future)
         return []
     else:
-        raise ValueError(f"Unknown sampler type: {sampler_config.type}")
+        raise ValueError(f"Unknown sampler type: {sampler_config.type}") # .type not recognized here?
 
 
 def create_unit_cube_transforms(prior: Prior) -> list[BijectiveTransform]:

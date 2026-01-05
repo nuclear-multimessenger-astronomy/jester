@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 """
-Generate comprehensive YAML configuration reference from Pydantic schemas.
+TODO: might be better to relocate this script to docs/scripts/ or similar?
+TODO: Automate running this as part of CI/CD?
+
+Generate comprehensive YAML configuration reference from Pydantic schemas. Script procuced by Claude.
 
 This script extracts all fields, types, defaults, and descriptions from the
 Pydantic models in schema.py and generates a complete YAML reference document.
@@ -14,9 +17,7 @@ Output:
 
 from typing import Any, get_args, get_origin
 from pathlib import Path
-import inspect
 from pydantic import BaseModel
-from pydantic.fields import FieldInfo
 
 from .schema import (
     InferenceConfig,
@@ -132,8 +133,7 @@ def generate_field_docs(fields: list[dict[str, Any]], indent: int = 0) -> str:
 
     return "\n".join(lines)
 
-
-def generate_example_yaml(model: type[BaseModel], fields: list[dict[str, Any]]) -> str:
+def generate_example_yaml(fields: list[dict[str, Any]]) -> str:
     """Generate example YAML for a model"""
     lines = []
 

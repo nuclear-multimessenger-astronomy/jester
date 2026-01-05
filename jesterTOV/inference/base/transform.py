@@ -1,5 +1,7 @@
 r"""Transform base classes for JESTER inference system.
 
+These transforms encode the behavior to transform sets of parameters for the EOS, e.g. sampled from priors, to their TOV solutions.
+
 This module contains transform classes that were originally from Jim (jimgw v0.2.0).
 They are copied here to remove the dependency on jimgw.
 
@@ -16,8 +18,8 @@ from beartype import beartype as typechecker
 from jaxtyping import Float, jaxtyped
 
 # Type aliases for better readability
-ParamDict: TypeAlias = dict[str, Float]
-NameMapping: TypeAlias = tuple[list[str], list[str]]
+ParamDict: TypeAlias = dict[str, Float] # dictionary containing parameter names and their values
+NameMapping: TypeAlias = tuple[list[str], list[str]] # tuple of (input_names, output_names)
 
 
 class Transform(ABC):
@@ -71,7 +73,7 @@ class NtoMTransform(Transform):
     requiring invertibility or Jacobian corrections.
     """
 
-    transform_func: Callable[[ParamDict], ParamDict]
+    transform_func: Callable[[ParamDict], ParamDict]  # Maps parameter dict to transformed parameter dict
 
     def forward(self, x: ParamDict) -> ParamDict:
         """
@@ -155,7 +157,7 @@ class BijectiveTransform(NtoNTransform):
     are applied to the prior.
     """
 
-    inverse_transform_func: Callable[[ParamDict], ParamDict]
+    inverse_transform_func: Callable[[ParamDict], ParamDict]  # Maps transformed dict back to original parameter dict
 
     def inverse(self, y: ParamDict) -> tuple[ParamDict, Float]:
         """
@@ -334,18 +336,18 @@ class BoundToBound(BijectiveTransform):
     different original and target bounds.
     """
 
-    original_lower_bound: dict[str, Float]
-    original_upper_bound: dict[str, Float]
-    target_lower_bound: dict[str, Float]
-    target_upper_bound: dict[str, Float]
+    original_lower_bound: ParamDict  # Lower bounds for original parameters
+    original_upper_bound: ParamDict  # Upper bounds for original parameters
+    target_lower_bound: ParamDict    # Lower bounds for target parameters
+    target_upper_bound: ParamDict    # Upper bounds for target parameters
 
     def __init__(
         self,
         name_mapping: NameMapping,
-        original_lower_bound: dict[str, Float],
-        original_upper_bound: dict[str, Float],
-        target_lower_bound: dict[str, Float],
-        target_upper_bound: dict[str, Float],
+        original_lower_bound: ParamDict,  # Lower bounds for original parameters
+        original_upper_bound: ParamDict,  # Upper bounds for original parameters
+        target_lower_bound: ParamDict,    # Lower bounds for target parameters
+        target_upper_bound: ParamDict,    # Upper bounds for target parameters
     ) -> None:
         """
         Parameters
@@ -397,133 +399,3 @@ class BoundToBound(BijectiveTransform):
 
         self.transform_func = _forward
         self.inverse_transform_func = _inverse
-
-
-# FIXME: remove if not used anywhere
-# @jaxtyped(typechecker=typechecker)
-# class ArcSineTransform(BijectiveTransform):
-#     """
-#     ArcSine transform: y = arcsin(x).
-
-#     Note: This class follows the Jim/jimgw architecture.
-#     """
-
-#     def __init__(
-#         self,
-#         name_mapping: tuple[list[str], list[str]],
-#     ):
-#         """
-#         Parameters
-#         ----------
-#         name_mapping : tuple[list[str], list[str]]
-#             Tuple of (input_names, output_names).
-#         """
-#         super().__init__(name_mapping)
-#         self.transform_func = lambda x: {
-#             name_mapping[1][i]: jnp.arcsin(x[name_mapping[0][i]])
-#             for i in range(len(name_mapping[0]))
-#         }
-#         self.inverse_transform_func = lambda x: {
-#             name_mapping[0][i]: jnp.sin(x[name_mapping[1][i]])
-#             for i in range(len(name_mapping[1]))
-#         }
-
-
-# @jaxtyped(typechecker=typechecker)
-# class PowerLawTransform(BijectiveTransform):
-#     """
-#     Power law transform for creating power law priors.
-
-#     Note: This class follows the Jim/jimgw architecture.
-#     """
-
-#     xmin: Float
-#     xmax: Float
-#     alpha: Float
-
-#     def __init__(
-#         self,
-#         name_mapping: tuple[list[str], list[str]],
-#         xmin: Float,
-#         xmax: Float,
-#         alpha: Float,
-#     ):
-#         """
-#         Parameters
-#         ----------
-#         name_mapping : tuple[list[str], list[str]]
-#             Tuple of (input_names, output_names).
-#         xmin : Float
-#             Minimum value.
-#         xmax : Float
-#             Maximum value.
-#         alpha : Float
-#             Power law index.
-#         """
-#         super().__init__(name_mapping)
-#         self.xmin = xmin
-#         self.xmax = xmax
-#         self.alpha = alpha
-#         self.transform_func = lambda x: {
-#             name_mapping[1][i]: (
-#                 self.xmin ** (1.0 + self.alpha)
-#                 + x[name_mapping[0][i]]
-#                 * (self.xmax ** (1.0 + self.alpha) - self.xmin ** (1.0 + self.alpha))
-#             )
-#             ** (1.0 / (1.0 + self.alpha))
-#             for i in range(len(name_mapping[0]))
-#         }
-#         self.inverse_transform_func = lambda x: {
-#             name_mapping[0][i]: (
-#                 (
-#                     x[name_mapping[1][i]] ** (1.0 + self.alpha)
-#                     - self.xmin ** (1.0 + self.alpha)
-#                 )
-#                 / (self.xmax ** (1.0 + self.alpha) - self.xmin ** (1.0 + self.alpha))
-#             )
-#             for i in range(len(name_mapping[1]))
-#         }
-
-
-# @jaxtyped(typechecker=typechecker)
-# class ParetoTransform(BijectiveTransform):
-#     """
-#     Pareto transform: Power law when alpha = -1.
-
-#     Note: This class follows the Jim/jimgw architecture.
-#     """
-
-#     xmin: Float
-#     xmax: Float
-
-#     def __init__(
-#         self,
-#         name_mapping: tuple[list[str], list[str]],
-#         xmin: Float,
-#         xmax: Float,
-#     ):
-#         """
-#         Parameters
-#         ----------
-#         name_mapping : tuple[list[str], list[str]]
-#             Tuple of (input_names, output_names).
-#         xmin : Float
-#             Minimum value.
-#         xmax : Float
-#             Maximum value.
-#         """
-#         super().__init__(name_mapping)
-#         self.xmin = xmin
-#         self.xmax = xmax
-#         self.transform_func = lambda x: {
-#             name_mapping[1][i]: self.xmin
-#             * jnp.exp(x[name_mapping[0][i]] * jnp.log(self.xmax / self.xmin))
-#             for i in range(len(name_mapping[0]))
-#         }
-#         self.inverse_transform_func = lambda x: {
-#             name_mapping[0][i]: (
-#                 jnp.log(x[name_mapping[1][i]] / self.xmin)
-#                 / jnp.log(self.xmax / self.xmin)
-#             )
-#             for i in range(len(name_mapping[1]))
-#         }

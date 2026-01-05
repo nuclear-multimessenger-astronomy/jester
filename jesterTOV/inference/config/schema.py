@@ -2,11 +2,12 @@ r"""Pydantic models for inference configuration validation.
 
 IMPORTANT: When you modify these schemas, regenerate the YAML reference documentation:
     uv run python -m jesterTOV.inference.config.generate_yaml_reference
+# TODO: make this automatic in CI/CD, so this note can be removed and user is not burdened with it
 
 This ensures the user documentation stays in sync with the actual validation rules.
 """
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ValidationInfo
 from typing import Literal, Dict, Any, Union
 
 
@@ -40,11 +41,11 @@ class TransformConfig(BaseModel):
     min_nsat_TOV: float = 0.75
     ndat_TOV: int = 100
     nb_masses: int = 100
-    crust_name: Literal["DH", "BPS", "DH_fixed"] = "DH" # FIXME: this should be done in the crust source code, not here, and here just fetch from there
+    crust_name: Literal["DH", "BPS", "DH_fixed"] = "DH" # TODO: this should be done in the crust source code, not here, and here just fetch from there
 
     @field_validator("nb_CSE")
     @classmethod
-    def validate_nb_cse(cls, v: int, info) -> int:
+    def validate_nb_cse(cls, v: int, info: ValidationInfo) -> int:
         """Validate that nb_CSE is only used with metamodel_cse."""
         if "type" in info.data and info.data["type"] == "metamodel" and v != 0:
             raise ValueError(
@@ -143,13 +144,14 @@ class LikelihoodConfig(BaseModel):
                 Log likelihood penalty for TOV integration failure (default: -1e10)
     """
 
+    # TODO: deprecate rex for now: not implemented yet
     type: Literal["gw", "nicer", "radio", "chieft", "rex", "constraints", "constraints_eos", "constraints_tov", "zero"]
     enabled: bool = True
     parameters: Dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("parameters")
     @classmethod
-    def validate_likelihood_parameters(cls, v: Dict[str, Any], info) -> Dict[str, Any]:
+    def validate_likelihood_parameters(cls, v: Dict[str, Any], info: ValidationInfo) -> Dict[str, Any]:
         """Validate likelihood-specific parameters."""
         if "type" not in info.data:
             return v
@@ -347,20 +349,12 @@ class FlowMCSamplerConfig(BaseSamplerConfig):
     train_thinning: int = 1
     output_thinning: int = 5
 
-    @field_validator("n_chains", "n_loop_training", "n_loop_production")
+    @field_validator("n_chains", "n_loop_training", "n_loop_production", "n_local_steps", "n_global_steps", "n_epochs", "learning_rate", "train_thinning", "output_thinning")
     @classmethod
     def validate_positive(cls, v: int) -> int:
         """Validate that value is positive."""
         if v <= 0:
             raise ValueError(f"Value must be positive, got: {v}")
-        return v
-
-    @field_validator("learning_rate")
-    @classmethod
-    def validate_learning_rate(cls, v: float) -> float:
-        """Validate that learning rate is reasonable."""
-        if v <= 0:
-            raise ValueError(f"Learning rate must be in (0, 1], got: {v}")
         return v
 
 
@@ -422,7 +416,7 @@ class SMCSamplerConfig(BaseSamplerConfig):
     type : Literal["smc"]
         Sampler type identifier
     kernel_type : Literal["nuts", "random_walk"]
-        Type of MCMC kernel to use (default: "nuts")
+        Type of MCMC kernel to use (default: "random_walk")
     n_particles : int
         Number of particles (default: 10000)
     n_mcmc_steps : int
@@ -444,7 +438,7 @@ class SMCSamplerConfig(BaseSamplerConfig):
     """
 
     type: Literal["smc"] = "smc"
-    kernel_type: Literal["nuts", "random_walk"] = "nuts"
+    kernel_type: Literal["nuts", "random_walk"] = "random_walk"
     n_particles: int = 10000
     n_mcmc_steps: int = 1
     target_ess: float = 0.9
@@ -480,6 +474,7 @@ class SMCSamplerConfig(BaseSamplerConfig):
         return v
 
 
+# TODO: is it perhaps not better to make, e.g. the BaseSamplerConfig a root model with a discriminator field rather than doing this union?
 # Type alias for discriminated union
 SamplerConfig = Union[FlowMCSamplerConfig, BlackJAXNSAWConfig, SMCSamplerConfig]
 
@@ -552,9 +547,8 @@ class InferenceConfig(BaseModel):
     @field_validator("likelihoods")
     @classmethod
     def validate_likelihoods(cls, v: list[LikelihoodConfig]) -> list[LikelihoodConfig]:
-        """Validate that at least one likelihood is enabled (if any provided)."""
-        # Allow empty list for testing purposes
-        if v and not any(lk.enabled for lk in v):
+        """Validate that at least one likelihood is enabled."""
+        if not any(lk.enabled for lk in v):
             raise ValueError("At least one likelihood must be enabled")
         return v
 

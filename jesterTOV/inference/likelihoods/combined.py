@@ -49,6 +49,8 @@ class CombinedLikelihood(LikelihoodBase):
         Float
             Sum of all log-likelihoods
         """
+        
+        # TODO: perhaps this can be improved performance wise, with vmap or pytree?
         all_log_likelihoods: Float[Array, " n_likelihoods"] = jnp.array(
             [likelihood.evaluate(params, data) for likelihood in self.likelihoods_list]
         )

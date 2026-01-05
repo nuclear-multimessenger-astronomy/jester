@@ -8,7 +8,6 @@ inherit from JesterSampler and implement the sampler initialization.
 
 from typing import Any
 
-import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float, PRNGKeyArray
 
@@ -114,6 +113,10 @@ class JesterSampler:
         # Backend sampler instance - must be created by subclasses
         self.sampler = None
 
+        # Transform caching for efficiency (avoid redundant TOV solver calls)
+        self._cache_transforms = False
+        self._transform_cache: dict[bytes, dict[str, Any]] = {}  # Cache keyed by param hash
+
     def add_name(self, x: Float[Array, " n_dim"]) -> dict[str, Float]:
         """
         Turn an array into a dictionary.
@@ -150,9 +153,25 @@ class JesterSampler:
         for transform in reversed(self.sample_transforms):
             named_params, jacobian = transform.inverse(named_params)
             transform_jacobian += jacobian
+
         prior = self.prior.log_prob(named_params) + transform_jacobian
-        for transform in self.likelihood_transforms:
-            named_params = transform.forward(named_params)
+
+        # Cache transforms if enabled
+        if self._cache_transforms and len(self.likelihood_transforms) > 0:
+            original_params = named_params.copy()
+
+            # Apply likelihood transforms
+            for transform in self.likelihood_transforms:
+                named_params = transform.forward(named_params)
+
+            # Cache transformed output
+            param_key = self._hash_params(original_params)
+            self._transform_cache[param_key] = named_params.copy()
+        else:
+            # Just apply transforms without caching
+            for transform in self.likelihood_transforms:
+                named_params = transform.forward(named_params)
+
         return self.likelihood.evaluate(named_params, data) + prior
 
     def posterior(self, params: Float[Array, " n_dim"], data: dict[str, Any]) -> Float:
@@ -300,3 +319,122 @@ class JesterSampler:
         raise NotImplementedError(
             "get_n_samples() must be implemented by backend-specific subclass"
         )
+
+    # Transform caching methods
+
+    def _hash_params(self, params: dict[str, Any]) -> bytes:
+        """Create hash key for parameter dict (for caching).
+
+        Parameters
+        ----------
+        params : dict
+            Parameter dictionary
+
+        Returns
+        -------
+        bytes
+            Hash of sorted parameter items
+        """
+        import hashlib
+        import json
+        # Convert to JSON string with sorted keys for consistent hashing
+        # Convert JAX arrays to lists for JSON serialization
+        param_list = []
+        for k in sorted(params.keys()):
+            v = params[k]
+            # Convert JAX/NumPy arrays to Python lists
+            if hasattr(v, 'tolist'):
+                param_list.append((k, v.tolist()))
+            else:
+                param_list.append((k, float(v)))
+        param_str = json.dumps(param_list)
+        return hashlib.md5(param_str.encode()).digest()
+
+    def enable_transform_caching(self) -> None:
+        """Enable caching of likelihood transform outputs.
+
+        This caches the output of likelihood_transforms (e.g., TOV solver results)
+        to avoid redundant computation when generating final EOS samples.
+
+        Call this BEFORE sampling to enable caching during the sampling process.
+        After sampling, use get_cached_transforms() to retrieve cached outputs.
+        """
+        self._cache_transforms = True
+        self._transform_cache = {}
+        logger.info("Transform caching enabled - will cache likelihood transform outputs")
+
+    def disable_transform_caching(self) -> None:
+        """Disable transform caching."""
+        self._cache_transforms = False
+        logger.debug("Transform caching disabled")
+
+    def clear_transform_cache(self) -> None:
+        """Clear the transform cache."""
+        self._transform_cache = {}
+        logger.debug(f"Cleared transform cache")
+
+    def get_cached_transforms(self, param_samples: dict[str, Any]) -> dict[str, Any] | None:
+        """Retrieve cached transform outputs for given parameter samples.
+
+        Parameters
+        ----------
+        param_samples : dict
+            Dictionary of parameter arrays, shape (n_samples, ...)
+
+        Returns
+        -------
+        dict or None
+            Dictionary of cached transformed outputs if all samples found in cache,
+            None if any samples are missing from cache
+
+        Notes
+        -----
+        This method looks up each parameter sample in the cache and returns the
+        corresponding transformed outputs. If any sample is not found in the cache,
+        returns None (indicating fallback to recomputation is needed).
+        """
+        import numpy as np
+
+        if not self._transform_cache:
+            logger.debug("Transform cache is empty, fallback to recomputation")
+            return None
+
+        # Get number of samples
+        n_samples = len(next(iter(param_samples.values())))
+
+        # Try to retrieve cached transforms for each sample
+        cached_outputs = None
+        n_found = 0
+
+        for i in range(n_samples):
+            # Extract i-th sample
+            sample_dict = {k: v[i] for k, v in param_samples.items()}
+
+            # Look up in cache
+            param_key = self._hash_params(sample_dict)
+            if param_key in self._transform_cache:
+                n_found += 1
+                cached_output = self._transform_cache[param_key]
+
+                # Initialize output dict on first hit
+                if cached_outputs is None:
+                    cached_outputs = {k: [] for k in cached_output.keys()}
+
+                # Append this sample's output
+                for k, v in cached_output.items():
+                    cached_outputs[k].append(v)
+            else:
+                # Cache miss - abort and fallback to recomputation
+                logger.warning(
+                    f"Cache miss for sample {i}/{n_samples}, "
+                    f"found {n_found}/{i+1} so far. Falling back to recomputation."
+                )
+                return None
+
+        if cached_outputs is not None:
+            # Convert lists to arrays
+            cached_outputs = {k: np.array(v) for k, v in cached_outputs.items()}
+            logger.info(f"Successfully retrieved {n_samples} cached transforms")
+            return cached_outputs
+
+        return None
