@@ -263,47 +263,6 @@ class TestConstraintTOVLikelihood:
         assert result == 0.0
 
 
-class TestConstraintLikelihood:
-    """Test ConstraintLikelihood (combined EOS + TOV constraints, deprecated)."""
-
-    def test_constraint_likelihood_all_valid(self):
-        """Test ConstraintLikelihood with all valid constraints."""
-        likelihood = ConstraintLikelihood()
-
-        # All valid
-        params = {
-            'n_tov_failures': 0.0,
-            'n_causality_violations': 0.0,
-            'n_stability_violations': 0.0,
-            'n_pressure_violations': 0.0,
-        }
-
-        result = likelihood.evaluate(params, {})
-        assert result == 0.0
-
-    def test_constraint_likelihood_all_violations(self):
-        """Test ConstraintLikelihood with all constraint types violated."""
-        likelihood = ConstraintLikelihood(
-            penalty_tov=-1e10,
-            penalty_causality=-1e10,
-            penalty_stability=-1e5,
-            penalty_pressure=-1e5,
-        )
-
-        # All violated
-        params = {
-            'n_tov_failures': 1.0,
-            'n_causality_violations': 1.0,
-            'n_stability_violations': 1.0,
-            'n_pressure_violations': 1.0,
-        }
-
-        result = likelihood.evaluate(params, {})
-        # Should sum all penalties
-        expected = -1e10 + -1e10 + -1e5 + -1e5
-        assert result == expected
-
-
 class TestChiEFTLikelihood:
     """Test ChiEFTLikelihood initialization and basic properties."""
 
@@ -325,8 +284,36 @@ class TestChiEFTLikelihood:
 
     def test_chieft_likelihood_with_custom_files(self):
         """Test ChiEFTLikelihood with custom file paths."""
-        # This test documents the expected API, but will skip if files don't exist
-        pytest.skip("Requires ChiEFT data files - test documents expected API")
+        from pathlib import Path
+
+        # Use the actual ChiEFT data files
+        data_dir = Path(__file__).parent.parent.parent / "jesterTOV" / "inference" / "data" / "chiEFT" / "2402.04172"
+        low_file = data_dir / "low.dat"
+        high_file = data_dir / "high.dat"
+
+        # Verify files exist
+        assert low_file.exists(), f"ChiEFT low data file not found: {low_file}"
+        assert high_file.exists(), f"ChiEFT high data file not found: {high_file}"
+
+        # Create likelihood with custom file paths
+        likelihood = ChiEFTLikelihood(
+            low_filename=str(low_file),
+            high_filename=str(high_file),
+            nb_n=100,
+        )
+
+        # Check basic properties
+        assert likelihood.nb_n == 100
+        assert len(likelihood.n_low) > 0
+        assert len(likelihood.p_low) > 0
+        assert len(likelihood.n_high) > 0
+        assert len(likelihood.p_high) > 0
+
+        # Check interpolation functions exist and work
+        test_density = 1.0  # 1.0 * n_sat
+        low_pressure = likelihood.EFT_low(test_density)
+        high_pressure = likelihood.EFT_high(test_density)
+        assert low_pressure < high_pressure  # Low bound should be less than high bound
 
 
 class TestRadioTimingLikelihood:

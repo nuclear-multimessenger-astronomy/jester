@@ -130,6 +130,7 @@ Z_sym = UniformPrior(-2000.0, 1500.0, parameter_names=["Z_sym"])
                 }
             ],
             "sampler": {
+                "type": "flowmc",
                 "n_chains": 2,
                 "n_loop_training": 1,
                 "n_loop_production": 1,
@@ -248,31 +249,6 @@ class TestConstraintEnforcement:
 
         # Should apply penalty
         assert log_likelihood == -1e10
-
-    def test_combined_constraints_sum_penalties(self):
-        """Test that multiple constraint violations sum penalties correctly."""
-        from jesterTOV.inference.likelihoods.constraints import ConstraintLikelihood
-
-        likelihood = ConstraintLikelihood(
-            penalty_tov=-1e10,
-            penalty_causality=-1e10,
-            penalty_stability=-1e5,
-            penalty_pressure=-1e5,
-        )
-
-        # Mock params with all violations
-        params = {
-            'n_tov_failures': 1.0,
-            'n_causality_violations': 1.0,
-            'n_stability_violations': 1.0,
-            'n_pressure_violations': 1.0,
-        }
-
-        log_likelihood = likelihood.evaluate(params, {})
-
-        # Should sum all penalties
-        expected = -1e10 + -1e10 + -1e5 + -1e5
-        assert log_likelihood == expected
 
 
 class TestParameterNamePropagation:
@@ -496,7 +472,7 @@ class TestEOSSampleGeneration:
             'seed': 42,
             'transform': {'type': 'metamodel', 'nb_CSE': 0},
             'prior': {'specification_file': 'dummy.prior'},
-            'likelihoods': [],
+            'likelihoods': [{'type': 'zero', 'enabled': True, 'parameters': {}}],
             'sampler': {
                 'type': 'flowmc',
                 'n_chains': 10,
@@ -594,7 +570,7 @@ class TestEOSSampleGeneration:
             'seed': 123,
             'transform': {'type': 'metamodel', 'nb_CSE': 0},
             'prior': {'specification_file': 'dummy.prior'},
-            'likelihoods': [],
+            'likelihoods': [{'type': 'zero', 'enabled': True, 'parameters': {}}],
             'sampler': {
                 'type': 'smc',
                 'kernel_type': 'nuts',

@@ -70,6 +70,7 @@ def sample_config_dict():
         "prior": {"specification_file": "test.prior"},
         "likelihoods": [{"type": "zero", "enabled": True, "parameters": {}}],
         "sampler": {
+            "type": "flowmc",
             "n_chains": 4,
             "n_loop_training": 2,
             "n_loop_production": 2,
