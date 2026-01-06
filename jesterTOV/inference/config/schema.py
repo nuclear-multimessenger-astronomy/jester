@@ -85,14 +85,26 @@ class LikelihoodConfig(BaseModel):
 
     Attributes
     ----------
-    type : Literal["gw", "gw_presampled", "nicer", "radio", "chieft", "rex", "constraints", "zero"]
+    type : Literal["gw", "gw_resampled", "nicer", "radio", "chieft", "rex", "constraints", "zero"]
         Type of likelihood constraint
     enabled : bool
         Whether this likelihood is enabled
     parameters : dict
         Likelihood-specific parameters
 
-        For GW likelihoods:
+        For GW likelihoods (type: "gw", presampled version - default):
+            events : list[dict]
+                List of GW events with 'name' and 'model_dir' keys
+            penalty_value : float
+                Penalty for masses exceeding Mtov (default: -99999.0)
+            N_masses_evaluation : int
+                Number of mass samples to pre-sample (default: 2000)
+            N_masses_batch_size : int
+                Batch size for jax.lax.map processing (default: 1000)
+            seed : int
+                Random seed for mass pre-sampling (default: 42)
+
+        For GW resampled likelihoods (type: "gw_resampled", legacy on-the-fly resampling):
             events : list[dict]
                 List of GW events with 'name' and 'model_dir' keys
             penalty_value : float
@@ -101,18 +113,6 @@ class LikelihoodConfig(BaseModel):
                 Number of mass samples per evaluation (default: 20)
             N_masses_batch_size : int
                 Batch size for mass sampling (default: 10)
-
-        For GW pre-sampled likelihoods (gw_presampled):
-            events : list[dict]
-                List of GW events with 'name' and 'model_dir' keys
-            penalty_value : float
-                Penalty for masses exceeding Mtov (default: -99999.0)
-            N_masses_evaluation : int
-                Number of mass samples to pre-sample (default: 10000)
-            N_masses_batch_size : int
-                Batch size for jax.lax.map processing (default: 1000)
-            seed : int
-                Random seed for mass pre-sampling (default: 42)
 
         For NICER likelihoods:
             pulsars : list[dict]
@@ -162,7 +162,7 @@ class LikelihoodConfig(BaseModel):
     # TODO: deprecate rex for now: not implemented yet
     type: Literal[
         "gw",
-        "gw_presampled",
+        "gw_resampled",
         "nicer",
         "radio",
         "chieft",
@@ -190,7 +190,7 @@ class LikelihoodConfig(BaseModel):
 
         likelihood_type = info.data["type"]
 
-        # Validate GW likelihood parameters
+        # Validate GW likelihood parameters (presampled is now default)
         if likelihood_type == "gw":
             if "events" not in v:
                 raise ValueError(
@@ -211,23 +211,22 @@ class LikelihoodConfig(BaseModel):
                     raise ValueError(f"Event {i} missing required 'name' field")
                 # model_dir is now optional - will use presets if not provided
 
-            # Set defaults for optional parameters
+            # Set defaults for optional parameters (presampled version)
             v.setdefault("penalty_value", -99999.0)
-            v.setdefault("N_masses_evaluation", 20)
-            v.setdefault("N_masses_batch_size", 10)
+            v.setdefault("N_masses_evaluation", 2000)  # Default for presampled
+            v.setdefault("N_masses_batch_size", 1000)
+            v.setdefault("seed", 42)
 
-        # Validate GW pre-sampled likelihood parameters
-        elif likelihood_type == "gw_presampled":
+        # Validate GW resampled likelihood parameters (legacy behavior)
+        elif likelihood_type == "gw_resampled":
             if "events" not in v:
                 raise ValueError(
-                    "GW pre-sampled likelihood requires 'events' parameter (list of dicts with 'name' and 'model_dir')"
+                    "GW resampled likelihood requires 'events' parameter (list of dicts with 'name' and 'model_dir')"
                 )
 
             events = v["events"]
             if not isinstance(events, list) or len(events) == 0:
-                raise ValueError(
-                    "GW pre-sampled likelihood 'events' must be a non-empty list"
-                )
+                raise ValueError("GW resampled likelihood 'events' must be a non-empty list")
 
             # Validate each event
             for i, event in enumerate(events):
@@ -239,11 +238,10 @@ class LikelihoodConfig(BaseModel):
                     raise ValueError(f"Event {i} missing required 'name' field")
                 # model_dir is now optional - will use presets if not provided
 
-            # Set defaults for optional parameters
+            # Set defaults for optional parameters (resampled version)
             v.setdefault("penalty_value", -99999.0)
-            v.setdefault("N_masses_evaluation", 10000)  # Large N recommended!
-            v.setdefault("N_masses_batch_size", 1000)
-            v.setdefault("seed", 42)
+            v.setdefault("N_masses_evaluation", 20)
+            v.setdefault("N_masses_batch_size", 10)
 
         # Validate NICER likelihood parameters
         elif likelihood_type == "nicer":

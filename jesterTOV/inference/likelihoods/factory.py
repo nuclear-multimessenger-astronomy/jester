@@ -4,7 +4,7 @@ from pathlib import Path
 
 from ..config.schema import LikelihoodConfig
 from .combined import CombinedLikelihood, ZeroLikelihood
-from .gw import GWLikelihood, GWLikelihoodPresampled
+from .gw import GWLikelihood, GWLikelihoodResampled
 from .nicer import NICERLikelihood
 from .radio import RadioTimingLikelihood
 from .chieft import ChiEFTLikelihood
@@ -181,15 +181,16 @@ def create_combined_likelihood(
         if not config.enabled:
             continue
 
-        # Special handling for GW likelihoods: create one likelihood per event
+        # Special handling for GW likelihoods (presampled is now default): create one likelihood per event
         if config.type == "gw":
             params = config.parameters
             events = params["events"]  # Required, validated by schema
             penalty_value = params.get("penalty_value", -99999.0)
-            N_masses_evaluation = params.get("N_masses_evaluation", 20)
-            N_masses_batch_size = params.get("N_masses_batch_size", 10)
+            N_masses_evaluation = params.get("N_masses_evaluation", 2000)
+            N_masses_batch_size = params.get("N_masses_batch_size", 1000)
+            seed = params.get("seed", 42)
 
-            # Create one GWLikelihood per event
+            # Create one GWLikelihood (presampled) per event
             for event in events:
                 # Get model directory (use preset if not provided)
                 model_dir = get_gw_model_dir(
@@ -202,32 +203,31 @@ def create_combined_likelihood(
                     penalty_value=penalty_value,
                     N_masses_evaluation=N_masses_evaluation,
                     N_masses_batch_size=N_masses_batch_size,
+                    seed=seed,
                 )
                 likelihoods.append(gw_likelihood)
 
-        # Special handling for GW likelihoods with pre-sampling: create one likelihood per event
-        elif config.type == "gw_presampled":
+        # Special handling for GW likelihoods with resampling: create one likelihood per event
+        elif config.type == "gw_resampled":
             params = config.parameters
             events = params["events"]  # Required, validated by schema
             penalty_value = params.get("penalty_value", -99999.0)
-            N_masses_evaluation = params.get("N_masses_evaluation", 10000)
-            N_masses_batch_size = params.get("N_masses_batch_size", 1000)
-            seed = params.get("seed", 42)
+            N_masses_evaluation = params.get("N_masses_evaluation", 20)
+            N_masses_batch_size = params.get("N_masses_batch_size", 10)
 
-            # Create one GWLikelihoodPresampled per event
+            # Create one GWLikelihoodResampled per event
             for event in events:
                 # Get model directory (use preset if not provided)
                 model_dir = get_gw_model_dir(
                     event_name=event["name"], model_dir=event.get("model_dir")
                 )
 
-                gw_likelihood = GWLikelihoodPresampled(
+                gw_likelihood = GWLikelihoodResampled(
                     event_name=event["name"],
                     model_dir=model_dir,
                     penalty_value=penalty_value,
                     N_masses_evaluation=N_masses_evaluation,
                     N_masses_batch_size=N_masses_batch_size,
-                    seed=seed,
                 )
                 likelihoods.append(gw_likelihood)
 

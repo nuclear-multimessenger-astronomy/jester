@@ -1,7 +1,7 @@
 """Modular likelihood components for jesterTOV inference"""
 
 from .combined import CombinedLikelihood, ZeroLikelihood
-from .gw import GWLikelihood
+from .gw import GWLikelihood, GWLikelihoodResampled
 from .nicer import NICERLikelihood
 from .radio import RadioTimingLikelihood
 from .chieft import ChiEFTLikelihood
@@ -13,6 +13,7 @@ __all__ = [
     "CombinedLikelihood",
     "ZeroLikelihood",
     "GWLikelihood",
+    "GWLikelihoodResampled",
     "NICERLikelihood",
     "RadioTimingLikelihood",
     "ChiEFTLikelihood",

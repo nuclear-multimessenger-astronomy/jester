@@ -13,7 +13,7 @@ from jesterTOV.logging_config import get_logger
 logger = get_logger("jester")
 
 
-class GWLikelihood(LikelihoodBase):
+class GWLikelihoodResampled(LikelihoodBase):
     """
     Gravitational wave likelihood for a single GW event using normalizing flow posteriors
 
@@ -154,15 +154,15 @@ class GWLikelihood(LikelihoodBase):
         return log_likelihood
 
 
-class GWLikelihoodPresampled(LikelihoodBase):
+class GWLikelihood(LikelihoodBase):
     """
     Gravitational wave likelihood using pre-sampled masses for deterministic evaluation
 
-    This likelihood improves upon GWLikelihood by pre-sampling mass pairs once at
+    This likelihood improves upon GWLikelihoodResampled by pre-sampling mass pairs once at
     initialization, eliminating the need for the _random_key parameter and providing
     deterministic likelihood evaluations critical for sampler convergence.
 
-    Key improvements over GWLikelihood:
+    Key improvements over GWLikelihoodResampled:
     1. Deterministic: Same EOS parameters → same likelihood value
     2. No _random_key hack: Uses fixed seed at initialization
     3. Scalable: Can use N=10,000+ samples efficiently on GPU
@@ -186,7 +186,7 @@ class GWLikelihoodPresampled(LikelihoodBase):
     penalty_value : float, optional
         Penalty value for samples where masses exceed Mtov (default: -99999.0)
     N_masses_evaluation : int, optional
-        Number of mass samples to pre-sample (default: 10000)
+        Number of mass samples to pre-sample (default: 2000)
         Large values recommended - GPU parallelization makes this cheap!
     N_masses_batch_size : int, optional
         Batch size for jax.lax.map processing (default: 1000)
@@ -216,7 +216,7 @@ class GWLikelihoodPresampled(LikelihoodBase):
     Notes
     -----
     This class does NOT require _random_key in the parameter dictionary,
-    unlike GWLikelihood. The seed is only used once at initialization.
+    unlike GWLikelihoodResampled. The seed is only used once at initialization.
 
     GPU parallelization via jax.lax.map means N=10,000 samples costs nearly
     the same as N=20, so use large N for near-integration accuracy.
@@ -226,12 +226,12 @@ class GWLikelihoodPresampled(LikelihoodBase):
     Configure in YAML:
 
     >>> likelihoods:
-    >>>   - type: "gw_presampled"
+    >>>   - type: "gw"
     >>>     enabled: true
     >>>     parameters:
     >>>       events:
     >>>         - name: "GW170817"
-    >>>       N_masses_evaluation: 10000  # Large N recommended
+    >>>       N_masses_evaluation: 2000  # Default value
     >>>       N_masses_batch_size: 1000
     >>>       seed: 42
     """
@@ -250,7 +250,7 @@ class GWLikelihoodPresampled(LikelihoodBase):
         event_name: str,
         model_dir: str,
         penalty_value: float = -99999.0,
-        N_masses_evaluation: int = 10000,
+        N_masses_evaluation: int = 2000,
         N_masses_batch_size: int = 1000,
         seed: int = 42,
     ) -> None:
