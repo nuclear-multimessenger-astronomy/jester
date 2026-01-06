@@ -16,7 +16,7 @@ from jaxtyping import Array, PRNGKeyArray
 
 from ..base import LikelihoodBase, Prior, BijectiveTransform, NtoMTransform
 from ..config.schema import BlackJAXNSAWConfig
-from .jester_sampler import JesterSampler
+from .jester_sampler import JesterSampler, SamplerOutput
 from jesterTOV.logging_config import get_logger
 
 logger = get_logger("jester")
@@ -359,13 +359,8 @@ class BlackJAXNSAWSampler(JesterSampler):
         if "n_samples" in self.metadata:
             logger.info(f"Posterior samples: {self.metadata['n_samples']}")
 
-    def get_samples(self, training: bool = False) -> dict:
+    def get_samples(self) -> dict:
         """Return posterior samples with importance weights.
-
-        Parameters
-        ----------
-        training : bool, optional
-            Not used for nested sampling (no train/production split)
 
         Returns
         -------
@@ -376,10 +371,6 @@ class BlackJAXNSAWSampler(JesterSampler):
             - 'logL_birth': birth log likelihoods
             - 'weights': importance weights from nested sampling
         """
-        # NS has no training phase - return empty dict if training requested
-        if training:
-            return {}
-
         if self.final_state is None:
             raise RuntimeError("No samples available - run sample() first")
 
@@ -465,13 +456,8 @@ class BlackJAXNSAWSampler(JesterSampler):
 
         return samples
 
-    def get_log_prob(self, training: bool = False) -> Array:
+    def get_log_prob(self) -> Array:
         """Get log likelihoods from nested sampling.
-
-        Parameters
-        ----------
-        training : bool, optional
-            Not used for nested sampling (no train/production split)
 
         Returns
         -------
@@ -486,10 +472,6 @@ class BlackJAXNSAWSampler(JesterSampler):
         If anesthetic has dropped invalid samples, the length will be less than
         the raw NSInfo.loglikelihood array.
         """
-        # NS has no training phase - return empty array if training requested
-        if training:
-            return jnp.array([])
-
         if self.final_state is None:
             raise RuntimeError("No samples available - run sample() first")
 
@@ -505,19 +487,13 @@ class BlackJAXNSAWSampler(JesterSampler):
         )
         return self.final_state.loglikelihood
 
-    def get_n_samples(self, training: bool = False) -> int:
+    def get_n_samples(self) -> int:
         """Get number of posterior samples from nested sampling.
-
-        Parameters
-        ----------
-        training : bool, optional
-            If True, returns 0 (NS has no training phase).
-            If False, returns number of posterior samples.
 
         Returns
         -------
         int
-            Number of posterior samples (0 if training=True)
+            Number of posterior samples
 
         Notes
         -----
@@ -525,10 +501,6 @@ class BlackJAXNSAWSampler(JesterSampler):
         If anesthetic has dropped invalid samples, the count will be less than
         the raw NSInfo particle count.
         """
-        # NS has no training phase - return 0 if training requested
-        if training:
-            return 0
-
         if self.final_state is None:
             return 0
 
@@ -541,3 +513,51 @@ class BlackJAXNSAWSampler(JesterSampler):
 
         # Fallback: return all particles (unfiltered)
         return len(self.final_state.particles)
+
+    def get_sampler_output(self) -> SamplerOutput:
+        """
+        Get standardized sampler output.
+
+        Returns
+        -------
+        SamplerOutput
+            - samples: Parameter samples (dict of arrays, no metadata fields)
+            - log_prob: Log likelihood (NOT log posterior - NS works in likelihood space)
+            - metadata: {"weights": Array, "logL": Array, "logL_birth": Array}
+
+        Raises
+        ------
+        RuntimeError
+            If sampling has not been run yet.
+
+        Notes
+        -----
+        Unlike FlowMC/SMC, log_prob contains log likelihood, not log posterior.
+        This is by design - nested sampling operates in likelihood space.
+        The posterior can be reconstructed using weights and prior.
+        """
+        if self.final_state is None:
+            raise RuntimeError("No samples available. Run sample() first.")
+
+        # Get current samples dict (includes weights, logL, logL_birth)
+        all_data = self.get_samples()
+
+        # Separate parameters from metadata
+        samples: dict[str, Array] = {}
+        metadata: dict[str, Any] = {}
+
+        metadata_keys = {"weights", "logL", "logL_birth"}
+        for key, value in all_data.items():
+            if key in metadata_keys:
+                metadata[key] = value
+            else:
+                samples[key] = value
+
+        # Get log probabilities (log likelihood for NS-AW)
+        log_prob = self.get_log_prob()
+
+        return SamplerOutput(
+            samples=samples,
+            log_prob=log_prob,
+            metadata=metadata,
+        )

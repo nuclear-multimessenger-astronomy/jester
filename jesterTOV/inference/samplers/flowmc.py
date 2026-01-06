@@ -10,7 +10,7 @@ from flowMC.proposal.MALA import MALA
 from flowMC.proposal.Gaussian_random_walk import GaussianRandomWalk
 from flowMC.Sampler import Sampler
 
-from .jester_sampler import JesterSampler
+from .jester_sampler import JesterSampler, SamplerOutput
 from ..config.schema import FlowMCSamplerConfig
 from ..base import LikelihoodBase, Prior, BijectiveTransform, NtoMTransform
 from jesterTOV.logging_config import get_logger
@@ -274,65 +274,114 @@ class FlowMCSampler(JesterSampler):
             f"Global acceptance: {production_global_acceptance.mean():.3f} +/- {production_global_acceptance.std():.3f}"
         )
 
-    def get_samples(self, training: bool = False) -> dict:
+    def get_samples(self) -> dict:
         """
-        Get the samples from the flowMC sampler.
-
-        Parameters
-        ----------
-        training : bool, optional
-            Whether to get the training samples or the production samples, by default False
+        Get production samples from the flowMC sampler.
 
         Returns
         -------
         dict
-            Dictionary of samples
+            Dictionary of production samples
         """
-        if training:
-            chains = self.sampler.get_sampler_state(training=True)["chains"]
-        else:
-            chains = self.sampler.get_sampler_state(training=False)["chains"]
-
+        chains = self.sampler.get_sampler_state(training=False)["chains"]
         chains = chains.reshape(-1, self.prior.n_dim)
         chains = jax.vmap(self.add_name)(chains)
         for sample_transform in reversed(self.sample_transforms):
             chains = jax.vmap(sample_transform.backward)(chains)
         return chains
 
-    def get_log_prob(self, training: bool = False) -> Array:
+    def get_log_prob(self) -> Array:
         """
-        Get log probabilities from flowMC sampler.
-
-        Parameters
-        ----------
-        training : bool, optional
-            Whether to get training or production log probs (default: False)
+        Get log probabilities from flowMC sampler (production samples only).
 
         Returns
         -------
         Array
             Log posterior probability values (1D array, flattened across chains)
         """
-        if training:
-            sampler_state = self.sampler.get_sampler_state(training=True)
-        else:
-            sampler_state = self.sampler.get_sampler_state(training=False)
-
+        sampler_state = self.sampler.get_sampler_state(training=False)
         return sampler_state["log_prob"].flatten()
 
-    def get_n_samples(self, training: bool = False) -> int:
+    def get_n_samples(self) -> int:
         """
-        Get number of samples from flowMC sampler.
-
-        Parameters
-        ----------
-        training : bool, optional
-            Whether to count training or production samples (default: False)
+        Get number of production samples from flowMC sampler.
 
         Returns
         -------
         int
-            Number of samples (total across all chains)
+            Number of production samples (total across all chains)
         """
-        log_prob = self.get_log_prob(training=training)
+        log_prob = self.get_log_prob()
         return len(log_prob)
+
+    def get_n_training_samples(self) -> int:
+        """
+        Get number of training samples from flowMC sampler.
+
+        This is a FlowMC-specific method for diagnostic purposes.
+
+        Returns
+        -------
+        int
+            Number of training samples (total across all chains)
+        """
+        sampler_state = self.sampler.get_sampler_state(training=True)
+        return len(sampler_state["log_prob"].flatten())
+
+    def get_sampler_output(self) -> SamplerOutput:
+        """
+        Get standardized sampler output (production samples only).
+
+        Returns
+        -------
+        SamplerOutput
+            - samples: Parameter samples (dict of arrays)
+            - log_prob: Log posterior probability
+            - metadata: {} (empty, MCMC has equal weights)
+        """
+        # Get production samples
+        samples = self.get_samples()
+        log_prob = self.get_log_prob()
+
+        # FlowMC has no metadata (equal weights)
+        metadata: dict[str, Any] = {}
+
+        return SamplerOutput(
+            samples=samples,
+            log_prob=log_prob,
+            metadata=metadata,
+        )
+
+    def get_training_sampler_output(self) -> SamplerOutput:
+        """
+        Get standardized sampler output for training samples.
+
+        This is a FlowMC-specific method for diagnostic purposes.
+
+        Returns
+        -------
+        SamplerOutput
+            - samples: Parameter samples from training phase (dict of arrays)
+            - log_prob: Log posterior probability from training phase
+            - metadata: {} (empty, MCMC has equal weights)
+        """
+        # Get training samples directly from sampler state
+        chains = self.sampler.get_sampler_state(training=True)["chains"]
+        chains = chains.reshape(-1, self.prior.n_dim)
+        chains = jax.vmap(self.add_name)(chains)
+        for sample_transform in reversed(self.sample_transforms):
+            chains = jax.vmap(sample_transform.backward)(chains)
+        samples = chains
+
+        # Get training log_prob
+        sampler_state = self.sampler.get_sampler_state(training=True)
+        log_prob = sampler_state["log_prob"].flatten()
+
+        # FlowMC has no metadata (equal weights)
+        metadata: dict[str, Any] = {}
+
+        return SamplerOutput(
+            samples=samples,
+            log_prob=log_prob,
+            metadata=metadata,
+        )

@@ -20,7 +20,7 @@ from jaxtyping import Array, PRNGKeyArray
 
 from ..base import LikelihoodBase, Prior, BijectiveTransform, NtoMTransform
 from ..config.schema import SMCSamplerConfig
-from .jester_sampler import JesterSampler
+from .jester_sampler import JesterSampler, SamplerOutput
 from jesterTOV.logging_config import get_logger
 
 logger = get_logger("jester")
@@ -573,81 +573,6 @@ class BlackJAXSMCSampler(JesterSampler):
             "acceptance_history": acceptance_history[:steps].tolist(),
         }
 
-        # Display progress summary table only
-        logger.info("")
-        self._print_progress_summary(
-            steps, lmbda_history, ess_history, acceptance_history
-        )
-
-    def _print_progress_summary(
-        self,
-        steps: int,
-        lmbda_history: Array,
-        ess_history: Array,
-        acceptance_history: Array,
-    ) -> None:
-        """Print a progress summary table showing annealing progression.
-
-        Parameters
-        ----------
-        steps : int
-            Number of annealing steps completed
-        lmbda_history : Array
-            Temperature (lambda) values at each step
-        ess_history : Array
-            ESS values at each step
-        acceptance_history : Array
-            Acceptance rates at each step
-        """
-        logger.info("")
-        logger.info("=" * 70)
-        logger.info("ANNEALING PROGRESS SUMMARY")
-        logger.info("=" * 70)
-
-        # Determine how many rows to show
-        # Show first, last, and evenly spaced intermediate steps
-        max_rows = 15
-        if steps <= max_rows:
-            # Show all steps
-            indices = list(range(steps))
-        else:
-            # Show first, last, and evenly spaced intermediate
-            n_intermediate = max_rows - 2
-            step_size = (steps - 2) / n_intermediate
-            indices = [0]  # First step
-            indices.extend([int(1 + i * step_size) for i in range(n_intermediate)])
-            indices.append(steps - 1)  # Last step
-
-        # Print table header
-        logger.info(
-            f"{'Step':<8} {'Lambda':<12} {'ESS (%)':<12} {'Accept (%)':<12} {'Progress':<20}"
-        )
-        logger.info("-" * 70)
-
-        # Print table rows
-        for idx in indices:
-            step_num = idx
-            lmbda = float(lmbda_history[idx])
-            ess_pct = float(ess_history[idx]) * 100
-            acc_pct = float(acceptance_history[idx]) * 100
-
-            # Create progress bar (20 chars)
-            bar_length = 20
-            filled = int(lmbda * bar_length)
-            bar = "█" * filled + "░" * (bar_length - filled)
-
-            logger.info(
-                f"{step_num:<8} {lmbda:<12.6f} {ess_pct:<12.1f} {acc_pct:<12.1f} {bar}"
-            )
-
-        logger.info("-" * 70)
-        logger.info(f"Total steps: {steps}")
-        logger.info(
-            f"Temperature range: λ = 0.000000 (prior) → {float(lmbda_history[steps-1]):.6f} (posterior)"
-        )
-        logger.info("=" * 70)
-        logger.info("")
-
     def print_summary(self, transform: bool = True) -> None:
         """Print summary of SMC run.
 
@@ -768,13 +693,8 @@ class BlackJAXSMCSampler(JesterSampler):
         logger.info(f"Saved diagnostic plot to {output_path}")
         plt.close(fig)
 
-    def get_samples(self, training: bool = False) -> dict:
+    def get_samples(self) -> dict:
         """Return final particle positions.
-
-        Parameters
-        ----------
-        training : bool, optional
-            Not used for SMC (no train/production split)
 
         Returns
         -------
@@ -818,13 +738,8 @@ class BlackJAXSMCSampler(JesterSampler):
 
         return particles_dict
 
-    def get_log_prob(self, training: bool = False) -> Array:
+    def get_log_prob(self) -> Array:
         """Get log posterior probabilities from SMC.
-
-        Parameters
-        ----------
-        training : bool, optional
-            Not used for SMC (no train/production split)
 
         Returns
         -------
@@ -861,25 +776,57 @@ class BlackJAXSMCSampler(JesterSampler):
 
         return log_probs
 
-    def get_n_samples(self, training: bool = False) -> int:
+    def get_n_samples(self) -> int:
         """Get number of particles from SMC.
-
-        Parameters
-        ----------
-        training : bool, optional
-            If True, returns 0 (SMC has no training phase).
-            If False, returns number of particles.
 
         Returns
         -------
         int
-            Number of particles (0 if training=True)
+            Number of particles
         """
-        # SMC has no training phase - return 0 if training requested
-        if training:
-            return 0
-
         if self._particles_flat is None:
             return 0
 
         return len(self._particles_flat)
+
+    def get_sampler_output(self) -> SamplerOutput:
+        """
+        Get standardized sampler output.
+
+        Returns
+        -------
+        SamplerOutput
+            - samples: Parameter samples (dict of arrays, no weights/ess)
+            - log_prob: Log posterior at λ=1 (final tempering)
+            - metadata: {"weights": Array, "ess": float}
+
+        Raises
+        ------
+        RuntimeError
+            If sampling has not been run yet.
+        """
+        if self._particles_flat is None:
+            raise RuntimeError("No samples available. Run sample() first.")
+
+        # Get current samples dict (includes weights, ess)
+        all_data = self.get_samples()
+
+        # Separate parameters from metadata
+        samples: dict[str, Array] = {}
+        metadata: dict[str, Any] = {}
+
+        metadata_keys = {"weights", "ess"}
+        for key, value in all_data.items():
+            if key in metadata_keys:
+                metadata[key] = value
+            else:
+                samples[key] = value
+
+        # Get log probabilities
+        log_prob = self.get_log_prob()
+
+        return SamplerOutput(
+            samples=samples,
+            log_prob=log_prob,
+            metadata=metadata,
+        )

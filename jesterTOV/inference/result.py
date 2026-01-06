@@ -88,9 +88,10 @@ class InferenceResult:
         sampler: JesterSampler,
         config: InferenceConfig,
         runtime: float,
-        training: bool = False,
     ) -> "InferenceResult":
         """Create InferenceResult from sampler output.
+
+        Extracts production/final samples from the sampler (not training samples).
 
         Parameters
         ----------
@@ -100,13 +101,11 @@ class InferenceResult:
             Configuration used for inference
         runtime : float
             Total runtime in seconds
-        training : bool, optional
-            Whether to extract training samples (FlowMC only), by default False
 
         Returns
         -------
         InferenceResult
-            Result object with samples and metadata
+            Result object with production/final samples and metadata
         """
         # Detect sampler type
         sampler_class_name = sampler.__class__.__name__
@@ -122,27 +121,22 @@ class InferenceResult:
 
         logger.info(f"Extracting results from {sampler_type} sampler")
 
-        # Get samples and log_prob from sampler
-        samples = sampler.get_samples(training=training)
-        log_prob = sampler.get_log_prob(training=training)
-        n_samples = sampler.get_n_samples(training=training)
+        # Get standardized sampler output (production/final samples)
+        sampler_output = sampler.get_sampler_output()
+        n_samples = sampler.get_n_samples()
 
-        # Convert JAX arrays to NumPy and separate parameter types
+        # Convert samples to NumPy
         posterior: Dict[str, np.ndarray] = {}
-        sampler_specific: Dict[str, np.ndarray] = {}
-
-        # Special fields that are sampler-specific, not parameters
-        sampler_specific_keys = {"weights", "ess", "logL", "logL_birth"}
-
-        for key, value in samples.items():
-            np_value = np.array(value)  # Convert JAX → NumPy
-            if key in sampler_specific_keys:
-                sampler_specific[key] = np_value
-            else:
-                posterior[key] = np_value
+        for key, value in sampler_output.samples.items():
+            posterior[key] = np.array(value)  # Convert JAX → NumPy
 
         # Add log_prob to posterior (common to all samplers)
-        posterior["log_prob"] = np.array(log_prob)
+        posterior["log_prob"] = np.array(sampler_output.log_prob)
+
+        # Convert metadata to NumPy
+        sampler_specific: Dict[str, np.ndarray] = {}
+        for key, value in sampler_output.metadata.items():
+            sampler_specific[key] = np.array(value)
 
         # Serialize config to JSON
         config_dict = config.model_dump()

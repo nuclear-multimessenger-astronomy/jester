@@ -210,8 +210,15 @@ def run_sampling(sampler, seed, config, outdir):
     ### POSTPROCESSING ###
 
     # Get sample counts (FlowMC has train/production split, others don't)
-    nb_samples_training = sampler.get_n_samples(training=True)
-    nb_samples_production = sampler.get_n_samples(training=False)
+    # Use FlowMC-specific method if available
+    from .samplers.flowmc import FlowMCSampler
+
+    if isinstance(sampler, FlowMCSampler):
+        nb_samples_training = sampler.get_n_training_samples()
+    else:
+        nb_samples_training = 0
+
+    nb_samples_production = sampler.get_n_samples()
     total_nb_samples = nb_samples_training + nb_samples_production
 
     logger.info(f"Number of samples generated in training: {nb_samples_training}")
@@ -224,7 +231,6 @@ def run_sampling(sampler, seed, config, outdir):
         sampler=sampler,
         config=config,
         runtime=runtime,
-        training=False,  # Use production/final samples
     )
 
     # Save the runtime info to text file for backward compatibility

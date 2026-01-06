@@ -8,13 +8,14 @@ Note: In practice, samplers are imported directly from their submodules
 This file is maintained for discoverability and completeness.
 """
 
-from .jester_sampler import JesterSampler
+from .jester_sampler import JesterSampler, SamplerOutput
 from .flowmc import FlowMCSampler
 from .blackjax_ns_aw import BlackJAXNSAWSampler
 from .blackjax_smc import BlackJAXSMCSampler
 
 __all__ = [
     "JesterSampler",
+    "SamplerOutput",
     "FlowMCSampler",
     "BlackJAXNSAWSampler",
     "BlackJAXSMCSampler",

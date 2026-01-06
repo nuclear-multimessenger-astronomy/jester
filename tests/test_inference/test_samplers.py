@@ -443,7 +443,7 @@ class TestSamplerIntegration:
         sampler.sample(key)
 
         # Should have samples
-        samples = sampler.get_samples(training=False)
+        samples = sampler.get_samples()
 
         assert "x" in samples
         assert jnp.isfinite(samples["x"]).all()
@@ -971,3 +971,166 @@ class TestSamplerFactory:
                 sample_transforms=[],
                 likelihood_transforms=[],
             )
+
+
+class TestSamplerOutputInterface:
+    """Test standardized SamplerOutput interface across all samplers."""
+
+    def test_sampler_output_dataclass_structure(self):
+        """Test SamplerOutput has expected fields."""
+        from jesterTOV.inference.samplers import SamplerOutput
+
+        samples = {"x": jnp.array([1.0, 2.0, 3.0])}
+        log_prob = jnp.array([-1.0, -2.0, -3.0])
+        metadata = {"weights": jnp.array([0.3, 0.3, 0.4])}
+
+        output = SamplerOutput(
+            samples=samples,
+            log_prob=log_prob,
+            metadata=metadata,
+        )
+
+        assert output.samples == samples
+        assert jnp.array_equal(output.log_prob, log_prob)
+        assert output.metadata == metadata
+
+    def test_sampler_output_default_metadata(self):
+        """Test SamplerOutput metadata defaults to empty dict."""
+        from jesterTOV.inference.samplers import SamplerOutput
+
+        output = SamplerOutput(
+            samples={"x": jnp.array([1.0])},
+            log_prob=jnp.array([-1.0]),
+        )
+
+        assert output.metadata == {}
+
+    @pytest.mark.slow
+    def test_flowmc_sampler_output_interface(self):
+        """Test FlowMC implements get_sampler_output() correctly."""
+        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
+        likelihood = MockLikelihood()
+
+        config = FlowMCSamplerConfig(
+            type="flowmc",
+            n_chains=2,
+            n_loop_training=1,
+            n_loop_production=1,
+            n_local_steps=2,
+            n_global_steps=2,
+            n_epochs=2,
+            output_dir="./test_output/",
+        )
+
+        sampler = FlowMCSampler(likelihood, prior, config)
+        sampler.sample(jax.random.PRNGKey(42))
+
+        # Get output via new interface (production samples)
+        output = sampler.get_sampler_output()
+
+        # Verify structure
+        assert "x" in output.samples
+        assert output.log_prob.shape[0] == output.samples["x"].shape[0]
+        assert output.metadata == {}  # FlowMC has no metadata
+
+        # Verify consistency with old interface
+        old_samples = sampler.get_samples()
+        old_log_prob = sampler.get_log_prob()
+
+        assert jnp.array_equal(output.samples["x"], old_samples["x"])
+        assert jnp.array_equal(output.log_prob, old_log_prob)
+
+        # Test FlowMC-specific training sample access
+        training_output = sampler.get_training_sampler_output()
+        assert "x" in training_output.samples
+        assert training_output.log_prob.shape[0] == training_output.samples["x"].shape[0]
+        assert training_output.metadata == {}
+
+        # Test training sample count
+        n_training = sampler.get_n_training_samples()
+        assert n_training > 0
+        assert n_training == len(training_output.log_prob)
+
+    @pytest.mark.slow
+    def test_smc_sampler_output_interface(self):
+        """Test SMC implements get_sampler_output() correctly."""
+        pytest.importorskip("blackjax")
+
+        from jesterTOV.inference.samplers.blackjax_smc import BlackJAXSMCSampler
+        from jesterTOV.inference.config.schema import SMCSamplerConfig
+
+        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
+        likelihood = MockLikelihood()
+
+        config = SMCSamplerConfig(
+            kernel_type="nuts",
+            n_particles=50,
+            n_mcmc_steps=2,
+            output_dir="./test_output/",
+        )
+
+        sampler = BlackJAXSMCSampler(likelihood, prior, [], [], config)
+        sampler.sample(jax.random.PRNGKey(42))
+
+        # Get output via new interface
+        output = sampler.get_sampler_output()
+
+        # Verify structure
+        assert "x" in output.samples
+        assert "weights" not in output.samples  # Should be in metadata
+        assert "weights" in output.metadata
+        assert "ess" in output.metadata
+        assert output.log_prob.shape[0] == output.samples["x"].shape[0]
+
+        # Verify consistency with old interface
+        old_samples = sampler.get_samples()
+        old_log_prob = sampler.get_log_prob()
+
+        assert jnp.array_equal(output.samples["x"], old_samples["x"])
+        assert jnp.array_equal(output.metadata["weights"], old_samples["weights"])
+        assert jnp.array_equal(output.log_prob, old_log_prob)
+
+    def test_ns_aw_sampler_output_before_sampling(self):
+        """Test NS-AW raises error before sampling."""
+        pytest.importorskip("blackjax")
+
+        from jesterTOV.inference.samplers.blackjax_ns_aw import BlackJAXNSAWSampler
+        from jesterTOV.inference.config.schema import BlackJAXNSAWConfig
+
+        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
+        likelihood = MockLikelihood()
+
+        config = BlackJAXNSAWConfig(
+            n_live=100,
+            output_dir="./test_output/",
+        )
+
+        sampler = BlackJAXNSAWSampler(likelihood, prior, [], [], config)
+
+        # Before sampling, should raise error
+        with pytest.raises(RuntimeError, match="No samples available"):
+            sampler.get_sampler_output()
+
+    def test_sampler_output_separates_parameters_from_metadata(self):
+        """Test that samples dict contains only parameters, not metadata."""
+        from jesterTOV.inference.samplers import SamplerOutput
+
+        # Simulate SMC output
+        output = SamplerOutput(
+            samples={"mass": jnp.array([1.5, 1.6, 1.7])},
+            log_prob=jnp.array([-10.0, -11.0, -12.0]),
+            metadata={
+                "weights": jnp.array([0.3, 0.4, 0.3]),
+                "ess": 2.5,
+            },
+        )
+
+        # Parameters should only be in samples
+        assert "mass" in output.samples
+        assert "weights" not in output.samples
+        assert "ess" not in output.samples
+
+        # Metadata should only be in metadata
+        assert "weights" in output.metadata
+        assert "ess" in output.metadata
+        assert "mass" not in output.metadata
