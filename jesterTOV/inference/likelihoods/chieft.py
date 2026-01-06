@@ -161,7 +161,7 @@ class ChiEFTLikelihood(LikelihoodBase):
 
         self.nb_n = nb_n
 
-    def evaluate(self, params: dict[str, Float | Array], data: dict[str, Any]) -> Float:
+    def evaluate(self, params: dict[str, Float | Array]) -> Float:
         """Evaluate the log-likelihood for chiEFT constraints.
 
         Parameters
@@ -171,9 +171,6 @@ class ChiEFTLikelihood(LikelihoodBase):
             - "n" : Baryon number density grid (geometric units)
             - "p" : Pressure values on density grid (geometric units)
             - "nbreak" : Breaking density where CSE begins (fm⁻³)
-        data : dict[str, Any]
-            Unused; included for API compatibility. All chiEFT data is loaded
-            during initialization.
 
         Returns
         -------

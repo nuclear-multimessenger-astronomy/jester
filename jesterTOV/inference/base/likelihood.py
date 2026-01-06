@@ -14,15 +14,16 @@ class LikelihoodBase(ABC):
     """
     Base class for likelihoods.
 
-    Note: This class follows the jimgw architecture. It is designed to work
-    for a general class of problems where the likelihood depends on data and a model.
+    This class is designed for likelihoods where data is encapsulated within the
+    likelihood object during initialization. This differs from other frameworks
+    (e.g., jimgw) that pass data at evaluation time.
 
-    This class handles two main components of a likelihood:
-    - The data: observations or measurements
-    - The model: theoretical predictions
+    The likelihood encapsulates:
+    - The data: observations or measurements (stored internally)
+    - The model: theoretical predictions (computed from parameters)
 
-    It should be able to take the data and model and evaluate the likelihood for
-    a given set of parameters.
+    It evaluates the log-likelihood for a given set of parameters, using the
+    internally stored data.
     """
 
     _model: Any
@@ -44,8 +45,6 @@ class LikelihoodBase(ABC):
     def data(self) -> Any:
         """
         The data for the likelihood.
-        
-        Note: The data is usually left empty, but we keep it to mimic jimgw as closely as possible.
 
         Returns
         -------
@@ -55,7 +54,7 @@ class LikelihoodBase(ABC):
         return self._data
 
     @abstractmethod
-    def evaluate(self, params: dict[str, Float], data: dict[str, Any]) -> Float:
+    def evaluate(self, params: dict[str, Float]) -> Float:
         """
         Evaluate the log-likelihood for a given set of parameters.
 
@@ -63,9 +62,6 @@ class LikelihoodBase(ABC):
         ----------
         params : dict[str, Float]
             Dictionary of parameter names to values.
-        data : dict
-            Dictionary containing the data. In JESTER's case, this is often
-            an empty dict {} since data is encapsulated in the likelihood object.
 
         Returns
         -------

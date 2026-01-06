@@ -2,7 +2,6 @@
 
 import pytest
 import tempfile
-import os
 from pathlib import Path
 import yaml
 import jax.numpy as jnp
@@ -161,28 +160,6 @@ def realistic_nep_soft():
         "Z_sat": 0.0,
         "E_sym": 32.0,
         "L_sym": 40.0,  # Low L_sym for soft EOS
-        "K_sym": 0.0,
-        "Q_sym": 0.0,
-        "Z_sym": 0.0,
-    }
-
-
-# NOTE: This fixture is also defined in the main conftest.py - keeping here for
-# inference module tests to be self-contained
-@pytest.fixture
-def realistic_nep_stiff():
-    """Realistic stiff EOS NEP parameters for testing (should produce ~2 Msun NS).
-
-    NOTE: This duplicates the fixture in the parent conftest.py but is kept here
-    for test isolation and clarity.
-    """
-    return {
-        "E_sat": -16.0,
-        "K_sat": 240.0,  # Stiff
-        "Q_sat": 0.0,
-        "Z_sat": 0.0,
-        "E_sym": 32.0,
-        "L_sym": 90.0,  # High L_sym for stiff EOS
         "K_sym": 0.0,
         "Q_sym": 0.0,
         "Z_sym": 0.0,

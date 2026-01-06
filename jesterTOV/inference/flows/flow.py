@@ -99,7 +99,9 @@ class Flow:
         self.flow = flow
         self.metadata = metadata
         self.flow_kwargs = flow_kwargs
-        self.standardize = metadata["standardize"] # TODO: this is a bit redunant, only used below, simplify
+        self.standardize = metadata[
+            "standardize"
+        ]  # TODO: this is a bit redunant, only used below, simplify
 
         # Always store bounds as JAX arrays
         # If standardization is disabled, use trivial bounds (min=0, range=1)

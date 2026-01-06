@@ -18,8 +18,12 @@ from beartype import beartype as typechecker
 from jaxtyping import Float, jaxtyped
 
 # Type aliases for better readability
-ParamDict: TypeAlias = dict[str, Float] # dictionary containing parameter names and their values
-NameMapping: TypeAlias = tuple[list[str], list[str]] # tuple of (input_names, output_names)
+ParamDict: TypeAlias = dict[
+    str, Float
+]  # dictionary containing parameter names and their values
+NameMapping: TypeAlias = tuple[
+    list[str], list[str]
+]  # tuple of (input_names, output_names)
 
 
 class Transform(ABC):
@@ -73,7 +77,9 @@ class NtoMTransform(Transform):
     requiring invertibility or Jacobian corrections.
     """
 
-    transform_func: Callable[[ParamDict], ParamDict]  # Maps parameter dict to transformed parameter dict
+    transform_func: Callable[
+        [ParamDict], ParamDict
+    ]  # Maps parameter dict to transformed parameter dict
 
     def forward(self, x: ParamDict) -> ParamDict:
         """
@@ -136,7 +142,9 @@ class NtoNTransform(NtoMTransform):
         output_params = self.transform_func(transform_params)
         jacobian = jax.jacfwd(self.transform_func)(transform_params)
         jacobian = jnp.array(jax.tree.leaves(jacobian))
-        jacobian = jnp.log(jnp.absolute(jnp.linalg.det(jacobian.reshape(self.n_dim, self.n_dim))))
+        jacobian = jnp.log(
+            jnp.absolute(jnp.linalg.det(jacobian.reshape(self.n_dim, self.n_dim)))
+        )
         jax.tree.map(
             lambda key: x_copy.pop(key),
             self.name_mapping[0],
@@ -157,7 +165,9 @@ class BijectiveTransform(NtoNTransform):
     are applied to the prior.
     """
 
-    inverse_transform_func: Callable[[ParamDict], ParamDict]  # Maps transformed dict back to original parameter dict
+    inverse_transform_func: Callable[
+        [ParamDict], ParamDict
+    ]  # Maps transformed dict back to original parameter dict
 
     def inverse(self, y: ParamDict) -> tuple[ParamDict, Float]:
         """
@@ -180,7 +190,9 @@ class BijectiveTransform(NtoNTransform):
         output_params = self.inverse_transform_func(transform_params)
         jacobian = jax.jacfwd(self.inverse_transform_func)(transform_params)
         jacobian = jnp.array(jax.tree.leaves(jacobian))
-        jacobian = jnp.log(jnp.absolute(jnp.linalg.det(jacobian.reshape(self.n_dim, self.n_dim))))
+        jacobian = jnp.log(
+            jnp.absolute(jnp.linalg.det(jacobian.reshape(self.n_dim, self.n_dim)))
+        )
         jax.tree.map(
             lambda key: y_copy.pop(key),
             self.name_mapping[1],
@@ -338,16 +350,16 @@ class BoundToBound(BijectiveTransform):
 
     original_lower_bound: ParamDict  # Lower bounds for original parameters
     original_upper_bound: ParamDict  # Upper bounds for original parameters
-    target_lower_bound: ParamDict    # Lower bounds for target parameters
-    target_upper_bound: ParamDict    # Upper bounds for target parameters
+    target_lower_bound: ParamDict  # Lower bounds for target parameters
+    target_upper_bound: ParamDict  # Upper bounds for target parameters
 
     def __init__(
         self,
         name_mapping: NameMapping,
         original_lower_bound: ParamDict,  # Lower bounds for original parameters
         original_upper_bound: ParamDict,  # Upper bounds for original parameters
-        target_lower_bound: ParamDict,    # Lower bounds for target parameters
-        target_upper_bound: ParamDict,    # Upper bounds for target parameters
+        target_lower_bound: ParamDict,  # Lower bounds for target parameters
+        target_upper_bound: ParamDict,  # Upper bounds for target parameters
     ) -> None:
         """
         Parameters
@@ -380,7 +392,9 @@ class BoundToBound(BijectiveTransform):
                 x_max = original_upper_bound[in_name]
                 y_min = target_lower_bound[out_name]
                 y_max = target_upper_bound[out_name]
-                result[out_name] = (x_val - x_min) / (x_max - x_min) * (y_max - y_min) + y_min
+                result[out_name] = (x_val - x_min) / (x_max - x_min) * (
+                    y_max - y_min
+                ) + y_min
             return result
 
         # Inverse: target → original
@@ -394,7 +408,9 @@ class BoundToBound(BijectiveTransform):
                 x_max = original_upper_bound[in_name]
                 y_min = target_lower_bound[out_name]
                 y_max = target_upper_bound[out_name]
-                result[in_name] = (y_val - y_min) / (y_max - y_min) * (x_max - x_min) + x_min
+                result[in_name] = (y_val - y_min) / (y_max - y_min) * (
+                    x_max - x_min
+                ) + x_min
             return result
 
         self.transform_func = _forward

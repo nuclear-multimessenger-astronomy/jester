@@ -4,11 +4,10 @@ from pathlib import Path
 
 from ..config.schema import LikelihoodConfig
 from .combined import CombinedLikelihood, ZeroLikelihood
-from .gw import GWLikelihood
+from .gw import GWLikelihood, GWLikelihoodPresampled
 from .nicer import NICERLikelihood
 from .radio import RadioTimingLikelihood
 from .chieft import ChiEFTLikelihood
-from .rex import REXLikelihood # TODO: not implemented yet error
 from .constraints import ConstraintEOSLikelihood, ConstraintTOVLikelihood
 from jesterTOV.logging_config import get_logger
 
@@ -194,8 +193,7 @@ def create_combined_likelihood(
             for event in events:
                 # Get model directory (use preset if not provided)
                 model_dir = get_gw_model_dir(
-                    event_name=event["name"],
-                    model_dir=event.get("model_dir")
+                    event_name=event["name"], model_dir=event.get("model_dir")
                 )
 
                 gw_likelihood = GWLikelihood(
@@ -204,6 +202,32 @@ def create_combined_likelihood(
                     penalty_value=penalty_value,
                     N_masses_evaluation=N_masses_evaluation,
                     N_masses_batch_size=N_masses_batch_size,
+                )
+                likelihoods.append(gw_likelihood)
+
+        # Special handling for GW likelihoods with pre-sampling: create one likelihood per event
+        elif config.type == "gw_presampled":
+            params = config.parameters
+            events = params["events"]  # Required, validated by schema
+            penalty_value = params.get("penalty_value", -99999.0)
+            N_masses_evaluation = params.get("N_masses_evaluation", 10000)
+            N_masses_batch_size = params.get("N_masses_batch_size", 1000)
+            seed = params.get("seed", 42)
+
+            # Create one GWLikelihoodPresampled per event
+            for event in events:
+                # Get model directory (use preset if not provided)
+                model_dir = get_gw_model_dir(
+                    event_name=event["name"], model_dir=event.get("model_dir")
+                )
+
+                gw_likelihood = GWLikelihoodPresampled(
+                    event_name=event["name"],
+                    model_dir=model_dir,
+                    penalty_value=penalty_value,
+                    N_masses_evaluation=N_masses_evaluation,
+                    N_masses_batch_size=N_masses_batch_size,
+                    seed=seed,
                 )
                 likelihoods.append(gw_likelihood)
 

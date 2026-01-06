@@ -117,8 +117,10 @@ class BlackJAXSMCSampler(JesterSampler):
                 "Use with caution and validate results carefully."
             )
 
-        logger.info(f"Configuration: {config.n_particles} particles, "
-                    f"{config.n_mcmc_steps} MCMC steps per tempering stage")
+        logger.info(
+            f"Configuration: {config.n_particles} particles, "
+            f"{config.n_mcmc_steps} MCMC steps per tempering stage"
+        )
         logger.info(f"Target ESS: {config.target_ess}")
 
     def _build_mass_matrix(self) -> Array:
@@ -138,14 +140,18 @@ class BlackJAXSMCSampler(JesterSampler):
                 idx = self.parameter_names.index(param_name)
                 mass_matrix_scale_array = mass_matrix_scale_array.at[idx].set(scale)
             except ValueError:
-                logger.warning(f"Parameter '{param_name}' not found in parameter list, "
-                               f"ignoring mass matrix scale")
+                logger.warning(
+                    f"Parameter '{param_name}' not found in parameter list, "
+                    f"ignoring mass matrix scale"
+                )
 
         # Mass matrix diagonal = (base * scale)^2
         mass_matrix_diag = (self.config.mass_matrix_base * mass_matrix_scale_array) ** 2
         return jnp.diag(mass_matrix_diag)
 
-    def sample(self, key: PRNGKeyArray, initial_position: Array = jnp.array([])) -> None:
+    def sample(
+        self, key: PRNGKeyArray, initial_position: Array = jnp.array([])
+    ) -> None:
         """Run SMC until λ = 1 (posterior).
 
         Parameters
@@ -171,7 +177,9 @@ class BlackJAXSMCSampler(JesterSampler):
 
         # Sample initial particles from prior
         key, subkey = jax.random.split(key)
-        initial_position_dict: dict[str, Array] = self.prior.sample(subkey, self.config.n_particles)
+        initial_position_dict: dict[str, Array] = self.prior.sample(
+            subkey, self.config.n_particles
+        )
 
         # Apply sample transforms if any
         for transform in self.sample_transforms:
@@ -200,7 +208,9 @@ class BlackJAXSMCSampler(JesterSampler):
 
         # Ensure float dtype for NUTS compatibility
         if not jnp.issubdtype(initial_position_flat.dtype, jnp.floating):
-            logger.warning(f"Converting initial_position_flat from {initial_position_flat.dtype} to float64")
+            logger.warning(
+                f"Converting initial_position_flat from {initial_position_flat.dtype} to float64"
+            )
             initial_position_flat = initial_position_flat.astype(jnp.float64)
 
         # Helper function to unflatten and apply inverse transforms
@@ -234,7 +244,9 @@ class BlackJAXSMCSampler(JesterSampler):
         # So these should work on SINGLE particles, not batches
         def logprior_fn(x_flat: Array) -> float:
             """Log prior for single particle in flattened space."""
-            x_dict, transform_jacobian = _unflatten_and_inverse_transform(x_flat, return_jacobian=True)
+            x_dict, transform_jacobian = _unflatten_and_inverse_transform(
+                x_flat, return_jacobian=True
+            )
             return self.prior.log_prob(x_dict) + transform_jacobian
 
         def loglikelihood_fn(x_flat: Array) -> float:
@@ -245,7 +257,7 @@ class BlackJAXSMCSampler(JesterSampler):
             for transform in self.likelihood_transforms:
                 x_dict = transform.forward(x_dict)
 
-            return self.likelihood.evaluate(x_dict, {})
+            return self.likelihood.evaluate(x_dict)
 
         # Create posterior for NUTS Hessian initialization (single particle)
         logposterior_fn = lambda x: logprior_fn(x) + loglikelihood_fn(x)
@@ -276,8 +288,12 @@ class BlackJAXSMCSampler(JesterSampler):
                 """Adapt mass matrix and step size using Hessian at best particle."""
                 # Extract log posteriors from NUTS trajectory endpoints
                 last_step_info = jax.tree.map(lambda x: x[-1], info.update_info)
-                log_posteriors_left = last_step_info.trajectory_leftmost_state.logdensity
-                log_posteriors_right = last_step_info.trajectory_rightmost_state.logdensity
+                log_posteriors_left = (
+                    last_step_info.trajectory_leftmost_state.logdensity
+                )
+                log_posteriors_right = (
+                    last_step_info.trajectory_rightmost_state.logdensity
+                )
 
                 # Take maximum logdensity between endpoints
                 log_posteriors = jnp.maximum(log_posteriors_left, log_posteriors_right)
@@ -363,7 +379,9 @@ class BlackJAXSMCSampler(JesterSampler):
             def mcmc_step_fn(rng_key, state, logdensity_fn, **params):
                 """Random walk step function matching NUTS signature."""
                 # Update random step with current sigma
-                step_fn = random_walk.normal(jnp.ones(self.prior.n_dim) * current_sigma["value"])
+                step_fn = random_walk.normal(
+                    jnp.ones(self.prior.n_dim) * current_sigma["value"]
+                )
                 return kernel(rng_key, state, logdensity_fn, step_fn)
 
             # Init function for random walk
@@ -391,7 +409,9 @@ class BlackJAXSMCSampler(JesterSampler):
         state = smc_alg.init(initial_position_flat, subkey)
 
         # Progress callback for live updates during sampling
-        def progress_callback(step: int, lmbda: float, ess: float, acceptance: float) -> None:
+        def progress_callback(
+            step: int, lmbda: float, ess: float, acceptance: float
+        ) -> None:
             """Print progress update during sampling (called via io_callback)."""
             # Create progress bar
             bar_length = 30
@@ -410,7 +430,15 @@ class BlackJAXSMCSampler(JesterSampler):
             return state.sampler_state.lmbda < 1  # type: ignore[attr-defined]
 
         def body_fn(carry):
-            state, key, step_count, lmbda_history, ess_history, acceptance_history, log_evidence = carry
+            (
+                state,
+                key,
+                step_count,
+                lmbda_history,
+                ess_history,
+                acceptance_history,
+                log_evidence,
+            ) = carry
             key, subkey = jax.random.split(key, 2)
             state, info = smc_alg.step(subkey, state)
 
@@ -438,10 +466,18 @@ class BlackJAXSMCSampler(JesterSampler):
                 step_count,
                 state.sampler_state.lmbda,  # type: ignore[attr-defined]
                 ess_value,
-                acceptance_rate
+                acceptance_rate,
             )
 
-            return (state, key, step_count + 1, lmbda_history, ess_history, acceptance_history, log_evidence)
+            return (
+                state,
+                key,
+                step_count + 1,
+                lmbda_history,
+                ess_history,
+                acceptance_history,
+                log_evidence,
+            )
 
         # Run SMC with JAX while_loop
         logger.info("=" * 70)
@@ -465,14 +501,28 @@ class BlackJAXSMCSampler(JesterSampler):
         acceptance_history = jnp.zeros(max_steps)
         log_evidence = 0.0  # Initialize log evidence accumulator
 
-        init_carry = (state, key, 0, lmbda_history, ess_history, acceptance_history, log_evidence)
+        init_carry = (
+            state,
+            key,
+            0,
+            lmbda_history,
+            ess_history,
+            acceptance_history,
+            log_evidence,
+        )
 
         logger.info("Running SMC loop (this may take several minutes)...")
         loop_start_time = time.time()
 
-        state, key, steps, lmbda_history, ess_history, acceptance_history, log_evidence = jax.lax.while_loop(
-            cond_fn, body_fn, init_carry
-        )
+        (
+            state,
+            key,
+            steps,
+            lmbda_history,
+            ess_history,
+            acceptance_history,
+            log_evidence,
+        ) = jax.lax.while_loop(cond_fn, body_fn, init_carry)
 
         loop_end_time = time.time()
         steps = int(steps)
@@ -497,40 +547,44 @@ class BlackJAXSMCSampler(JesterSampler):
         # Note: This is a rough estimate; proper SMC evidence error requires
         # tracking incremental variances, which BlackJAX doesn't provide directly
         # FIXME: Implement proper evidence error estimation if needed
-        log_evidence_err = 0.0  # Placeholder - proper error estimation would require more info
+        log_evidence_err = (
+            0.0  # Placeholder - proper error estimation would require more info
+        )
 
         # Store metadata
         self.metadata = {
-            'sampler': 'blackjax_smc',
-            'kernel_type': self.config.kernel_type,
-            'n_particles': self.config.n_particles,
-            'n_mcmc_steps': self.config.n_mcmc_steps,
-            'target_ess': self.config.target_ess,
-            'annealing_steps': steps,
-            'final_ess': float(ess),
-            'final_ess_percent': float(ess / self.config.n_particles * 100),
-            'mean_ess': mean_ess,
-            'min_ess': min_ess,
-            'mean_acceptance': mean_acceptance,
-            'logZ': float(log_evidence),
-            'logZ_err': float(log_evidence_err),
-            'sampling_time_seconds': end_time - start_time,
-            'loop_time_seconds': loop_end_time - loop_start_time,
-            'lmbda_history': lmbda_history[:steps].tolist(),
-            'ess_history': ess_history[:steps].tolist(),
-            'acceptance_history': acceptance_history[:steps].tolist(),
+            "sampler": "blackjax_smc",
+            "kernel_type": self.config.kernel_type,
+            "n_particles": self.config.n_particles,
+            "n_mcmc_steps": self.config.n_mcmc_steps,
+            "target_ess": self.config.target_ess,
+            "annealing_steps": steps,
+            "final_ess": float(ess),
+            "final_ess_percent": float(ess / self.config.n_particles * 100),
+            "mean_ess": mean_ess,
+            "min_ess": min_ess,
+            "mean_acceptance": mean_acceptance,
+            "logZ": float(log_evidence),
+            "logZ_err": float(log_evidence_err),
+            "sampling_time_seconds": end_time - start_time,
+            "loop_time_seconds": loop_end_time - loop_start_time,
+            "lmbda_history": lmbda_history[:steps].tolist(),
+            "ess_history": ess_history[:steps].tolist(),
+            "acceptance_history": acceptance_history[:steps].tolist(),
         }
 
         # Display progress summary table only
         logger.info("")
-        self._print_progress_summary(steps, lmbda_history, ess_history, acceptance_history)
+        self._print_progress_summary(
+            steps, lmbda_history, ess_history, acceptance_history
+        )
 
     def _print_progress_summary(
         self,
         steps: int,
         lmbda_history: Array,
         ess_history: Array,
-        acceptance_history: Array
+        acceptance_history: Array,
     ) -> None:
         """Print a progress summary table showing annealing progression.
 
@@ -565,7 +619,9 @@ class BlackJAXSMCSampler(JesterSampler):
             indices.append(steps - 1)  # Last step
 
         # Print table header
-        logger.info(f"{'Step':<8} {'Lambda':<12} {'ESS (%)':<12} {'Accept (%)':<12} {'Progress':<20}")
+        logger.info(
+            f"{'Step':<8} {'Lambda':<12} {'ESS (%)':<12} {'Accept (%)':<12} {'Progress':<20}"
+        )
         logger.info("-" * 70)
 
         # Print table rows
@@ -580,11 +636,15 @@ class BlackJAXSMCSampler(JesterSampler):
             filled = int(lmbda * bar_length)
             bar = "█" * filled + "░" * (bar_length - filled)
 
-            logger.info(f"{step_num:<8} {lmbda:<12.6f} {ess_pct:<12.1f} {acc_pct:<12.1f} {bar}")
+            logger.info(
+                f"{step_num:<8} {lmbda:<12.6f} {ess_pct:<12.1f} {acc_pct:<12.1f} {bar}"
+            )
 
         logger.info("-" * 70)
         logger.info(f"Total steps: {steps}")
-        logger.info(f"Temperature range: λ = 0.000000 (prior) → {float(lmbda_history[steps-1]):.6f} (posterior)")
+        logger.info(
+            f"Temperature range: λ = 0.000000 (prior) → {float(lmbda_history[steps-1]):.6f} (posterior)"
+        )
         logger.info("=" * 70)
         logger.info("")
 
@@ -604,7 +664,9 @@ class BlackJAXSMCSampler(JesterSampler):
         # Summary already displayed during sampling - no need to repeat
         pass
 
-    def plot_diagnostics(self, outdir: str | Path = ".", filename: str = "smc_diagnostics.png") -> None:
+    def plot_diagnostics(
+        self, outdir: str | Path = ".", filename: str = "smc_diagnostics.png"
+    ) -> None:
         """Generate diagnostic plots for SMC sampling run.
 
         Creates a 3-panel figure showing:
@@ -635,43 +697,65 @@ class BlackJAXSMCSampler(JesterSampler):
             return
 
         # Extract histories from metadata
-        lmbda_history = self.metadata['lmbda_history']
-        ess_history = self.metadata['ess_history']
-        acceptance_history = self.metadata['acceptance_history']
-        n_steps = self.metadata['annealing_steps']
+        lmbda_history = self.metadata["lmbda_history"]
+        ess_history = self.metadata["ess_history"]
+        acceptance_history = self.metadata["acceptance_history"]
+        n_steps = self.metadata["annealing_steps"]
 
         # Create figure with 3 subplots
         fig, axes = plt.subplots(3, 1, figsize=(10, 9), sharex=True)
-        fig.suptitle(f"SMC Diagnostics ({self.config.kernel_type.upper()} kernel)",
-                     fontsize=14, fontweight='bold')
+        fig.suptitle(
+            f"SMC Diagnostics ({self.config.kernel_type.upper()} kernel)",
+            fontsize=14,
+            fontweight="bold",
+        )
 
         # Plot 1: Lambda (temperature) progression
-        axes[0].plot(range(n_steps), lmbda_history, 'b-o', linewidth=2)
-        axes[0].set_ylabel(r'Temperature $\lambda$', fontsize=12)
+        axes[0].plot(range(n_steps), lmbda_history, "b-o", linewidth=2)
+        axes[0].set_ylabel(r"Temperature $\lambda$", fontsize=12)
         axes[0].grid(True, alpha=0.3)
         axes[0].set_ylim(-0.05, 1.05)
-        axes[0].axhline(y=0, color='black', linestyle='--', alpha=0.3, linewidth=1)
-        axes[0].axhline(y=1, color='black', linestyle='--', alpha=0.3, linewidth=1)
+        axes[0].axhline(y=0, color="black", linestyle="--", alpha=0.3, linewidth=1)
+        axes[0].axhline(y=1, color="black", linestyle="--", alpha=0.3, linewidth=1)
 
         # Plot 2: ESS evolution
         ess_percent = [ess * 100 for ess in ess_history]
-        axes[1].plot(range(n_steps), ess_percent, 'g-o', linewidth=2)
-        axes[1].axhline(y=self.config.target_ess * 100, color='black', linestyle='--',
-                       alpha=0.5, linewidth=1.5, label=f'Target ({self.config.target_ess*100:.0f}%)')
-        axes[1].set_ylabel('ESS (%)', fontsize=12)
+        axes[1].plot(range(n_steps), ess_percent, "g-o", linewidth=2)
+        axes[1].axhline(
+            y=self.config.target_ess * 100,
+            color="black",
+            linestyle="--",
+            alpha=0.5,
+            linewidth=1.5,
+            label=f"Target ({self.config.target_ess*100:.0f}%)",
+        )
+        axes[1].set_ylabel("ESS (%)", fontsize=12)
         axes[1].grid(True, alpha=0.3)
-        axes[1].legend(loc='best', fontsize=10)
+        axes[1].legend(loc="best", fontsize=10)
         axes[1].set_ylim(0, 105)
 
         # Plot 3: Acceptance rate evolution
         acceptance_percent = [acc * 100 for acc in acceptance_history]
-        axes[2].plot(range(n_steps), acceptance_percent, 'orange', linestyle='-', marker='o', linewidth=2)
-        axes[2].axhline(y=self.config.target_acceptance * 100, color='black', linestyle='--',
-                       alpha=0.5, linewidth=1.5, label=f'Target ({self.config.target_acceptance*100:.0f}%)')
-        axes[2].set_ylabel('Acceptance Rate (%)', fontsize=12)
-        axes[2].set_xlabel('Annealing Step', fontsize=12)
+        axes[2].plot(
+            range(n_steps),
+            acceptance_percent,
+            "orange",
+            linestyle="-",
+            marker="o",
+            linewidth=2,
+        )
+        axes[2].axhline(
+            y=self.config.target_acceptance * 100,
+            color="black",
+            linestyle="--",
+            alpha=0.5,
+            linewidth=1.5,
+            label=f"Target ({self.config.target_acceptance*100:.0f}%)",
+        )
+        axes[2].set_ylabel("Acceptance Rate (%)", fontsize=12)
+        axes[2].set_xlabel("Annealing Step", fontsize=12)
         axes[2].grid(True, alpha=0.3)
-        axes[2].legend(loc='best', fontsize=10)
+        axes[2].legend(loc="best", fontsize=10)
         axes[2].set_ylim(0, 105)
 
         plt.tight_layout()
@@ -680,7 +764,7 @@ class BlackJAXSMCSampler(JesterSampler):
         outdir_path = Path(outdir)
         outdir_path.mkdir(parents=True, exist_ok=True)
         output_path = outdir_path / filename
-        plt.savefig(output_path, dpi=150, bbox_inches='tight')
+        plt.savefig(output_path, dpi=150, bbox_inches="tight")
         logger.info(f"Saved diagnostic plot to {output_path}")
         plt.close(fig)
 
@@ -700,7 +784,11 @@ class BlackJAXSMCSampler(JesterSampler):
             - 'weights': particle weights
             - 'ess': effective sample size
         """
-        if self.final_state is None or self._particles_flat is None or self._weights is None:
+        if (
+            self.final_state is None
+            or self._particles_flat is None
+            or self._weights is None
+        ):
             raise RuntimeError("No samples available - run sample() first")
 
         # Transform particles back to structured format (guaranteed non-None after check above)
@@ -713,7 +801,9 @@ class BlackJAXSMCSampler(JesterSampler):
             particles_list = []
             n_particles = len(self._particles_flat)
             for i in range(n_particles):
-                particle_dict = {name: particles_dict[name][i] for name in particles_dict.keys()}
+                particle_dict = {
+                    name: particles_dict[name][i] for name in particles_dict.keys()
+                }
                 transformed_dict, _ = transform.inverse(particle_dict)
                 particles_list.append(transformed_dict)
             # Reconstruct dict of arrays
@@ -723,8 +813,8 @@ class BlackJAXSMCSampler(JesterSampler):
             }
 
         # Add weights and ESS to output
-        particles_dict['weights'] = self._weights
-        particles_dict['ess'] = self.metadata['final_ess']
+        particles_dict["weights"] = self._weights
+        particles_dict["ess"] = self.metadata["final_ess"]
 
         return particles_dict
 
@@ -762,7 +852,11 @@ class BlackJAXSMCSampler(JesterSampler):
             return self.posterior_from_dict(x_dict, {})
 
         # Use batched processing for efficiency
-        log_probs = jax.lax.map(compute_log_prob, self._particles_flat, batch_size=self.config.log_prob_batch_size)
+        log_probs = jax.lax.map(
+            compute_log_prob,
+            self._particles_flat,
+            batch_size=self.config.log_prob_batch_size,
+        )
         logger.info(f"Computed {len(log_probs)} log probability values")
 
         return log_probs

@@ -78,33 +78,22 @@ roots_vmap = vmap(partial(jnp.roots, strip_zeros=False), in_axes=0, out_axes=0)
 
 @vmap
 def cubic_root_for_proton_fraction(coefficients):
-    r"""
-    Solve cubic equation for proton fraction in beta-equilibrium.
+    r"""Solve cubic equation for proton fraction in beta-equilibrium.
 
     This function solves the cubic equation that arises from the
-    beta-equilibrium condition in neutron star matter:
+    beta-equilibrium condition in neutron star matter using Cardano's
+    formula for exact analytical solution. The cubic equation has the
+    form ax^3 + bx^2 + cx + d = 0, where the coefficients are related
+    to the symmetry energy and electron chemical potential.
 
-    .. math::
-        ax^3 + bx^2 + cx + d = 0
-
-    where the coefficients are related to the symmetry energy and
-    electron chemical potential. Uses Cardano's formula for exact
-    analytical solution.
-
-    Parameters
-    ----------
-    coefficients : Array
-        Cubic polynomial coefficients [a, b, c, d]
-
-    Returns
-    -------
-    Array
-        Three roots of the cubic equation (may be complex)
-
-    Notes
-    -----
     This function is vectorized to handle multiple coefficient sets
     simultaneously for different densities.
+
+    Args:
+        coefficients: Array of cubic polynomial coefficients [a, b, c, d]
+
+    Returns:
+        Array of three roots of the cubic equation (may be complex)
     """
     a, b, c, d = coefficients
 

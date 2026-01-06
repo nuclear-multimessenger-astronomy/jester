@@ -55,6 +55,7 @@ class TestTransformFactory:
         """Test that invalid transform type raises error."""
         # Pydantic will catch the invalid type during config creation
         from pydantic import ValidationError
+
         with pytest.raises(ValidationError):
             TransformConfig(
                 type="invalid_transform",  # type: ignore
@@ -65,6 +66,7 @@ class TestTransformFactory:
         """Test that invalid crust name raises error."""
         # Pydantic will catch the invalid crust name during config creation
         from pydantic import ValidationError
+
         with pytest.raises(ValidationError):
             TransformConfig(
                 type="metamodel",
@@ -114,7 +116,9 @@ class TestMetaModelTransform:
         ]
         assert metamodel_transform.get_parameter_names() == expected_params
 
-    def test_metamodel_forward_realistic_params(self, metamodel_transform, realistic_nep_stiff):
+    def test_metamodel_forward_realistic_params(
+        self, metamodel_transform, realistic_nep_stiff
+    ):
         """Test forward transform with realistic stiff EOS parameters.
 
         NOTE: This is a slow integration test as it solves TOV equations.
@@ -143,7 +147,9 @@ class TestMetaModelTransform:
         # Check that we got some valid neutron stars
         # (at least one mass should be > 1.0 Msun for realistic EOS)
         max_mass = jnp.max(result["masses_EOS"])
-        assert max_mass > 1.0, f"Maximum mass {max_mass} too low - EOS may be unphysical"
+        assert (
+            max_mass > 1.0
+        ), f"Maximum mass {max_mass} too low - EOS may be unphysical"
 
         # Check that radii are in reasonable range (8-25 km for various EOS)
         max_radius = jnp.max(result["radii_EOS"])

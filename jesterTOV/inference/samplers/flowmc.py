@@ -71,7 +71,7 @@ class FlowMCSampler(JesterSampler):
         sample_transforms: list[BijectiveTransform] | None = None,
         likelihood_transforms: list[NtoMTransform] | None = None,
         seed: int = 0,
-        local_sampler_name: str = "GaussianRandomWalk", # TODO: use literal here, MALA and GaussianRandomWalk for now
+        local_sampler_name: str = "GaussianRandomWalk",  # TODO: use literal here, MALA and GaussianRandomWalk for now
         local_sampler_arg: dict[str, Any] | None = None,
         num_layers: int = 10,
         hidden_size: list[int] | None = None,
@@ -101,19 +101,29 @@ class FlowMCSampler(JesterSampler):
             # MALA uses matrix-vector multiplication, so it can handle full matrices
             # Provide default step_size if not given
             if "step_size" not in local_sampler_arg:
-                local_sampler_arg = {**local_sampler_arg, "step_size": jnp.ones((self.prior.n_dim, self.prior.n_dim)) * 1e-3}
+                local_sampler_arg = {
+                    **local_sampler_arg,
+                    "step_size": jnp.ones((self.prior.n_dim, self.prior.n_dim)) * 1e-3,
+                }
             local_sampler = MALA(self.posterior, True, **local_sampler_arg)
         elif local_sampler_name == "GaussianRandomWalk":
             # GaussianRandomWalk uses element-wise multiplication, so convert matrix to diagonal
-            step_size: Array | None = local_sampler_arg.get("step_size")  # Can be 1D or 2D array
+            step_size: Array | None = local_sampler_arg.get(
+                "step_size"
+            )  # Can be 1D or 2D array
             if step_size is None:
                 # Provide default step_size if not given
                 step_size = jnp.ones(self.prior.n_dim) * 1e-3
                 local_sampler_arg = {**local_sampler_arg, "step_size": step_size}
             elif step_size.ndim == 2:
                 # Extract diagonal from DxD matrix
-                local_sampler_arg = {**local_sampler_arg, "step_size": jnp.diag(step_size)}
-            local_sampler = GaussianRandomWalk(self.posterior, True, **local_sampler_arg)
+                local_sampler_arg = {
+                    **local_sampler_arg,
+                    "step_size": jnp.diag(step_size),
+                }
+            local_sampler = GaussianRandomWalk(
+                self.posterior, True, **local_sampler_arg
+            )
         else:
             raise ValueError(
                 f"Unknown local_sampler_name: {local_sampler_name}. "

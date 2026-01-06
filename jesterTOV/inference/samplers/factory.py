@@ -73,9 +73,11 @@ def create_sampler(
         # - flowmc: No transforms (current behavior)
         sample_transforms = create_sample_transforms(config, prior)
     else:
-        logger.debug(f"Using provided sample_transforms (overriding automatic creation)")
+        logger.debug("Using provided sample_transforms (overriding automatic creation)")
 
-    logger.debug(f"Created {len(sample_transforms)} sample transforms for {config.type}")
+    logger.debug(
+        f"Created {len(sample_transforms)} sample transforms for {config.type}"
+    )
 
     # Dispatch to appropriate sampler implementation
     if config.type == "flowmc":

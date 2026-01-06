@@ -213,7 +213,6 @@ class MassesAndLambdasToChirpMassRatio(AbstractBijection):
         return x, log_det_inverse
 
 
-
 def load_gw_posterior(
     filepath: str, max_samples: int = 20_000
 ) -> Tuple[np.ndarray, Dict[str, Any]]:
@@ -430,7 +429,9 @@ def create_transformer(
     if transformer_type == "affine":
         return Affine()
     elif transformer_type == "rational_quadratic_spline":
-        return RationalQuadraticSpline(knots=transformer_knots, interval=transformer_interval)
+        return RationalQuadraticSpline(
+            knots=transformer_knots, interval=transformer_interval
+        )
     else:
         raise ValueError(
             f"Unknown transformer type: {transformer_type}. "
@@ -726,7 +727,7 @@ def plot_corner(data: np.ndarray, flow_samples: np.ndarray, output_path: str) ->
         color="red",
         bins=40,
         smooth=1.0,
-        plot_datapoints=True, # DO plot them for the flow, to check if it violates bounds
+        plot_datapoints=True,  # DO plot them for the flow, to check if it violates bounds
         plot_density=False,
         fill_contours=False,
         levels=[0.68, 0.95],
@@ -831,7 +832,9 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
         # Plot transformed data to visualize what the flow will train on
         figures_dir = os.path.join(config.output_dir, "figures")
         os.makedirs(figures_dir, exist_ok=True)
-        transformed_plot_path = os.path.join(figures_dir, "transformed_training_data.png")
+        transformed_plot_path = os.path.join(
+            figures_dir, "transformed_training_data.png"
+        )
         print(f"\nSaving transformed data visualization to {transformed_plot_path}")
 
         # Set appropriate labels based on transformation mode
@@ -975,7 +978,9 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
             # Use original_data for corner plot comparison
             plot_corner(original_data, flow_samples_np, corner_path)
         except Exception as e:
-            print(f"Warning: Corner plot generation failed, skipping. Error: {type(e).__name__}")
+            print(
+                f"Warning: Corner plot generation failed, skipping. Error: {type(e).__name__}"
+            )
 
     print("\n" + "=" * 60)
     print("Training complete!")

@@ -69,9 +69,7 @@ def parse_prior_file(
     try:
         exec(prior_code, namespace)
     except Exception as e:
-        raise ValueError(
-            f"Error executing prior file {prior_file}: {e}"
-        ) from e
+        raise ValueError(f"Error executing prior file {prior_file}: {e}") from e
 
     # Extract all Prior objects from the namespace
     excluded_keys = {"__builtins__", "UniformPrior"}
@@ -100,9 +98,7 @@ def parse_prior_file(
     if nb_CSE > 0:
         for i in range(nb_CSE):
             # Add n_CSE_i_u parameters (uniform [0, 1])
-            prior_list.append(
-                UniformPrior(0.0, 1.0, parameter_names=[f"n_CSE_{i}_u"])
-            )
+            prior_list.append(UniformPrior(0.0, 1.0, parameter_names=[f"n_CSE_{i}_u"]))
             # Add cs2_CSE_i parameters (uniform [0, 1])
             prior_list.append(UniformPrior(0.0, 1.0, parameter_names=[f"cs2_CSE_{i}"]))
 

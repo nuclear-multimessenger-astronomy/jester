@@ -104,7 +104,9 @@ def main():
         print(f"\n✓ {event} processing complete!")
         print(f"  Final file: {extracted_file}")
         print(f"  Size: {extracted_size:.2f} MB")
-        print(f"  Size reduction: {full_size - extracted_size:.2f} MB ({(1 - extracted_size/full_size)*100:.1f}% smaller)")
+        print(
+            f"  Size reduction: {full_size - extracted_size:.2f} MB ({(1 - extracted_size/full_size)*100:.1f}% smaller)"
+        )
 
     print("\n" + "=" * 80)
     print("All downloads complete!")

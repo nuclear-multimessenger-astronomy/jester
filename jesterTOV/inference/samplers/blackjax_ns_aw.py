@@ -92,8 +92,11 @@ class BlackJAXNSAWSampler(JesterSampler):
         # Nested sampling requires unit cube transforms
         # If not provided, create them automatically
         if len(sample_transforms) == 0:
-            logger.info("No sample transforms provided - creating unit cube transforms for NS-AW")
+            logger.info(
+                "No sample transforms provided - creating unit cube transforms for NS-AW"
+            )
             from .transform_factory import create_sample_transforms
+
             sample_transforms = create_sample_transforms(config, prior)
             # Update the sample_transforms in the parent class
             self.sample_transforms = sample_transforms
@@ -102,8 +105,10 @@ class BlackJAXNSAWSampler(JesterSampler):
                 self.parameter_names = transform.propagate_name(self.parameter_names)
 
         logger.info("Initializing BlackJAX Nested Sampling (Acceptance Walk) sampler")
-        logger.info(f"Configuration: {config.n_live} live points, "
-                    f"delete fraction {config.n_delete_frac}")
+        logger.info(
+            f"Configuration: {config.n_live} live points, "
+            f"delete fraction {config.n_delete_frac}"
+        )
         logger.info(f"Termination: dlogZ < {config.termination_dlogz}")
 
         # Pre-compile log prior and log likelihood functions
@@ -116,6 +121,7 @@ class BlackJAXNSAWSampler(JesterSampler):
         # Import BlackJAX nested sampling (lazy import to avoid dependency issues)
         try:
             from blackjax.ns.utils import finalise
+
             self._finalise = finalise
         except ImportError as e:
             raise ImportError(
@@ -172,8 +178,8 @@ class BlackJAXNSAWSampler(JesterSampler):
             for transform in self.likelihood_transforms:
                 named_params = transform.forward(named_params)
 
-            # Evaluate likelihood (pass empty dict for data)
-            return self.likelihood.evaluate(named_params, {})
+            # Evaluate likelihood
+            return self.likelihood.evaluate(named_params)
 
         # JIT compile for performance
         self._loglikelihood_fn = jax.jit(loglikelihood_fn)
@@ -185,7 +191,9 @@ class BlackJAXNSAWSampler(JesterSampler):
         modulo wrapping for all parameters to keep them in [0, 1].
         """
 
-        def unit_cube_stepper(position: dict, direction: dict, step_size: float) -> dict:
+        def unit_cube_stepper(
+            position: dict, direction: dict, step_size: float
+        ) -> dict:
             """Step in unit cube with periodic boundary wrapping."""
             proposed = jax.tree.map(
                 lambda pos, d: pos + step_size * d,
@@ -197,7 +205,9 @@ class BlackJAXNSAWSampler(JesterSampler):
 
         self._unit_cube_stepper = unit_cube_stepper
 
-    def sample(self, key: PRNGKeyArray, initial_position: Array = jnp.array([])) -> None:
+    def sample(
+        self, key: PRNGKeyArray, initial_position: Array = jnp.array([])
+    ) -> None:
         """Run nested sampling until termination criterion.
 
         Parameters
@@ -263,7 +273,9 @@ class BlackJAXNSAWSampler(JesterSampler):
 
             # Log progress every 10 iterations
             if n_iterations % 10 == 0:
-                logger.info(f"Iteration {n_iterations}: {len(dead) * n_delete} dead points collected")
+                logger.info(
+                    f"Iteration {n_iterations}: {len(dead) * n_delete} dead points collected"
+                )
 
         # Store evidence from state before finalization
         # (NSState has logZ, but NSInfo from finalise does not)
@@ -291,25 +303,29 @@ class BlackJAXNSAWSampler(JesterSampler):
         sampling_time = end_time - start_time
 
         self.metadata = {
-            'sampler': 'blackjax_ns_aw',
-            'n_live': self.config.n_live,
-            'n_delete': n_delete,
-            'n_delete_frac': self.config.n_delete_frac,
-            'n_target': self.config.n_target,
-            'max_mcmc': self.config.max_mcmc,
-            'max_proposals': self.config.max_proposals,
-            'termination_dlogz': self.config.termination_dlogz,
-            'sampling_time_seconds': sampling_time,
-            'sampling_time_minutes': sampling_time / 60,
-            'n_iterations': n_iterations,
-            'n_samples': int(final_info.particles.shape[0]),  # type: ignore[union-attr]
-            'n_likelihood_evaluations': int(jnp.sum(final_info.inner_kernel_info.n_likelihood_evals)),  # type: ignore[attr-defined]
-            'logZ': logZ,
-            'logZ_err': logZ_err,
+            "sampler": "blackjax_ns_aw",
+            "n_live": self.config.n_live,
+            "n_delete": n_delete,
+            "n_delete_frac": self.config.n_delete_frac,
+            "n_target": self.config.n_target,
+            "max_mcmc": self.config.max_mcmc,
+            "max_proposals": self.config.max_proposals,
+            "termination_dlogz": self.config.termination_dlogz,
+            "sampling_time_seconds": sampling_time,
+            "sampling_time_minutes": sampling_time / 60,
+            "n_iterations": n_iterations,
+            "n_samples": int(final_info.particles.shape[0]),  # type: ignore[union-attr]
+            "n_likelihood_evaluations": int(jnp.sum(final_info.inner_kernel_info.n_likelihood_evals)),  # type: ignore[attr-defined]
+            "logZ": logZ,
+            "logZ_err": logZ_err,
         }
 
-        logger.info(f"Nested sampling completed! Generated {len(dead) * n_delete} dead points.")
-        logger.info(f"Sampling time: {(sampling_time)//60:.0f} minutes {(sampling_time)%60:.1f} seconds")
+        logger.info(
+            f"Nested sampling completed! Generated {len(dead) * n_delete} dead points."
+        )
+        logger.info(
+            f"Sampling time: {(sampling_time)//60:.0f} minutes {(sampling_time)%60:.1f} seconds"
+        )
         logger.info(f"Evidence: log(Z) = {logZ:.2f} ± {logZ_err:.2f}")
 
     def print_summary(self, transform: bool = True) -> None:
@@ -329,14 +345,18 @@ class BlackJAXNSAWSampler(JesterSampler):
             return
 
         # Print evidence
-        if 'logZ' in self.metadata:
-            logger.info(f"log(Z) = {self.metadata['logZ']:.2f} ± {self.metadata['logZ_err']:.2f}")
+        if "logZ" in self.metadata:
+            logger.info(
+                f"log(Z) = {self.metadata['logZ']:.2f} ± {self.metadata['logZ_err']:.2f}"
+            )
 
         # Print sampling info
         logger.info(f"Live points: {self.config.n_live}")
-        logger.info(f"Sampling time: {self.metadata.get('sampling_time_seconds', 0):.1f}s")
+        logger.info(
+            f"Sampling time: {self.metadata.get('sampling_time_seconds', 0):.1f}s"
+        )
 
-        if 'n_samples' in self.metadata:
+        if "n_samples" in self.metadata:
             logger.info(f"Posterior samples: {self.metadata['n_samples']}")
 
     def get_samples(self, training: bool = False) -> dict:
@@ -376,7 +396,9 @@ class BlackJAXNSAWSampler(JesterSampler):
             # Note: self.final_state is NSInfo, which has particles in physical (prior) space
             # Suppress the logL <= logL_birth warning (it's handled internally by anesthetic)
             with warnings.catch_warnings():
-                warnings.filterwarnings('ignore', 'out of .* samples have logL <= logL_birth')
+                warnings.filterwarnings(
+                    "ignore", "out of .* samples have logL <= logL_birth"
+                )
                 ns_samples = NestedSamples(
                     self.final_state.particles,
                     logL=self.final_state.loglikelihood,
@@ -391,13 +413,17 @@ class BlackJAXNSAWSampler(JesterSampler):
 
             # Extract filtered samples from anesthetic (it's a DataFrame)
             # Get all columns except metadata columns
-            param_cols = [col for col in ns_samples.columns if col not in ['logL', 'logL_birth', 'weights']]
+            param_cols = [
+                col
+                for col in ns_samples.columns
+                if col not in ["logL", "logL_birth", "weights"]
+            ]
             samples = {col: jnp.array(ns_samples[col].values) for col in param_cols}
 
             # Add metadata
-            samples['weights'] = jnp.array(weights)
-            samples['logL'] = jnp.array(ns_samples['logL'].values)
-            samples['logL_birth'] = jnp.array(ns_samples['logL_birth'].values)
+            samples["weights"] = jnp.array(weights)
+            samples["logL"] = jnp.array(ns_samples["logL"].values)
+            samples["logL_birth"] = jnp.array(ns_samples["logL_birth"].values)
 
             # Cache filtered samples for get_log_prob() to use
             self._filtered_samples_cache = samples
@@ -411,26 +437,30 @@ class BlackJAXNSAWSampler(JesterSampler):
                 # Note: anesthetic stores logZ values in the samples dataframe
                 logZ_err_anesthetic = float(ns_samples.logZ().std())  # type: ignore[union-attr]
                 # Only set if both succeed
-                self.metadata['logZ_anesthetic'] = logZ_anesthetic
-                self.metadata['logZ_err_anesthetic'] = logZ_err_anesthetic
+                self.metadata["logZ_anesthetic"] = logZ_anesthetic
+                self.metadata["logZ_err_anesthetic"] = logZ_err_anesthetic
             except Exception as e:
                 logger.warning(f"Could not compute anesthetic evidence: {e}")
 
         except ImportError:
-            logger.warning("anesthetic not available - using all samples with uniform weights")
+            logger.warning(
+                "anesthetic not available - using all samples with uniform weights"
+            )
             # Use all samples without filtering
             samples = dict(self.final_state.particles)
-            samples['logL'] = self.final_state.loglikelihood
-            samples['logL_birth'] = logL_birth
-            samples['weights'] = jnp.ones(len(samples['logL'])) / len(samples['logL'])
+            samples["logL"] = self.final_state.loglikelihood
+            samples["logL_birth"] = logL_birth
+            samples["weights"] = jnp.ones(len(samples["logL"])) / len(samples["logL"])
             self._filtered_samples_cache = samples
         except Exception as e:
-            logger.warning(f"anesthetic weight computation failed: {e} - using all samples with uniform weights")
+            logger.warning(
+                f"anesthetic weight computation failed: {e} - using all samples with uniform weights"
+            )
             # Use all samples without filtering
             samples = dict(self.final_state.particles)
-            samples['logL'] = self.final_state.loglikelihood
-            samples['logL_birth'] = logL_birth
-            samples['weights'] = jnp.ones(len(samples['logL'])) / len(samples['logL'])
+            samples["logL"] = self.final_state.loglikelihood
+            samples["logL_birth"] = logL_birth
+            samples["weights"] = jnp.ones(len(samples["logL"])) / len(samples["logL"])
             self._filtered_samples_cache = samples
 
         return samples
@@ -466,11 +496,13 @@ class BlackJAXNSAWSampler(JesterSampler):
         # Use cached filtered samples if available (from get_samples())
         # This ensures get_log_prob() and get_samples() have consistent lengths
         if self._filtered_samples_cache is not None:
-            return self._filtered_samples_cache['logL']
+            return self._filtered_samples_cache["logL"]
 
         # Fallback: return all log likelihoods (unfiltered)
         # This shouldn't happen in normal usage since get_samples() is called first
-        logger.warning("get_log_prob() called before get_samples() - returning unfiltered logL")
+        logger.warning(
+            "get_log_prob() called before get_samples() - returning unfiltered logL"
+        )
         return self.final_state.loglikelihood
 
     def get_n_samples(self, training: bool = False) -> int:

@@ -16,7 +16,12 @@ import jax.numpy as jnp
 from beartype import beartype as typechecker
 from jaxtyping import Array, Float, PRNGKeyArray, jaxtyped
 
-from .transform import BijectiveTransform, LogitTransform, ScaleTransform, OffsetTransform
+from .transform import (
+    BijectiveTransform,
+    LogitTransform,
+    ScaleTransform,
+    OffsetTransform,
+)
 
 
 class Prior:

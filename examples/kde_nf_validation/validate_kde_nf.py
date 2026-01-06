@@ -23,6 +23,7 @@ from jax.scipy.stats import gaussian_kde
 
 # Import JESTER modules
 import sys
+
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from jesterTOV.inference.flows.flow import Flow
@@ -44,14 +45,24 @@ GW_EVENTS = {
         "data_file": DATA_DIR / "gw170817" / "gw170817_gwtc1_lowspin_posterior.npz",
         "model_dir": MODELS_DIR / "gw170817" / "gw170817_gwtc1_lowspin_posterior",
         "parameters": ["mass_1_source", "mass_2_source", "lambda_1", "lambda_2"],
-        "labels": [r"$m_1$ [$M_\odot$]", r"$m_2$ [$M_\odot$]", r"$\Lambda_1$", r"$\Lambda_2$"],
+        "labels": [
+            r"$m_1$ [$M_\odot$]",
+            r"$m_2$ [$M_\odot$]",
+            r"$\Lambda_1$",
+            r"$\Lambda_2$",
+        ],
         "n_samples": 10000,
     },
     "GW190425": {
         "data_file": DATA_DIR / "gw190425" / "gw190425_phenompnrt-ls_posterior.npz",
         "model_dir": MODELS_DIR / "gw190425" / "gw190425_phenompnrt-ls_posterior",
         "parameters": ["mass_1_source", "mass_2_source", "lambda_1", "lambda_2"],
-        "labels": [r"$m_1$ [$M_\odot$]", r"$m_2$ [$M_\odot$]", r"$\Lambda_1$", r"$\Lambda_2$"],
+        "labels": [
+            r"$m_1$ [$M_\odot$]",
+            r"$m_2$ [$M_\odot$]",
+            r"$\Lambda_1$",
+            r"$\Lambda_2$",
+        ],
         "n_samples": 10000,
     },
 }
@@ -59,14 +70,18 @@ GW_EVENTS = {
 # NICER pulsars configuration
 NICER_PULSARS = {
     "J0030": {
-        "amsterdam": DATA_DIR / "NICER" / "J00300451_amsterdam_ST_U_NICER_only_Riley2019.npz",
+        "amsterdam": DATA_DIR
+        / "NICER"
+        / "J00300451_amsterdam_ST_U_NICER_only_Riley2019.npz",
         "maryland": DATA_DIR / "NICER" / "J00300451_maryland_3spot_NICER_only_RM.npz",
         "parameters": ["mass", "radius"],
         "labels": [r"$M$ [$M_\odot$]", r"$R$ [km]"],
         "n_samples": 10000,
     },
     "J0740": {
-        "amsterdam": DATA_DIR / "NICER" / "J07406620_amsterdam_gamma_NICERXMM_equal_weights_recent.npz",
+        "amsterdam": DATA_DIR
+        / "NICER"
+        / "J07406620_amsterdam_gamma_NICERXMM_equal_weights_recent.npz",
         "maryland": DATA_DIR / "NICER" / "J07406620_maryland_unknown_NICER_only_RM.npz",
         "parameters": ["mass", "radius"],
         "labels": [r"$M$ [$M_\odot$]", r"$R$ [km]"],
@@ -81,6 +96,7 @@ SEED = 42
 # ============================================================================
 # GW Validation Functions
 # ============================================================================
+
 
 def load_gw_original_samples(data_file: Path, parameters: list) -> np.ndarray:
     """
@@ -151,8 +167,12 @@ def validate_gw_event(event_name: str, config: Dict) -> None:
 
     # Load original samples
     print(f"Loading original samples from {config['data_file']}...")
-    original_samples = load_gw_original_samples(config["data_file"], config["parameters"])
-    print(f"  Loaded {original_samples.shape[0]} samples with {original_samples.shape[1]} parameters")
+    original_samples = load_gw_original_samples(
+        config["data_file"], config["parameters"]
+    )
+    print(
+        f"  Loaded {original_samples.shape[0]} samples with {original_samples.shape[1]} parameters"
+    )
 
     # Sample from NF
     print(f"Sampling from NF model at {config['model_dir']}...")
@@ -183,6 +203,7 @@ def validate_gw_event(event_name: str, config: Dict) -> None:
 # ============================================================================
 # NICER Validation Functions
 # ============================================================================
+
 
 def load_nicer_original_samples(data_file: Path, parameters: list) -> np.ndarray:
     """
@@ -249,11 +270,15 @@ def validate_nicer_pulsar(pulsar_name: str, config: Dict) -> None:
 
     # Load original samples from both groups
     print(f"Loading Amsterdam samples from {config['amsterdam']}...")
-    amsterdam_samples = load_nicer_original_samples(config["amsterdam"], config["parameters"])
+    amsterdam_samples = load_nicer_original_samples(
+        config["amsterdam"], config["parameters"]
+    )
     print(f"  Loaded {amsterdam_samples.shape[0]} Amsterdam samples")
 
     print(f"Loading Maryland samples from {config['maryland']}...")
-    maryland_samples = load_nicer_original_samples(config["maryland"], config["parameters"])
+    maryland_samples = load_nicer_original_samples(
+        config["maryland"], config["parameters"]
+    )
     print(f"  Loaded {maryland_samples.shape[0]} Maryland samples")
 
     # Construct JAX KDEs (same as in NICERLikelihood)
@@ -272,14 +297,19 @@ def validate_nicer_pulsar(pulsar_name: str, config: Dict) -> None:
     print(f"  Generated {kde_samples.shape[0]} KDE samples")
 
     # Combine original samples (equal weights)
-    n_original_per_group = min(amsterdam_samples.shape[0], maryland_samples.shape[0]) // 2
+    n_original_per_group = (
+        min(amsterdam_samples.shape[0], maryland_samples.shape[0]) // 2
+    )
     np.random.seed(SEED + 2)
-    amsterdam_idx = np.random.choice(amsterdam_samples.shape[0], n_original_per_group, replace=False)
-    maryland_idx = np.random.choice(maryland_samples.shape[0], n_original_per_group, replace=False)
-    original_samples = np.vstack([
-        amsterdam_samples[amsterdam_idx],
-        maryland_samples[maryland_idx]
-    ])
+    amsterdam_idx = np.random.choice(
+        amsterdam_samples.shape[0], n_original_per_group, replace=False
+    )
+    maryland_idx = np.random.choice(
+        maryland_samples.shape[0], n_original_per_group, replace=False
+    )
+    original_samples = np.vstack(
+        [amsterdam_samples[amsterdam_idx], maryland_samples[maryland_idx]]
+    )
     print(f"  Subsampled {original_samples.shape[0]} original samples for comparison")
 
     # Create corner plot comparison
@@ -294,7 +324,9 @@ def validate_nicer_pulsar(pulsar_name: str, config: Dict) -> None:
     )
 
     # Save figure in subdirectory named after the Amsterdam dataset
-    amsterdam_name = config["amsterdam"].stem  # e.g., "J00300451_amsterdam_ST_U_NICER_only_Riley2019"
+    amsterdam_name = config[
+        "amsterdam"
+    ].stem  # e.g., "J00300451_amsterdam_ST_U_NICER_only_Riley2019"
     maryland_name = config["maryland"].stem
     output_subdir = OUTPUT_DIR / "nicer" / pulsar_name
     output_subdir.mkdir(parents=True, exist_ok=True)
@@ -308,6 +340,7 @@ def validate_nicer_pulsar(pulsar_name: str, config: Dict) -> None:
 # ============================================================================
 # Plotting Functions
 # ============================================================================
+
 
 def compute_plot_ranges(
     original_samples: np.ndarray,
@@ -430,12 +463,15 @@ def plot_corner_comparison(
 
     # Add legend manually (corner doesn't propagate labels automatically)
     from matplotlib.patches import Patch
+
     axes = fig.get_axes()
     legend_elements = [
-        Patch(facecolor='blue', alpha=0.5, label=truth_label),
-        Patch(facecolor='red', alpha=0.5, label=approx_label)
+        Patch(facecolor="blue", alpha=0.5, label=truth_label),
+        Patch(facecolor="red", alpha=0.5, label=approx_label),
     ]
-    axes[0].legend(handles=legend_elements, loc="upper right", fontsize=12, framealpha=0.9)
+    axes[0].legend(
+        handles=legend_elements, loc="upper right", fontsize=12, framealpha=0.9
+    )
 
     return fig
 
@@ -443,6 +479,7 @@ def plot_corner_comparison(
 # ============================================================================
 # Main Execution
 # ============================================================================
+
 
 def main():
     """Run validation for all GW events and NICER pulsars."""
@@ -464,6 +501,7 @@ def main():
             print(f"ERROR: Failed to validate {event_name}")
             print(f"  {e}")
             import traceback
+
             traceback.print_exc()
 
     # Validate NICER pulsars
@@ -477,6 +515,7 @@ def main():
             print(f"ERROR: Failed to validate {pulsar_name}")
             print(f"  {e}")
             import traceback
+
             traceback.print_exc()
 
     print("\n" + "=" * 70)

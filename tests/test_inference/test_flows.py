@@ -2,9 +2,7 @@
 
 import pytest
 import numpy as np
-import tempfile
 import yaml
-from pathlib import Path
 from pydantic import ValidationError
 
 from jesterTOV.inference.flows.config import FlowTrainingConfig
@@ -215,7 +213,9 @@ class TestDataLoading:
 
     def test_load_gw_posterior_basic(self, synthetic_gw_posterior):
         """Test loading posterior from npz file with required keys."""
-        data, metadata = load_gw_posterior(str(synthetic_gw_posterior), max_samples=50000)
+        data, metadata = load_gw_posterior(
+            str(synthetic_gw_posterior), max_samples=50000
+        )
 
         assert data.shape[0] == 1000  # All samples loaded
         assert data.shape[1] == 4  # 4 features
@@ -324,11 +324,13 @@ class TestDataPreprocessing:
     def test_clip_data_for_bijection(self):
         """Test data clipping for numerical stability (epsilon bounds)."""
         np.random.seed(42)
-        data = np.array([
-            [1.5, 1.2, 100.0, 200.0],
-            [2.0, 1.8, 0.0, 500.0],  # lambda_1 = 0 should be clipped
-            [1.8, 1.8, 300.0, 0.0],  # lambda_2 = 0 should be clipped
-        ])
+        data = np.array(
+            [
+                [1.5, 1.2, 100.0, 200.0],
+                [2.0, 1.8, 0.0, 500.0],  # lambda_1 = 0 should be clipped
+                [1.8, 1.8, 300.0, 0.0],  # lambda_2 = 0 should be clipped
+            ]
+        )
 
         epsilon = 1e-5
         clipped = clip_data_for_bijection(data, epsilon=epsilon)
@@ -346,10 +348,12 @@ class TestDataPreprocessing:
     def test_clip_data_swaps_m1_m2_if_needed(self):
         """Test that m2 > m1 samples are swapped correctly."""
         # Create data where m2 > m1
-        data = np.array([
-            [1.2, 1.5, 100.0, 200.0],  # m2 > m1, should swap
-            [2.0, 1.8, 300.0, 400.0],  # m1 > m2, should not swap
-        ])
+        data = np.array(
+            [
+                [1.2, 1.5, 100.0, 200.0],  # m2 > m1, should swap
+                [2.0, 1.8, 300.0, 400.0],  # m1 > m2, should not swap
+            ]
+        )
 
         clipped = clip_data_for_bijection(data)
 
@@ -382,9 +386,11 @@ class TestDataPreprocessing:
 
     def test_clip_data_epsilon_parameter(self):
         """Test that epsilon parameter is respected."""
-        data = np.array([
-            [1.5, 1.2, 0.0, 0.0],
-        ])
+        data = np.array(
+            [
+                [1.5, 1.2, 0.0, 0.0],
+            ]
+        )
 
         epsilon = 0.01
         clipped = clip_data_for_bijection(data, epsilon=epsilon)

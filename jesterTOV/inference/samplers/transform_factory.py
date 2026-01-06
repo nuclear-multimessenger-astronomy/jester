@@ -89,6 +89,7 @@ def create_unit_cube_transforms(prior: Prior) -> list[BijectiveTransform]:
     if isinstance(prior, UniformPrior):
         # Wrap single prior in CombinePrior for uniform handling
         from ..base import CombinePrior as CombinePriorClass
+
         prior = CombinePriorClass([prior])
     elif not isinstance(prior, CombinePrior):
         raise ValueError(

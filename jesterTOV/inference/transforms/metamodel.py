@@ -43,6 +43,7 @@ class MetaModelTransform(JesterTransformBase):
         the transformed quantities. Default is to keep all input parameters.
     **kwargs
         Additional arguments passed to JesterTransformBase, including:
+
         - ndat_metamodel : int
             Number of density grid points for EOS construction (default: 100)
         - nmax_nsat : float

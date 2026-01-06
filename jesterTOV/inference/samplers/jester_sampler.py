@@ -11,7 +11,12 @@ from typing import Any
 import jax.numpy as jnp
 from jaxtyping import Array, Float, PRNGKeyArray
 
-from jesterTOV.inference.base import LikelihoodBase, Prior, BijectiveTransform, NtoMTransform
+from jesterTOV.inference.base import (
+    LikelihoodBase,
+    Prior,
+    BijectiveTransform,
+    NtoMTransform,
+)
 from jesterTOV.logging_config import get_logger
 
 logger = get_logger("jester")
@@ -129,7 +134,9 @@ class JesterSampler:
         """
         return dict(zip(self.parameter_names, x))
 
-    def posterior_from_dict(self, named_params: dict[str, Float], data: dict[str, Any]) -> Float:
+    def posterior_from_dict(
+        self, named_params: dict[str, Float], data: dict[str, Any]
+    ) -> Float:
         """
         Evaluate posterior log probability from parameter dict.
 
@@ -156,7 +163,7 @@ class JesterSampler:
         for transform in self.likelihood_transforms:
             named_params = transform.forward(named_params)
 
-        return self.likelihood.evaluate(named_params, data) + prior
+        return self.likelihood.evaluate(named_params) + prior
 
     def posterior(self, params: Float[Array, " n_dim"], data: dict[str, Any]) -> Float:
         """
@@ -177,7 +184,9 @@ class JesterSampler:
         named_params = self.add_name(params)
         return self.posterior_from_dict(named_params, data)
 
-    def sample(self, key: PRNGKeyArray, initial_position: Array = jnp.array([])) -> None:
+    def sample(
+        self, key: PRNGKeyArray, initial_position: Array = jnp.array([])
+    ) -> None:
         """
         Run MCMC sampling.
 

@@ -136,7 +136,7 @@ class RadioTimingLikelihood(LikelihoodBase):
         self.nb_masses = nb_masses
         self.m_min = m_min  # Minimum mass for integration (solar masses)
 
-    def evaluate(self, params: dict[str, Float | Array], data: dict[str, Any]) -> Float:
+    def evaluate(self, params: dict[str, Float | Array]) -> Float:
         """Evaluate the marginalized log-likelihood for the pulsar mass measurement.
 
         This method computes the marginal likelihood by:
@@ -151,11 +151,9 @@ class RadioTimingLikelihood(LikelihoodBase):
         params : dict[str, Float | Array]
             Dictionary containing TOV solution outputs from the transform.
             Required keys:
+
             - "masses_EOS" : Array of neutron star masses (solar masses) at
               different central pressures. The maximum value is taken as M_TOV.
-        data : dict[str, Any]
-            Unused; included for API compatibility. All observational data
-            (mean, std) is stored in the likelihood object during initialization.
 
         Returns
         -------

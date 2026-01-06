@@ -51,6 +51,7 @@ class MetaModelCSETransform(JesterTransformBase):
         CSE region. Default is 100.
     **kwargs
         Additional arguments passed to JesterTransformBase, including:
+
         - ndat_metamodel : int
             Number of density grid points for low-density MetaModel region
         - nmax_nsat : float

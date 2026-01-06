@@ -142,7 +142,9 @@ class JesterTransformBase(NtoMTransform, ABC):
 
     def _solve_tov(
         self, eos_tuple: tuple[Array, Array, Array, Array, Array]
-    ) -> tuple[Float[Array, " n"], Float[Array, " n"], Float[Array, " n"], Float[Array, " n"]]:
+    ) -> tuple[
+        Float[Array, " n"], Float[Array, " n"], Float[Array, " n"], Float[Array, " n"]
+    ]:
         """Solve TOV equations for a given EOS.
 
         Parameters
@@ -231,10 +233,10 @@ class JesterTransformBase(NtoMTransform, ABC):
             "dloge_dlogp": dloge_dlogps,
             "cs2": cs2,
             # Constraint violation counts (scalars for JAX compatibility)
-            "n_tov_failures": constraints['n_tov_failures'],
-            "n_causality_violations": constraints['n_causality_violations'],
-            "n_stability_violations": constraints['n_stability_violations'],
-            "n_pressure_violations": constraints['n_pressure_violations'],
+            "n_tov_failures": constraints["n_tov_failures"],
+            "n_causality_violations": constraints["n_causality_violations"],
+            "n_stability_violations": constraints["n_stability_violations"],
+            "n_pressure_violations": constraints["n_pressure_violations"],
         }
 
     def set_keep_names(self, keep_names: list[str] | None) -> None:

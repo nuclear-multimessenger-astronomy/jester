@@ -74,7 +74,9 @@ def load_config(config_path: Union[str, Path]) -> InferenceConfig:
         logger.debug(f"  Seed: {config.seed}")
         logger.debug(f"  Transform type: {config.transform.type}")
         logger.debug(f"  Prior file: {config.prior.specification_file}")
-        logger.debug(f"  Enabled likelihoods: {[lk.type for lk in config.likelihoods if lk.enabled]}")
+        logger.debug(
+            f"  Enabled likelihoods: {[lk.type for lk in config.likelihoods if lk.enabled]}"
+        )
         logger.debug(f"  Sampler type: {config.sampler.type}")
         logger.debug(f"  Output directory: {config.sampler.output_dir}")
         return config

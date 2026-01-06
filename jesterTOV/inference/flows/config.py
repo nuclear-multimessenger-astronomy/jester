@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, field_validator
 
 
 class FlowTrainingConfig(BaseModel):
@@ -104,7 +104,18 @@ class FlowTrainingConfig(BaseModel):
     constrain_physics: bool = False
     use_chirp_mass: bool = False
 
-    @field_validator("num_epochs", "max_patience", "nn_depth", "nn_block_dim", "flow_layers", "max_samples", "nn_width", "knots", "transformer_knots", "batch_size")
+    @field_validator(
+        "num_epochs",
+        "max_patience",
+        "nn_depth",
+        "nn_block_dim",
+        "flow_layers",
+        "max_samples",
+        "nn_width",
+        "knots",
+        "transformer_knots",
+        "batch_size",
+    )
     @classmethod
     def validate_positive_int(cls, v: int) -> int:
         """Validate that integer value is positive."""
@@ -112,7 +123,9 @@ class FlowTrainingConfig(BaseModel):
             raise ValueError(f"Value must be positive, got: {v}")
         return v
 
-    @field_validator("learning_rate", "tanh_max_val", "val_prop", "transformer_interval")
+    @field_validator(
+        "learning_rate", "tanh_max_val", "val_prop", "transformer_interval"
+    )
     @classmethod
     def validate_positive_float(cls, v: float) -> float:
         """Validate that float value is positive."""

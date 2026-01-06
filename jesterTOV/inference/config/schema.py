@@ -42,7 +42,9 @@ class TransformConfig(BaseModel):
     min_nsat_TOV: float = 0.75
     ndat_TOV: int = 100
     nb_masses: int = 100
-    crust_name: Literal["DH", "BPS", "DH_fixed"] = "DH" # TODO: this should be done in the crust source code, not here, and here just fetch from there
+    crust_name: Literal["DH", "BPS", "DH_fixed"] = (
+        "DH"  # TODO: this should be done in the crust source code, not here, and here just fetch from there
+    )
 
     @field_validator("nb_CSE")
     @classmethod
@@ -83,7 +85,7 @@ class LikelihoodConfig(BaseModel):
 
     Attributes
     ----------
-    type : Literal["gw", "nicer", "radio", "chieft", "rex", "constraints", "zero"]
+    type : Literal["gw", "gw_presampled", "nicer", "radio", "chieft", "rex", "constraints", "zero"]
         Type of likelihood constraint
     enabled : bool
         Whether this likelihood is enabled
@@ -99,6 +101,18 @@ class LikelihoodConfig(BaseModel):
                 Number of mass samples per evaluation (default: 20)
             N_masses_batch_size : int
                 Batch size for mass sampling (default: 10)
+
+        For GW pre-sampled likelihoods (gw_presampled):
+            events : list[dict]
+                List of GW events with 'name' and 'model_dir' keys
+            penalty_value : float
+                Penalty for masses exceeding Mtov (default: -99999.0)
+            N_masses_evaluation : int
+                Number of mass samples to pre-sample (default: 10000)
+            N_masses_batch_size : int
+                Batch size for jax.lax.map processing (default: 1000)
+            seed : int
+                Random seed for mass pre-sampling (default: 42)
 
         For NICER likelihoods:
             pulsars : list[dict]
@@ -146,13 +160,26 @@ class LikelihoodConfig(BaseModel):
     """
 
     # TODO: deprecate rex for now: not implemented yet
-    type: Literal["gw", "nicer", "radio", "chieft", "rex", "constraints", "constraints_eos", "constraints_tov", "zero"]
+    type: Literal[
+        "gw",
+        "gw_presampled",
+        "nicer",
+        "radio",
+        "chieft",
+        "rex",
+        "constraints",
+        "constraints_eos",
+        "constraints_tov",
+        "zero",
+    ]
     enabled: bool = True
     parameters: Dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("parameters")
     @classmethod
-    def validate_likelihood_parameters(cls, v: Dict[str, Any], info: ValidationInfo) -> Dict[str, Any]:
+    def validate_likelihood_parameters(
+        cls, v: Dict[str, Any], info: ValidationInfo
+    ) -> Dict[str, Any]:
         """Validate likelihood-specific parameters."""
         if "type" not in info.data:
             return v
@@ -177,7 +204,9 @@ class LikelihoodConfig(BaseModel):
             # Validate each event
             for i, event in enumerate(events):
                 if not isinstance(event, dict):
-                    raise ValueError(f"Event {i} must be a dict with 'name' and optional 'model_dir' keys")
+                    raise ValueError(
+                        f"Event {i} must be a dict with 'name' and optional 'model_dir' keys"
+                    )
                 if "name" not in event:
                     raise ValueError(f"Event {i} missing required 'name' field")
                 # model_dir is now optional - will use presets if not provided
@@ -186,6 +215,35 @@ class LikelihoodConfig(BaseModel):
             v.setdefault("penalty_value", -99999.0)
             v.setdefault("N_masses_evaluation", 20)
             v.setdefault("N_masses_batch_size", 10)
+
+        # Validate GW pre-sampled likelihood parameters
+        elif likelihood_type == "gw_presampled":
+            if "events" not in v:
+                raise ValueError(
+                    "GW pre-sampled likelihood requires 'events' parameter (list of dicts with 'name' and 'model_dir')"
+                )
+
+            events = v["events"]
+            if not isinstance(events, list) or len(events) == 0:
+                raise ValueError(
+                    "GW pre-sampled likelihood 'events' must be a non-empty list"
+                )
+
+            # Validate each event
+            for i, event in enumerate(events):
+                if not isinstance(event, dict):
+                    raise ValueError(
+                        f"Event {i} must be a dict with 'name' and optional 'model_dir' keys"
+                    )
+                if "name" not in event:
+                    raise ValueError(f"Event {i} missing required 'name' field")
+                # model_dir is now optional - will use presets if not provided
+
+            # Set defaults for optional parameters
+            v.setdefault("penalty_value", -99999.0)
+            v.setdefault("N_masses_evaluation", 10000)  # Large N recommended!
+            v.setdefault("N_masses_batch_size", 1000)
+            v.setdefault("seed", 42)
 
         # Validate NICER likelihood parameters
         elif likelihood_type == "nicer":
@@ -209,9 +267,13 @@ class LikelihoodConfig(BaseModel):
                 if "name" not in pulsar:
                     raise ValueError(f"Pulsar {i} missing required 'name' field")
                 if "amsterdam_samples_file" not in pulsar:
-                    raise ValueError(f"Pulsar {i} missing required 'amsterdam_samples_file' field")
+                    raise ValueError(
+                        f"Pulsar {i} missing required 'amsterdam_samples_file' field"
+                    )
                 if "maryland_samples_file" not in pulsar:
-                    raise ValueError(f"Pulsar {i} missing required 'maryland_samples_file' field")
+                    raise ValueError(
+                        f"Pulsar {i} missing required 'maryland_samples_file' field"
+                    )
 
             # Set defaults for optional parameters
             v.setdefault("N_masses_evaluation", 100)
@@ -227,7 +289,9 @@ class LikelihoodConfig(BaseModel):
 
             pulsars = v["pulsars"]
             if not isinstance(pulsars, list) or len(pulsars) == 0:
-                raise ValueError("Radio timing likelihood 'pulsars' must be a non-empty list")
+                raise ValueError(
+                    "Radio timing likelihood 'pulsars' must be a non-empty list"
+                )
 
             # Validate each pulsar
             for i, pulsar in enumerate(pulsars):
@@ -243,11 +307,17 @@ class LikelihoodConfig(BaseModel):
                     raise ValueError(f"Pulsar {i} missing required 'mass_std' field")
 
                 # Validate mass values
-                if not isinstance(pulsar["mass_mean"], (int, float)) or pulsar["mass_mean"] <= 0:
+                if (
+                    not isinstance(pulsar["mass_mean"], (int, float))
+                    or pulsar["mass_mean"] <= 0
+                ):
                     raise ValueError(
                         f"Pulsar {i} 'mass_mean' must be a positive number, got: {pulsar['mass_mean']}"
                     )
-                if not isinstance(pulsar["mass_std"], (int, float)) or pulsar["mass_std"] <= 0:
+                if (
+                    not isinstance(pulsar["mass_std"], (int, float))
+                    or pulsar["mass_std"] <= 0
+                ):
                     raise ValueError(
                         f"Pulsar {i} 'mass_std' must be a positive number, got: {pulsar['mass_std']}"
                     )
@@ -350,7 +420,17 @@ class FlowMCSamplerConfig(BaseSamplerConfig):
     train_thinning: int = 1
     output_thinning: int = 5
 
-    @field_validator("n_chains", "n_loop_training", "n_loop_production", "n_local_steps", "n_global_steps", "n_epochs", "learning_rate", "train_thinning", "output_thinning")
+    @field_validator(
+        "n_chains",
+        "n_loop_training",
+        "n_loop_production",
+        "n_local_steps",
+        "n_global_steps",
+        "n_epochs",
+        "learning_rate",
+        "train_thinning",
+        "output_thinning",
+    )
     @classmethod
     def validate_positive(cls, v: int) -> int:
         """Validate that value is positive."""
@@ -479,7 +559,7 @@ class SMCSamplerConfig(BaseSamplerConfig):
 # This allows Pydantic to automatically select the correct config class based on the 'type' field
 SamplerConfig = Annotated[
     Union[FlowMCSamplerConfig, BlackJAXNSAWConfig, SMCSamplerConfig],
-    Discriminator("type")
+    Discriminator("type"),
 ]
 
 

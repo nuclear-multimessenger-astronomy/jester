@@ -7,7 +7,10 @@ import jax.numpy as jnp
 from jesterTOV.inference.samplers.jester_sampler import JesterSampler
 from jesterTOV.inference.samplers.flowmc import FlowMCSampler
 from jesterTOV.inference.base import UniformPrior, CombinePrior, LikelihoodBase
-from jesterTOV.inference.base.transform import BijectiveTransform, NtoMTransform, ScaleTransform
+from jesterTOV.inference.base.transform import (
+    NtoMTransform,
+    ScaleTransform,
+)
 from jesterTOV.inference.config.schema import FlowMCSamplerConfig
 
 
@@ -15,7 +18,7 @@ from jesterTOV.inference.config.schema import FlowMCSamplerConfig
 class MockLikelihood(LikelihoodBase):
     """Simple mock likelihood that returns 0.0 (prior-only sampling)."""
 
-    def evaluate(self, params, data):
+    def evaluate(self, params):
         return 0.0
 
 
@@ -52,10 +55,12 @@ class TestJesterSamplerBase:
 
     def test_jester_sampler_add_name(self):
         """Test JesterSampler.add_name converts array to dict."""
-        prior = CombinePrior([
-            UniformPrior(0.0, 1.0, parameter_names=["x"]),
-            UniformPrior(10.0, 20.0, parameter_names=["y"]),
-        ])
+        prior = CombinePrior(
+            [
+                UniformPrior(0.0, 1.0, parameter_names=["x"]),
+                UniformPrior(10.0, 20.0, parameter_names=["y"]),
+            ]
+        )
         likelihood = MockLikelihood()
 
         sampler = JesterSampler(likelihood, prior)
@@ -93,7 +98,7 @@ class TestJesterSamplerBase:
 
         # Create likelihood that expects transformed parameter "y"
         class TransformedLikelihood(LikelihoodBase):
-            def evaluate(self, params, data):
+            def evaluate(self, params):
                 # Expect "y" parameter (from transform)
                 assert "y" in params
                 return 0.0
@@ -124,7 +129,10 @@ class TestJesterSamplerBase:
 
         sampler = JesterSampler(likelihood, prior)
 
-        with pytest.raises(NotImplementedError, match="must be implemented by backend-specific subclass"):
+        with pytest.raises(
+            NotImplementedError,
+            match="must be implemented by backend-specific subclass",
+        ):
             sampler.sample(jax.random.PRNGKey(42))
 
     def test_jester_sampler_print_summary_not_implemented(self):
@@ -134,7 +142,10 @@ class TestJesterSamplerBase:
 
         sampler = JesterSampler(likelihood, prior)
 
-        with pytest.raises(NotImplementedError, match="must be implemented by backend-specific subclass"):
+        with pytest.raises(
+            NotImplementedError,
+            match="must be implemented by backend-specific subclass",
+        ):
             sampler.print_summary()
 
     def test_jester_sampler_get_samples_not_implemented(self):
@@ -144,7 +155,10 @@ class TestJesterSamplerBase:
 
         sampler = JesterSampler(likelihood, prior)
 
-        with pytest.raises(NotImplementedError, match="must be implemented by backend-specific subclass"):
+        with pytest.raises(
+            NotImplementedError,
+            match="must be implemented by backend-specific subclass",
+        ):
             sampler.get_samples()
 
 
@@ -172,7 +186,9 @@ class TestFlowMCSampler:
             likelihood,
             prior,
             config,
-            local_sampler_arg={"step_size": jnp.array([1e-3])},  # Required for GaussianRandomWalk
+            local_sampler_arg={
+                "step_size": jnp.array([1e-3])
+            },  # Required for GaussianRandomWalk
         )
 
         # Should create flowMC sampler
@@ -229,10 +245,12 @@ class TestFlowMCSampler:
 
     def test_flowmc_sampler_diagonal_extraction_for_gaussian_random_walk(self):
         """Test that FlowMCSampler extracts diagonal from matrix step_size for GaussianRandomWalk."""
-        prior = CombinePrior([
-            UniformPrior(0.0, 1.0, parameter_names=["x"]),
-            UniformPrior(0.0, 1.0, parameter_names=["y"]),
-        ])
+        prior = CombinePrior(
+            [
+                UniformPrior(0.0, 1.0, parameter_names=["x"]),
+                UniformPrior(0.0, 1.0, parameter_names=["y"]),
+            ]
+        )
         likelihood = MockLikelihood()
 
         config = FlowMCSamplerConfig(
@@ -348,11 +366,13 @@ class TestFlowMCSamplerParameterOrdering:
         to preserve dictionary order.
         """
         # Create prior with multiple parameters (order matters!)
-        prior = CombinePrior([
-            UniformPrior(0.0, 1.0, parameter_names=["a"]),
-            UniformPrior(10.0, 20.0, parameter_names=["b"]),
-            UniformPrior(100.0, 200.0, parameter_names=["c"]),
-        ])
+        prior = CombinePrior(
+            [
+                UniformPrior(0.0, 1.0, parameter_names=["a"]),
+                UniformPrior(10.0, 20.0, parameter_names=["b"]),
+                UniformPrior(100.0, 200.0, parameter_names=["c"]),
+            ]
+        )
         likelihood = MockLikelihood()
 
         config = FlowMCSamplerConfig(
@@ -542,11 +562,13 @@ class TestBlackJAXSMCSampler:
         from jesterTOV.inference.config.schema import SMCSamplerConfig
 
         # Multi-dimensional prior
-        prior = CombinePrior([
-            UniformPrior(0.0, 1.0, parameter_names=["x"]),
-            UniformPrior(0.0, 1.0, parameter_names=["y"]),
-            UniformPrior(0.0, 1.0, parameter_names=["z"]),
-        ])
+        prior = CombinePrior(
+            [
+                UniformPrior(0.0, 1.0, parameter_names=["x"]),
+                UniformPrior(0.0, 1.0, parameter_names=["y"]),
+                UniformPrior(0.0, 1.0, parameter_names=["z"]),
+            ]
+        )
         likelihood = MockLikelihood()
 
         # Custom mass matrix scales
@@ -837,7 +859,10 @@ class TestSamplerFactory:
         """Test factory creates FlowMC sampler from config."""
         from jesterTOV.inference.samplers.factory import create_sampler
         from jesterTOV.inference.samplers.flowmc import FlowMCSampler
-        from jesterTOV.inference.config.schema import InferenceConfig, FlowMCSamplerConfig
+        from jesterTOV.inference.config.schema import (
+            InferenceConfig,
+            FlowMCSamplerConfig,
+        )
 
         # Create full inference config
         config = InferenceConfig(
