@@ -272,14 +272,8 @@ class InferenceResult:
         transform,
         n_eos_samples: int | None = None,
         batch_size: int = 1000,
-        sampler=None,
     ) -> None:
         """Apply transform to posterior samples to add EOS quantities.
-
-        This method avoids redundant TOV solver calls by:
-        1. First checking if transforms are cached in the sampler (from sampling)
-        2. If cached, uses those (zero recomputation!)
-        3. If not cached, applies transform to posterior samples (one recomputation)
 
         Parameters
         ----------
@@ -291,15 +285,12 @@ class InferenceResult:
             a subset and filters log_prob/sampler fields to match.
         batch_size : int, optional
             Batch size for JAX computation, by default 1000
-        sampler : JesterSampler, optional
-            Sampler instance to check for cached transforms. If provided and caching
-            was enabled during sampling, will use cached transforms instead of recomputing.
 
         Notes
         -----
         When n_eos_samples < total samples:
         - Randomly selects n_eos_samples from posterior
-        - Applies transform to selected samples (or retrieves from cache)
+        - Applies transform to selected samples
         - Filters log_prob and sampler-specific fields (weights, ess, logL, logL_birth)
           to match selected samples
         - Backs up full arrays as *_full before filtering
@@ -340,29 +331,18 @@ class InferenceResult:
         else:
             chosen_samples = param_samples
 
-        # Try to get cached transforms first (zero recomputation!)
-        transformed_samples = None
-        if sampler is not None:
-            logger.info("Checking for cached transforms from sampling...")
-            transformed_samples = sampler.get_cached_transforms(chosen_samples)
+        # Apply transform with batched processing
+        logger.info(f"Applying transform to {n_eos_samples} samples...")
+        logger.info(f"Using batch size: {batch_size}")
 
-        # If cache miss or no sampler provided, recompute
-        if transformed_samples is None:
-            logger.info("Cache miss or unavailable, recomputing transforms...")
-            chosen_samples_jax = {k: jnp.array(v) for k, v in chosen_samples.items()}
+        chosen_samples_jax = {k: jnp.array(v) for k, v in chosen_samples.items()}
+        my_forward = jax.jit(transform.forward)
 
-            # Apply transform with batched processing
-            logger.info(f"Applying transform to {n_eos_samples} samples...")
-            logger.info(f"Using batch size: {batch_size}")
-            my_forward = jax.jit(transform.forward)
-
-            import time
-            TOV_start = time.time()
-            transformed_samples = jax.lax.map(my_forward, chosen_samples_jax, batch_size=batch_size)
-            TOV_end = time.time()
-            logger.info(f"TOV solve time: {TOV_end - TOV_start:.2f} s ({n_eos_samples} samples)")
-        else:
-            logger.info("✓ Using cached transforms - zero recomputation!")
+        import time
+        TOV_start = time.time()
+        transformed_samples = jax.lax.map(my_forward, chosen_samples_jax, batch_size=batch_size)
+        TOV_end = time.time()
+        logger.info(f"TOV solve time: {TOV_end - TOV_start:.2f} s ({n_eos_samples} samples)")
 
         # Add transformed outputs to posterior
         self.add_derived_eos(transformed_samples)

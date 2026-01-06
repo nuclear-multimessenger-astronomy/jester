@@ -70,6 +70,7 @@ Contents
    :maxdepth: 2
    :caption: Developer Guide
 
+   inference_workflow
    inference_architecture
 
 Indices and tables

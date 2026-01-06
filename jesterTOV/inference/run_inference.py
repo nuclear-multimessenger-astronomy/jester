@@ -478,26 +478,16 @@ def main(config_path: str):
     test_log_prob = jax.vmap(likelihood.evaluate)(test_samples_transformed, {})
     logger.info(f"Test log probabilities: {test_log_prob}")
 
-    # TODO: Enable transform caching to avoid redundant TOV solver calls
-    # Caching infrastructure exists but has JAX tracing issues (see CLAUDE.md)
-    # Need to implement caching outside JAX trace context for all samplers:
-    # - FlowMC: Cache during production phase
-    # - BlackJAX SMC: Cache final temperature samples
-    # - BlackJAX NS-AW: Cache all samples
-    # For now, caching is DISABLED and we fall back to recomputation
-    # sampler.enable_transform_caching()  # DISABLED
-
     # Run inference
     result = run_sampling(sampler, config.seed, config, outdir)
 
-    # Generate EOS quantities from cached transforms (if available) or recompute
-    # With caching: zero TOV solver calls (uses cached outputs from sampling)
-    # Without caching: one TOV solver call (fallback to recomputation)
+    # Generate EOS quantities from posterior samples
+    # Note: This requires recomputing the TOV solver for selected samples.
+    # Future optimization: implement transform caching outside JAX trace (see JesterSampler)
     result.add_eos_from_transform(
         transform=transform,  # Use the same transform from sampling
         n_eos_samples=config.sampler.n_eos_samples,
         batch_size=config.sampler.log_prob_batch_size,
-        sampler=sampler,  # Pass sampler to check for cached transforms
     )
 
     # Save unified HDF5 file

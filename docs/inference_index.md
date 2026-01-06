@@ -25,6 +25,15 @@ Choose the right guide for your needs:
 - Advanced usage
 - **Start here if**: You want comprehensive understanding
 
+### 🏗️ Workflow Guide
+**[Inference Workflow](inference_workflow.md)** - *30-45 minutes*
+- Interactive Mermaid diagrams showing file connections
+- Step-by-step data flow from config to results
+- Understanding how components connect
+- Developer guide for extending the system
+- Common pitfalls and best practices
+- **Start here if**: You want to understand how files connect or extend the system
+
 ### 🏗️ Architecture Guide
 **[Architecture Documentation](inference_architecture.md)** - *20-40 minutes*
 - Module dependency graph
@@ -163,11 +172,13 @@ Choose the right guide for your needs:
 ### 👨‍💻 Developer (Contributing Code)
 
 **Recommended path**:
-1. Start: [Architecture Documentation](inference_architecture.md)
-2. Reference: [Complete Documentation](inference.md)
-3. Code: [Module README](../jesterTOV/inference/README.md)
+1. Start: [Inference Workflow](inference_workflow.md)
+2. Deep dive: [Architecture Documentation](inference_architecture.md)
+3. Reference: [Complete Documentation](inference.md)
+4. Code: [Module README](../jesterTOV/inference/README.md)
 
 **Focus areas**:
+- File connections and data flow
 - Module structure
 - Class hierarchy
 - Component interfaces
