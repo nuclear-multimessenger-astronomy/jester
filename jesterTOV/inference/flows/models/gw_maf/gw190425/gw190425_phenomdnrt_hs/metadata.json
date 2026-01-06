@@ -1,0 +1,25 @@
+{
+  "n_samples_total": 58713,
+  "n_samples_used": 29357,
+  "filepath": "../../../../../data/gw190425/gw190425_phenomdnrt-hs_posterior.npz",
+  "flow_type": "masked_autoregressive_flow",
+  "num_epochs": 3000,
+  "learning_rate": 0.0001,
+  "max_patience": 500,
+  "val_prop": 0.2,
+  "standardize": true,
+  "constrain_physics": false,
+  "use_chirp_mass": false,
+  "data_bounds_min": [
+    1.6082089771072234,
+    0.9538905589471387,
+    0.00027828159322213,
+    0.162761690581053
+  ],
+  "data_bounds_max": [
+    3.0376939889265615,
+    1.681608282405659,
+    4995.440864711791,
+    9999.66977305056
+  ]
+}
