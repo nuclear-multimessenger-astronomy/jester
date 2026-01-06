@@ -141,11 +141,12 @@ def save_nicer_samples(
     filepath = output_dir / filename
 
     # Save
+    # Metadata is stored as numpy object array
     np.savez(
         filepath,
         radius=radius,
         mass=mass,
-        metadata=metadata
+        metadata=metadata  # type: ignore[arg-type]
     )
 
     print(f"  ✓ Saved: {filename}")
@@ -422,8 +423,12 @@ def extract_amsterdam_data(zenodo_dir: Path, output_dir: Path, ignore_cache: boo
                     member = tar.getmember(mr_file_path)
 
                     # Extract to a temporary file
+                    extracted_file = tar.extractfile(member)
+                    if extracted_file is None:
+                        raise ValueError(f"Could not extract {mr_file_path}")
+
                     with tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.txt') as tmp:
-                        tmp.write(tar.extractfile(member).read())
+                        tmp.write(extracted_file.read())
                         tmp_path = Path(tmp.name)
 
                     # Parse the data
@@ -432,12 +437,12 @@ def extract_amsterdam_data(zenodo_dir: Path, output_dir: Path, ignore_cache: boo
                     # Clean up temp file
                     tmp_path.unlink()
 
-                    # Save
+                    # Save (metadata as numpy object array)
                     np.savez(
                         output_filepath,
                         radius=radius,
                         mass=mass,
-                        metadata=metadata
+                        metadata=metadata  # type: ignore[arg-type]
                     )
 
                     print(f"  ✓ Saved: {output_filename}")
@@ -480,8 +485,12 @@ def extract_amsterdam_data(zenodo_dir: Path, output_dir: Path, ignore_cache: boo
                     member = tar.getmember(mr_file_path)
 
                     # Extract to a temporary file
+                    extracted_file = tar.extractfile(member)
+                    if extracted_file is None:
+                        raise ValueError(f"Could not extract {mr_file_path}")
+
                     with tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.dat') as tmp:
-                        tmp.write(tar.extractfile(member).read())
+                        tmp.write(extracted_file.read())
                         tmp_path = Path(tmp.name)
 
                     # Parse the data
@@ -490,12 +499,12 @@ def extract_amsterdam_data(zenodo_dir: Path, output_dir: Path, ignore_cache: boo
                     # Clean up temp file
                     tmp_path.unlink()
 
-                    # Save
+                    # Save (metadata as numpy object array)
                     np.savez(
                         output_filepath,
                         radius=radius,
                         mass=mass,
-                        metadata=metadata
+                        metadata=metadata  # type: ignore[arg-type]
                     )
 
                     print(f"  ✓ Saved: {output_filename}")

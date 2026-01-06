@@ -30,8 +30,10 @@ from .schema import (
 )
 
 
-def get_type_string(field_type: type) -> str:
+def get_type_string(field_type: type | None) -> str:
     """Convert Python type to readable string"""
+    if field_type is None:
+        return "Any"
     origin = get_origin(field_type)
 
     # Handle Literal types
@@ -75,8 +77,12 @@ def extract_field_info(model: type[BaseModel]) -> list[dict[str, Any]]:
             # Check if there's a default_factory
             if field.default_factory is not None and field.default_factory is not PydanticUndefined:
                 try:
-                    default = field.default_factory()
-                except:
+                    # Try calling with no arguments; default_factory is typically a callable
+                    if callable(field.default_factory):
+                        default = field.default_factory()  # type: ignore[call-arg]
+                    else:
+                        default = None
+                except Exception:
                     default = None
             else:
                 default = None
@@ -92,8 +98,10 @@ def extract_field_info(model: type[BaseModel]) -> list[dict[str, Any]]:
         }
 
         # Get additional info from Field() if available
-        if hasattr(field, 'json_schema_extra'):
-            field_info.update(field.json_schema_extra or {})
+        if hasattr(field, 'json_schema_extra') and field.json_schema_extra:
+            # json_schema_extra can be dict or callable - only handle dict case
+            if isinstance(field.json_schema_extra, dict):
+                field_info.update(field.json_schema_extra)
 
         fields_info.append(field_info)
 

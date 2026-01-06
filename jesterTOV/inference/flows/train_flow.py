@@ -90,7 +90,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, Mapping
 
 import equinox as eqx
 import jax
@@ -156,18 +156,20 @@ class MassesAndLambdasToChirpMassRatio(AbstractBijection):
     """
 
     shape: tuple = (4,)
-    cond_shape: None = None
+    cond_shape = None  # type: ignore[assignment]  # Override from AbstractBijection
 
     def transform(self, x, condition=None):
         """Transform (m1, m2, λ1, λ2) to (M_chirp, q, λ1, λ2)."""
-        m1, m2, lam1, lam2 = x[..., 0], x[..., 1], x[..., 2], x[..., 3]
+        # Type checker has trouble with array indexing - x is always an array at runtime
+        m1, m2, lam1, lam2 = x[..., 0], x[..., 1], x[..., 2], x[..., 3]  # type: ignore[index]
         M_chirp = (m1 * m2) ** (3 / 5) / (m1 + m2) ** (1 / 5)
         q = m2 / m1
         return jnp.stack([M_chirp, q, lam1, lam2], axis=-1)
 
     def inverse(self, y, condition=None):
         """Transform (M_chirp, q, λ1, λ2) to (m1, m2, λ1, λ2)."""
-        M_chirp, q, lam1, lam2 = y[..., 0], y[..., 1], y[..., 2], y[..., 3]
+        # Type checker has trouble with array indexing - y is always an array at runtime
+        M_chirp, q, lam1, lam2 = y[..., 0], y[..., 1], y[..., 2], y[..., 3]  # type: ignore[index]
         prefac = (1 + q) ** (6 / 5) / q ** (3 / 5)
         M_total = M_chirp * prefac
         m1 = M_total / (1 + q)
@@ -184,8 +186,8 @@ class MassesAndLambdasToChirpMassRatio(AbstractBijection):
         def transform_fn(x_single):
             return self.transform(x_single, condition)
 
-        # Handle batched input
-        if x.ndim == 1:
+        # Handle batched input - x is always an array at runtime
+        if x.ndim == 1:  # type: ignore[union-attr]
             jac = jax.jacobian(transform_fn)(x)
             log_det = jnp.log(jnp.abs(jnp.linalg.det(jac)))
         else:
@@ -384,7 +386,8 @@ def create_physics_constraint_bijection(use_chirp_mass: bool = False):
     if use_chirp_mass:
         # Full reparameterization with chirp mass
         # Physical: (m1, m2, λ1, λ2) -> (M_chirp, q, λ1, λ2) -> unbounded
-        mass_transform = MassesAndLambdasToChirpMassRatio()
+        # Class has no __init__ parameters - shape and cond_shape are class attributes
+        mass_transform = MassesAndLambdasToChirpMassRatio()  # type: ignore[call-arg]
         unbounded_transform = Stack(
             [
                 Invert(Exp()),  # M_chirp in (0, ∞) -> R
@@ -543,7 +546,7 @@ def train_flow(
     max_patience: int = 50,
     val_prop: float = 0.2,
     batch_size: int = 128,
-) -> Tuple[Any, Dict[str, np.ndarray]]:
+) -> Tuple[Any, Dict[str, list]]:
     """
     Train the normalizing flow on data.
 
@@ -613,8 +616,8 @@ def save_model(
         json.dump(metadata, f, indent=2)
 
 
-def plot_losses(losses: Dict[str, np.ndarray], output_path: str) -> None:
-    """Plot training and validation losses."""
+def plot_losses(losses: Mapping[str, np.ndarray | list], output_path: str) -> None:
+    """Plot training and validation losses (accepts dict or list values)."""
     try:
         import matplotlib.pyplot as plt
     except ImportError:

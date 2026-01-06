@@ -13,6 +13,7 @@ Example:
 
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.colors import Normalize
 import seaborn as sns
 import corner
 import os
@@ -350,7 +351,7 @@ def make_mass_radius_plot(data: Dict[str, Any],
 
     # Normalize probabilities for coloring
     prob = np.exp(log_prob - np.max(log_prob))  # Normalize to avoid overflow
-    norm = plt.Normalize(vmin=np.min(prob), vmax=np.max(prob))
+    norm = Normalize(vmin=np.min(prob), vmax=np.max(prob))
     cmap = DEFAULT_COLORMAP if use_crest_cmap else plt.get_cmap("viridis")
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
 
@@ -393,7 +394,7 @@ def make_mass_radius_plot(data: Dict[str, Any],
     # Add colorbar
     fig = plt.gcf()
     sm.set_array([])
-    cbar_ax = fig.add_axes([0.15, 0.94, 0.7, 0.03])
+    cbar_ax = fig.add_axes((0.15, 0.94, 0.7, 0.03))  # tuple for type checker
     cbar = plt.colorbar(sm, cax=cbar_ax, orientation='horizontal')
     cbar.set_label("Normalized posterior probability", fontsize=16)
     cbar.set_ticks([])
@@ -461,7 +462,7 @@ def make_pressure_density_plot(data: Dict[str, Any],
 
     # Normalize probabilities for coloring
     prob = np.exp(log_prob - np.max(log_prob))
-    norm = plt.Normalize(vmin=np.min(prob), vmax=np.max(prob))
+    norm = Normalize(vmin=np.min(prob), vmax=np.max(prob))
     cmap = DEFAULT_COLORMAP if use_crest_cmap else sns.color_palette("viridis", as_cmap=True)
 
     bad_counter = 0

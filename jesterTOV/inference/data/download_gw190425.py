@@ -18,7 +18,7 @@ import urllib.request
 import numpy as np
 import h5py
 from pathlib import Path
-from bilby.gw.conversion import luminosity_distance_to_redshift
+from bilby.gw.conversion import luminosity_distance_to_redshift  # type: ignore[import-not-found]
 
 # URL for GW190425 posterior samples
 URL = "https://dcc.ligo.org/public/0165/P2000026/002/posterior_samples.h5"
@@ -93,7 +93,8 @@ def explore_hdf5_structure(hdf5_path):
 
             if isinstance(f[key], h5py.Group):
                 # Check if this group contains posterior_samples
-                if 'posterior_samples' in f[key]:
+                group = f[key]
+                if 'posterior_samples' in group:  # type: ignore[operator]
                     full_path = f"{key}/posterior_samples"
                     posteriors.append(full_path)
                     print(f"Found: {full_path}")
@@ -122,12 +123,12 @@ def load_posterior_by_path(hdf5_path, posterior_path):
 
         dataset = f[posterior_path]
 
-        # Extract data
-        if dataset.dtype.names:
+        # Extract data - check if it's a structured dataset or group
+        if isinstance(dataset, h5py.Dataset) and dataset.dtype.names:  # type: ignore[union-attr]
             # Structured array
-            header = list(dataset.dtype.names)
+            header = list(dataset.dtype.names)  # type: ignore[arg-type]
             data = np.array(dataset)
-            posterior = {name: data[name] for name in header}
+            posterior = {name: data[name] for name in header}  # type: ignore[call-overload]
         elif isinstance(dataset, h5py.Group):
             # Group with individual datasets
             header = list(dataset.keys())
@@ -245,7 +246,8 @@ def extract_and_save(posterior, header, dataset_name, waveform_model, data_sourc
     }
 
     output_file = DATA_DIR / f"gw190425_{dataset_name}_posterior.npz"
-    np.savez(output_file, **extracted, metadata=metadata)
+    # Metadata is stored as numpy object array
+    np.savez(output_file, **extracted, metadata=metadata)  # type: ignore[arg-type]
 
     print(f"\n✓ Saved to: {output_file}")
     print(f"  Parameters: {metadata['parameters']}")

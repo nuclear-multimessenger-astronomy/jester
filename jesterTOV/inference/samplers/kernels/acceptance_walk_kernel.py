@@ -4,38 +4,40 @@ Copied and modified from:
 https://github.com/mrosep/blackjax_ns_gw/blob/main/src/custom_kernels/acceptance_walk.py
 """
 
-from typing import NamedTuple
+from typing import Callable, NamedTuple, Dict, Any
 from functools import partial
 
 import jax
 import jax.numpy as jnp
+from jax import flatten_util
 
 from blackjax.base import SamplingAlgorithm
-from blackjax.ns.base import PartitionedState, NSState, init as base_init, delete_fn as default_delete_fn
+from blackjax.ns.base import PartitionedState, NSState, NSInfo, init as base_init, delete_fn as default_delete_fn
 from blackjax.ns.adaptive import build_kernel as build_adaptive_kernel
+from blackjax.types import ArrayTree, ArrayLikeTree
 
 
 class DEInfo(NamedTuple):
     """Diagnostic information for a single DE MCMC step."""
-    is_accepted: bool
-    evals: int
-    likelihood_evals: int  # Count only in-bounds proposals (like bilby)
+    is_accepted: jax.Array  # Scalar boolean array
+    evals: jax.Array  # Scalar int array
+    likelihood_evals: jax.Array  # Count only in-bounds proposals (like bilby)
 
 
 class DEWalkInfo(NamedTuple):
     """Diagnostic information for a full DE MCMC walk."""
-    n_accept: int
-    walks_completed: int  # Actual number of walks completed (was n_steps)
-    n_likelihood_evals: int  # Total likelihood evaluations (in-bounds only)
-    total_proposals: int  # Total DE proposals made (including failed prior checks)
+    n_accept: jax.Array  # Scalar int array
+    walks_completed: jax.Array  # Actual number of walks completed (was n_steps)
+    n_likelihood_evals: jax.Array  # Total likelihood evaluations (in-bounds only)
+    total_proposals: jax.Array  # Total DE proposals made (including failed prior checks)
 
 
 class DEKernelParams(NamedTuple):
     """Static pytree for DE kernel parameters."""
-    live_points: jax.Array
+    live_points: ArrayLikeTree | ArrayTree  # Can be pytree of arrays
     loglikelihoods: jax.Array  # Log-likelihoods of all live points
     mix: float
-    scale: float
+    scale: float | jax.Array  # Can be array for JAX operations
     num_walks: jax.Array
     walks_float: jax.Array
     n_accept_total: jax.Array
@@ -45,11 +47,11 @@ class DEKernelParams(NamedTuple):
 def de_rwalk_one_step_unit_cube(
     rng_key: jax.Array,
     state: PartitionedState,
-    logprior_fn: callable,
-    loglikelihood_fn: callable,
+    logprior_fn: Callable,
+    loglikelihood_fn: Callable,
     loglikelihood_0: float,
     params: DEKernelParams,
-    stepper_fn: callable,
+    stepper_fn: Callable,
     num_survivors: int,
     max_proposals: int = 1000,
 ):
@@ -107,9 +109,12 @@ def de_rwalk_one_step_unit_cube(
     )
     final_logp = jnp.where(is_accepted, logp_prop, state.logprior)
     final_logl = jnp.where(is_accepted, logl_prop, state.loglikelihood)
-    
-    new_state = PartitionedState(final_pos, final_logp, final_logl)
-    likelihood_evals = is_valid.astype(jnp.int32)
+
+    # Ensure final_logl is an Array (pyright inference issue workaround)
+    final_logl_array = jnp.asarray(final_logl)
+    new_state = PartitionedState(final_pos, final_logp, final_logl_array)
+    # Ensure is_valid is a JAX array before calling astype
+    likelihood_evals = jnp.asarray(is_valid, dtype=jnp.bool_).astype(jnp.int32)
     info = DEInfo(is_accepted=is_accepted, evals=n_proposals, likelihood_evals=likelihood_evals)
     
     return new_state, info
@@ -118,11 +123,11 @@ def de_rwalk_one_step_unit_cube(
 def de_rwalk_dynamic_unit_cube(
     rng_key: jax.Array,
     state: PartitionedState,
-    logprior_fn: callable,
-    loglikelihood_fn: callable,
+    logprior_fn: Callable,
+    loglikelihood_fn: Callable,
     loglikelihood_0: float,
     params: DEKernelParams,
-    stepper_fn: callable,
+    stepper_fn: Callable,
     num_survivors: int,
     max_proposals: int = 1000,
     max_mcmc: int = 5000,
@@ -195,14 +200,15 @@ def de_rwalk_dynamic_unit_cube(
 
 def update_bilby_walks_fn(
     ns_state: NSState,
-    logprior_fn: callable,
-    loglikelihood_fn: callable,
+    logprior_fn: Callable,
+    loglikelihood_fn: Callable,
     n_target: int,
     max_mcmc: int,
     n_delete: int,
-):
+) -> DEKernelParams:
     """Bilby batch-level adaptation for unit cube sampling."""
-    prev_params = ns_state.inner_kernel_params
+    # Type annotation to help pyright understand the type
+    prev_params: DEKernelParams = ns_state.inner_kernel_params  # type: ignore[assignment]
     
     # Check sentinel value instead of None (JAX-compatible)
     is_uninitialized = prev_params.n_accept_total < 0
@@ -247,9 +253,9 @@ def update_bilby_walks_fn(
     new_walks_float = jnp.where(n_accept_total == 0, walks_float, new_walks_float)
 
     num_walks_int = jnp.minimum(jnp.ceil(new_walks_float).astype(jnp.int32), max_mcmc)
-    
+
     example_particle = jax.tree_util.tree_map(lambda x: x[0], ns_state.particles)
-    flat_particle, _ = jax.flatten_util.ravel_pytree(example_particle)
+    flat_particle, _ = flatten_util.ravel_pytree(example_particle)
     n_dim = flat_particle.shape[0]
     
     return DEKernelParams(
@@ -265,13 +271,13 @@ def update_bilby_walks_fn(
 
 
 def bilby_adaptive_de_sampler_unit_cube(
-    logprior_fn: callable,
-    loglikelihood_fn: callable,
+    logprior_fn: Callable,
+    loglikelihood_fn: Callable,
     nlive: int,
     n_target: int = 60,
     max_mcmc: int = 5000,
     num_delete: int = 1,
-    stepper_fn: callable = None,
+    stepper_fn: Callable | None = None,
     max_proposals: int = 1000,
 ) -> SamplingAlgorithm:
     """Bilby adaptive DE sampler for unit hypercube."""
@@ -283,7 +289,8 @@ def bilby_adaptive_de_sampler_unit_cube(
         
     delete_fn = partial(default_delete_fn, num_delete=num_delete)
 
-    def update_fn(ns_state, *args): # args for compatibility with blackjax.ns.adaptive.build_kernel.kernel
+    def update_fn(ns_state: NSState, ns_info: NSInfo, params: Dict[str, ArrayTree]) -> DEKernelParams:
+        """Update function compatible with blackjax adaptive kernel interface."""
         return update_bilby_walks_fn(
             ns_state=ns_state,
             logprior_fn=logprior_fn,
@@ -301,12 +308,14 @@ def bilby_adaptive_de_sampler_unit_cube(
         max_mcmc=max_mcmc,
         )
 
+    # BlackJAX API compatibility: DEKernelParams (NamedTuple) works as pytree but type checker
+    # expects Dict[str, ArrayTree]. This is safe since NamedTuple is a valid pytree.
     base_kernel_step = build_adaptive_kernel(
         logprior_fn,
         loglikelihood_fn,
         delete_fn,
         jax.vmap(kernel_with_stepper, in_axes=(0, 0, None, None, None, None)),
-        update_fn,
+        update_fn,  # type: ignore[arg-type]
     )
 
     def init_fn(particles):
@@ -318,7 +327,7 @@ def bilby_adaptive_de_sampler_unit_cube(
         
         # Calculate proper scale from particle dimensionality
         example_particle = jax.tree_util.tree_map(lambda x: x[0], particles)
-        flat_particle, _ = jax.flatten_util.ravel_pytree(example_particle)
+        flat_particle, _ = flatten_util.ravel_pytree(example_particle)
         n_dim = flat_particle.shape[0]
         scale = 2.38 / jnp.sqrt(2 * n_dim)
         
@@ -352,4 +361,6 @@ def bilby_adaptive_de_sampler_unit_cube(
         final_state = new_state._replace(inner_kernel_params=updated_params)
         return final_state, info
 
-    return SamplingAlgorithm(init_fn, step_fn)
+    # BlackJAX API compatibility: Our functions work correctly but type signatures
+    # don't match generic SamplingAlgorithm interface exactly. This is safe.
+    return SamplingAlgorithm(init_fn, step_fn)  # type: ignore[arg-type]

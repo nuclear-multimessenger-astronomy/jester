@@ -21,7 +21,10 @@ import gzip
 import numpy as np
 import h5py
 from pathlib import Path
-from bilby.gw.conversion import luminosity_distance_to_redshift
+try:
+    from bilby.gw.conversion import luminosity_distance_to_redshift  # type: ignore[import-not-found]
+except ImportError:
+    raise ImportError("bilby is required for this script. Please install bilby via 'pip install bilby'.")
 
 # URLs for the posterior samples
 URLS = {
@@ -121,10 +124,12 @@ def load_hdf5_posterior(hdf5_path):
                 elif isinstance(group, h5py.Dataset):
                     data = np.array(group)
                     if 'columns' in group.attrs:
-                        header = list(group.attrs['columns'])
+                        # HDF5 attrs can return various array-like types
+                        header = list(group.attrs['columns'])  # type: ignore[arg-type]
                     elif data.dtype.names:  # Structured array
                         header = list(data.dtype.names)
-                        posterior_data = {name: data[name] for name in header}
+                        # Structured array field access is valid but type checker needs help
+                        posterior_data = {name: data[name] for name in header}  # type: ignore[call-overload]
                     break
 
         # If no specific group found, check if datasets are at root level
@@ -156,11 +161,15 @@ def load_hdf5_posterior_by_name(hdf5_path, posterior_name):
 
         dataset = f[posterior_name]
 
+        # Ensure it's a Dataset not a Group
+        if not isinstance(dataset, h5py.Dataset):
+            raise ValueError(f"'{posterior_name}' is not a dataset")
+
         # Extract structured array
-        if dataset.dtype.names:
-            header = list(dataset.dtype.names)
+        if dataset.dtype.names:  # type: ignore[union-attr]
+            header = list(dataset.dtype.names)  # type: ignore[arg-type]
             data = np.array(dataset)
-            posterior_data = {name: data[name] for name in header}
+            posterior_data = {name: data[name] for name in header}  # type: ignore[call-overload]
             print(f"Loaded {len(header)} parameters, {len(data)} samples")
         else:
             raise ValueError(f"Dataset {posterior_name} is not a structured array")
@@ -313,10 +322,11 @@ def extract_and_save(posterior, header, dataset_name, waveform_model="PhenomPNRT
 
     # Save as npz
     output_file = data_dir / f"{event_name.lower()}_{dataset_name}_posterior.npz"
+    # Metadata is stored as a numpy object array to work around npz limitations
     np.savez(
         output_file,
         **extracted,
-        metadata=metadata
+        metadata=metadata  # type: ignore[arg-type]
     )
 
     print(f"\nSaved to: {output_file}")

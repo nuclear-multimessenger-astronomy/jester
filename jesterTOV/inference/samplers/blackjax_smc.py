@@ -6,7 +6,7 @@ Supports two MCMC kernels:
 - Gaussian Random Walk Metropolis-Hastings
 """
 
-from typing import Any
+from typing import Any, Literal, overload
 import time
 from pathlib import Path
 
@@ -204,7 +204,19 @@ class BlackJAXSMCSampler(JesterSampler):
             initial_position_flat = initial_position_flat.astype(jnp.float64)
 
         # Helper function to unflatten and apply inverse transforms
-        def _unflatten_and_inverse_transform(x_flat: Array, return_jacobian: bool = False):
+        @overload
+        def _unflatten_and_inverse_transform(
+            x_flat: Array, return_jacobian: Literal[True]
+        ) -> tuple[dict[str, Any], float]: ...
+
+        @overload
+        def _unflatten_and_inverse_transform(
+            x_flat: Array, return_jacobian: Literal[False] = False
+        ) -> dict[str, Any]: ...
+
+        def _unflatten_and_inverse_transform(
+            x_flat: Array, return_jacobian: bool = False
+        ) -> dict[str, Any] | tuple[dict[str, Any], float]:
             """Unflatten particle and apply inverse sample transforms."""
             x_flat = jnp.atleast_1d(x_flat)
             x_dict = self._unflatten_fn(x_flat)
