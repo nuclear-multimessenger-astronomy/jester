@@ -5,18 +5,18 @@
 
 ## Table of Contents
 
-1. [Overview](#overview)
-2. [System Architecture](#system-architecture)
-3. [Quick Start](#quick-start)
-4. [Configuration System](#configuration-system)
-5. [Prior Specification](#prior-specification)
-6. [Transforms](#transforms)
-7. [Likelihoods](#likelihoods)
-8. [Data Management](#data-management)
-9. [Sampling](#sampling)
-10. [Complete Workflow](#complete-workflow)
-11. [Advanced Usage](#advanced-usage)
-12. [File Structure Reference](#file-structure-reference)
+1. Overview
+2. System Architecture
+3. Quick Start
+4. Configuration System
+5. Prior Specification
+6. Transforms
+7. Likelihoods
+8. Data Management
+9. Sampling
+10. Complete Workflow
+11. Advanced Usage
+12. File Structure Reference
 
 ---
 

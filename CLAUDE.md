@@ -104,6 +104,10 @@ uv run pytest tests/test_inference/test_config.py
 uv run pytest -v tests/
 ```
 
+**CI/CD Test Dependencies**:
+- LaTeX packages (texlive-latex-base, texlive-latex-extra, dvipng, cm-super) for matplotlib plotting tests
+- IPython (added to `[tests]` dependencies) required by fastprogress (BlackJAX transitive dependency)
+
 ## Code Quality Standards
 
 ### Documentation

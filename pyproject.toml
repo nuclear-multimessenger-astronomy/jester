@@ -80,6 +80,7 @@ tests = [
     "pytest-xdist>=3.0",
     "hypothesis>=6.0",
     "pytest-timeout>=2.1.0",  # For timeout control in slow tests
+    "ipython>=8.0",  # Required by fastprogress (BlackJAX dependency)
 ]
 dev = [
     "pytest>=7.0",
