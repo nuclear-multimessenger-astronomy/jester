@@ -24,7 +24,7 @@ import warnings
 import arviz as az
 
 np.random.seed(2)
-import jesterTOV.utils as jose_utils
+import jesterTOV.utils as utils
 from jesterTOV.logging_config import get_logger
 
 logger = get_logger("jester")
@@ -145,9 +145,9 @@ def load_eos_data(outdir: str) -> Dict[str, np.ndarray]:
     cs2 = result.posterior["cs2"]
 
     # Convert units
-    n = n / jose_utils.fm_inv3_to_geometric / 0.16
-    p = p / jose_utils.MeV_fm_inv3_to_geometric
-    e = e / jose_utils.MeV_fm_inv3_to_geometric
+    n = n / utils.fm_inv3_to_geometric / 0.16
+    p = p / utils.MeV_fm_inv3_to_geometric
+    e = e / utils.MeV_fm_inv3_to_geometric
 
     log_prob = result.posterior["log_prob"]
 
