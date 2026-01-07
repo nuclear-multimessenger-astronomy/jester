@@ -34,8 +34,9 @@ likelihoods:
           # model_dir is optional - defaults to flow trained on XP-NRTv3 posterior samples
           # To use a different flow, specify: model_dir: "/path/to/flow/model/"
       penalty_value: -99999.0
-      N_masses_evaluation: 1
-      N_masses_batch_size: 1
+      N_masses_evaluation: 2000
+      N_masses_batch_size: 1000
+      seed: 42
 
 # BlackJAX Nested Sampling with Acceptance Walk configuration
 sampler:
