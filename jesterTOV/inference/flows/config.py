@@ -66,10 +66,6 @@ class FlowTrainingConfig(BaseModel):
         Proportion of data to use for validation (default: 0.2)
     batch_size : int
         Batch size for training (default: 128)
-    constrain_physics : bool
-        Apply physics constraints (m1>m2, lambdas>0) via bijections (default: False)
-    use_chirp_mass : bool
-        Use chirp mass reparameterization (default: False)
     """
 
     posterior_file: str
@@ -101,8 +97,6 @@ class FlowTrainingConfig(BaseModel):
     transformer_interval: float = 4.0
     val_prop: float = 0.2
     batch_size: int = 128
-    constrain_physics: bool = False
-    use_chirp_mass: bool = False
 
     @field_validator(
         "num_epochs",

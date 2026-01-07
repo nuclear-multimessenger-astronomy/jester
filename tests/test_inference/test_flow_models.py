@@ -7,9 +7,8 @@ import jax
 import jax.numpy as jnp
 
 # Import after JAX to ensure proper initialization
-from jesterTOV.inference.flows.flow import Flow, load_model
+from jesterTOV.inference.flows.flow import Flow, load_model, create_flow
 from jesterTOV.inference.flows.train_flow import (
-    create_flow,
     save_model,
     standardize_data,
 )
@@ -68,8 +67,6 @@ def flow_kwargs():
         "transformer_type": "affine",
         "transformer_knots": 4,
         "transformer_interval": 4.0,
-        "constrain_physics": False,
-        "use_chirp_mass": False,
     }
 
 
@@ -159,15 +156,12 @@ class TestModelSerialization:
         assert len(loaded_metadata["data_bounds_min"]) == 4
         assert len(loaded_metadata["data_bounds_max"]) == 4
 
-    def test_load_model_without_physics_constraints(
+    def test_load_model_basic(
         self, tmp_path, simple_flow_model, flow_kwargs, sample_metadata
     ):
-        """Test loading model without physics bijections."""
+        """Test basic model loading."""
         output_dir = tmp_path / "model"
         output_dir.mkdir()
-
-        # Ensure physics constraints are disabled
-        flow_kwargs["constrain_physics"] = False
 
         save_model(simple_flow_model, str(output_dir), flow_kwargs, sample_metadata)
 

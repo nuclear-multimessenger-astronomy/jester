@@ -10,7 +10,6 @@ from jesterTOV.inference.flows.train_flow import (
     load_gw_posterior,
     standardize_data,
     inverse_standardize_data,
-    clip_data_for_bijection,
 )
 
 
@@ -320,80 +319,3 @@ class TestDataPreprocessing:
         # Should handle constant features gracefully (avoid division by zero)
         assert not np.any(np.isnan(standardized))
         assert not np.any(np.isinf(standardized))
-
-    def test_clip_data_for_bijection(self):
-        """Test data clipping for numerical stability (epsilon bounds)."""
-        np.random.seed(42)
-        data = np.array(
-            [
-                [1.5, 1.2, 100.0, 200.0],
-                [2.0, 1.8, 0.0, 500.0],  # lambda_1 = 0 should be clipped
-                [1.8, 1.8, 300.0, 0.0],  # lambda_2 = 0 should be clipped
-            ]
-        )
-
-        epsilon = 1e-5
-        clipped = clip_data_for_bijection(data, epsilon=epsilon)
-
-        # Check all values >= epsilon
-        assert np.all(clipped[:, 0] >= epsilon)  # m1
-        assert np.all(clipped[:, 1] >= epsilon)  # m2
-        assert np.all(clipped[:, 2] >= epsilon)  # lambda_1
-        assert np.all(clipped[:, 3] >= epsilon)  # lambda_2
-
-        # Check mass ratio constraint
-        q = clipped[:, 1] / clipped[:, 0]
-        assert np.all(q <= 1 - epsilon)
-
-    def test_clip_data_swaps_m1_m2_if_needed(self):
-        """Test that m2 > m1 samples are swapped correctly."""
-        # Create data where m2 > m1
-        data = np.array(
-            [
-                [1.2, 1.5, 100.0, 200.0],  # m2 > m1, should swap
-                [2.0, 1.8, 300.0, 400.0],  # m1 > m2, should not swap
-            ]
-        )
-
-        clipped = clip_data_for_bijection(data)
-
-        # After clipping, all samples should have m1 >= m2
-        assert np.all(clipped[:, 0] >= clipped[:, 1])
-
-        # Check that first sample was swapped (m1 should be 1.5, m2 should be 1.2)
-        np.testing.assert_allclose(clipped[0, 0], 1.5, rtol=1e-5)
-        np.testing.assert_allclose(clipped[0, 1], 1.2, rtol=1e-5)
-        # Lambdas should also be swapped
-        np.testing.assert_allclose(clipped[0, 2], 200.0, rtol=1e-5)
-        np.testing.assert_allclose(clipped[0, 3], 100.0, rtol=1e-5)
-
-        # Second sample should be unchanged (already m1 > m2)
-        np.testing.assert_allclose(clipped[1, 0], 2.0, rtol=1e-5)
-        np.testing.assert_allclose(clipped[1, 1], 1.8, rtol=1e-5)
-        np.testing.assert_allclose(clipped[1, 2], 300.0, rtol=1e-5)
-        np.testing.assert_allclose(clipped[1, 3], 400.0, rtol=1e-5)
-
-    def test_clip_data_preserves_shape(self):
-        """Test that clipping preserves data shape."""
-        np.random.seed(43)  # Use different seed to avoid mass swapping issues
-        # Generate data with m1 > m2 to avoid triggering swap bug
-        data = np.random.uniform(1.5, 2, (100, 4))
-        data[:, 1] = np.random.uniform(1.0, 1.4, 100)  # Ensure m2 < m1
-
-        clipped = clip_data_for_bijection(data)
-
-        assert clipped.shape == data.shape
-
-    def test_clip_data_epsilon_parameter(self):
-        """Test that epsilon parameter is respected."""
-        data = np.array(
-            [
-                [1.5, 1.2, 0.0, 0.0],
-            ]
-        )
-
-        epsilon = 0.01
-        clipped = clip_data_for_bijection(data, epsilon=epsilon)
-
-        # All values should be >= epsilon
-        assert np.all(clipped >= epsilon)

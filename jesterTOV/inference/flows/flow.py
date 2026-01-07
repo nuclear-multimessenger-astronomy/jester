@@ -3,8 +3,8 @@ Wrapper for trained normalizing flows with automatic data preprocessing.
 
 This module provides a high-level interface for loading and using pre-trained
 normalizing flow models for gravitational wave inference. The Flow class handles
-the complexities of data standardization, physics constraints, and model loading,
-allowing users to sample from or evaluate trained flows with a simple API.
+the complexities of data standardization and model loading, allowing users to
+sample from or evaluate trained flows with a simple API.
 
 Normalizing flows trained on gravitational wave posterior samples can be used
 for importance sampling in EOS inference, providing efficient proposals that
@@ -13,7 +13,6 @@ capture the correlations between binary component masses and tidal deformabiliti
 Key Features
 ------------
 - Automatic min-max standardization and inverse transformation
-- Transparent handling of physics constraint bijections (m1 ≥ m2, λi > 0) # TODO: experimental/work in progress
 - Simple save/load interface compatible with flowjax models
 - JAX-accelerated sampling and probability evaluation
 
@@ -51,8 +50,17 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jax import Array
-from flowjax.distributions import AbstractDistribution, Transformed
-from flowjax.bijections import Invert
+from flowjax.distributions import AbstractDistribution, Normal
+from flowjax.flows import (
+    block_neural_autoregressive_flow,
+    coupling_flow,
+    masked_autoregressive_flow,
+    triangular_spline_flow,
+)
+from flowjax.bijections import (
+    RationalQuadraticSpline,
+    Affine,
+)
 
 
 class Flow:
@@ -247,6 +255,134 @@ class Flow:
         return log_p
 
 
+def create_transformer(
+    transformer_type: str = "affine",
+    transformer_knots: int = 8,
+    transformer_interval: float = 4.0,
+) -> Any:
+    """
+    Create a transformer for masked_autoregressive_flow and coupling_flow.
+
+    Args:
+        transformer_type: Type of transformer ("affine", "rational_quadratic_spline")
+        transformer_knots: Number of knots for RationalQuadraticSpline
+        transformer_interval: Interval for RationalQuadraticSpline
+
+    Returns:
+        Transformer instance
+    """
+    if transformer_type == "affine":
+        return Affine()
+    elif transformer_type == "rational_quadratic_spline":
+        return RationalQuadraticSpline(
+            knots=transformer_knots, interval=transformer_interval
+        )
+    else:
+        raise ValueError(
+            f"Unknown transformer type: {transformer_type}. "
+            "Must be one of: affine, rational_quadratic_spline"
+        )
+
+
+def create_flow(
+    key: Array,
+    flow_type: str = "triangular_spline_flow",
+    nn_depth: int = 5,
+    nn_block_dim: int = 8,
+    nn_width: int = 50,
+    flow_layers: int = 1,
+    knots: int = 8,
+    tanh_max_val: float = 3.0,
+    invert: bool = True,
+    cond_dim: int | None = None,
+    transformer_type: str = "affine",
+    transformer_knots: int = 8,
+    transformer_interval: float = 4.0,
+) -> Any:
+    """
+    Create a normalizing flow of the specified type.
+
+    Args:
+        key: JAX random key
+        flow_type: Type of flow ("block_neural_autoregressive_flow",
+            "masked_autoregressive_flow", "coupling_flow", "triangular_spline_flow")
+        nn_depth: Depth of neural network (for block_neural_autoregressive_flow,
+            masked_autoregressive_flow, coupling_flow)
+        nn_block_dim: Block dimension (for block_neural_autoregressive_flow)
+        nn_width: Width of hidden layers (for masked_autoregressive_flow, coupling_flow)
+        flow_layers: Number of flow layers
+        knots: Number of spline knots (for triangular_spline_flow)
+        tanh_max_val: Maximum value for tanh tails (for triangular_spline_flow)
+        invert: Whether to invert the flow
+        cond_dim: Conditional dimension (None for unconditional flows)
+        transformer_type: Type of transformer for masked_autoregressive_flow and coupling_flow
+            ("affine", "rational_quadratic_spline")
+        transformer_knots: Number of knots for RationalQuadraticSpline
+        transformer_interval: Interval for RationalQuadraticSpline
+
+    Returns:
+        Untrained flowjax flow model
+    """
+    base_dist = Normal(jnp.zeros(4))  # 4D: m1, m2, lambda1, lambda2
+
+    if flow_type == "block_neural_autoregressive_flow":
+        flow = block_neural_autoregressive_flow(
+            key=key,
+            base_dist=base_dist,
+            nn_depth=nn_depth,
+            nn_block_dim=nn_block_dim,
+            flow_layers=flow_layers,
+            invert=invert,
+            cond_dim=cond_dim,
+        )
+    elif flow_type == "masked_autoregressive_flow":
+        transformer = create_transformer(
+            transformer_type, transformer_knots, transformer_interval
+        )
+        flow = masked_autoregressive_flow(
+            key=key,
+            base_dist=base_dist,
+            flow_layers=flow_layers,
+            nn_width=nn_width,
+            nn_depth=nn_depth,
+            invert=invert,
+            cond_dim=cond_dim,
+            transformer=transformer,
+        )
+    elif flow_type == "coupling_flow":
+        transformer = create_transformer(
+            transformer_type, transformer_knots, transformer_interval
+        )
+        flow = coupling_flow(
+            key=key,
+            base_dist=base_dist,
+            flow_layers=flow_layers,
+            nn_width=nn_width,
+            nn_depth=nn_depth,
+            invert=invert,
+            cond_dim=cond_dim,
+            transformer=transformer,
+        )
+    elif flow_type == "triangular_spline_flow":
+        flow = triangular_spline_flow(
+            key=key,
+            base_dist=base_dist,
+            flow_layers=flow_layers,
+            knots=knots,
+            tanh_max_val=tanh_max_val,
+            invert=invert,
+            cond_dim=cond_dim,
+        )
+    else:
+        raise ValueError(
+            f"Unknown flow type: {flow_type}. Must be one of: "
+            "block_neural_autoregressive_flow, masked_autoregressive_flow, "
+            "coupling_flow, triangular_spline_flow"
+        )
+
+    return flow
+
+
 def load_model(output_dir: str) -> Tuple[Any, Dict[str, Any]]:
     """
     Load a trained flow model from saved files.
@@ -261,9 +397,6 @@ def load_model(output_dir: str) -> Tuple[Any, Dict[str, Any]]:
     Example:
         >>> flow, metadata = load_model("./models/gw170817/")
     """
-    # Import here to avoid circular dependency
-    from .train_flow import create_flow, create_physics_constraint_bijection
-
     # Load kwargs
     kwargs_path = os.path.join(output_dir, "flow_kwargs.json")
     with open(kwargs_path, "r") as f:
@@ -295,11 +428,5 @@ def load_model(output_dir: str) -> Tuple[Any, Dict[str, Any]]:
     metadata_path = os.path.join(output_dir, "metadata.json")
     with open(metadata_path, "r") as f:
         metadata = json.load(f)
-
-    # Wrap with physics bijection if it was used during training
-    if flow_kwargs["constrain_physics"]:
-        use_chirp_mass = flow_kwargs["use_chirp_mass"]
-        physics_bijection = create_physics_constraint_bijection(use_chirp_mass)
-        flow = Transformed(flow, Invert(physics_bijection))
 
     return flow, metadata
