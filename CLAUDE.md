@@ -276,11 +276,11 @@ Goal: Keep flowMC as only external sampler dependency.
   - **Bug**: When generating fewer EOS samples than posterior samples (e.g., 10000 EOS from 800000 posterior),
     arrays had inconsistent lengths causing `ValueError` in cornerplot: "array at index 0 has size 800000 and
     array at index 8 has size 10000"
-  - **Root Cause**: `generate_eos_samples()` filtered `log_prob` and sampler-specific fields but forgot to
-    filter NEP/CSE parameter arrays, leaving them at full posterior size while EOS quantities were subsampled
+  - **Root Cause**: `InferenceResult.add_eos_from_transform()` filtered `log_prob` and sampler-specific fields
+    but forgot to filter NEP/CSE parameter arrays, leaving them at full posterior size while EOS quantities were subsampled
   - **Fix** (January 2026): Filter ALL arrays (log_prob, sampler fields, AND NEP/CSE parameters) to match
     selected samples; backup full arrays as `*_full`; added validation loop to catch future mismatches
-  - **Location**: `jesterTOV/inference/run_inference.py:294-344`
+  - **Location**: `jesterTOV/inference/result.py:385-418`
   - **Regression test**: `tests/test_inference/test_integration.py::TestEOSSampleGeneration` (needs update)
 - ✅ **SMC parameter ordering bug** (December 2025):
   - **Bug**: `ravel_pytree` uses alphabetical ordering but `add_name` uses `prior.parameter_names` ordering,

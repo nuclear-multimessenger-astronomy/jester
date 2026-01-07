@@ -384,7 +384,7 @@ class InferenceResult:
 
         # If we selected a subset, filter log_prob and sampler fields to match
         if idx is not None:
-            logger.info("Filtering log_prob and sampler fields to match EOS samples...")
+            logger.info("Filtering log_prob, sampler fields, and parameters to match EOS samples...")
 
             # Filter log_prob
             self.posterior["log_prob_full"] = self.posterior["log_prob"].copy()
@@ -397,7 +397,22 @@ class InferenceResult:
                     self.posterior[f"{field}_full"] = self.posterior[field].copy()
                     self.posterior[field] = self.posterior[field][idx]
 
+            # CRITICAL: Also filter NEP/CSE parameter arrays to match selected samples
+            # These must have the same length as log_prob for cornerplot and other analyses
+            for param_key in param_samples.keys():
+                if param_key in self.posterior:
+                    self.posterior[f"{param_key}_full"] = self.posterior[param_key].copy()
+                    self.posterior[param_key] = self.posterior[param_key][idx]
+
             logger.info(f"Filtered from {n_available} to {n_eos_samples} samples")
+
+            # Validate array consistency (all non-_full arrays should have n_eos_samples length)
+            for key, value in self.posterior.items():
+                if not key.endswith("_full") and hasattr(value, "__len__"):
+                    if len(value) != n_eos_samples:
+                        logger.warning(
+                            f"Array length mismatch: {key} has {len(value)} samples, expected {n_eos_samples}"
+                        )
 
         logger.info("EOS generation complete!")
         logger.info("=" * 60)
