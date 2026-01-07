@@ -274,13 +274,14 @@ Goal: Keep flowMC as only external sampler dependency.
 - ✅ Transform factory expects Pydantic config, not dict
 - ✅ **EOS sample generation array filtering bug** (December 2024, refined January 2026):
   - **Bug**: When generating fewer EOS samples than posterior samples (e.g., 10000 EOS from 800000 posterior),
-    arrays had inconsistent lengths causing `ValueError` in cornerplot: "array at index 0 has size 800000 and
-    array at index 8 has size 10000"
-  - **Root Cause**: `InferenceResult.add_eos_from_transform()` filtered `log_prob` and sampler-specific fields
-    but forgot to filter NEP/CSE parameter arrays, leaving them at full posterior size while EOS quantities were subsampled
-  - **Fix** (January 2026): Filter ALL arrays (log_prob, sampler fields, AND NEP/CSE parameters) to match
-    selected samples; backup full arrays as `*_full`; added validation loop to catch future mismatches
-  - **Location**: `jesterTOV/inference/result.py:385-418`
+    got `IndexError: index 196498 is out of bounds for axis 0 with size 10000` when filtering parameters
+  - **Root Cause**: Transform returns BOTH EOS quantities AND input parameters. Calling `add_derived_eos(transformed_samples)`
+    added the filtered 10000-element parameter arrays to `self.posterior`, overwriting the original 800000-element arrays.
+    Then attempting to filter again with `idx` failed because arrays were already filtered.
+  - **Fix** (January 2026): Filter `transformed_samples` to only include EOS quantities (masses_EOS, radii_EOS, etc.)
+    before calling `add_derived_eos()`, preventing parameter arrays from being overwritten. Then filter ALL arrays
+    (log_prob, sampler fields, AND NEP/CSE parameters) and backup full arrays as `*_full`.
+  - **Location**: `jesterTOV/inference/result.py:382-420`
   - **Regression test**: `tests/test_inference/test_integration.py::TestEOSSampleGeneration` (needs update)
 - ✅ **SMC parameter ordering bug** (December 2025):
   - **Bug**: `ravel_pytree` uses alphabetical ordering but `add_name` uses `prior.parameter_names` ordering,
