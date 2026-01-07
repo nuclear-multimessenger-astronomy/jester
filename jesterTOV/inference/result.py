@@ -156,8 +156,11 @@ class InferenceResult:
         histories: Dict[str, np.ndarray] | None = None
 
         if sampler_type == "flowmc":
+            # TODO: need to make diagnosis plots from training and production separately for sampler performance
+            # still need to decide where to do this, and if to save in metadata the history/final summary for training and production
+            
             # FlowMC: Get metadata from sampler state
-            state = sampler.sampler.get_sampler_state(training=training)  # type: ignore[union-attr]
+            state = sampler.sampler.get_sampler_state(training=False)  # type: ignore[union-attr]
 
             # Add FlowMC-specific metadata
             flowmc_config = config.sampler  # type: ignore[attr-defined]
