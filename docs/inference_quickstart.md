@@ -49,7 +49,7 @@ run_jester_inference config.yaml
 ls outdir/
 # results_production.npz  - MCMC samples (K_sat, Q_sat, etc.)
 # eos_samples.npz         - EOS curves (M, R, Λ)
-# runtime.txt             - Timing info
+# (Timing info stored in metadata)
 ```
 
 ### 3. Run With Real Data

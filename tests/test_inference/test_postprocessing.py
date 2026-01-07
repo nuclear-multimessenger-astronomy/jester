@@ -362,7 +362,7 @@ class TestIntegrationWithInferenceResult:
         metadata = {
             "sampler": "flowmc",
             "n_samples": n_samples,
-            "runtime_seconds": 3600.0,
+            "sampling_time": 3600.0,
         }
 
         result = InferenceResult(

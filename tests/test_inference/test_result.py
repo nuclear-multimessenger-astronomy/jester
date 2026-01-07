@@ -20,7 +20,7 @@ class TestInferenceResultBasic:
         }
         metadata = {
             "sampler": "flowmc",
-            "runtime_seconds": 3600.0,
+            "sampling_time": 3600.0,
             "n_samples": 3,
             "seed": 42,
         }
@@ -70,7 +70,7 @@ class TestInferenceResultSaveLoad:
         }
         metadata = {
             "sampler": "flowmc",
-            "runtime_seconds": 3600.5,
+            "sampling_time": 3600.5,
             "n_samples": 3,
             "seed": 42,
             "creation_timestamp": datetime.now().isoformat(),
@@ -126,7 +126,7 @@ class TestInferenceResultSaveLoad:
         }
         metadata = {
             "sampler": "blackjax_smc",
-            "runtime_seconds": 1800.0,
+            "sampling_time": 1800.0,
             "n_samples": 4,
             "seed": 123,
             "creation_timestamp": datetime.now().isoformat(),
@@ -200,7 +200,7 @@ class TestInferenceResultSaveLoad:
         }
         metadata = {
             "sampler": "blackjax_ns_aw",
-            "runtime_seconds": 7200.0,
+            "sampling_time": 7200.0,
             "n_samples": 3,
             "seed": 999,
             "creation_timestamp": datetime.now().isoformat(),
@@ -267,7 +267,7 @@ class TestInferenceResultSaveLoad:
         }
         metadata = {
             "sampler": "flowmc",
-            "runtime_seconds": 100.0,
+            "sampling_time": 100.0,
             "n_samples": 2,
             "seed": 1,
             "config_json": "{}",
@@ -384,7 +384,7 @@ class TestInferenceResultSummary:
         posterior = {"K_sat": np.array([220.0])}
         metadata = {
             "sampler": "flowmc",
-            "runtime_seconds": 3600.5,
+            "sampling_time": 3600.5,
             "n_samples": 1000,
             "seed": 42,
             "creation_timestamp": "2024-12-28T10:00:00",
@@ -412,7 +412,7 @@ class TestInferenceResultSummary:
         posterior = {"K_sat": np.array([220.0])}
         metadata = {
             "sampler": "blackjax_smc",
-            "runtime_seconds": 1800.0,
+            "sampling_time": 1800.0,
             "n_samples": 500,
             "seed": 123,
             "kernel_type": "nuts",
@@ -443,7 +443,7 @@ class TestInferenceResultSummary:
         posterior = {"K_sat": np.array([220.0])}
         metadata = {
             "sampler": "blackjax_ns_aw",
-            "runtime_seconds": 7200.0,
+            "sampling_time": 7200.0,
             "n_samples": 300,
             "seed": 999,
             "n_live": 1000,

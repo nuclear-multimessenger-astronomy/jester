@@ -145,7 +145,7 @@ class InferenceResult:
         # Build metadata
         metadata: Dict[str, Any] = {
             "sampler": sampler_type,
-            "runtime_seconds": float(runtime),
+            "sampling_time": float(runtime),
             "n_samples": int(n_samples),
             "seed": int(config.seed),
             "creation_timestamp": datetime.now().isoformat(),
@@ -618,7 +618,7 @@ class InferenceResult:
         lines.append(
             f"Creation time: {self.metadata.get('creation_timestamp', 'unknown')}"
         )
-        lines.append(f"Runtime: {self.metadata.get('runtime_seconds', 0):.1f} seconds")
+        lines.append(f"Sampling time: {self.metadata.get('sampling_time', 0):.1f} seconds")
         lines.append(f"Random seed: {self.metadata.get('seed', 'unknown')}")
         lines.append(f"Number of samples: {self.metadata.get('n_samples', 0)}")
 

@@ -233,13 +233,6 @@ def run_sampling(sampler, seed, config, outdir):
         runtime=runtime,
     )
 
-    # Save the runtime info to text file for backward compatibility
-    os.makedirs(outdir, exist_ok=True)
-    with open(os.path.join(outdir, "runtime.txt"), "w") as f:
-        f.write(f"{runtime}\n")
-        f.write(f"Training samples: {nb_samples_training}\n")
-        f.write(f"Production samples: {nb_samples_production}\n")
-
     return result
 
 

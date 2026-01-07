@@ -239,7 +239,7 @@ uv run python -m jesterTOV.inference.run_inference --config config.yaml
 ls outdir/
 # results_production.npz  - MCMC samples
 # eos_samples.npz         - EOS curves (M, R, Λ)
-# runtime.txt             - Timing information
+# (Timing information stored in metadata)
 ```
 
 ---
@@ -1304,8 +1304,6 @@ outdir/
 │   ├── Lambdas_EOS
 │   ├── n, p, e, h          # Thermodynamic quantities
 │   └── cs2                 # Sound speed
-│
-└── runtime.txt              # Timing information
 ```
 
 ### Loading Results
