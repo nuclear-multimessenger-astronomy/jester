@@ -302,6 +302,10 @@ class BlackJAXNSAWSampler(JesterSampler):
         end_time = time.time()
         sampling_time = end_time - start_time
 
+        # Get number of samples from pytree (particles is a dict, not array)
+        particles_leaves = jax.tree_util.tree_leaves(final_info.particles)
+        n_samples = int(particles_leaves[0].shape[0]) if particles_leaves else 0
+
         self.metadata = {
             "sampler": "blackjax_ns_aw",
             "n_live": self.config.n_live,
@@ -314,7 +318,7 @@ class BlackJAXNSAWSampler(JesterSampler):
             "sampling_time_seconds": sampling_time,
             "sampling_time_minutes": sampling_time / 60,
             "n_iterations": n_iterations,
-            "n_samples": int(final_info.particles.shape[0]),  # type: ignore[union-attr]
+            "n_samples": n_samples,
             "n_likelihood_evaluations": int(jnp.sum(final_info.inner_kernel_info.n_likelihood_evals)),  # type: ignore[attr-defined]
             "logZ": logZ,
             "logZ_err": logZ_err,

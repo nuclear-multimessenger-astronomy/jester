@@ -298,6 +298,13 @@ Goal: Keep flowMC as only external sampler dependency.
   - **Fix** (January 2026): Remove `rng_key=subkey` argument from `nested_sampler.init()` call; added type
     ignore comment for pyright false positive
   - **Location**: `jesterTOV/inference/samplers/blackjax_ns_aw.py:251-253`
+- ✅ **BlackJAX NS-AW particles shape bug** (January 2026):
+  - **Bug**: `AttributeError: 'dict' object has no attribute 'shape'` when finalizing nested sampling results
+  - **Root Cause**: `final_info.particles` is a pytree/dict structure (JESTER uses named parameters), not a simple
+    array. Code was trying to access `.shape[0]` directly on the dict.
+  - **Fix** (January 2026): Use `jax.tree_util.tree_leaves()` to extract arrays from pytree, then get shape from
+    first leaf (same pattern used in `acceptance_walk_kernel.py`)
+  - **Location**: `jesterTOV/inference/samplers/blackjax_ns_aw.py:305-307`
 
 ### Open Issues
 - **UniformPrior boundaries**: `log_prob()` at exact boundaries causes errors (NaN at xmin, ZeroDivision at xmax)
