@@ -12,6 +12,7 @@ import time
 import jax
 import jax.numpy as jnp
 import jax.random
+from jax.experimental import io_callback
 from jaxtyping import Array, PRNGKeyArray
 
 from ..base import LikelihoodBase, Prior, BijectiveTransform, NtoMTransform
@@ -260,8 +261,31 @@ class BlackJAXNSAWSampler(JesterSampler):
         # JIT compile step function for performance
         step_fn = jax.jit(nested_sampler.step)
 
+        # Progress callback for live updates during sampling
+        def progress_callback(
+            iteration: int, logZ: float, dlogZ: float
+        ) -> None:
+            """Print progress update during nested sampling (called via io_callback)."""
+            # Format logZ and dlogZ with appropriate precision
+            logZ_str = f"{logZ:+10.2f}" if jnp.isfinite(logZ) else "      -inf"
+            dlogZ_str = f"{dlogZ:8.4f}" if jnp.isfinite(dlogZ) else "     inf"
+
+            # Print update
+            logger.info(
+                f"Iteration {iteration:4d} | logZ={logZ_str} | dlogZ={dlogZ_str}"
+            )
+
         # Run nested sampling loop
-        logger.info("Running nested sampling loop...")
+        logger.info("=" * 70)
+        logger.info("STARTING NESTED SAMPLING")
+        logger.info("=" * 70)
+        logger.info(f"Live points: {self.config.n_live}")
+        logger.info(f"Delete fraction: {self.config.n_delete_frac} ({n_delete} points per iteration)")
+        logger.info(f"Termination: dlogZ < {self.config.termination_dlogz}")
+        logger.info(f"Max MCMC steps: {self.config.max_mcmc}")
+        logger.info("Progress updates will be shown after each iteration")
+        logger.info("=" * 70)
+
         dead = []
         n_iterations = 0
 
@@ -271,11 +295,18 @@ class BlackJAXNSAWSampler(JesterSampler):
             dead.append(dead_info)
             n_iterations += 1
 
-            # Log progress every 10 iterations
-            if n_iterations % 10 == 0:
-                logger.info(
-                    f"Iteration {n_iterations}: {len(dead) * n_delete} dead points collected"
-                )
+            # Compute current evidence and termination criterion
+            current_logZ = float(state.logZ)  # type: ignore[attr-defined]
+            current_dlogZ = float(jnp.logaddexp(0, state.logZ_live - state.logZ))  # type: ignore[attr-defined]
+
+            # Print progress update using io_callback
+            io_callback(
+                progress_callback,
+                None,  # No return value
+                n_iterations,
+                current_logZ,
+                current_dlogZ,
+            )
 
         # Store evidence from state before finalization
         # (NSState has logZ, but NSInfo from finalise does not)
@@ -324,13 +355,18 @@ class BlackJAXNSAWSampler(JesterSampler):
             "logZ_err": logZ_err,
         }
 
-        logger.info(
-            f"Nested sampling completed! Generated {len(dead) * n_delete} dead points."
-        )
+        logger.info("=" * 70)
+        logger.info("NESTED SAMPLING COMPLETE")
+        logger.info("=" * 70)
+        logger.info(f"Total iterations: {n_iterations}")
+        logger.info(f"Dead points generated: {len(dead) * n_delete}")
+        logger.info(f"Final evidence: log(Z) = {logZ:.2f} ± {logZ_err:.2f}")
+        logger.info(f"Final dlogZ: {logZ_err:.4f} (termination criterion: {self.config.termination_dlogz})")
         logger.info(
             f"Sampling time: {(sampling_time)//60:.0f} minutes {(sampling_time)%60:.1f} seconds"
         )
-        logger.info(f"Evidence: log(Z) = {logZ:.2f} ± {logZ_err:.2f}")
+        logger.info(f"Likelihood evaluations: {int(jnp.sum(final_info.inner_kernel_info.n_likelihood_evals))}")  # type: ignore[attr-defined]
+        logger.info("=" * 70)
 
     def print_summary(self, transform: bool = True) -> None:
         """Print summary of nested sampling run.
