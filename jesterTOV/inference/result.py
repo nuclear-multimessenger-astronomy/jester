@@ -183,7 +183,7 @@ class InferenceResult:
                 histories = {
                     "local_accs": np.array(state["local_accs"]),
                     "global_accs": np.array(state["global_accs"]),
-                    "loss_vals": np.array(state["loss_vals"]),
+                    # "loss_vals": np.array(state["loss_vals"]),
                 }
 
         elif sampler_type == "blackjax_smc":
