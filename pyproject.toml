@@ -33,7 +33,7 @@ dependencies = [
     "numpy>=1.24.0",
     "pandas>=2.0.0",
     "equinox>=0.11.0",
-    "flowmc>=0.3.4",
+    "flowmc==0.3.4",
     "blackjax @ git+https://github.com/handley-lab/blackjax@nested_sampling",
     "h5py>=3.0",
     "anesthetic>=2.0.0",

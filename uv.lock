@@ -1399,7 +1399,7 @@ requires-dist = [
     { name = "diffrax" },
     { name = "equinox", specifier = ">=0.11.0" },
     { name = "flowjax" },
-    { name = "flowmc", specifier = ">=0.3.4" },
+    { name = "flowmc", specifier = "==0.3.4" },
     { name = "h5py", specifier = ">=3.0" },
     { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.0" },
     { name = "hypothesis", marker = "extra == 'tests'", specifier = ">=6.0" },
