@@ -31,6 +31,10 @@ jobs:
         python -m pip install --upgrade pip
         pip install -e .[tests]
 
+    - name: Run tests
+      run: |
+        pytest
+
     - name: Run pre-commit checks
       if: matrix.python-version == '3.11'
       run: |
@@ -42,7 +46,3 @@ jobs:
       run: |
         pip install pyright
         pyright
-
-    - name: Run tests
-      run: |
-        pytest
