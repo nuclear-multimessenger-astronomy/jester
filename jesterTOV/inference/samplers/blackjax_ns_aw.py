@@ -476,6 +476,9 @@ class BlackJAXNSAWSampler(JesterSampler):
             samples = resampled_samples
             logger.info(f"Resampling complete: {len(samples[list(samples.keys())[0]])} unweighted samples")
 
+            # Update cache to match resampled data (for get_log_prob() consistency)
+            self._filtered_samples_cache = samples.copy()
+
             # Store evidence from anesthetic computation (more accurate than our estimate)
             try:
                 # Note: logZ() returns the evidence value; std() is accessed on the samples
