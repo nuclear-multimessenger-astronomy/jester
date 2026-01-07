@@ -7,6 +7,8 @@ Modular inference script for jesterTOV
 
 import os
 import time
+import warnings
+from pathlib import Path
 import numpy as np
 import jax
 import jax.numpy as jnp
@@ -19,10 +21,15 @@ jax.config.update("jax_enable_x64", True)
 # jax.config.update("jax_debug_nans", True)
 
 from .config.parser import load_config
+from .config.schema import InferenceConfig
 from .priors.parser import parse_prior_file
+from .base.prior import CombinePrior
+from .base.likelihood import LikelihoodBase
 from .transforms.factory import create_transform
+from .transforms.base import JesterTransformBase
 from .likelihoods.factory import create_combined_likelihood
 from .samplers.factory import create_sampler
+from .samplers.jester_sampler import JesterSampler
 from .result import InferenceResult
 from jesterTOV.logging_config import get_logger
 
@@ -30,7 +37,7 @@ from jesterTOV.logging_config import get_logger
 logger = get_logger("jester")
 
 
-def determine_keep_names(config, prior):
+def determine_keep_names(config: InferenceConfig, prior: CombinePrior) -> list[str] | None:
     """
     Determine which parameters need to be preserved in transform output.
 
@@ -73,18 +80,10 @@ def determine_keep_names(config, prior):
             "ChiEFT likelihood enabled: 'nbreak' parameter will be preserved in transform output"
         )
 
-    # Add future likelihood parameter requirements here
-    # Example:
-    # some_other_likelihood_enabled = any(lk.enabled and lk.type == "other" for lk in config.likelihoods)
-    # if some_other_likelihood_enabled:
-    #     if "some_param" not in prior.parameter_names:
-    #         raise ValueError("...")
-    #     keep_names.append("some_param")
-
     return keep_names if keep_names else None
 
 
-def setup_prior(config):
+def setup_prior(config: InferenceConfig) -> CombinePrior:
     """
     Setup prior from configuration
 
@@ -129,7 +128,7 @@ def setup_prior(config):
     return prior
 
 
-def setup_transform(config, keep_names=None):
+def setup_transform(config: InferenceConfig, keep_names: list[str] | None = None) -> JesterTransformBase:
     """
     Setup transform from configuration
 
@@ -150,7 +149,7 @@ def setup_transform(config, keep_names=None):
     return transform
 
 
-def setup_likelihood(config, transform):
+def setup_likelihood(config: InferenceConfig, transform: JesterTransformBase) -> LikelihoodBase:
     """
     Setup combined likelihood from configuration
 
@@ -169,7 +168,7 @@ def setup_likelihood(config, transform):
     return create_combined_likelihood(config.likelihoods)
 
 
-def run_sampling(sampler, seed, config, outdir):
+def run_sampling(sampler: JesterSampler, seed: int, config: InferenceConfig, outdir: str | Path) -> InferenceResult:
     """
     Run MCMC sampling and create InferenceResult
 
@@ -207,24 +206,6 @@ def run_sampling(sampler, seed, config, outdir):
         logger.info("Generating SMC diagnostic plots...")
         sampler.plot_diagnostics(outdir=outdir, filename="smc_diagnostics.png")
 
-    ### POSTPROCESSING ###
-
-    # Get sample counts (FlowMC has train/production split, others don't)
-    # Use FlowMC-specific method if available
-    from .samplers.flowmc import FlowMCSampler
-
-    if isinstance(sampler, FlowMCSampler):
-        nb_samples_training = sampler.get_n_training_samples()
-    else:
-        nb_samples_training = 0
-
-    nb_samples_production = sampler.get_n_samples()
-    total_nb_samples = nb_samples_training + nb_samples_production
-
-    logger.info(f"Number of samples generated in training: {nb_samples_training}")
-    logger.info(f"Number of samples generated in production: {nb_samples_production}")
-    logger.info(f"Total number of samples: {total_nb_samples}")
-
     # Create InferenceResult from sampler output
     logger.info("Creating InferenceResult from sampler output...")
     result = InferenceResult.from_sampler(
@@ -236,8 +217,18 @@ def run_sampling(sampler, seed, config, outdir):
     return result
 
 
-def generate_eos_samples(config, result, transform_eos, outdir, n_eos_samples=10_000):
+def generate_eos_samples(
+    config: InferenceConfig,
+    result: InferenceResult,
+    transform_eos: JesterTransformBase,
+    outdir: str | Path,
+    n_eos_samples: int = 10_000
+) -> None:
     """
+    .. deprecated::
+        This function is deprecated and will be removed in a future version.
+        Use :meth:`InferenceResult.add_eos_from_transform` instead.
+
     Generate EOS curves from sampled parameters and add to InferenceResult
 
     Parameters
@@ -253,6 +244,13 @@ def generate_eos_samples(config, result, transform_eos, outdir, n_eos_samples=10
     n_eos_samples : int, optional
         Number of EOS samples to generate
     """
+    warnings.warn(
+        "generate_eos_samples() is deprecated and will be removed in a future version. "
+        "Use InferenceResult.add_eos_from_transform() instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+
     # Get log_prob from result
     log_prob = result.posterior["log_prob"]
 
@@ -331,7 +329,7 @@ def generate_eos_samples(config, result, transform_eos, outdir, n_eos_samples=10
     logger.info("Derived EOS quantities added to InferenceResult")
 
 
-def main(config_path: str):
+def main(config_path: str) -> None:
     """Main inference script
 
     Parameters
@@ -488,7 +486,7 @@ def main(config_path: str):
         logger.info(f"  Learning rate: {config.sampler.learning_rate}")
         logger.info(f"  Training thinning: {config.sampler.train_thinning}")
         logger.info(f"  Output thinning: {config.sampler.output_thinning}")
-    elif config.sampler.type == "nested_sampling":
+    elif config.sampler.type == "blackjax-ns-aw":
         logger.info(f"  Live points: {config.sampler.n_live}")
         logger.info(f"  Delete fraction: {config.sampler.n_delete_frac}")
         logger.info(f"  Target MCMC steps: {config.sampler.n_target}")
@@ -555,7 +553,7 @@ def main(config_path: str):
     logger.info(f"\nInference complete! Results saved to {outdir}")
 
 
-def cli_entry_point():
+def cli_entry_point() -> None:
     """
     Entry point for console script.
 
