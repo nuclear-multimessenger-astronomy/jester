@@ -10,8 +10,6 @@
   "cond_dim": null,
   "seed": 0,
   "standardize": true,
-  "constrain_physics": false,
-  "use_chirp_mass": false,
   "transformer_type": "rational_quadratic_spline",
   "transformer_knots": 8,
   "transformer_interval": 4.0,

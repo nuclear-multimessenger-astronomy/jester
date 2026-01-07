@@ -7,11 +7,11 @@
 #SBATCH --cpus-per-gpu=1
 #SBATCH --mem-per-gpu=10G
 #SBATCH --output="../../../../logs/%x.out"
-#SBATCH --job-name="gw170817_low_spin"
+#SBATCH --job-name="gw170817_xp_nrtv3"
 
 now=$(date)
 echo "$now"
-echo "Training flow for: gw170817_low_spin"
+echo "Training flow for: gw170817_xp_nrtv3"
 source /home/twouters2/projects/jester_review/jester/.venv/bin/activate
 nvidia-smi --query-gpu=name --format=csv,noheader
 train_jester_gw_flow "./config.yaml"

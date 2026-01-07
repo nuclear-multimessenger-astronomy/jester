@@ -8,8 +8,6 @@
   "max_patience": 500,
   "val_prop": 0.2,
   "standardize": true,
-  "constrain_physics": false,
-  "use_chirp_mass": false,
   "data_bounds_min": [
     1.6188004582046867,
     0.9577210575828184,
