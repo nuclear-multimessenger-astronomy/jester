@@ -43,7 +43,7 @@ Extra dependencies can be installed as follows:
 ```bash
 uv sync --extra cuda12 # For GPU support
 uv sync --extra docs   # To work on documentation locally
-uv sync --extra tests  # To run tests locally 
+uv sync --extra test  # To run tests locally 
 ```
 
 ## Examples
