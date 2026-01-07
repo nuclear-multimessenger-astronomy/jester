@@ -8,50 +8,13 @@ The `jesterTOV/inference/` module provides Bayesian inference for constraining n
 
 **Status**: Fully functional - Modular architecture complete (Phases 1-7), data infrastructure in place, ready for production use
 
-**Next Priority**: 📋 **Multi-Sampler Architecture** - Extend beyond FlowMC to support Nested Sampling and SMC
-- Plan location: `/Users/Woute029/.claude/plans/twinkly-crunching-seal.md`
-- See `../../CLAUDE.md` for full details on implementation phases
-
-**Recent Completions**:
-- ✅ NICER data downloading and KDE construction (J0030+0451, J0740+6620)
-- ✅ GW170817 posterior data extraction and processing
-- ✅ Postprocessing module cleanup and modularization
-- ✅ Prior-only sampling debug (NaN issue resolved)
-- ✅ Comprehensive docstring improvements across all modules
-- ✅ Example configuration files for common use cases
-- ✅ HDF5-based result storage (InferenceResult class) - replacing NPZ format
-
-**⚠️ CRITICAL TESTING GAPS**:
-- ❌ **InferenceResult class (result.py)** - 516 lines, ZERO tests (see `../../CLAUDE.md`)
-- ❌ **Postprocessing module** - 893 lines, ZERO tests
-- ⚠️ **BlackJAX NS-AW sampler** - 7 type errors need fixing
-- ⚠️ **BlackJAX SMC sampler** - Limited test coverage, recent bug fixes need validation
-- See `../../CLAUDE.md` "Testing Coverage Assessment" section for full details
-
 ## Running Inference
 
 **ALWAYS use `uv` for Python commands:**
 
+Run inference with config file with venv in root jester directory activated:
 ```bash
-# Run inference with config file
-uv run run_jester_inference config.yaml
-
-# Alternative module-based command
-uv run python -m jesterTOV.inference.run_inference --config config.yaml
-
-# Override output directory
-uv run run_jester_inference config.yaml --output-dir ./results/
-
-# Validate config without running
-uv run run_jester_inference config.yaml --validate-only
-
-# Dry run (setup without sampling)
-uv run run_jester_inference config.yaml --dry-run
-
-# Use example configs
-uv run run_jester_inference examples/inference/full_inference/config.yaml
-uv run run_jester_inference examples/inference/gw170817_only/config.yaml
-uv run run_jester_inference examples/inference/nicer_only/config.yaml
+run_jester_inference config.yaml
 ```
 
 ## Architecture
@@ -141,9 +104,6 @@ Priors are specified in `.prior` files using bilby-style Python syntax:
 # Nuclear Empirical Parameters
 K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
 L_sym = UniformPrior(10.0, 200.0, parameter_names=["L_sym"])
-
-# GW event masses (conditionally included)
-mass_1_GW170817 = UniformPrior(1.5, 2.1, parameter_names=["mass_1_GW170817"])
 
 # CSE breaking density (only if nb_CSE > 0)
 nbreak = UniformPrior(0.16, 0.32, parameter_names=["nbreak"])
