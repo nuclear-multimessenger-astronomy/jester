@@ -14,7 +14,7 @@ Currently, `jester` supports the following EOS parametrizations:
 - **Metamodel+peakCSE**: Metamodel up to breakdown density (varied on-the-fly), and speed-of-sound extrapolation above the breakdown density parametrized to have a Gaussian peak.
 
 Moreover, the following samplers are supported:
-- **Sequential Monte Carlo**: Implemented with [`blackjax`](https://github.com/blackjax-devs/blackjax)
+- **Sequential Monte Carlo** (Recommended): Implemented with [`blackjax`](https://github.com/blackjax-devs/blackjax)
 - **flowMC** ([GitHub](https://github.com/kazewong/flowMC)): Normalizing flow-enhanced MCMC sampling
 - **Nested sampling**: Implemented in `blackjax` in [this specific fork](https://github.com/handley-lab/blackjax)
 

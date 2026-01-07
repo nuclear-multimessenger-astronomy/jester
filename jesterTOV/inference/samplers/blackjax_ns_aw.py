@@ -364,16 +364,25 @@ class BlackJAXNSAWSampler(JesterSampler):
             logger.info(f"Posterior samples: {self.metadata['n_samples']}")
 
     def get_samples(self) -> dict:
-        """Return posterior samples with importance weights.
+        """Return unweighted posterior samples from nested sampling.
+
+        This method computes importance weights using anesthetic, then resamples
+        to produce approximately ESS (effective sample size) unweighted posterior
+        samples. This ensures downstream analysis (plotting, postprocessing) treats
+        all samples as equally weighted, which is the expected behavior.
 
         Returns
         -------
         dict
             Dictionary with:
-            - Parameter samples (transformed back to prior space)
-            - 'logL': log likelihood values
-            - 'logL_birth': birth log likelihoods
-            - 'weights': importance weights from nested sampling
+            - Parameter samples (resampled, unweighted)
+            - 'logL': log likelihood values (resampled)
+            - 'logL_birth': birth log likelihoods (resampled)
+
+        Notes
+        -----
+        The original weighted samples are cached in _filtered_samples_cache for
+        advanced users who need access to the full weighted set.
         """
         if self.final_state is None:
             raise RuntimeError("No samples available - run sample() first")
@@ -420,8 +429,52 @@ class BlackJAXNSAWSampler(JesterSampler):
             samples["logL"] = jnp.array(ns_samples["logL"].values)
             samples["logL_birth"] = jnp.array(ns_samples["logL_birth"].values)
 
-            # Cache filtered samples for get_log_prob() to use
-            self._filtered_samples_cache = samples
+            # Cache filtered samples BEFORE resampling (for get_log_prob() to use if needed)
+            self._filtered_samples_cache = samples.copy()
+
+            # Resample weighted samples to produce unweighted posterior samples
+            # This is critical for downstream analysis that assumes equal weights
+            logger.info("Resampling weighted NS samples to produce unweighted posterior...")
+
+            # Compute effective sample size
+            weights_array = samples["weights"]
+            ess = jnp.sum(weights_array)**2 / jnp.sum(weights_array**2)
+            logger.info(f"Effective sample size: {ess:.1f} / {len(weights_array)} raw samples")
+
+            # Number of samples to draw: use ESS as target
+            # Round to nearest integer, minimum 100 samples
+            n_resample = max(100, int(jnp.round(ess)))
+            logger.info(f"Resampling to {n_resample} unweighted posterior samples...")
+
+            # Normalize weights for sampling
+            normalized_weights = weights_array / jnp.sum(weights_array)
+
+            # Resample with replacement using weighted sampling
+            key = jax.random.PRNGKey(self._seed + 1000)  # Offset seed for reproducibility
+            indices = jax.random.choice(
+                key,
+                len(weights_array),
+                shape=(n_resample,),
+                replace=True,
+                p=normalized_weights
+            )
+
+            # Create resampled samples dict
+            resampled_samples = {}
+            for key_name, value in samples.items():
+                if key_name == "weights":
+                    # All samples now have equal weight
+                    continue
+                elif key_name in ["logL", "logL_birth"]:
+                    # Keep metadata
+                    resampled_samples[key_name] = value[indices]
+                else:
+                    # Resample parameter arrays
+                    resampled_samples[key_name] = value[indices]
+
+            # Replace samples with resampled version
+            samples = resampled_samples
+            logger.info(f"Resampling complete: {len(samples[list(samples.keys())[0]])} unweighted samples")
 
             # Store evidence from anesthetic computation (more accurate than our estimate)
             try:
@@ -439,24 +492,29 @@ class BlackJAXNSAWSampler(JesterSampler):
 
         except ImportError:
             logger.warning(
-                "anesthetic not available - using all samples with uniform weights"
+                "anesthetic not available - using all samples without resampling"
             )
-            # Use all samples without filtering
+            # Use all samples without filtering or resampling
             samples = dict(self.final_state.particles)
             samples["logL"] = self.final_state.loglikelihood
             samples["logL_birth"] = logL_birth
-            samples["weights"] = jnp.ones(len(samples["logL"])) / len(samples["logL"])
             self._filtered_samples_cache = samples
+            logger.warning(
+                "Without anesthetic, cannot compute proper weights. "
+                "All samples treated equally (may include low-weight samples)."
+            )
         except Exception as e:
             logger.warning(
-                f"anesthetic weight computation failed: {e} - using all samples with uniform weights"
+                f"anesthetic weight computation failed: {e} - using all samples without resampling"
             )
-            # Use all samples without filtering
+            # Use all samples without filtering or resampling
             samples = dict(self.final_state.particles)
             samples["logL"] = self.final_state.loglikelihood
             samples["logL_birth"] = logL_birth
-            samples["weights"] = jnp.ones(len(samples["logL"])) / len(samples["logL"])
             self._filtered_samples_cache = samples
+            logger.warning(
+                "Without proper weights, all samples treated equally (may include low-weight samples)."
+            )
 
         return samples
 
@@ -525,9 +583,9 @@ class BlackJAXNSAWSampler(JesterSampler):
         Returns
         -------
         SamplerOutput
-            - samples: Parameter samples (dict of arrays, no metadata fields)
+            - samples: Unweighted parameter samples (dict of arrays, no metadata fields)
             - log_prob: Log likelihood (NOT log posterior - NS works in likelihood space)
-            - metadata: {"weights": Array, "logL": Array, "logL_birth": Array}
+            - metadata: {"logL": Array, "logL_birth": Array}
 
         Raises
         ------
@@ -536,9 +594,9 @@ class BlackJAXNSAWSampler(JesterSampler):
 
         Notes
         -----
-        Unlike FlowMC/SMC, log_prob contains log likelihood, not log posterior.
-        This is by design - nested sampling operates in likelihood space.
-        The posterior can be reconstructed using weights and prior.
+        Samples are resampled using importance weights to produce unweighted posterior samples.
+        This ensures downstream analysis treats all samples equally.
+        log_prob contains log likelihood, not log posterior (standard for NS).
         """
         if self.final_state is None:
             raise RuntimeError("No samples available. Run sample() first.")
