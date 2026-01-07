@@ -249,8 +249,8 @@ class BlackJAXNSAWSampler(JesterSampler):
         )
 
         # Initialize sampler state
-        key, subkey = jax.random.split(key)
-        state = nested_sampler.init(initial_particles, rng_key=subkey)
+        # Note: init_fn only takes particles, pyright incorrectly expects rng_key
+        state = nested_sampler.init(initial_particles)  # type: ignore[call-arg]
 
         def terminate(state):
             """Termination condition: stop when remaining evidence is small."""
