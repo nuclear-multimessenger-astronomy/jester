@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code when working with the JESTER repository.
 
-## Important Guidelines
+## IMPORTANT GUIDELINES
 
 **Testing Philosophy**: When tests fail, investigate root causes rather than modifying tests to pass. Make notes in CLAUDE.md and fix underlying code issues.
 
@@ -12,46 +12,22 @@ This file provides guidance to Claude Code when working with the JESTER reposito
 
 ---
 
-## Current Status (December 2024)
+## Current Status
 
-### Multi-Sampler Architecture ✅ COMPLETE
+### Multi-Sampler Architecture
 
 Three sampler backends are now available for Bayesian inference:
 
 1. **FlowMC** (Production Ready) - Normalizing flow-enhanced MCMC
 2. **BlackJAX SMC** (Production Ready) - Sequential Monte Carlo with adaptive tempering
-   - NUTS kernel with Hessian-based mass matrix adaptation
-   - Gaussian Random Walk kernel with sigma adaptation
-   - ✅ All type errors fixed (0 errors)
-   - ✅ Example configs created
-   - ✅ Dry run validation passed
-3. **BlackJAX NS-AW** (Needs Type Checking) - Nested Sampling with Acceptance Walk
-   - ⚠️ Has 7 pyright type errors to fix
-   - Example configs created
-   - Prior-only test run successful
-
-### Unified HDF5 Results Storage ✅ COMPLETE
-
-Single `results.h5` file replaces separate NPZ files:
-
-- ✅ `InferenceResult` class for save/load operations (`jesterTOV/inference/result.py`)
-- ✅ Hierarchical HDF5 structure: `/posterior`, `/metadata`, `/histories`
-- ✅ Supports all samplers (FlowMC, SMC, NS-AW) with sampler-specific metadata
-- ✅ Stores parameters + derived EOS quantities + sampler diagnostics
-- ✅ Postprocessing updated to use HDF5 format
-- ✅ Type checking passes (0 errors)
-- ⚠️ **Needs tests**: See Next Priority Tasks #4
+   - Gaussian Random Walk kernel with sigma adaptation -- TESTED, THIS IS OUR "DEFAULT" SAMPLER
+   - NUTS kernel with Hessian-based mass matrix adaptation -- EXPERIMENTAL, REFRAIN FROM USING NOW
+3. **BlackJAX NS-AW** (Needs Testing) - Nested Sampling with Acceptance Walk, mimics bilby setup
 
 **Example Configs Available**:
+SMC is production ready and we usually test the following config, which can be executed locally on a laptop without GPU support
 ```bash
-# FlowMC (production ready)
-examples/inference/smc-nuts/config.yaml
-examples/inference/smc-random-walk/config.yaml
-
-# BlackJAX NS-AW (needs type fixes)
-examples/inference/blackjax-ns-aw/prior/config.yaml
-examples/inference/blackjax-ns-aw/GW170817/config.yaml
-examples/inference/blackjax-ns-aw/NICER_J0030/config.yaml
+examples/inference/smc_random_walk/chiEFT/config.yaml
 ```
 
 ---
@@ -114,31 +90,6 @@ uv run pytest tests/test_inference/test_config.py
 uv run pytest -v tests/
 ```
 
----
-
-## Testing Coverage Assessment (December 2024)
-
-TODO: Rerun to check the actual coverage now.
-
-### Recommendations
-
-**IMMEDIATE ACTIONS** (before next release):
-1. **Create `tests/test_inference/test_result.py`** - Test HDF5 save/load for all sampler types
-2. **Fix NS-AW type errors** - Run `uv run pyright` and resolve all 7 errors
-3. **Document data loading status** - Either implement missing functions or update FIXME
-
-**SHORT-TERM** (next sprint):
-4. **Create `tests/test_inference/test_postprocessing.py`** - Basic smoke tests for plotting
-5. **Expand SMC tests** - Add tests for evidence calculation, batching behavior
-6. **Expand transform tests** - More edge cases for MetaModel and MetaModel+CSE
-
-**LONG-TERM**:
-7. **Add integration tests with real data** - Test full workflow with actual GW/NICER data
-8. **Performance regression tests** - Track sampling efficiency over time
-9. **Documentation tests** - Verify all examples in docs actually run
-
----
-
 ## Code Quality Standards
 
 ### Documentation
@@ -163,8 +114,7 @@ uv run sphinx-build -W --keep-going docs docs/_build/html
 ### Running Inference
 ```bash
 # Run inference
-uv run run_jester_inference config.yaml
-
+run_jester_inference config.yaml
 # Validate config only
 # (set validate_only: true in config.yaml)
 
@@ -250,61 +200,9 @@ jesterTOV/inference/
 └── run_inference.py # Main entry point
 ```
 
-### Base Classes (jimgw Independence)
-The `base/` module contains copies of Jim v0.2.0 base classes to remove dependency on jimgw:
-- `LikelihoodBase` - Abstract likelihood interface
-- `Prior`, `CombinePrior`, `UniformPrior` - Prior system
-- `NtoMTransform`, `BijectiveTransform` - Transform interfaces
-
-Goal: Keep flowMC as only external sampler dependency.
-
-### Critical Design Notes
-- **JAX NaN handling**: Use `jnp.inf` instead of `jnp.nan` for initialization
-- **flowMC data argument**: Always pass empty dict `{}`, not `None`
-- **Geometric units**: Realistic NS: M~2000m, R~12000m, P~1e-11 m^-2
-- **LaTeX in docstrings**: Use raw strings `r"""..."""` to avoid warnings
-
 ---
 
 ## Known Issues & Workarounds
-
-### Testing Issues (Fixed)
-- ✅ LikelihoodConfig validation respects `enabled` field
-- ✅ Prior API uses `sample(rng_key, n_samples)` not `sample(u_array)`
-- ✅ Transform factory expects Pydantic config, not dict
-- ✅ **EOS sample generation array filtering bug** (December 2024, refined January 2026):
-  - **Bug**: When generating fewer EOS samples than posterior samples (e.g., 10000 EOS from 800000 posterior),
-    got `IndexError: index 196498 is out of bounds for axis 0 with size 10000` when filtering parameters
-  - **Root Cause**: Transform returns BOTH EOS quantities AND input parameters. Calling `add_derived_eos(transformed_samples)`
-    added the filtered 10000-element parameter arrays to `self.posterior`, overwriting the original 800000-element arrays.
-    Then attempting to filter again with `idx` failed because arrays were already filtered.
-  - **Fix** (January 2026): Filter `transformed_samples` to only include EOS quantities (masses_EOS, radii_EOS, etc.)
-    before calling `add_derived_eos()`, preventing parameter arrays from being overwritten. Then filter ALL arrays
-    (log_prob, sampler fields, AND NEP/CSE parameters) and backup full arrays as `*_full`.
-  - **Location**: `jesterTOV/inference/result.py:382-420`
-  - **Regression test**: `tests/test_inference/test_integration.py::TestEOSSampleGeneration` (needs update)
-- ✅ **SMC parameter ordering bug** (December 2025):
-  - **Bug**: `ravel_pytree` uses alphabetical ordering but `add_name` uses `prior.parameter_names` ordering,
-    causing scrambled parameters → NaN log_prob
-  - **Root Cause**: Inconsistent parameter ordering between flatten and unflatten operations
-  - **Fix** (commit a5c863e): Use `self._unflatten_fn(particle_flat)` consistently; added `posterior_from_dict()`
-    method to bypass `add_name()`
-  - **Location**: `jesterTOV/inference/samplers/blackjax_smc.py:844-852`
-  - **Validation**: SMC examples run successfully without NaN values
-- ✅ **BlackJAX NS-AW initialization bug** (January 2026):
-  - **Bug**: `TypeError: init_fn() got an unexpected keyword argument 'rng_key'` when initializing nested sampler
-  - **Root Cause**: The `init_fn()` in `bilby_adaptive_de_sampler_unit_cube` only accepts `particles` parameter,
-    but code was passing `rng_key=subkey` argument (initialization doesn't need random key)
-  - **Fix** (January 2026): Remove `rng_key=subkey` argument from `nested_sampler.init()` call; added type
-    ignore comment for pyright false positive
-  - **Location**: `jesterTOV/inference/samplers/blackjax_ns_aw.py:251-253`
-- ✅ **BlackJAX NS-AW particles shape bug** (January 2026):
-  - **Bug**: `AttributeError: 'dict' object has no attribute 'shape'` when finalizing nested sampling results
-  - **Root Cause**: `final_info.particles` is a pytree/dict structure (JESTER uses named parameters), not a simple
-    array. Code was trying to access `.shape[0]` directly on the dict.
-  - **Fix** (January 2026): Use `jax.tree_util.tree_leaves()` to extract arrays from pytree, then get shape from
-    first leaf (same pattern used in `acceptance_walk_kernel.py`)
-  - **Location**: `jesterTOV/inference/samplers/blackjax_ns_aw.py:305-307`
 
 ### Open Issues
 - **UniformPrior boundaries**: `log_prob()` at exact boundaries causes errors (NaN at xmin, ZeroDivision at xmax)
@@ -312,6 +210,7 @@ Goal: Keep flowMC as only external sampler dependency.
   - Fix: Add numerical guards in LogitTransform
 - **TOV solver max_steps**: Some stiff EOS configs hit solver limits
   - May need to increase `max_steps` or adjust EOS parameters
+  - Needs further testing to understand when this happens, what the root cause is, and determine best solution
 
 ---
 
