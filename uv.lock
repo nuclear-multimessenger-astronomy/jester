@@ -1379,7 +1379,7 @@ docs = [
 examples = [
     { name = "ipykernel" },
 ]
-test = [
+tests = [
     { name = "hypothesis" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -1402,7 +1402,7 @@ requires-dist = [
     { name = "flowmc", specifier = ">=0.3.4" },
     { name = "h5py", specifier = ">=3.0" },
     { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.0" },
-    { name = "hypothesis", marker = "extra == 'test'", specifier = ">=6.0" },
+    { name = "hypothesis", marker = "extra == 'tests'", specifier = ">=6.0" },
     { name = "interpax" },
     { name = "ipykernel", marker = "extra == 'examples'", specifier = ">=7.1.0" },
     { name = "jax" },
@@ -1417,13 +1417,13 @@ requires-dist = [
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.5.0" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
-    { name = "pytest", marker = "extra == 'test'", specifier = ">=7.0" },
+    { name = "pytest", marker = "extra == 'tests'", specifier = ">=7.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0" },
-    { name = "pytest-cov", marker = "extra == 'test'", specifier = ">=4.0" },
+    { name = "pytest-cov", marker = "extra == 'tests'", specifier = ">=4.0" },
     { name = "pytest-timeout", marker = "extra == 'dev'", specifier = ">=2.1.0" },
-    { name = "pytest-timeout", marker = "extra == 'test'", specifier = ">=2.1.0" },
+    { name = "pytest-timeout", marker = "extra == 'tests'", specifier = ">=2.1.0" },
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.0" },
-    { name = "pytest-xdist", marker = "extra == 'test'", specifier = ">=3.0" },
+    { name = "pytest-xdist", marker = "extra == 'tests'", specifier = ">=3.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "scipy", specifier = ">=1.10.0" },
     { name = "seaborn", specifier = ">=0.12.0" },
@@ -1435,7 +1435,7 @@ requires-dist = [
     { name = "typing-extensions", specifier = ">=4.5.0" },
     { name = "zenodo-get", specifier = ">=1.5.0" },
 ]
-provides-extras = ["cuda12", "cuda13", "cpu", "test", "dev", "examples", "docs"]
+provides-extras = ["cuda12", "cuda13", "cpu", "tests", "dev", "examples", "docs"]
 
 [[package]]
 name = "jinja2"
