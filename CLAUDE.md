@@ -272,16 +272,16 @@ Goal: Keep flowMC as only external sampler dependency.
 - ✅ LikelihoodConfig validation respects `enabled` field
 - ✅ Prior API uses `sample(rng_key, n_samples)` not `sample(u_array)`
 - ✅ Transform factory expects Pydantic config, not dict
-- ✅ **EOS sample generation log_prob filtering bug** (December 2024):
-  - **Bug**: When generating fewer EOS samples than posterior samples (e.g., 5000 EOS from 10000 posterior),
-    `log_prob` was not filtered to match the randomly selected samples, causing index out of bounds errors
-    in postprocessing when trying to color M-R curves by probability
-  - **Root Cause**: `generate_eos_samples()` used random selection (`np.random.choice`) for parameters but
-    excluded `log_prob` from filtering (line 279), leaving full 10000 `log_prob` values with only 5000 EOS curves
-  - **Fix** (commit XXXX): Filter `log_prob` and other sampler-specific fields (`weights`, `ess`, `logL`, `logL_birth`)
-    to match selected samples; backup full arrays as `*_full`
-  - **Location**: `jesterTOV/inference/run_inference.py:285-298`, `jesterTOV/inference/postprocessing/postprocessing.py:347-352, 458-463`
-  - **Regression test**: `tests/test_inference/test_integration.py::TestEOSSampleGeneration`
+- ✅ **EOS sample generation array filtering bug** (December 2024, refined January 2026):
+  - **Bug**: When generating fewer EOS samples than posterior samples (e.g., 10000 EOS from 800000 posterior),
+    arrays had inconsistent lengths causing `ValueError` in cornerplot: "array at index 0 has size 800000 and
+    array at index 8 has size 10000"
+  - **Root Cause**: `generate_eos_samples()` filtered `log_prob` and sampler-specific fields but forgot to
+    filter NEP/CSE parameter arrays, leaving them at full posterior size while EOS quantities were subsampled
+  - **Fix** (January 2026): Filter ALL arrays (log_prob, sampler fields, AND NEP/CSE parameters) to match
+    selected samples; backup full arrays as `*_full`; added validation loop to catch future mismatches
+  - **Location**: `jesterTOV/inference/run_inference.py:294-344`
+  - **Regression test**: `tests/test_inference/test_integration.py::TestEOSSampleGeneration` (needs update)
 - ✅ **SMC parameter ordering bug** (December 2025):
   - **Bug**: `ravel_pytree` uses alphabetical ordering but `add_name` uses `prior.parameter_names` ordering,
     causing scrambled parameters → NaN log_prob
@@ -290,6 +290,13 @@ Goal: Keep flowMC as only external sampler dependency.
     method to bypass `add_name()`
   - **Location**: `jesterTOV/inference/samplers/blackjax_smc.py:844-852`
   - **Validation**: SMC examples run successfully without NaN values
+- ✅ **BlackJAX NS-AW initialization bug** (January 2026):
+  - **Bug**: `TypeError: init_fn() got an unexpected keyword argument 'rng_key'` when initializing nested sampler
+  - **Root Cause**: The `init_fn()` in `bilby_adaptive_de_sampler_unit_cube` only accepts `particles` parameter,
+    but code was passing `rng_key=subkey` argument (initialization doesn't need random key)
+  - **Fix** (January 2026): Remove `rng_key=subkey` argument from `nested_sampler.init()` call; added type
+    ignore comment for pyright false positive
+  - **Location**: `jesterTOV/inference/samplers/blackjax_ns_aw.py:251-253`
 
 ### Open Issues
 - **UniformPrior boundaries**: `log_prob()` at exact boundaries causes errors (NaN at xmin, ZeroDivision at xmax)

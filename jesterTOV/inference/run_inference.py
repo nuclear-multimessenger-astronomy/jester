@@ -304,8 +304,15 @@ def generate_eos_samples(config, result, transform_eos, outdir, n_eos_samples=10
             result.posterior[f"{field}_full"] = result.posterior[field].copy()
             result.posterior[field] = result.posterior[field][idx]
 
+    # CRITICAL: Also filter NEP/CSE parameter arrays to match selected samples
+    # These must have the same length as log_prob for cornerplot and other analyses
+    for param_key in param_samples.keys():
+        if param_key in result.posterior:
+            result.posterior[f"{param_key}_full"] = result.posterior[param_key].copy()
+            result.posterior[param_key] = result.posterior[param_key][idx]
+
     logger.info(
-        f"Filtered log_prob and sampler fields from {len(log_prob)} to {len(result.posterior['log_prob'])} samples"
+        f"Filtered log_prob, sampler fields, and parameters from {len(log_prob)} to {len(result.posterior['log_prob'])} samples"
     )
 
     # Generate EOS curves with batched processing
@@ -327,6 +334,14 @@ def generate_eos_samples(config, result, transform_eos, outdir, n_eos_samples=10
     # Add derived EOS quantities to result
     result.add_derived_eos(transformed_samples)
     logger.info("Derived EOS quantities added to InferenceResult")
+
+    # Validate array consistency (all non-_full arrays should have n_eos_samples length)
+    for key, value in result.posterior.items():
+        if not key.endswith("_full") and hasattr(value, "__len__"):
+            if len(value) != n_eos_samples:
+                logger.warning(
+                    f"Array length mismatch: {key} has {len(value)} samples, expected {n_eos_samples}"
+                )
 
 
 def main(config_path: str):
