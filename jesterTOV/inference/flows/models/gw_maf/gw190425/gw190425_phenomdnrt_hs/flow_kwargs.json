@@ -4,8 +4,6 @@
   "nn_block_dim": 8,
   "nn_width": 50,
   "flow_layers": 1,
-  "knots": 8,
-  "tanh_max_val": 3.0,
   "invert": true,
   "cond_dim": null,
   "seed": 0,

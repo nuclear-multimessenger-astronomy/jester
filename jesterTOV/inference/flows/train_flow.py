@@ -8,7 +8,7 @@ Training Pipeline
 1. Load configuration from YAML file
 2. Load posterior samples from npz file
 3. Apply optional standardization
-4. Create flow architecture (triangular spline, autoregressive, coupling)
+4. Create flow architecture (autoregressive, coupling)
 5. Fit flow using maximum likelihood with early stopping
 6. Save trained weights, config, and metadata
 7. Generate validation plots
@@ -16,7 +16,6 @@ Training Pipeline
 Supported Architectures
 -----------------------
 - coupling_flow: Balanced speed and expressiveness
-- triangular_spline_flow: Fast, flexible, exact sampling
 - block_neural_autoregressive_flow: Good expressiveness
 - masked_autoregressive_flow: Flexible but slower
 
@@ -26,7 +25,7 @@ Create a YAML config file (e.g., config.yaml):
 
     posterior_file: data/gw170817_posterior.npz
     output_dir: models/gw170817/
-    flow_type: triangular_spline_flow
+    flow_type: masked_autoregressive_flow
     num_epochs: 1000
     learning_rate: 1.0e-3
     standardize: true
@@ -55,7 +54,7 @@ Or use the lower-level functions directly:
 >>> from jesterTOV.inference.flows.flow import create_flow
 >>> from jesterTOV.inference.flows.train_flow import load_gw_posterior, train_flow, save_model
 >>> data, metadata = load_gw_posterior("gw170817.npz", max_samples=50000)
->>> flow = create_flow(jax.random.key(0), flow_type="triangular_spline_flow")
+>>> flow = create_flow(jax.random.key(0), flow_type="masked_autoregressive_flow")
 >>> trained_flow, losses = train_flow(flow, data, jax.random.key(1))
 >>> save_model(trained_flow, "models/gw170817/", flow_kwargs, metadata)
 
@@ -404,8 +403,6 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
     print(f"NN block dim: {config.nn_block_dim}")
     print(f"NN width: {config.nn_width}")
     print(f"Flow layers: {config.flow_layers}")
-    print(f"Knots: {config.knots}")
-    print(f"Tanh max val: {config.tanh_max_val}")
     print(f"Invert: {config.invert}")
     print(f"Cond dim: {config.cond_dim}")
     print(f"Transformer: {config.transformer}")
@@ -453,8 +450,6 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
         nn_block_dim=config.nn_block_dim,
         nn_width=config.nn_width,
         flow_layers=config.flow_layers,
-        knots=config.knots,
-        tanh_max_val=config.tanh_max_val,
         invert=config.invert,
         cond_dim=config.cond_dim,
         transformer_type=config.transformer,
@@ -486,8 +481,6 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
         "nn_block_dim": config.nn_block_dim,
         "nn_width": config.nn_width,
         "flow_layers": config.flow_layers,
-        "knots": config.knots,
-        "tanh_max_val": config.tanh_max_val,
         "invert": config.invert,
         "cond_dim": config.cond_dim,
         "seed": config.seed,

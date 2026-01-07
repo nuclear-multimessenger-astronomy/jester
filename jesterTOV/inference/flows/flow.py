@@ -55,7 +55,6 @@ from flowjax.flows import (
     block_neural_autoregressive_flow,
     coupling_flow,
     masked_autoregressive_flow,
-    triangular_spline_flow,
 )
 from flowjax.bijections import (
     RationalQuadraticSpline,
@@ -286,13 +285,11 @@ def create_transformer(
 
 def create_flow(
     key: Array,
-    flow_type: str = "triangular_spline_flow",
+    flow_type: str = "masked_autoregressive_flow",
     nn_depth: int = 5,
     nn_block_dim: int = 8,
     nn_width: int = 50,
     flow_layers: int = 1,
-    knots: int = 8,
-    tanh_max_val: float = 3.0,
     invert: bool = True,
     cond_dim: int | None = None,
     transformer_type: str = "affine",
@@ -305,14 +302,12 @@ def create_flow(
     Args:
         key: JAX random key
         flow_type: Type of flow ("block_neural_autoregressive_flow",
-            "masked_autoregressive_flow", "coupling_flow", "triangular_spline_flow")
+            "masked_autoregressive_flow", "coupling_flow")
         nn_depth: Depth of neural network (for block_neural_autoregressive_flow,
             masked_autoregressive_flow, coupling_flow)
         nn_block_dim: Block dimension (for block_neural_autoregressive_flow)
         nn_width: Width of hidden layers (for masked_autoregressive_flow, coupling_flow)
         flow_layers: Number of flow layers
-        knots: Number of spline knots (for triangular_spline_flow)
-        tanh_max_val: Maximum value for tanh tails (for triangular_spline_flow)
         invert: Whether to invert the flow
         cond_dim: Conditional dimension (None for unconditional flows)
         transformer_type: Type of transformer for masked_autoregressive_flow and coupling_flow
@@ -363,21 +358,11 @@ def create_flow(
             cond_dim=cond_dim,
             transformer=transformer,
         )
-    elif flow_type == "triangular_spline_flow":
-        flow = triangular_spline_flow(
-            key=key,
-            base_dist=base_dist,
-            flow_layers=flow_layers,
-            knots=knots,
-            tanh_max_val=tanh_max_val,
-            invert=invert,
-            cond_dim=cond_dim,
-        )
     else:
         raise ValueError(
             f"Unknown flow type: {flow_type}. Must be one of: "
             "block_neural_autoregressive_flow, masked_autoregressive_flow, "
-            "coupling_flow, triangular_spline_flow"
+            "coupling_flow"
         )
 
     return flow
@@ -411,13 +396,11 @@ def load_model(output_dir: str) -> Tuple[Any, Dict[str, Any]]:
         nn_block_dim=flow_kwargs["nn_block_dim"],
         nn_width=flow_kwargs["nn_width"],
         flow_layers=flow_kwargs["flow_layers"],
-        knots=flow_kwargs["knots"],
-        tanh_max_val=flow_kwargs["tanh_max_val"],
         invert=flow_kwargs["invert"],
         cond_dim=flow_kwargs["cond_dim"],
-        transformer_type=flow_kwargs["transformer_type"],
-        transformer_knots=flow_kwargs["transformer_knots"],
-        transformer_interval=flow_kwargs["transformer_interval"],
+        transformer_type=flow_kwargs.get("transformer_type", "affine"),
+        transformer_knots=flow_kwargs.get("transformer_knots", 8),
+        transformer_interval=flow_kwargs.get("transformer_interval", 4.0),
     )
 
     # Load weights

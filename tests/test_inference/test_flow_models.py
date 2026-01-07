@@ -25,13 +25,11 @@ def simple_flow_model():
     key = jax.random.key(42)
     flow = create_flow(
         key=key,
-        flow_type="triangular_spline_flow",
+        flow_type="masked_autoregressive_flow",
         nn_depth=2,
         nn_block_dim=4,
         nn_width=8,
         flow_layers=1,
-        knots=4,
-        tanh_max_val=3.0,
         invert=True,
         cond_dim=None,
         transformer_type="affine",
@@ -55,13 +53,11 @@ def flow_kwargs():
     """Sample flow kwargs for serialization."""
     return {
         "seed": 42,
-        "flow_type": "triangular_spline_flow",
+        "flow_type": "masked_autoregressive_flow",
         "nn_depth": 2,
         "nn_block_dim": 4,
         "nn_width": 8,
         "flow_layers": 1,
-        "knots": 4,
-        "tanh_max_val": 3.0,
         "invert": True,
         "cond_dim": None,
         "transformer_type": "affine",
@@ -395,6 +391,6 @@ class TestFlowWrapper:
         flow = Flow.from_directory(str(output_dir))
 
         # Check flow_kwargs access
-        assert flow.flow_kwargs["flow_type"] == "triangular_spline_flow"
+        assert flow.flow_kwargs["flow_type"] == "masked_autoregressive_flow"
         assert flow.flow_kwargs["seed"] == 42
         assert flow.flow_kwargs["nn_depth"] == 2

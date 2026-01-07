@@ -46,14 +46,10 @@ class FlowTrainingConfig(BaseModel):
         Generate corner plot comparison (default: True)
     plot_losses : bool
         Plot training and validation losses (default: True)
-    flow_type : Literal["block_neural_autoregressive_flow", "masked_autoregressive_flow", "coupling_flow", "triangular_spline_flow"]
-        Type of normalizing flow to use (default: triangular_spline_flow)
+    flow_type : Literal["block_neural_autoregressive_flow", "masked_autoregressive_flow", "coupling_flow"]
+        Type of normalizing flow to use (default: masked_autoregressive_flow)
     nn_width : int
         Width of neural network hidden layers (default: 50)
-    knots : int
-        Number of knots in splines (default: 8)
-    tanh_max_val : float
-        Maximum absolute value for tanh tails (default: 3.0)
     standardize : bool
         Standardize input data to [0,1] domain using min-max scaling (default: False)
     transformer : Literal["affine", "rational_quadratic_spline"]
@@ -86,11 +82,8 @@ class FlowTrainingConfig(BaseModel):
         "block_neural_autoregressive_flow",
         "masked_autoregressive_flow",
         "coupling_flow",
-        "triangular_spline_flow",
-    ] = "triangular_spline_flow"
+    ] = "masked_autoregressive_flow"
     nn_width: int = 50
-    knots: int = 8
-    tanh_max_val: float = 3.0
     standardize: bool = False
     transformer: Literal["affine", "rational_quadratic_spline"] = "affine"
     transformer_knots: int = 8
@@ -106,7 +99,6 @@ class FlowTrainingConfig(BaseModel):
         "flow_layers",
         "max_samples",
         "nn_width",
-        "knots",
         "transformer_knots",
         "batch_size",
     )
@@ -118,7 +110,7 @@ class FlowTrainingConfig(BaseModel):
         return v
 
     @field_validator(
-        "learning_rate", "tanh_max_val", "val_prop", "transformer_interval"
+        "learning_rate", "val_prop", "transformer_interval"
     )
     @classmethod
     def validate_positive_float(cls, v: float) -> float:

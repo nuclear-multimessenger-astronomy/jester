@@ -23,9 +23,7 @@ transformer: "rational_quadratic_spline"
 transformer_knots: 8
 transformer_interval: 4.0
 
-# Spline settings (for triangular_spline_flow)
-knots: 8
-tanh_max_val: 3.0
+# Spline settings (for masked_autoregressive_flow)
 
 # Data preprocessing
 max_samples: 50000

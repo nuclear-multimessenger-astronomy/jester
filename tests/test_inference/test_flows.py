@@ -68,7 +68,7 @@ def sample_flow_config_dict(tmp_path):
         "seed": 42,
         "plot_corner": False,
         "plot_losses": False,
-        "flow_type": "triangular_spline_flow",
+        "flow_type": "masked_autoregressive_flow",
         "standardize": False,
     }
 
@@ -95,7 +95,7 @@ class TestFlowTrainingConfig:
         config = FlowTrainingConfig(**sample_flow_config_dict)
         assert config.num_epochs == 100
         assert config.learning_rate == 1e-3
-        assert config.flow_type == "triangular_spline_flow"
+        assert config.flow_type == "masked_autoregressive_flow"
 
     def test_from_yaml_loading(self, sample_flow_config_yaml):
         """Test loading config from YAML file."""
@@ -158,7 +158,6 @@ class TestFlowTrainingConfig:
             "block_neural_autoregressive_flow",
             "masked_autoregressive_flow",
             "coupling_flow",
-            "triangular_spline_flow",
         ]
         for flow_type in valid_types:
             sample_flow_config_dict["flow_type"] = flow_type
@@ -182,7 +181,7 @@ class TestFlowTrainingConfig:
         assert config.seed == 0
         assert config.plot_corner is True
         assert config.plot_losses is True
-        assert config.flow_type == "triangular_spline_flow"
+        assert config.flow_type == "masked_autoregressive_flow"
         assert config.standardize is False
         assert config.val_prop == 0.2
         assert config.batch_size == 128
