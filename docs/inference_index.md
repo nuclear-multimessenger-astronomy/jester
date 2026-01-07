@@ -53,7 +53,7 @@ Choose the right guide for your needs:
 - **Start here if**: You need the authoritative list of all configuration options
 
 ### 📁 Module README
-**[Inference Module README](../jesterTOV/inference/README.md)** - *10-15 minutes*
+**Inference Module README** (`jesterTOV/inference/README.md`) - *10-15 minutes*
 - Module structure overview
 - Basic workflow
 - File connections
@@ -69,88 +69,88 @@ Choose the right guide for your needs:
 
 | Task | Documentation | Time |
 |------|---------------|------|
-| Install JESTER | [Quick Start](inference_quickstart.md#installation) | 2 min |
-| Run first inference | [Quick Start](inference_quickstart.md#run-your-first-inference) | 5 min |
-| Understand workflow | [Architecture](inference_architecture.md#execution-flow) | 10 min |
+| Install JESTER | {ref}`installation` | 2 min |
+| Run first inference | {ref}`run-your-first-inference` | 5 min |
+| Understand workflow | {ref}`execution-flow` | 10 min |
 
 ### Configuration
 
 | Task | Documentation | Time |
 |------|---------------|------|
-| Create config file | [Quick Start](inference_quickstart.md#configuration-files-explained) | 5 min |
+| Create config file | {ref}`configuration-files-explained` | 5 min |
 | See all YAML options | [YAML Reference](inference_yaml_reference.md) | 2 min |
-| Understand YAML structure | [Complete Docs](inference.md#configuration-system) | 15 min |
-| Validation rules | [Complete Docs](inference.md#configuration-validation) | 10 min |
-| Path resolution | [Complete Docs](inference.md#path-resolution) | 5 min |
+| Understand YAML structure | {ref}`configuration-system` | 15 min |
+| Validation rules | {ref}`configuration-validation` | 10 min |
+| Path resolution | {ref}`path-resolution` | 5 min |
 
 ### Priors
 
 | Task | Documentation | Time |
 |------|---------------|------|
-| Create prior file | [Quick Start](inference_quickstart.md#prior-file) | 5 min |
-| Understand format | [Complete Docs](inference.md#prior-file-format) | 10 min |
-| Inclusion rules | [Complete Docs](inference.md#prior-inclusion-rules) | 10 min |
-| CSE grid parameters | [Complete Docs](inference.md#cse-grid-parameters) | 5 min |
+| Create prior file | {ref}`prior-file` | 5 min |
+| Understand format | {ref}`prior-file-format` | 10 min |
+| Inclusion rules | {ref}`prior-inclusion-rules` | 10 min |
+| CSE grid parameters | {ref}`cse-grid-parameters` | 5 min |
 
 ### Transforms
 
 | Task | Documentation | Time |
 |------|---------------|------|
-| Choose transform type | [Quick Start](inference_quickstart.md#use-metamodel--cse) | 5 min |
-| MetaModel details | [Complete Docs](inference.md#1-metamodel-transform) | 10 min |
-| MetaModel+CSE details | [Complete Docs](inference.md#2-metamodel-cse-transform) | 10 min |
-| Transform workflow | [Architecture](inference_architecture.md#parameter--eos--observables) | 10 min |
+| Choose transform type | {ref}`use-metamodel--cse` | 5 min |
+| MetaModel details | {ref}`1-metamodel-transform` | 10 min |
+| MetaModel+CSE details | {ref}`2-metamodel-cse-transform` | 10 min |
+| Transform workflow | {ref}`parameter--eos--observables` | 10 min |
 
 ### Likelihoods
 
 | Task | Documentation | Time |
 |------|---------------|------|
-| Add data constraint | [Quick Start](inference_quickstart.md#add-real-observational-data) | 5 min |
-| All likelihood types | [Complete Docs](inference.md#available-likelihood-types) | 20 min |
-| Custom likelihood | [Complete Docs](inference.md#custom-likelihoods) | 30 min |
-| Combined likelihood | [Architecture](inference_architecture.md#likelihood-system) | 10 min |
+| Add data constraint | {ref}`add-real-observational-data` | 5 min |
+| All likelihood types | {ref}`available-likelihood-types` | 20 min |
+| Custom likelihood | {ref}`custom-likelihoods` | 30 min |
+| Combined likelihood | {ref}`likelihood-system` | 10 min |
 
 ### Data Management
 
 | Task | Documentation | Time |
 |------|---------------|------|
-| Configure data paths | [Complete Docs](inference.md#data-path-configuration) | 10 min |
-| Understand caching | [Complete Docs](inference.md#caching-mechanism) | 5 min |
-| DataLoader interface | [Architecture](inference_architecture.md#data-loading) | 10 min |
+| Configure data paths | {ref}`data-path-configuration` | 10 min |
+| Understand caching | {ref}`caching-mechanism` | 5 min |
+| DataLoader interface | {ref}`data-loading` | 10 min |
 
 ### Sampling
 
 | Task | Documentation | Time |
 |------|---------------|------|
-| Configure sampler | [Quick Start](inference_quickstart.md#configuration-files-explained) | 5 min |
-| Sampler parameters | [Complete Docs](inference.md#sampler-parameters) | 15 min |
-| Sampling phases | [Complete Docs](inference.md#sampling-phases) | 10 min |
-| Tune acceptance rates | [Complete Docs](inference.md#adjusting-step-sizes) | 10 min |
+| Configure sampler | {ref}`configuration-files-explained` | 5 min |
+| Sampler parameters | {ref}`sampler-parameters` | 15 min |
+| Sampling phases | {ref}`sampling-phases` | 10 min |
+| Tune acceptance rates | {ref}`adjusting-step-sizes` | 10 min |
 
 ### Results Analysis
 
 | Task | Documentation | Time |
 |------|---------------|------|
-| Load results | [Quick Start](inference_quickstart.md#analyze-results) | 5 min |
-| Output file structure | [Complete Docs](inference.md#output-files) | 5 min |
-| Corner plots | [Quick Start](inference_quickstart.md#make-corner-plot) | 5 min |
-| M-R diagrams | [Quick Start](inference_quickstart.md#plot-m-r-diagram) | 5 min |
+| Load results | {ref}`analyze-results` | 5 min |
+| Output file structure | {ref}`output-files` | 5 min |
+| Corner plots | {ref}`make-corner-plot` | 5 min |
+| M-R diagrams | {ref}`plot-m-r-diagram` | 5 min |
 
 ### Advanced Topics
 
 | Task | Documentation | Time |
 |------|---------------|------|
-| Add custom likelihood | [Complete Docs](inference.md#custom-likelihoods) | 30 min |
-| Add custom prior | [Complete Docs](inference.md#custom-priors) | 20 min |
-| Parallel runs | [Complete Docs](inference.md#parallel-runs) | 10 min |
+| Add custom likelihood | {ref}`custom-likelihoods` | 30 min |
+| Add custom prior | {ref}`custom-priors` | 20 min |
+| Parallel runs | {ref}`parallel-runs` | 10 min |
 | Understand architecture | [Architecture](inference_architecture.md) | 40 min |
 
 ### Troubleshooting
 
 | Task | Documentation | Time |
 |------|---------------|------|
-| Common issues | [Quick Start](inference_quickstart.md#common-issues) | 10 min |
-| Performance tips | [Quick Start](inference_quickstart.md#performance-tips) | 10 min |
+| Common issues | {ref}`common-issues` | 10 min |
+| Performance tips | {ref}`performance-tips` | 10 min |
 
 ---
 
@@ -161,7 +161,7 @@ Choose the right guide for your needs:
 **Recommended path**:
 1. Start: [Quick Start Guide](inference_quickstart.md)
 2. Deep dive: [Complete Documentation](inference.md)
-3. Reference: [Module README](../jesterTOV/inference/README.md)
+3. Reference: Module README (`jesterTOV/inference/README.md`)
 
 **Focus areas**:
 - Configuration system
@@ -175,7 +175,7 @@ Choose the right guide for your needs:
 1. Start: [Inference Workflow](inference_workflow.md)
 2. Deep dive: [Architecture Documentation](inference_architecture.md)
 3. Reference: [Complete Documentation](inference.md)
-4. Code: [Module README](../jesterTOV/inference/README.md)
+4. Code: Module README (`jesterTOV/inference/README.md`)
 
 **Focus areas**:
 - File connections and data flow
@@ -205,11 +205,11 @@ All documentation references working examples in `jester/examples/inference/`:
 
 | Example | Description | Config | Prior | Use Case |
 |---------|-------------|--------|-------|----------|
-| `prior/` | Prior-only sampling | [config.yaml](../examples/inference/prior/config.yaml) | [prior.prior](../examples/inference/prior/prior.prior) | Testing, prior predictive |
-| `nicer_only/` | NICER data only | [config.yaml](../examples/inference/nicer_only/config.yaml) | [prior.prior](../examples/inference/nicer_only/prior.prior) | X-ray timing constraint |
-| `gw170817_only/` | GW170817 only | [config.yaml](../examples/inference/gw170817_only/config.yaml) | [prior.prior](../examples/inference/gw170817_only/prior.prior) | GW constraint |
-| `full_inference/` | All constraints | [config.yaml](../examples/inference/full_inference/config.yaml) | [prior.prior](../examples/inference/full_inference/prior.prior) | Multi-messenger |
-| `MM_CSE/` | MetaModel+CSE | [config.yaml](../examples/inference/MM_CSE/config.yaml) | [prior.prior](../examples/inference/MM_CSE/prior.prior) | High-density EOS |
+| `prior/` | Prior-only sampling | `config.yaml` | `prior.prior` | Testing, prior predictive |
+| `nicer_only/` | NICER data only | `config.yaml` | `prior.prior` | X-ray timing constraint |
+| `gw170817_only/` | GW170817 only | `config.yaml` | `prior.prior` | GW constraint |
+| `full_inference/` | All constraints | `config.yaml` | `prior.prior` | Multi-messenger |
+| `MM_CSE/` | MetaModel+CSE | `config.yaml` | `prior.prior` | High-density EOS |
 
 ---
 
@@ -338,7 +338,7 @@ If you find errors or want to improve the documentation:
 | `inference_quickstart.md` | Quick start guide | End users |
 | `inference.md` | Complete reference | All |
 | `inference_architecture.md` | Technical details | Developers |
-| `../jesterTOV/inference/README.md` | Module overview | Developers |
+| `jesterTOV/inference/README.md` | Module overview | Developers |
 
 ---
 
@@ -368,9 +368,9 @@ Please report:
 
 ### JESTER Core Documentation
 
-- [Main README](../README.md) - Project overview
-- [API Documentation](../docs/) - Auto-generated API docs
-- [Examples](../examples/) - Code examples
+- Main README (`README.md`) - Project overview
+- API Documentation - Auto-generated API docs
+- Examples (`examples/`) - Code examples
 
 ### External Resources
 

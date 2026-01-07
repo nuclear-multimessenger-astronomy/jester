@@ -32,6 +32,12 @@ jobs:
         pip install pre-commit
         pre-commit run --all-files
 
+    - name: Run type checking
+      if: matrix.python-version == '3.11'
+      run: |
+        pip install pyright
+        pyright
+
     - name: Run tests
       run: |
         pytest

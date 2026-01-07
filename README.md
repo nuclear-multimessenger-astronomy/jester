@@ -82,14 +82,15 @@ uv run pytest tests/
 
 Code quality checks:
 ```bash
-# Pre-commit checks
+# Pre-commit checks (black, ruff, nbqa)
 uv run pre-commit run --all-files
 
 # Format and lint
 uv run black .
 uv run ruff check --fix .
 
-# Type checking
+# Type checking (run separately, not via pre-commit)
+uv pip install pyright
 uv run pyright                 # All files
 uv run pyright jesterTOV/      # Specific directory
 ```

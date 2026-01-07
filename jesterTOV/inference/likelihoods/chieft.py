@@ -7,9 +7,8 @@ theory (chiEFT) predictions for the nuclear equation of state at low densities
 on the pressure-density relationship derived from fundamental interactions,
 serving as a complementary constraint to high-density astrophysical observations.
 
-The current implementation uses the pressure bands from Koehn et al.,
-Phys. Rev. X 15, 021014 (2025), which provide upper and lower bounds on the
-allowed pressure at each density.
+The current implementation uses the pressure bands from [chieft1]_, which
+provide upper and lower bounds on the allowed pressure at each density.
 
 References
 ----------

@@ -79,7 +79,7 @@ jesterTOV/inference/
 
 This diagram shows how the main files connect during execution:
 
-```mermaid
+```{mermaid}
 graph TB
     subgraph "User Inputs"
         CONFIG[config.yaml]
@@ -194,7 +194,7 @@ This section shows how data transforms as it flows through the system.
 
 ### High-Level Data Flow
 
-```mermaid
+```{mermaid}
 graph LR
     A[YAML Config] --> B[Validated Config Object]
     C[.prior File] --> D[CombinePrior Object]
@@ -219,7 +219,7 @@ graph LR
 
 This is what happens when the sampler evaluates the posterior probability for a proposed parameter set:
 
-```mermaid
+```{mermaid}
 sequenceDiagram
     participant S as Sampler
     participant JS as JesterSampler
@@ -257,7 +257,7 @@ sequenceDiagram
 
 The transform is the heart of the physics computation. Here is what happens inside:
 
-```mermaid
+```{mermaid}
 graph TB
     subgraph "Input: Microscopic Parameters"
         P1[K_sat, Q_sat, Z_sat<br/>Nuclear incompressibility]

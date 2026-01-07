@@ -2,6 +2,7 @@
 
 **Get started with Bayesian EOS inference in 5 minutes**
 
+(installation)=
 ## Installation
 
 ```bash
@@ -10,6 +11,7 @@ cd jester
 uv pip install -e ".[inference]"
 ```
 
+(run-your-first-inference)=
 ## Run Your First Inference
 
 ### 1. Use an Example Configuration
@@ -82,6 +84,7 @@ cd examples/inference/radio/
 run_jester_inference config.yaml
 ```
 
+(configuration-files-explained)=
 ## Configuration Files Explained
 
 ### Minimal Configuration
@@ -108,6 +111,7 @@ sampler:
   output_dir: "./outdir/"
 ```
 
+(prior-file)=
 ### Prior File
 
 Create `prior.prior`:
@@ -130,6 +134,7 @@ Z_sym = UniformPrior(-2000.0, 1500.0, parameter_names=["Z_sym"])
 run_jester_inference config.yaml
 ```
 
+(add-real-observational-data)=
 ## Add Real Observational Data
 
 ### NICER X-ray Timing
@@ -188,6 +193,7 @@ likelihoods:
       nb_n: 100
 ```
 
+(use-metamodel--cse)=
 ## Use MetaModel + CSE
 
 For high-density physics (e.g., stiff EOS):
@@ -202,6 +208,7 @@ transform:
 # (CSE grid parameters auto-generated)
 ```
 
+(analyze-results)=
 ## Analyze Results
 
 ### Load Samples
@@ -230,6 +237,7 @@ print(f"Mass range: {masses.min():.2f} - {masses.max():.2f} km (geometric)")
 print(f"Radius range: {radii.min():.2f} - {radii.max():.2f} km (geometric)")
 ```
 
+(make-corner-plot)=
 ### Make Corner Plot
 
 ```python
@@ -250,6 +258,7 @@ fig = corner.corner(
 plt.savefig("corner_plot.png", dpi=150, bbox_inches="tight")
 ```
 
+(plot-m-r-diagram)=
 ### Plot M-R Diagram
 
 ```python
@@ -289,6 +298,7 @@ run_jester_inference config.yaml --dry-run
 uv run python -m jesterTOV.inference.run_inference --config config.yaml
 ```
 
+(common-issues)=
 ## Common Issues
 
 ### Issue: "Prior specification file not found"
@@ -338,6 +348,7 @@ eps_mass_matrix = 1e-4  # Smaller step size
 
 Or increase it if acceptance is too high (>90%).
 
+(performance-tips)=
 ## Performance Tips
 
 ### Fast Testing

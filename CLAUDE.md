@@ -67,15 +67,29 @@ uv run pytest tests/
 uv run pre-commit run --all-files
 ```
 
+### Search Performance
+```bash
+# When searching Python files with grep, use --include to avoid slowdowns
+grep -rn "pattern" --include="*.py" directory/
+
+# For other file types
+grep -rn "pattern" --include="*.yaml" directory/
+grep -rn "pattern" --include="*.md" directory/
+```
+
 ### Code Quality
 ```bash
-# Format and lint
+# Format and lint (also in pre-commit)
 uv run black .
 uv run ruff check --fix .
 
-# Type checking
+# Type checking (CI/CD uses pyright directly, not via pre-commit)
+uv pip install pyright
 uv run pyright                 # All files
 uv run pyright jesterTOV/      # Specific directory
+
+# Run all pre-commit checks (black, ruff, nbqa)
+uv run pre-commit run --all-files
 ```
 
 ### Testing
@@ -104,6 +118,19 @@ uv run sphinx-build -W --keep-going docs docs/_build/html
 ```
 
 **Docs URL**: https://nuclear-multimessenger-astronomy.github.io/jester/
+
+**Documentation Build Status**: ✅ All warnings fixed! CI/CD documentation builds should now pass.
+
+**Recent Fixes** (January 2026):
+- ✅ Added `inference_documentation_guide.md` and `inference_yaml_reference.md` to toctree in `index.rst`
+- ✅ Added MyST-style explicit anchors to all referenced sections in inference docs
+- ✅ Fixed `[chieft1]` citation reference in `jesterTOV/inference/likelihoods/chieft.py`
+- ✅ Converted external file links to plain text references
+- ✅ Installed and configured `sphinxcontrib-mermaid` extension
+- ✅ Converted mermaid code blocks to MyST directive syntax `{mermaid}`
+- ✅ Fixed all cross-references to use MyST `{ref}` syntax
+
+**Verification**: Run `uv run sphinx-build -W --keep-going docs docs/_build/html` - should complete with zero warnings.
 
 ---
 

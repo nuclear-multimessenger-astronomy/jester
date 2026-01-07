@@ -90,6 +90,7 @@
 
 ---
 
+(execution-flow)=
 ## Execution Flow
 
 ### Phase 1: Initialization
@@ -349,6 +350,7 @@ observables = transform.forward(params)
 print(observables.keys())  # ["masses_EOS", "radii_EOS", "Lambdas_EOS", ...]
 ```
 
+(likelihood-system)=
 ### Likelihood System
 
 **Input**: Observable dict + data dict
@@ -376,6 +378,7 @@ observables = transform.forward(params)
 log_like = likelihood.evaluate(observables, {})
 ```
 
+(data-loading)=
 ### Data Loading
 
 **Input**: Data paths
@@ -437,6 +440,7 @@ samples = sampler.get_samples(training=False)
 
 ## Data Transformations
 
+(parameter--eos--observables)=
 ### Parameter → EOS → Observables
 
 ```
