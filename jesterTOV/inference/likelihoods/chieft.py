@@ -13,7 +13,7 @@ allowed pressure at each density.
 
 References
 ----------
-.. [1] Koehn et al., "Equation of state constraints from multi-messenger
+.. [chieft1] Koehn et al., "Equation of state constraints from multi-messenger
    observations of neutron stars," Phys. Rev. X 15, 021014 (2025).
 
 Notes

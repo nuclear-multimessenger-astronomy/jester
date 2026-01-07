@@ -17,10 +17,11 @@ on the true mass.
 
 References
 ----------
-.. [1] Demorest et al., "A two-solar-mass neutron star measured using Shapiro delay,"
-   Nature 467, 1081-1083 (2010).
-.. [2] Fonseca et al., "Refined Mass and Geometric Measurements of the High-Mass
-   PSR J0740+6620," ApJL 915, L12 (2021).
+Demorest et al., "A two-solar-mass neutron star measured using Shapiro delay,"
+Nature 467, 1081-1083 (2010).
+
+Fonseca et al., "Refined Mass and Geometric Measurements of the High-Mass
+PSR J0740+6620," ApJL 915, L12 (2021).
 """
 
 import jax.numpy as jnp

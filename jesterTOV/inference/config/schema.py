@@ -1,8 +1,10 @@
 r"""Pydantic models for inference configuration validation.
 
 IMPORTANT: When you modify these schemas, regenerate the YAML reference documentation:
+
     uv run python -m jesterTOV.inference.config.generate_yaml_reference
-# TODO: make this automatic in CI/CD, so this note can be removed and user is not burdened with it
+
+TODO: make this automatic in CI/CD, so this note can be removed and user is not burdened with it
 
 This ensures the user documentation stays in sync with the actual validation rules.
 """
