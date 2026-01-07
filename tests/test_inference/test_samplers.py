@@ -1043,7 +1043,9 @@ class TestSamplerOutputInterface:
         # Test FlowMC-specific training sample access
         training_output = sampler.get_training_sampler_output()
         assert "x" in training_output.samples
-        assert training_output.log_prob.shape[0] == training_output.samples["x"].shape[0]
+        assert (
+            training_output.log_prob.shape[0] == training_output.samples["x"].shape[0]
+        )
         assert training_output.metadata == {}
 
         # Test training sample count

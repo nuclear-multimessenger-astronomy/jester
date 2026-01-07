@@ -226,7 +226,9 @@ class LikelihoodConfig(BaseModel):
 
             events = v["events"]
             if not isinstance(events, list) or len(events) == 0:
-                raise ValueError("GW resampled likelihood 'events' must be a non-empty list")
+                raise ValueError(
+                    "GW resampled likelihood 'events' must be a non-empty list"
+                )
 
             # Validate each event
             for i, event in enumerate(events):

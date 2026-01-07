@@ -23,7 +23,7 @@ low-density constraints beyond the current pressure band implementation.
 """
 
 from pathlib import Path
-from typing import Any, Callable
+from typing import Callable
 
 import jax.numpy as jnp
 import numpy as np

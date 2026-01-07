@@ -8,12 +8,12 @@ repos:
     hooks:
       - id: ruff
         args: ["--fix"]
-  # - repo: https://github.com/RobertCraigie/pyright-python
-  #   rev: v1.1.349
-  #   hooks:
-  #   - id: pyright
-  #     args: [--warnings]
-  #     additional_dependencies: [beartype, jax, jaxtyping, pytest, typing_extensions, diffrax]
+  - repo: https://github.com/RobertCraigie/pyright-python
+    rev: v1.1.349
+    hooks:
+    - id: pyright
+      args: [--warnings]
+      additional_dependencies: [beartype, jax, jaxtyping, pytest, typing_extensions, diffrax]
   - repo: https://github.com/nbQA-dev/nbQA
     rev: 1.7.1
     hooks:

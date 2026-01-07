@@ -93,7 +93,6 @@ from typing import Any, Dict, Tuple, Mapping
 
 import equinox as eqx
 import jax
-import jax.numpy as jnp
 import numpy as np
 from jax import Array
 from flowjax.train import fit_to_data

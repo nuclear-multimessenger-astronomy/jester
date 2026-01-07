@@ -262,9 +262,7 @@ class BlackJAXNSAWSampler(JesterSampler):
         step_fn = jax.jit(nested_sampler.step)
 
         # Progress callback for live updates during sampling
-        def progress_callback(
-            iteration: int, logZ: float, dlogZ: float
-        ) -> None:
+        def progress_callback(iteration: int, logZ: float, dlogZ: float) -> None:
             """Print progress update during nested sampling (called via io_callback)."""
             # Format logZ and dlogZ with appropriate precision
             logZ_str = f"{logZ:+10.2f}" if jnp.isfinite(logZ) else "      -inf"
@@ -280,7 +278,9 @@ class BlackJAXNSAWSampler(JesterSampler):
         logger.info("STARTING NESTED SAMPLING")
         logger.info("=" * 70)
         logger.info(f"Live points: {self.config.n_live}")
-        logger.info(f"Delete fraction: {self.config.n_delete_frac} ({n_delete} points per iteration)")
+        logger.info(
+            f"Delete fraction: {self.config.n_delete_frac} ({n_delete} points per iteration)"
+        )
         logger.info(f"Termination: dlogZ < {self.config.termination_dlogz}")
         logger.info(f"Max MCMC steps: {self.config.max_mcmc}")
         logger.info("Progress updates will be shown after each iteration")
@@ -361,7 +361,9 @@ class BlackJAXNSAWSampler(JesterSampler):
         logger.info(f"Total iterations: {n_iterations}")
         logger.info(f"Dead points generated: {len(dead) * n_delete}")
         logger.info(f"Final evidence: log(Z) = {logZ:.2f} ± {logZ_err:.2f}")
-        logger.info(f"Final dlogZ: {logZ_err:.4f} (termination criterion: {self.config.termination_dlogz})")
+        logger.info(
+            f"Final dlogZ: {logZ_err:.4f} (termination criterion: {self.config.termination_dlogz})"
+        )
         logger.info(
             f"Sampling time: {(sampling_time)//60:.0f} minutes {(sampling_time)%60:.1f} seconds"
         )
@@ -470,12 +472,16 @@ class BlackJAXNSAWSampler(JesterSampler):
 
             # Resample weighted samples to produce unweighted posterior samples
             # This is critical for downstream analysis that assumes equal weights
-            logger.info("Resampling weighted NS samples to produce unweighted posterior...")
+            logger.info(
+                "Resampling weighted NS samples to produce unweighted posterior..."
+            )
 
             # Compute effective sample size
             weights_array = samples["weights"]
-            ess = jnp.sum(weights_array)**2 / jnp.sum(weights_array**2)
-            logger.info(f"Effective sample size: {ess:.1f} / {len(weights_array)} raw samples")
+            ess = jnp.sum(weights_array) ** 2 / jnp.sum(weights_array**2)
+            logger.info(
+                f"Effective sample size: {ess:.1f} / {len(weights_array)} raw samples"
+            )
 
             # Number of samples to draw: use ESS as target
             # Round to nearest integer, minimum 100 samples
@@ -486,13 +492,15 @@ class BlackJAXNSAWSampler(JesterSampler):
             normalized_weights = weights_array / jnp.sum(weights_array)
 
             # Resample with replacement using weighted sampling
-            key = jax.random.PRNGKey(self._seed + 1000)  # Offset seed for reproducibility
+            key = jax.random.PRNGKey(
+                self._seed + 1000
+            )  # Offset seed for reproducibility
             indices = jax.random.choice(
                 key,
                 len(weights_array),
                 shape=(n_resample,),
                 replace=True,
-                p=normalized_weights
+                p=normalized_weights,
             )
 
             # Create resampled samples dict
@@ -510,7 +518,9 @@ class BlackJAXNSAWSampler(JesterSampler):
 
             # Replace samples with resampled version
             samples = resampled_samples
-            logger.info(f"Resampling complete: {len(samples[list(samples.keys())[0]])} unweighted samples")
+            logger.info(
+                f"Resampling complete: {len(samples[list(samples.keys())[0]])} unweighted samples"
+            )
 
             # Update cache to match resampled data (for get_log_prob() consistency)
             self._filtered_samples_cache = samples.copy()

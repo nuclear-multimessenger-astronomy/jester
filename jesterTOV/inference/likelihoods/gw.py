@@ -1,7 +1,5 @@
 r"""Gravitational wave event likelihood implementations"""
 
-from typing import Any
-
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
@@ -170,12 +168,12 @@ class GWLikelihood(LikelihoodBase):
     5. Better convergence: Smooth likelihood surface for MCMC/SMC
 
     The likelihood works by:
+
     1. Pre-sampling (m1, m2) pairs from the trained flow at initialization
-    2. For each EOS evaluation:
-       a. Interpolate Λ1, Λ2 from the candidate EOS at the fixed mass points
-       b. Evaluate flow log_prob on (m1, m2, Λ1_EOS, Λ2_EOS)
-       c. Apply penalties for masses exceeding Mtov
-       d. Average over all pre-sampled mass pairs
+    2. For each EOS evaluation: interpolate Λ1, Λ2 from the candidate EOS at
+       the fixed mass points, evaluate flow log_prob on (m1, m2, Λ1_EOS, Λ2_EOS),
+       apply penalties for masses exceeding Mtov, and average over all
+       pre-sampled mass pairs
 
     Parameters
     ----------
@@ -223,17 +221,17 @@ class GWLikelihood(LikelihoodBase):
 
     Examples
     --------
-    Configure in YAML:
+    Configure in YAML::
 
-    >>> likelihoods:
-    >>>   - type: "gw"
-    >>>     enabled: true
-    >>>     parameters:
-    >>>       events:
-    >>>         - name: "GW170817"
-    >>>       N_masses_evaluation: 2000  # Default value
-    >>>       N_masses_batch_size: 1000
-    >>>       seed: 42
+        likelihoods:
+          - type: "gw"
+            enabled: true
+            parameters:
+              events:
+                - name: "GW170817"
+              N_masses_evaluation: 2000  # Default value
+              N_masses_batch_size: 1000
+              seed: 42
     """
 
     event_name: str

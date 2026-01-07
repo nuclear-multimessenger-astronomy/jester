@@ -38,8 +38,6 @@ ChiEFTLikelihood : Low-density EOS constraints from chiral effective field theor
 RadioTimingLikelihood : Maximum mass constraints from pulsar timing
 """
 
-from typing import Any
-
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 

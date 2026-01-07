@@ -1,7 +1,5 @@
 r"""Combined and utility likelihood classes"""
 
-from typing import Any
-
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 

@@ -23,8 +23,6 @@ References
    PSR J0740+6620," ApJL 915, L12 (2021).
 """
 
-from typing import Any
-
 import jax.numpy as jnp
 from jax.scipy.special import logsumexp
 from jaxtyping import Array, Float

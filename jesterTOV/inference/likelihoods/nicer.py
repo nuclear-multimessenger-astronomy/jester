@@ -2,8 +2,6 @@ r"""
 NICER X-ray timing likelihood implementations
 """
 
-from typing import Any
-
 import jax
 import jax.numpy as jnp
 import numpy as np

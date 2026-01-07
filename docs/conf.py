@@ -73,6 +73,13 @@ autodoc_default_options = {
     "show-inheritance": True,
 }
 
+# Mock imports for optional dependencies that may not be available during docs build
+autodoc_mock_imports = [
+    "flowMC.nfmodel",
+    "flowMC.proposal",
+    "flowMC.Sampler",
+]
+
 add_module_names = False
 autodoc_inherit_docstrings = False
 python_maximum_signature_line_length = 88

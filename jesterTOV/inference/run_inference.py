@@ -37,7 +37,9 @@ from jesterTOV.logging_config import get_logger
 logger = get_logger("jester")
 
 
-def determine_keep_names(config: InferenceConfig, prior: CombinePrior) -> list[str] | None:
+def determine_keep_names(
+    config: InferenceConfig, prior: CombinePrior
+) -> list[str] | None:
     """
     Determine which parameters need to be preserved in transform output.
 
@@ -128,7 +130,9 @@ def setup_prior(config: InferenceConfig) -> CombinePrior:
     return prior
 
 
-def setup_transform(config: InferenceConfig, keep_names: list[str] | None = None) -> JesterTransformBase:
+def setup_transform(
+    config: InferenceConfig, keep_names: list[str] | None = None
+) -> JesterTransformBase:
     """
     Setup transform from configuration
 
@@ -149,7 +153,9 @@ def setup_transform(config: InferenceConfig, keep_names: list[str] | None = None
     return transform
 
 
-def setup_likelihood(config: InferenceConfig, transform: JesterTransformBase) -> LikelihoodBase:
+def setup_likelihood(
+    config: InferenceConfig, transform: JesterTransformBase
+) -> LikelihoodBase:
     """
     Setup combined likelihood from configuration
 
@@ -168,7 +174,9 @@ def setup_likelihood(config: InferenceConfig, transform: JesterTransformBase) ->
     return create_combined_likelihood(config.likelihoods)
 
 
-def run_sampling(sampler: JesterSampler, seed: int, config: InferenceConfig, outdir: str | Path) -> InferenceResult:
+def run_sampling(
+    sampler: JesterSampler, seed: int, config: InferenceConfig, outdir: str | Path
+) -> InferenceResult:
     """
     Run MCMC sampling and create InferenceResult
 
@@ -222,7 +230,7 @@ def generate_eos_samples(
     result: InferenceResult,
     transform_eos: JesterTransformBase,
     outdir: str | Path,
-    n_eos_samples: int = 10_000
+    n_eos_samples: int = 10_000,
 ) -> None:
     """
     .. deprecated::
@@ -248,7 +256,7 @@ def generate_eos_samples(
         "generate_eos_samples() is deprecated and will be removed in a future version. "
         "Use InferenceResult.add_eos_from_transform() instead.",
         DeprecationWarning,
-        stacklevel=2
+        stacklevel=2,
     )
 
     # Get log_prob from result

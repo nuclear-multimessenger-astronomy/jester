@@ -158,7 +158,7 @@ class InferenceResult:
         if sampler_type == "flowmc":
             # TODO: need to make diagnosis plots from training and production separately for sampler performance
             # still need to decide where to do this, and if to save in metadata the history/final summary for training and production
-            
+
             # FlowMC: Get metadata from sampler state
             state = sampler.sampler.get_sampler_state(training=False)  # type: ignore[union-attr]
 
@@ -387,7 +387,9 @@ class InferenceResult:
 
         # If we selected a subset, filter log_prob and sampler fields to match
         if idx is not None:
-            logger.info("Filtering log_prob, sampler fields, and parameters to match EOS samples...")
+            logger.info(
+                "Filtering log_prob, sampler fields, and parameters to match EOS samples..."
+            )
 
             # Filter log_prob
             self.posterior["log_prob_full"] = self.posterior["log_prob"].copy()
@@ -404,7 +406,9 @@ class InferenceResult:
             # These must have the same length as log_prob for cornerplot and other analyses
             for param_key in param_samples.keys():
                 if param_key in self.posterior:
-                    self.posterior[f"{param_key}_full"] = self.posterior[param_key].copy()
+                    self.posterior[f"{param_key}_full"] = self.posterior[
+                        param_key
+                    ].copy()
                     self.posterior[param_key] = self.posterior[param_key][idx]
 
             logger.info(f"Filtered from {n_available} to {n_eos_samples} samples")
@@ -639,7 +643,9 @@ class InferenceResult:
         lines.append(
             f"Creation time: {self.metadata.get('creation_timestamp', 'unknown')}"
         )
-        lines.append(f"Sampling time: {self.metadata.get('sampling_time', 0):.1f} seconds")
+        lines.append(
+            f"Sampling time: {self.metadata.get('sampling_time', 0):.1f} seconds"
+        )
         lines.append(f"Random seed: {self.metadata.get('seed', 'unknown')}")
         lines.append(f"Number of samples: {self.metadata.get('n_samples', 0)}")
 
