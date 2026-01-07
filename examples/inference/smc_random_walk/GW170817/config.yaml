@@ -28,7 +28,7 @@ prior:
 likelihoods:
   - type: "constraints_eos"
     enabled: true
-  - type: "gw_presampled"  # NEW: Pre-sampled masses for deterministic evaluation
+  - type: "gw"  # NEW: Pre-sampled masses for deterministic evaluation
     enabled: true
     parameters:
       events:
@@ -36,7 +36,7 @@ likelihoods:
           # model_dir is optional - defaults to flow trained on XP-NRTv3 posterior samples
           # To use a different flow, specify: model_dir: "/path/to/flow/model/"
       penalty_value: -99999.0
-      N_masses_evaluation: 1000  # Large N recommended - cheap on GPU!
+      N_masses_evaluation: 2000  # Large N recommended - cheap on GPU!
       N_masses_batch_size: 1000   # Batch size for jax.lax.map
       seed: 42                     # Fixed seed for mass pre-sampling
 
