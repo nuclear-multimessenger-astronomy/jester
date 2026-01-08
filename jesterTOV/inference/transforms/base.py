@@ -141,7 +141,7 @@ class JesterTransformBase(NtoMTransform, ABC):
         pass
 
     def _solve_tov(
-        self, eos_tuple: tuple[Array, Array, Array, Array, Array]
+        self, eos_tuple: tuple[Array, Array, Array, Array, Array, Array]
     ) -> tuple[
         Float[Array, " n"], Float[Array, " n"], Float[Array, " n"], Float[Array, " n"]
     ]:
@@ -149,8 +149,9 @@ class JesterTransformBase(NtoMTransform, ABC):
 
         Parameters
         ----------
-        eos_tuple : tuple[Array, Array, Array, Array, Array]
-            Tuple of (ns, ps, hs, es, dloge_dlogps) arrays
+        eos_tuple : tuple[Array, Array, Array, Array, Array, Array]
+            Tuple of (ns, ps, hs, es, dloge_dlogps, cs2) EOS arrays.
+            The cs2 should be analytically computed to avoid numerical round-trip errors.
 
         Returns
         -------
