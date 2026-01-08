@@ -22,7 +22,8 @@ requires-python = ">=3.10, <3.13"
 license = {file = "LICENSE"}
 urls = {repository = "https://github.com/nuclear-multimessenger-astronomy/jester"}
 dependencies = [
-    "jax",
+    "jax<0.8.2",
+    "jaxlib<0.8.2",
     "jaxtyping",
     "diffrax",
     "interpax",
