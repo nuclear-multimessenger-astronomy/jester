@@ -249,7 +249,7 @@ class MetaModelCSETransform(JesterTransformBase):
         ns, ps, hs, es, dloge_dlogps, _, cs2 = self.eos.construct_eos(
             NEP, ngrids, cs2grids
         )
-        eos_tuple = (ns, ps, hs, es, dloge_dlogps)
+        eos_tuple = (ns, ps, hs, es, dloge_dlogps, cs2)
 
         # Solve the TOV equations
         logpc_EOS, masses_EOS, radii_EOS, Lambdas_EOS = self._solve_tov(eos_tuple)

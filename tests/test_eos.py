@@ -239,8 +239,10 @@ class TestConstructFamily:
         hs = utils.cumtrapz(ps / (es + ps), jnp.log(ps))
         dloge_dlogps = jnp.diff(jnp.log(es)) / jnp.diff(jnp.log(ps))
         dloge_dlogps = jnp.concatenate([jnp.array([dloge_dlogps[0]]), dloge_dlogps])
+        # Compute cs2 from p and e
+        cs2 = ps / es / dloge_dlogps
 
-        eos_tuple = (ns, ps, hs, es, dloge_dlogps)
+        eos_tuple = (ns, ps, hs, es, dloge_dlogps, cs2)
 
         # Test family construction
         log_pcs, ms, rs, lambdas = eos.construct_family(
@@ -290,8 +292,8 @@ class TestMetaModelIntegration:
         eos_data = model.construct_eos(nep_dict)
         ns, ps, hs, es, dloge_dlogps, mu, cs2 = eos_data
 
-        # Construct neutron star family
-        eos_tuple = (ns, ps, hs, es, dloge_dlogps)
+        # Construct neutron star family (include cs2 to avoid numerical round-trip error)
+        eos_tuple = (ns, ps, hs, es, dloge_dlogps, cs2)
         log_pcs, ms, rs, lambdas = eos.construct_family(eos_tuple, ndat=20)
 
         # Check that we get reasonable neutron star properties for limited EOS (2 nsat)

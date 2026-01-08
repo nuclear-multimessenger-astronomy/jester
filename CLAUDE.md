@@ -10,6 +10,8 @@ This file provides guidance to Claude Code when working with the JESTER reposito
 
 **File Operations**: Use proper tools (Write, Edit, Read) instead of bash heredocs or cat redirection.
 
+**GitHub Issue Comments**: When posting comments on GitHub issues, always identify as "Claude" or "Claude Code" to make it clear the comment is AI-generated. Never post as if you were the human user. This maintains transparency about AI contributions to the project.
+
 ---
 
 ## Current Status

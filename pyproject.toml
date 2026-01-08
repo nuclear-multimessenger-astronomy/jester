@@ -45,7 +45,8 @@ dependencies = [
     "scipy>=1.10.0",
     "tqdm>=4.65.0",
     "zenodo-get>=1.5.0",
-    "arviz>=0.15.0"
+    "arviz>=0.15.0",
+    "ipython>=8.0"  # Required by fastprogress (BlackJAX transitive dependency)
 ]
 
 classifiers = [
@@ -80,7 +81,6 @@ tests = [
     "pytest-xdist>=3.0",
     "hypothesis>=6.0",
     "pytest-timeout>=2.1.0",  # For timeout control in slow tests
-    "ipython>=8.0",  # Required by fastprogress (BlackJAX dependency)
 ]
 dev = [
     "pytest>=7.0",

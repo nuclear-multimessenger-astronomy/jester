@@ -54,8 +54,8 @@ class TestMetaModelEOSIntegration:
         assert jnp.all(cs2 > 0)
         assert jnp.all(cs2 <= 1.0)  # Causal
 
-        # Construct neutron star family
-        eos_tuple = (ns, ps, hs, es, dloge_dlogps)
+        # Construct neutron star family (include cs2 to avoid numerical round-trip error)
+        eos_tuple = (ns, ps, hs, es, dloge_dlogps, cs2)
         log_pcs, masses, radii, lambdas = eos.construct_family(eos_tuple, ndat=30)
 
         # Check neutron star properties
@@ -124,8 +124,8 @@ class TestMetaModelEOSIntegration:
             p_after = ps[break_idx + 1]
             assert abs((p_after - p_before) / p_before) < 0.1  # 10% tolerance
 
-        # Construct family
-        eos_tuple = (ns, ps, hs, es, dloge_dlogps)
+        # Construct family (include cs2 to avoid numerical round-trip error)
+        eos_tuple = (ns, ps, hs, es, dloge_dlogps, cs2)
         log_pcs, masses, radii, lambdas = eos.construct_family(eos_tuple, ndat=25)
 
         # Should get reasonable neutron star properties (CSE with 6 nsat base)
@@ -344,8 +344,8 @@ class TestCrustIntegration:
         assert jnp.all(cs2 > 0)
         assert jnp.all(cs2 <= 1.0)
 
-        # Should be able to construct neutron star family
-        eos_tuple = (ns, ps, hs, es, dloge_dlogps)
+        # Should be able to construct neutron star family (include cs2 to avoid numerical round-trip error)
+        eos_tuple = (ns, ps, hs, es, dloge_dlogps, cs2)
         log_pcs, masses, radii, lambdas = eos.construct_family(eos_tuple, ndat=20)
 
         assert len(masses) == 20
@@ -399,8 +399,8 @@ class TestNumericalStability:
                 assert jnp.all(cs2 > 0)
                 assert jnp.all(cs2 <= 1.0)
 
-                # Should be able to solve TOV
-                eos_tuple = (ns, ps, hs, es, dloge_dlogps)
+                # Should be able to solve TOV (include cs2 to avoid numerical round-trip error)
+                eos_tuple = (ns, ps, hs, es, dloge_dlogps, cs2)
                 log_pcs, masses, radii, lambdas = eos.construct_family(
                     eos_tuple, ndat=15
                 )
@@ -457,7 +457,8 @@ def test_full_pipeline_reproducibility():
         eos_data = model.construct_eos(nep_dict)
         ns, ps, hs, es, dloge_dlogps, mu, cs2 = eos_data
 
-        eos_tuple = (ns, ps, hs, es, dloge_dlogps)
+        # Include cs2 to avoid numerical round-trip error
+        eos_tuple = (ns, ps, hs, es, dloge_dlogps, cs2)
         log_pcs, masses, radii, lambdas = eos.construct_family(eos_tuple, ndat=20)
 
         max_mass = jnp.max(masses)
