@@ -1684,6 +1684,8 @@ dependencies = [
     { name = "flowmc" },
     { name = "h5py" },
     { name = "interpax" },
+    { name = "ipython", version = "8.38.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "ipython", version = "9.9.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "jax", version = "0.6.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "jax", version = "0.8.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "jaxlib", version = "0.6.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -1735,8 +1737,6 @@ examples = [
 ]
 tests = [
     { name = "hypothesis" },
-    { name = "ipython", version = "8.38.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "ipython", version = "9.9.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-timeout" },
@@ -1761,7 +1761,7 @@ requires-dist = [
     { name = "hypothesis", marker = "extra == 'tests'", specifier = ">=6.0" },
     { name = "interpax" },
     { name = "ipykernel", marker = "extra == 'examples'", specifier = ">=7.1.0" },
-    { name = "ipython", marker = "extra == 'tests'", specifier = ">=8.0" },
+    { name = "ipython", specifier = ">=8.0" },
     { name = "jax", specifier = "<0.8.2" },
     { name = "jax", extras = ["cuda12"], marker = "extra == 'cuda12'" },
     { name = "jaxlib", specifier = "<0.8.2" },
