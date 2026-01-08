@@ -1,0 +1,23 @@
+{
+  "n_samples_total": 3952,
+  "n_samples_used": 3952,
+  "filepath": "../../../../../data/gw170817/gw170817_low_spin_posterior.npz",
+  "flow_type": "masked_autoregressive_flow",
+  "num_epochs": 3000,
+  "learning_rate": 0.0001,
+  "max_patience": 500,
+  "val_prop": 0.2,
+  "standardize": true,
+  "data_bounds_min": [
+    1.3623125298090022,
+    1.0679947190789916,
+    0.024381006637305802,
+    0.15812813066848008
+  ],
+  "data_bounds_max": [
+    1.7589808695505982,
+    1.367034754541264,
+    2436.1372356287,
+    3773.4352100541682
+  ]
+}

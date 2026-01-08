@@ -1,0 +1,58 @@
+# GW170817-only inference configuration
+# BlackJAX Nested Sampling with Acceptance Walk for constraining EOS using GW data
+
+seed: 43
+
+# Execution options
+dry_run: false
+validate_only: false
+
+# Transform configuration: MetaModel + CSE for high-density region
+transform:
+  type: "metamodel_cse"
+  ndat_metamodel: 100
+  nmax_nsat: 25.0
+  nb_CSE: 8
+  min_nsat_TOV: 0.75
+  ndat_TOV: 100
+  nb_masses: 100
+  crust_name: "DH"
+
+# Prior specification file
+prior:
+  specification_file: "prior.prior"
+
+# Likelihood constraints (only GW170817 enabled)
+likelihoods:
+  - type: "constraints_eos"
+    enabled: true
+  - type: "gw"
+    enabled: true
+    parameters:
+      events:
+        - name: "GW170817"
+          # model_dir is optional - defaults to flow trained on XP-NRTv3 posterior samples
+          # To use a different flow, specify: model_dir: "/path/to/flow/model/"
+      penalty_value: -99999.0
+      N_masses_evaluation: 2000
+      N_masses_batch_size: 1000
+      seed: 42
+
+# BlackJAX Nested Sampling with Acceptance Walk configuration
+sampler:
+  type: "blackjax-ns-aw"
+  n_live: 1400
+  n_delete_frac: 0.5
+  n_target: 60
+  max_mcmc: 5000
+  max_proposals: 1000
+  termination_dlogz: 0.1
+  n_eos_samples: 10000
+  output_dir: "./outdir/"
+
+# Postprocessing configuration
+postprocessing:
+  enabled: true
+  make_cornerplot: true
+  make_massradius: true
+  make_pressuredensity: true

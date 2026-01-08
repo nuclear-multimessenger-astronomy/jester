@@ -1,0 +1,3 @@
+*.npz
+outdir/
+outdir_*/

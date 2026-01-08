@@ -5,8 +5,12 @@ r"""Neutron star family construction utilities."""
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float, Int
+from diffrax import Solution
 
 from jesterTOV import utils, tov, ptov, STtov
+from jesterTOV.logging_config import get_logger
+
+logger = get_logger("jester")
 
 
 def locate_lowest_non_causal_point(cs2):
@@ -240,11 +244,14 @@ def construct_family_ST(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> tupl
     pc_max = eos_dict["p"][-1]
     pcs = jnp.logspace(jnp.log10(pc_min), jnp.log10(pc_max), num=ndat)
 
-    def solve_single_pc(pc):
-        """Solve for single pc value"""
-        return STtov.tov_solver(eos_dict, pc)
+    def solve_single_pc(pc: Array) -> tuple[float, float, int]:
+        """Solve for single pc value (returns scalars, vmap will vectorize)"""
+        return STtov.tov_solver(eos_dict, pc)  # type: ignore[return-value]
 
-    ms, rs, ks = jax.vmap(solve_single_pc)(pcs)
+    ms, rs, ks = jax.vmap(solve_single_pc)(pcs)  # type: ignore[misc]
+    ms = jnp.asarray(ms)
+    rs = jnp.asarray(rs)
+    ks = jnp.asarray(ks)
 
     # calculate the compactness
     cs = ms / rs
@@ -275,8 +282,8 @@ def construct_family_ST_sol(eos: tuple, ndat: Int = 1, min_nsat: Float = 2) -> t
     Float[Array, "ndat"],
     Float[Array, "ndat"],
     Float[Array, "ndat"],
-    Float[Array, "ndat"],
-    Float[Array, "ndat"],
+    Solution,
+    Solution,
 ]:
     r"""
     # TODO: complete the description
@@ -304,11 +311,14 @@ def construct_family_ST_sol(eos: tuple, ndat: Int = 1, min_nsat: Float = 2) -> t
     pc_max = eos_dict["p"][-1]
     pcs = jnp.logspace(jnp.log10(pc_min), jnp.log10(pc_max), num=ndat)
 
-    def solve_single_pc(pc):
-        """Solve for single pc value"""
-        return STtov.tov_solver_printsol(eos_dict, pc)
+    def solve_single_pc(pc: Array) -> tuple[float, float, int, Solution, Solution]:
+        """Solve for single pc value (returns scalars, vmap will vectorize)"""
+        return STtov.tov_solver_printsol(eos_dict, pc)  # type: ignore[return-value]
 
-    ms, rs, ks, sol_iter, solext = jax.vmap(solve_single_pc)(pcs)
+    ms, rs, ks, sol_iter, solext = jax.vmap(solve_single_pc)(pcs)  # type: ignore[misc]
+    ms = jnp.asarray(ms)
+    rs = jnp.asarray(rs)
+    ks = jnp.asarray(ks)
 
     # calculate the compactness
     cs = ms / rs

@@ -20,15 +20,30 @@ extensions = [
     "sphinx.ext.viewcode",
     "sphinx.ext.intersphinx",
     "sphinx.ext.githubpages",
+    "myst_parser",
     "nbsphinx",
     "sphinx_copybutton",
     "sphinx_autodoc_typehints",
+    "sphinxcontrib.mermaid",
 ]
 
 templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 language = "en"
+
+# -- MyST Parser configuration -----------------------------------------------
+myst_enable_extensions = [
+    "dollarmath",
+    "amsmath",
+    "deflist",
+    "fieldlist",
+    "colon_fence",
+]
+source_suffix = {
+    ".rst": "restructuredtext",
+    ".md": "markdown",
+}
 
 # -- Options for HTML output -------------------------------------------------
 html_theme = "sphinx_book_theme"
@@ -58,6 +73,13 @@ autodoc_default_options = {
     "undoc-members": True,
     "show-inheritance": True,
 }
+
+# Mock imports for optional dependencies that may not be available during docs build
+autodoc_mock_imports = [
+    "flowMC.nfmodel",
+    "flowMC.proposal",
+    "flowMC.Sampler",
+]
 
 add_module_names = False
 autodoc_inherit_docstrings = False

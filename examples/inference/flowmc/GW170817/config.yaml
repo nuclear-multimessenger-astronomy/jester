@@ -1,0 +1,58 @@
+# GW170817-only inference configuration
+# Simple configuration for constraining EOS using only gravitational wave data
+
+seed: 43
+
+# Execution options
+dry_run: false         # Set to false to run full MCMC sampling
+validate_only: false  # Set to true to only validate configuration (faster than dry_run)
+
+# Transform configuration: MetaModel + CSE for high-density region
+transform:
+  type: "metamodel_cse"
+  ndat_metamodel: 100
+  nmax_nsat: 25.0
+  nb_CSE: 8
+  min_nsat_TOV: 0.75
+  ndat_TOV: 100
+  nb_masses: 100
+  crust_name: "DH"
+
+# Prior specification file
+prior:
+  specification_file: "prior.prior"
+
+# Likelihood constraints (only GW170817 enabled with pre-sampling)
+likelihoods:
+  - type: "constraints_eos"
+    enabled: true
+  - type: "gw"  # NEW: Pre-sampled masses for deterministic evaluation
+    enabled: true
+    parameters:
+      events:
+        - name: "GW170817"
+          # model_dir is optional - defaults to flow trained on XP-NRTv3 posterior samples
+          # To use a different flow, specify: model_dir: "/path/to/flow/model/"
+      penalty_value: -99999.0
+      N_masses_evaluation: 2000  # Large N recommended - cheap on GPU!
+      N_masses_batch_size: 1000   # Batch size for jax.lax.map
+      seed: 42
+
+# MCMC sampler configuration
+sampler:
+  type: "flowmc"
+  n_chains: 1000
+  n_loop_training: 30
+  n_loop_production: 30
+  n_local_steps: 100
+  n_global_steps: 100
+  n_epochs: 30
+  learning_rate: 0.001
+  output_dir: "./outdir/"
+
+# Postprocessing configuration
+postprocessing:
+  enabled: true
+  make_cornerplot: true
+  make_massradius: true
+  make_pressuredensity: true

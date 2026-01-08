@@ -1,0 +1,60 @@
+# NICER PSR J0030+0451-only inference configuration
+# SMC with Random Walk kernel for constraining EOS using NICER X-ray timing
+
+seed: 44
+
+# Execution options
+dry_run: false
+validate_only: false
+
+# Transform configuration: MetaModel + CSE for high-density region
+transform:
+  type: "metamodel_cse"
+  ndat_metamodel: 100
+  nmax_nsat: 25.0
+  nb_CSE: 8
+  min_nsat_TOV: 0.75
+  ndat_TOV: 100
+  nb_masses: 100
+  crust_name: "DH"
+
+# Prior specification file
+prior:
+  specification_file: "prior.prior"
+
+# Likelihood constraints
+likelihoods:
+  - type: "constraints_eos"
+    enabled: true
+
+  # NICER X-ray timing constraint (PSR J0030+0451)
+  - type: "nicer"
+    enabled: true
+    parameters:
+      pulsars:
+        - name: "J0030"
+          amsterdam_samples_file: "../../../../jesterTOV/inference/data/NICER/J00300451_amsterdam_ST_PST_NICER_only_Riley2019.npz"
+          maryland_samples_file: "../../../../jesterTOV/inference/data/NICER/J00300451_maryland_2spot_NICER_only_RM.npz"
+      N_masses_evaluation: 20
+      N_masses_batch_size: 10
+
+# SMC configuration with Random Walk kernel
+# Aggressive settings for high-quality NICER inference
+sampler:
+  type: "smc"
+  kernel_type: "random_walk"  # Gaussian random walk kernel with sigma adaptation
+  n_particles: 5000          # Number of particles for full inference (AGGRESSIVE)
+  n_mcmc_steps: 10            # MCMC steps per tempering level (AGGRESSIVE)
+  target_ess: 0.9             # Target effective sample size (90%)
+  random_walk_sigma: 0.05      # Initial sigma for Gaussian random walk
+  target_acceptance: 0.8
+  adaptation_rate: 0.3        # Adaptation rate for sigma tuning
+  n_eos_samples: 5000         # Number of EOS samples to generate after inference
+  output_dir: "./outdir/"
+
+# Postprocessing configuration
+postprocessing:
+  enabled: true
+  make_cornerplot: true
+  make_massradius: true
+  make_pressuredensity: true

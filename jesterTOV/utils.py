@@ -78,28 +78,22 @@ roots_vmap = vmap(partial(jnp.roots, strip_zeros=False), in_axes=0, out_axes=0)
 
 @vmap
 def cubic_root_for_proton_fraction(coefficients):
-    r"""
-    Solve cubic equation for proton fraction in beta-equilibrium.
+    r"""Solve cubic equation for proton fraction in beta-equilibrium.
 
     This function solves the cubic equation that arises from the
-    beta-equilibrium condition in neutron star matter:
+    beta-equilibrium condition in neutron star matter using Cardano's
+    formula for exact analytical solution. The cubic equation has the
+    form ax^3 + bx^2 + cx + d = 0, where the coefficients are related
+    to the symmetry energy and electron chemical potential.
 
-    .. math::
-        ax^3 + bx^2 + cx + d = 0
-
-    where the coefficients are related to the symmetry energy and
-    electron chemical potential. Uses Cardano's formula for exact
-    analytical solution.
+    This function is vectorized to handle multiple coefficient sets
+    simultaneously for different densities.
 
     Args:
-        coefficients (Array): Cubic polynomial coefficients [a, b, c, d].
+        coefficients: Array of cubic polynomial coefficients [a, b, c, d]
 
     Returns:
-        Array: Three roots of the cubic equation (may be complex).
-
-    Note:
-        This function is vectorized to handle multiple coefficient sets
-        simultaneously for different densities.
+        Array of three roots of the cubic equation (may be complex)
     """
     a, b, c, d = coefficients
 
@@ -136,16 +130,22 @@ def cumtrapz(y, x):
     .. math::
         \int_{x_0}^{x_i} y(x) dx \approx \sum_{j=1}^{i} \frac{\Delta x_j}{2}(y_{j-1} + y_j)
 
-    Args:
-        y (Array): Values to integrate.
-        x (Array): The coordinate to integrate along.
+    Parameters
+    ----------
+    y : Array
+        Values to integrate
+    x : Array
+        The coordinate to integrate along
 
-    Returns:
-        Array: The result of cumulative integration of y along x.
+    Returns
+    -------
+    Array
+        The result of cumulative integration of y along x
 
-    Note:
-        The result array has the same length as the input, with the first
-        element set to a small value (1e-30) to avoid logarithm issues.
+    Notes
+    -----
+    The result array has the same length as the input, with the first
+    element set to a small value (1e-30) to avoid logarithm issues.
     """
     # Validate input arrays
     assert y.shape == x.shape, "Input arrays must have matching shapes"
@@ -175,16 +175,23 @@ def interp_in_logspace(x, xs, ys):
     .. math::
         \log y(x) = \text{interp}(\log x, \log x_s, \log y_s)
 
-    Args:
-        x (float): Point at which to evaluate the interpolation.
-        xs (Array): Known x-coordinates (must be positive).
-        ys (Array): Known y-coordinates (must be positive).
+    Parameters
+    ----------
+    x : float
+        Point at which to evaluate the interpolation
+    xs : Array
+        Known x-coordinates (must be positive)
+    ys : Array
+        Known y-coordinates (must be positive)
 
-    Returns:
-        float: Interpolated value at x.
+    Returns
+    -------
+    float
+        Interpolated value at x
 
-    Note:
-        All input values must be positive since logarithms are taken.
+    Notes
+    -----
+    All input values must be positive since logarithms are taken.
     """
     # Perform interpolation in log space and convert back
     logx = jnp.log(x)
@@ -209,19 +216,32 @@ def limit_by_MTOV(
     .. math::
         \frac{dM}{dp_c} = 0
 
-    Args:
-        pc (Array): Central pressure array.
-        m (Array): Gravitational mass array.
-        r (Array): Radius array.
-        l (Array): Tidal deformability array.
+    Parameters
+    ----------
+    pc : Array
+        Central pressure array
+    m : Array
+        Gravitational mass array
+    r : Array
+        Radius array
+    l : Array
+        Tidal deformability array
 
-    Returns:
-        tuple: Truncated arrays (pc, m, r, l) where unstable configurations
-               are replaced with MTOV values.
+    Returns
+    -------
+    pc : Array
+        Truncated central pressure array
+    m : Array
+        Truncated mass array
+    r : Array
+        Truncated radius array
+    l : Array
+        Truncated tidal deformability array
 
-    Note:
-        This approach maintains static array shapes required for JAX JIT
-        compilation while effectively removing unstable configurations.
+    Notes
+    -----
+    This approach maintains static array shapes required for JAX JIT
+    compilation while effectively removing unstable configurations.
     """
 
     # Identify maximum TOV mass and corresponding index
@@ -269,17 +289,24 @@ def cubic_spline(xq: Float[Array, "n"], xp: Float[Array, "n"], fp: Float[Array, 
     data points and evaluates it at the query points. Cubic splines
     provide smooth interpolation with continuous first and second derivatives.
 
-    Args:
-        xq (Float[Array, "n"]): Query points for evaluation.
-        xp (Float[Array, "n"]): Known x-coordinates of data points.
-        fp (Float[Array, "n"]): Known y-coordinates, i.e., fp = f(xp).
+    Parameters
+    ----------
+    xq : Float[Array, "n"]
+        Query points for evaluation
+    xp : Float[Array, "n"]
+        Known x-coordinates of data points
+    fp : Float[Array, "n"]
+        Known y-coordinates, i.e., fp = f(xp)
 
-    Returns:
-        Array: Interpolated values at query points xq.
+    Returns
+    -------
+    Array
+        Interpolated values at query points xq
 
-    Note:
-        Uses the interpax library for JAX-compatible spline interpolation.
-        See: https://github.com/f0uriest/interpax
+    Notes
+    -----
+    Uses the interpax library for JAX-compatible spline interpolation.
+    See: https://github.com/f0uriest/interpax
     """
     return interpax_interp1d(xq, xp, fp, method="cubic")
 
@@ -293,11 +320,15 @@ def sigmoid(x: Array) -> Array:
     .. math::
         \sigma(x) = \frac{1}{1 + e^{-x}}
 
-    Args:
-        x (Array): Input values.
+    Parameters
+    ----------
+    x : Array
+        Input values
 
-    Returns:
-        Array: Sigmoid function values in range (0, 1).
+    Returns
+    -------
+    Array
+        Sigmoid function values in range (0, 1)
     """
     return 1.0 / (1.0 + jnp.exp(-x))
 
@@ -316,17 +347,23 @@ def calculate_rest_mass_density(e: Float[Array, "n"], p: Float[Array, "n"]):
     where :math:`\rho` is the rest-mass density, :math:`\varepsilon` is the
     energy density, and :math:`p` is the pressure.
 
-    Args:
-        e (Float[Array, "n"]): Energy density array [geometric units].
-        p (Float[Array, "n"]): Pressure array [geometric units].
+    Parameters
+    ----------
+    e : Float[Array, "n"]
+        Energy density array [geometric units]
+    p : Float[Array, "n"]
+        Pressure array [geometric units]
 
-    Returns:
-        Array: Rest-mass density array [geometric units].
+    Returns
+    -------
+    Array
+        Rest-mass density array [geometric units]
 
-    Note:
-        This function uses diffrax for ODE integration and may have
-        compatibility issues with some diffrax versions. The initial
-        condition assumes :math:`\rho(\varepsilon_0) = \varepsilon_0`.
+    Notes
+    -----
+    This function uses diffrax for ODE integration and may have
+    compatibility issues with some diffrax versions. The initial
+    condition assumes :math:`\rho(\varepsilon_0) = \varepsilon_0`.
     """
 
     # Define pressure interpolation function
@@ -355,6 +392,7 @@ def calculate_rest_mass_density(e: Float[Array, "n"], p: Float[Array, "n"]):
         y0=rho0,  # Initial rest-mass density
         saveat=SaveAt(ts=e),  # Save at input grid points
         stepsize_controller=PIDController(rtol=1e-5, atol=1e-6),
+        throw=False,
     )
 
     return solution.ys
