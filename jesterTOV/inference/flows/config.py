@@ -109,9 +109,7 @@ class FlowTrainingConfig(BaseModel):
             raise ValueError(f"Value must be positive, got: {v}")
         return v
 
-    @field_validator(
-        "learning_rate", "val_prop", "transformer_interval"
-    )
+    @field_validator("learning_rate", "val_prop", "transformer_interval")
     @classmethod
     def validate_positive_float(cls, v: float) -> float:
         """Validate that float value is positive."""
