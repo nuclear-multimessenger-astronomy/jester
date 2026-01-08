@@ -21,7 +21,6 @@ Pass cs2 directly through to construct_family instead of recomputing it.
 """
 
 import jax.numpy as jnp
-import pytest
 
 import jesterTOV.eos as eos
 from jesterTOV import utils
@@ -97,7 +96,9 @@ class TestCS2Roundtrip:
         cs2_recomputed = ps / es / dloge_dlogps
 
         # Calculate relative error
-        relative_error = jnp.abs(cs2_recomputed - cs2_analytical) / (cs2_analytical + 1e-10)
+        relative_error = jnp.abs(cs2_recomputed - cs2_analytical) / (
+            cs2_analytical + 1e-10
+        )
 
         # The error should be small (< 10% for most points)
         # In the bug, errors reached 1240% at the crust-core boundary
@@ -191,7 +192,9 @@ class TestCS2Roundtrip:
         cs2_recomputed = ps / es / dloge_dlogps
 
         # Calculate errors
-        relative_error = jnp.abs(cs2_recomputed - cs2_analytical) / (cs2_analytical + 1e-10)
+        relative_error = jnp.abs(cs2_recomputed - cs2_analytical) / (
+            cs2_analytical + 1e-10
+        )
         max_error = jnp.max(relative_error)
 
         # The bug manifested as errors > 1000% at the crust-core boundary
@@ -199,8 +202,8 @@ class TestCS2Roundtrip:
 
         # Test that using stored cs2 gives correct results
         eos_tuple_correct = (ns, ps, hs, es, dloge_dlogps, cs2_analytical)
-        log_pcs_correct, masses_correct, radii_correct, lambdas_correct = eos.construct_family(
-            eos_tuple_correct, ndat=30
+        log_pcs_correct, masses_correct, radii_correct, lambdas_correct = (
+            eos.construct_family(eos_tuple_correct, ndat=30)
         )
 
         # Should get reasonable neutron stars when using analytical cs2

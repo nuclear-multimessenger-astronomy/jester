@@ -206,7 +206,14 @@ class MetaModelTransform(JesterTransformBase):
         cs2_interp = jnp.interp(ns_interp, ns, cs2)
 
         # Solve the TOV equations
-        eos_tuple = (ns_interp, ps_interp, hs_interp, es_interp, dloge_dlogps_interp, cs2_interp)
+        eos_tuple = (
+            ns_interp,
+            ps_interp,
+            hs_interp,
+            es_interp,
+            dloge_dlogps_interp,
+            cs2_interp,
+        )
         logpc_EOS, masses_EOS, radii_EOS, Lambdas_EOS = self._solve_tov(eos_tuple)
 
         # Create and return standardized output dictionary
