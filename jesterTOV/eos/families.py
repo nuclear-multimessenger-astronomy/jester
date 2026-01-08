@@ -54,8 +54,6 @@ def construct_family(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> tuple[
 
     Args:
         eos (tuple): Tuple of (ns, ps, hs, es, dloge_dlogps, cs2) EOS data.
-            The cs2 array should be the analytically computed sound speed squared
-            to avoid numerical round-trip errors.
         ndat (int, optional): Number of datapoints used when constructing the central pressure grid. Defaults to 50.
         min_nsat (int, optional): Starting density for central pressure in numbers of :math:`n_0`
                                  (assumed to be 0.16 :math:`\mathrm{fm}^{-3}`). Defaults to 2.
@@ -68,7 +66,7 @@ def construct_family(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> tuple[
             - :math:`R`: Circumferential radii [:math:`\mathrm{km}`]
             - :math:`\Lambda`: Dimensionless tidal deformabilities
     """
-    # Unpack EOS including analytically-computed cs2
+    # Unpack EOS
     ns, ps, hs, es, dloge_dlogps, cs2 = eos
     eos_dict = dict(p=ps, h=hs, e=es, dloge_dlogp=dloge_dlogps)
 
@@ -77,8 +75,7 @@ def construct_family(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> tuple[
         min_nsat * 0.16 * utils.fm_inv3_to_geometric, ns, ps
     )
 
-    # end at pc at pmax at which it is causal
-    # Use analytically-computed cs2 (avoids numerical round-trip error)
+    # End at pc at pmax at which it is causal
     pc_max = eos_dict["p"][locate_lowest_non_causal_point(cs2)]
 
     pcs = jnp.logspace(jnp.log10(pc_min), jnp.log10(pc_max), num=ndat)
@@ -136,7 +133,6 @@ def construct_family_nonGR(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> t
     Args:
         eos (tuple): Extended EOS data (ns, ps, hs, es, dloge_dlogps, alpha, beta, gamma,
             lambda_BL, lambda_DY, lambda_HB, cs2) including GR modification parameters.
-            The cs2 array should be analytically computed to avoid numerical round-trip errors.
         ndat (int, optional): Number of datapoints for central pressure grid. Defaults to 50.
         min_nsat (int, optional): Starting density in units of :math:`n_0`. Defaults to 2.
 
@@ -148,7 +144,7 @@ def construct_family_nonGR(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> t
             - :math:`R`: Circumferential radii [:math:`\mathrm{km}`]
             - :math:`\Lambda`: Dimensionless tidal deformabilities
     """
-    # Unpack EOS including analytically-computed cs2
+    # Unpack EOS
     (
         ns,
         ps,
@@ -182,8 +178,7 @@ def construct_family_nonGR(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> t
         min_nsat * 0.16 * utils.fm_inv3_to_geometric, ns, ps
     )
 
-    # end at pc at pmax at which it is causal
-    # Use analytically-computed cs2 (avoids numerical round-trip error)
+    # End at pc at pmax at which it is causal
     pc_max = eos_dict["p"][locate_lowest_non_causal_point(cs2)]
 
     pcs = jnp.logspace(jnp.log10(pc_min), jnp.log10(pc_max), num=ndat)

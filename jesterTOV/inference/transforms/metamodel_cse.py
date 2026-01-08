@@ -249,7 +249,6 @@ class MetaModelCSETransform(JesterTransformBase):
         ns, ps, hs, es, dloge_dlogps, _, cs2 = self.eos.construct_eos(
             NEP, ngrids, cs2grids
         )
-        # Pass cs2 to avoid numerical round-trip error
         eos_tuple = (ns, ps, hs, es, dloge_dlogps, cs2)
 
         # Solve the TOV equations

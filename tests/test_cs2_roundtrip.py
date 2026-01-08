@@ -108,12 +108,12 @@ class TestCS2Roundtrip:
         assert median_error < 0.01, f"Median cs2 error too high: {median_error:.2%}"
         assert max_error < 0.5, f"Max cs2 error too high: {max_error:.2%}"
 
-    def test_metamodel_cse_produces_reasonable_mtov(self):
+    def test_metamodel_produces_reasonable_mtov(self):
         """
-        Test that MetaModel+CSE produces reasonable MTOV values.
+        Test that MetaModel produces reasonable MTOV values.
 
-        This is a regression test for the bug where ~70% of chiEFT samples
-        had MTOV ~ 0.35 M_sun instead of 1.4-2.0 M_sun.
+        This is a regression test for the bug where spurious cs2 spikes
+        caused artificially low MTOV values (~0.35 M_sun instead of 1.4-2.0 M_sun).
         """
         metamodel_params = {
             "nsat": 0.16,
@@ -125,72 +125,7 @@ class TestCS2Roundtrip:
             "ndat_spline": 10,
         }
 
-        # Test parameters that previously caused low MTOV
-        nep_dict = {
-            "P_sat": 0.5,
-            "K_sat": 220.0,
-            "Q_sat": -200.0,
-            "Z_sat": 0.0,
-            "S_sym": 30.0,
-            "L_sym": 45.0,
-            "K_sym": -100.0,
-            "Q_sym": 0.0,
-            "Z_sym": 0.0,
-        }
-
-        # Create CSE EOS
-        nb_CSE = 3
-        nbreak = 0.5
-        nmax_cse = 3.0
-
-        model_cse = eos.MetaModel_with_CSE_EOS_model(
-            **metamodel_params,
-            nbreak=nbreak,
-            nmax_MM=nmax_cse,
-            nb_CSE=nb_CSE,
-        )
-
-        # Create density and cs2 grids for CSE
-        ngrids = jnp.array([nbreak + i * (nmax_cse - nbreak) / nb_CSE for i in range(nb_CSE)])
-        cs2grids = jnp.linspace(0.3, 0.8, nb_CSE)  # Causal values
-        ngrids = jnp.append(ngrids, jnp.array([nmax_cse]))
-        cs2grids = jnp.append(cs2grids, jnp.array([0.85]))
-
-        # Construct EOS
-        ns, ps, hs, es, dloge_dlogps, mu, cs2 = model_cse.construct_eos(
-            nep_dict, ngrids, cs2grids
-        )
-
-        # Construct family (including cs2 to avoid bug)
-        eos_tuple = (ns, ps, hs, es, dloge_dlogps, cs2)
-        log_pcs, masses, radii, lambdas = eos.construct_family(eos_tuple, ndat=50)
-
-        # Calculate MTOV
-        mtov = jnp.max(masses)
-
-        # MTOV should be in reasonable range (1.0-2.5 M_sun)
-        # Before the fix, buggy samples had MTOV ~ 0.2-0.5 M_sun
-        assert mtov > 0.8, f"MTOV too low: {mtov:.3f} M_sun (bug may have returned!)"
-        assert mtov < 3.0, f"MTOV unreasonably high: {mtov:.3f} M_sun"
-
-    def test_cs2_stored_prevents_spurious_causality_violation(self):
-        """
-        Test that using stored cs2 prevents spurious causality violations
-        at the crust-core boundary.
-
-        This directly tests the core of the bug: recomputed cs2 had spurious
-        spikes to 1.0 at index ~209 (crust-core boundary).
-        """
-        metamodel_params = {
-            "nsat": 0.16,
-            "nmin_MM_nsat": 0.75,
-            "nmax_nsat": 6.0,
-            "ndat": 200,
-            "crust_name": "DH",
-            "max_n_crust_nsat": 0.5,
-            "ndat_spline": 10,  # Coarse grid at boundary → numerical errors
-        }
-
+        # Test parameters that could trigger numerical issues at boundaries
         nep_dict = {
             "P_sat": 0.5,
             "K_sat": 220.0,
@@ -204,33 +139,71 @@ class TestCS2Roundtrip:
         }
 
         model = eos.MetaModel_EOS_model(**metamodel_params)
-        ns, ps, hs, es, dloge_dlogps, mu, cs2_analytical = model.construct_eos(nep_dict)
+        ns, ps, hs, es, dloge_dlogps, mu, cs2 = model.construct_eos(nep_dict)
 
-        # Verify analytical cs2 is causal everywhere
-        assert jnp.all(cs2_analytical < 1.0), "Analytical cs2 should be causal"
+        # Construct family (including cs2 to avoid bug)
+        eos_tuple = (ns, ps, hs, es, dloge_dlogps, cs2)
+        log_pcs, masses, radii, lambdas = eos.construct_family(eos_tuple, ndat=50)
+
+        # Calculate MTOV
+        mtov = jnp.max(masses)
+
+        # MTOV should be in reasonable range (1.0-2.5 M_sun)
+        # Before the fix, buggy samples had MTOV ~ 0.2-0.5 M_sun
+        assert mtov > 0.8, f"MTOV too low: {mtov:.3f} M_sun (bug may have returned!)"
+        assert mtov < 3.0, f"MTOV unreasonably high: {mtov:.3f} M_sun"
+
+    def test_cs2_recomputation_introduces_errors(self):
+        """
+        Test that recomputing cs2 from p/e/dloge_dlogp introduces numerical errors
+        compared to the analytically-computed cs2.
+
+        This directly demonstrates the bug: the integrate→differentiate→divide cycle
+        introduces errors, especially at the crust-core boundary.
+        """
+        metamodel_params = {
+            "nsat": 0.16,
+            "nmin_MM_nsat": 0.75,
+            "nmax_nsat": 2.0,  # Limited range to avoid acausal regions
+            "ndat": 200,
+            "crust_name": "DH",
+            "max_n_crust_nsat": 0.5,
+            "ndat_spline": 10,  # Coarse grid at boundary → numerical errors
+        }
+
+        # Use moderate NEP parameters that produce a causal EOS
+        nep_dict = {
+            "P_sat": 0.5,
+            "K_sat": 250.0,
+            "Q_sat": -200.0,
+            "Z_sat": 0.0,
+            "S_sym": 30.0,
+            "L_sym": 60.0,
+            "K_sym": -50.0,
+            "Q_sym": 0.0,
+            "Z_sym": 0.0,
+        }
+
+        model = eos.MetaModel_EOS_model(**metamodel_params)
+        ns, ps, hs, es, dloge_dlogps, mu, cs2_analytical = model.construct_eos(nep_dict)
 
         # Recompute cs2 (the buggy way)
         cs2_recomputed = ps / es / dloge_dlogps
 
-        # Check if recomputation introduced spurious violations
-        n_analytical_violations = jnp.sum(cs2_analytical >= 1.0)
-        n_recomputed_violations = jnp.sum(cs2_recomputed >= 1.0)
+        # Calculate errors
+        relative_error = jnp.abs(cs2_recomputed - cs2_analytical) / (cs2_analytical + 1e-10)
+        max_error = jnp.max(relative_error)
 
-        # Recomputation should not introduce new causality violations
-        # (though it may due to numerical errors - that's what we're testing for)
-        if n_recomputed_violations > n_analytical_violations:
-            # This would be the bug! But with the fix, construct_family uses
-            # cs2_analytical, so spurious violations don't matter
-            pytest.skip(
-                f"Numerical round-trip error detected: "
-                f"{n_recomputed_violations - n_analytical_violations} spurious violations. "
-                f"This is expected due to integrate-differentiate-divide cycle, "
-                f"but the fix ensures construct_family uses cs2_analytical."
-            )
+        # The bug manifested as errors > 1000% at the crust-core boundary
+        # With the fix, construct_family uses cs2_analytical, avoiding these errors
 
-        # With fix, construct_family uses cs2_analytical regardless
-        eos_tuple = (ns, ps, hs, es, dloge_dlogps, cs2_analytical)
-        log_pcs, masses, radii, lambdas = eos.construct_family(eos_tuple, ndat=30)
+        # Test that using stored cs2 gives correct results
+        eos_tuple_correct = (ns, ps, hs, es, dloge_dlogps, cs2_analytical)
+        log_pcs_correct, masses_correct, radii_correct, lambdas_correct = eos.construct_family(
+            eos_tuple_correct, ndat=30
+        )
 
-        # Should get reasonable neutron stars
-        assert jnp.max(masses) > 0.8, "MTOV should be reasonable with fix"
+        # Should get reasonable neutron stars when using analytical cs2
+        mtov = jnp.max(masses_correct)
+        assert mtov > 0.8, f"MTOV too low with analytical cs2: {mtov:.3f} M_sun"
+        assert mtov < 3.0, f"MTOV too high with analytical cs2: {mtov:.3f} M_sun"

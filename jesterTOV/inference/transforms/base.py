@@ -151,7 +151,6 @@ class JesterTransformBase(NtoMTransform, ABC):
         ----------
         eos_tuple : tuple[Array, Array, Array, Array, Array, Array]
             Tuple of (ns, ps, hs, es, dloge_dlogps, cs2) EOS arrays.
-            The cs2 should be analytically computed to avoid numerical round-trip errors.
 
         Returns
         -------
