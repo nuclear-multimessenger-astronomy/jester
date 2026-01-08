@@ -77,6 +77,15 @@ grep -rn "pattern" --include="*.yaml" directory/
 grep -rn "pattern" --include="*.md" directory/
 ```
 
+### Check PR Status
+```bash
+# View PR status and CI checks
+gh pr view <PR_NUMBER> --json statusCheckRollup
+
+# Download CI logs for specific job
+gh api repos/nuclear-multimessenger-astronomy/jester/actions/jobs/<JOB_ID>/logs > logs.txt
+```
+
 ### Code Quality
 ```bash
 # Format and lint (also in pre-commit)
