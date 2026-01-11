@@ -6,16 +6,59 @@ Backend-specific implementations (e.g., flowMC, Jim, NumPyro) should
 inherit from JesterSampler and implement the sampler initialization.
 """
 
+from dataclasses import dataclass, field
 from typing import Any
 
-import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float, PRNGKeyArray
 
-from jesterTOV.inference.base import LikelihoodBase, Prior, BijectiveTransform, NtoMTransform
+from jesterTOV.inference.base import (
+    LikelihoodBase,
+    Prior,
+    BijectiveTransform,
+    NtoMTransform,
+)
 from jesterTOV.logging_config import get_logger
 
 logger = get_logger("jester")
+
+
+@dataclass
+class SamplerOutput:
+    """
+    Standardized output from JESTER samplers.
+
+    This dataclass provides a uniform interface for accessing samples,
+    log probabilities, and sampler-specific metadata across different
+    sampling backends (FlowMC, SMC, NS-AW).
+
+    Attributes
+    ----------
+    samples : dict[str, Array]
+        Dictionary of parameter samples. Keys are parameter names,
+        values are JAX arrays of shape (n_samples,) or (n_samples, n_dim).
+        Only contains actual parameters, not metadata fields.
+    log_prob : Array
+        Log probability for each sample. Interpretation depends on sampler:
+        - FlowMC/SMC: log posterior probability
+        - NS-AW: log likelihood (nested sampling uses likelihood)
+        Shape: (n_samples,)
+    metadata : dict[str, Any]
+        Sampler-specific metadata. Common fields:
+        - FlowMC: {} (empty, MCMC has equal weights)
+        - SMC: {"weights": Array, "ess": float}
+        - NS-AW: {"weights": Array, "logL": Array, "logL_birth": Array}
+
+    Notes
+    -----
+    The log_prob field has different semantics for NS-AW (log likelihood)
+    versus FlowMC/SMC (log posterior). Consumers should check the sampler
+    type when interpreting this field.
+    """
+
+    samples: dict[str, Array]
+    log_prob: Array
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class JesterSampler:
@@ -130,9 +173,40 @@ class JesterSampler:
         """
         return dict(zip(self.parameter_names, x))
 
+    def posterior_from_dict(
+        self, named_params: dict[str, Float], data: dict[str, Any]
+    ) -> Float:
+        """
+        Evaluate posterior log probability from parameter dict.
+
+        Parameters
+        ----------
+        named_params : dict
+            Parameter dictionary
+        data : dict
+            Data dictionary (unused in JESTER, pass {})
+
+        Returns
+        -------
+        Float
+            Log posterior probability
+        """
+        transform_jacobian = 0.0
+        for transform in reversed(self.sample_transforms):
+            named_params, jacobian = transform.inverse(named_params)
+            transform_jacobian += jacobian
+
+        prior = self.prior.log_prob(named_params) + transform_jacobian
+
+        # Apply likelihood transforms
+        for transform in self.likelihood_transforms:
+            named_params = transform.forward(named_params)
+
+        return self.likelihood.evaluate(named_params) + prior
+
     def posterior(self, params: Float[Array, " n_dim"], data: dict[str, Any]) -> Float:
         """
-        Evaluate posterior log probability.
+        Evaluate posterior log probability from flat array.
 
         Parameters
         ----------
@@ -147,16 +221,11 @@ class JesterSampler:
             Log posterior probability
         """
         named_params = self.add_name(params)
-        transform_jacobian = 0.0
-        for transform in reversed(self.sample_transforms):
-            named_params, jacobian = transform.inverse(named_params)
-            transform_jacobian += jacobian
-        prior = self.prior.log_prob(named_params) + transform_jacobian
-        for transform in self.likelihood_transforms:
-            named_params = transform.forward(named_params)
-        return self.likelihood.evaluate(named_params, data) + prior
+        return self.posterior_from_dict(named_params, data)
 
-    def sample(self, key: PRNGKeyArray, initial_position: Array = jnp.array([])) -> None:
+    def sample(
+        self, key: PRNGKeyArray, initial_position: Array = jnp.array([])
+    ) -> None:
         """
         Run MCMC sampling.
 
@@ -199,17 +268,12 @@ class JesterSampler:
             "print_summary() must be implemented by backend-specific subclass"
         )
 
-    def get_samples(self, training: bool = False) -> dict:
+    def get_samples(self) -> dict:
         """
-        Get samples from the sampler.
+        Get production samples from the sampler.
 
         This method must be implemented by backend-specific subclasses.
-
-        Parameters
-        ----------
-        training : bool, optional
-            Whether to get training or production samples (default: False)
-            Note: Only FlowMC has train/production split. Other samplers ignore this.
+        Always returns production/final samples (not training samples).
 
         Returns
         -------
@@ -225,17 +289,12 @@ class JesterSampler:
             "get_samples() must be implemented by backend-specific subclass"
         )
 
-    def get_log_prob(self, training: bool = False) -> Array:
+    def get_log_prob(self) -> Array:
         """
-        Get log probabilities for samples.
+        Get log probabilities for production samples.
 
         This method must be implemented by backend-specific subclasses.
-
-        Parameters
-        ----------
-        training : bool, optional
-            Whether to get training or production log probs (default: False)
-            Note: Only FlowMC has train/production split. Other samplers ignore this.
+        Always returns production/final samples (not training samples).
 
         Returns
         -------
@@ -249,7 +308,7 @@ class JesterSampler:
 
         Notes
         -----
-        - FlowMC: Returns log posterior from sampler state
+        - FlowMC: Returns log posterior from production sampler state
         - Nested Sampling: Returns log likelihood (use weights separately)
         - SMC: Returns log posterior (uniform weights at λ=1)
         """
@@ -257,28 +316,78 @@ class JesterSampler:
             "get_log_prob() must be implemented by backend-specific subclass"
         )
 
-    def get_n_samples(self, training: bool = False) -> int:
+    def get_n_samples(self) -> int:
         """
-        Get number of samples.
+        Get number of production/final samples.
 
         This method must be implemented by backend-specific subclasses.
-
-        Parameters
-        ----------
-        training : bool, optional
-            Whether to count training or production samples (default: False)
-            Note: Only FlowMC has train/production split. Other samplers ignore this.
+        Always returns the number of production/final samples (not training samples).
 
         Returns
         -------
         int
-            Number of samples
+            Number of production/final samples
 
         Raises
         ------
         NotImplementedError
             This is an abstract method that must be implemented by subclasses
+
+        Notes
+        -----
+        For samplers with train/production splits (e.g., FlowMC), this returns
+        only production sample count. Training sample count should be accessed
+        via sampler-specific methods if needed.
         """
         raise NotImplementedError(
             "get_n_samples() must be implemented by backend-specific subclass"
         )
+
+    def get_sampler_output(self) -> SamplerOutput:
+        """
+        Get standardized sampler output with samples, log probabilities, and metadata.
+
+        This is the preferred method for accessing sampler results. It returns
+        a SamplerOutput dataclass containing all samples, log probabilities,
+        and sampler-specific metadata in a standardized format.
+
+        Always returns production/final samples (not training samples).
+
+        Returns
+        -------
+        SamplerOutput
+            Standardized output containing:
+            - samples: Dict of parameter arrays (no metadata fields)
+            - log_prob: Log probability array (posterior or likelihood)
+            - metadata: Sampler-specific fields (weights, ESS, etc.)
+
+        Raises
+        ------
+        NotImplementedError
+            If called on base class (must be implemented by backend-specific subclass)
+        RuntimeError
+            If sampling has not been run yet (no results available)
+
+        Notes
+        -----
+        This method should be used instead of the older get_samples() and
+        get_log_prob() methods, which are now considered legacy.
+
+        For NS-AW, log_prob contains log likelihood (not log posterior),
+        as nested sampling works in likelihood space.
+
+        For samplers with train/production splits (e.g., FlowMC), this returns
+        only production samples. Training samples should be accessed via
+        sampler-specific methods if needed for diagnostics.
+        """
+        raise NotImplementedError(
+            "get_sampler_output() must be implemented by backend-specific subclass"
+        )
+
+    # TODO: Future optimization - implement transform caching
+    # Current issue: JAX tracing limitations prevent caching inside compiled functions
+    # Potential solution: Cache transforms outside JAX trace (sampler-specific implementation)
+    # - FlowMC: Cache during production phase
+    # - BlackJAX SMC: Cache final temperature samples
+    # - BlackJAX NS-AW: Cache all samples
+    # Would eliminate redundant TOV solver calls when generating EOS samples

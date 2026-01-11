@@ -107,9 +107,7 @@ class TestLikelihoodConfig:
             type="gw",
             enabled=True,
             parameters={
-                "events": [
-                    {"name": "GW170817", "model_dir": "/path/to/data"}
-                ],
+                "events": [{"name": "GW170817", "model_dir": "/path/to/data"}],
                 "penalty_value": -99999.0,
                 "N_masses_evaluation": 20,
             },
@@ -175,7 +173,7 @@ class TestSamplerConfig:
 
     def test_valid_sampler_config(self):
         """Test valid sampler configuration."""
-        config = schema.SamplerConfig(
+        config = schema.FlowMCSamplerConfig(
             n_chains=20,
             n_loop_training=2,
             n_loop_production=2,
@@ -191,7 +189,7 @@ class TestSamplerConfig:
     def test_negative_chains_fails(self):
         """Test that negative number of chains fails validation."""
         with pytest.raises(ValidationError):
-            schema.SamplerConfig(
+            schema.FlowMCSamplerConfig(
                 n_chains=-1,  # Should fail
                 n_loop_training=2,
                 n_loop_production=2,
@@ -200,7 +198,7 @@ class TestSamplerConfig:
     def test_zero_chains_fails(self):
         """Test that zero chains fails validation."""
         with pytest.raises(ValidationError):
-            schema.SamplerConfig(
+            schema.FlowMCSamplerConfig(
                 n_chains=0,  # Should fail
                 n_loop_training=2,
                 n_loop_production=2,
@@ -209,7 +207,7 @@ class TestSamplerConfig:
     def test_negative_learning_rate_fails(self):
         """Test that negative learning rate fails validation."""
         with pytest.raises(ValidationError):
-            schema.SamplerConfig(
+            schema.FlowMCSamplerConfig(
                 n_chains=4,
                 learning_rate=-0.001,  # Should fail
             )
@@ -333,10 +331,12 @@ E_sym = UniformPrior(28.0, 45.0, parameter_names=["E_sym"])
         for better error messages, so we expect ValueError here.
         """
         incomplete_config = temp_dir / "incomplete.yaml"
-        incomplete_config.write_text("""
+        incomplete_config.write_text(
+            """
 seed: 42
 # Missing transform, prior, likelihoods, sampler
-""")
+"""
+        )
 
         with pytest.raises(ValueError, match="Error validating configuration"):
             parser.load_config(incomplete_config)
@@ -345,7 +345,9 @@ seed: 42
 class TestConfigIntegration:
     """Integration tests for configuration system."""
 
-    def test_roundtrip_config_to_yaml_and_back(self, temp_dir, sample_config_dict, sample_prior_file):
+    def test_roundtrip_config_to_yaml_and_back(
+        self, temp_dir, sample_config_dict, sample_prior_file
+    ):
         """Test that config can be saved and loaded without changes."""
         # Update prior path
         config_dict = sample_config_dict.copy()
@@ -374,7 +376,6 @@ class TestConfigIntegration:
         are missing required data files. If so, document the issue in CLAUDE.md
         and investigate - do not just skip the test!
         """
-        import os
         from pathlib import Path
 
         # Find example configs
@@ -399,10 +400,12 @@ class TestConfigIntegration:
 
         # If there are issues, document them
         if issues:
-            error_msg = "\n".join([
-                "Issues found in example configs:",
-                *[f"  - {issue}" for issue in issues],
-                "\n⚠️  These issues should be investigated and documented in CLAUDE.md",
-                "    Do not just skip this test - fix the underlying issues!"
-            ])
+            error_msg = "\n".join(
+                [
+                    "Issues found in example configs:",
+                    *[f"  - {issue}" for issue in issues],
+                    "\n⚠️  These issues should be investigated and documented in CLAUDE.md",
+                    "    Do not just skip this test - fix the underlying issues!",
+                ]
+            )
             pytest.fail(error_msg)

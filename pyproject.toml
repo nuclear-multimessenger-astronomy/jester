@@ -22,7 +22,8 @@ requires-python = ">=3.10, <3.13"
 license = {file = "LICENSE"}
 urls = {repository = "https://github.com/nuclear-multimessenger-astronomy/jester"}
 dependencies = [
-    "jax",
+    "jax<0.8.2",
+    "jaxlib<0.8.2",
     "jaxtyping",
     "diffrax",
     "interpax",
@@ -33,8 +34,9 @@ dependencies = [
     "numpy>=1.24.0",
     "pandas>=2.0.0",
     "equinox>=0.11.0",
-    "flowmc>=0.3.4",
+    "flowmc==0.3.4",
     "blackjax @ git+https://github.com/handley-lab/blackjax@nested_sampling",
+    "h5py>=3.0",
     "anesthetic>=2.0.0",
     "beartype>=0.10.0",
     "matplotlib>=3.10.7",
@@ -43,7 +45,8 @@ dependencies = [
     "scipy>=1.10.0",
     "tqdm>=4.65.0",
     "zenodo-get>=1.5.0",
-    "arviz>=0.15.0"
+    "arviz>=0.15.0",
+    "ipython>=8.0"  # Required by fastprogress (BlackJAX transitive dependency)
 ]
 
 classifiers = [
@@ -67,12 +70,12 @@ classifiers = [
 [project.scripts]
 run_jester_inference = "jesterTOV.inference.run_inference:cli_entry_point"
 run_jester_postprocessing = "jesterTOV.inference.postprocessing.postprocessing:main"
+train_jester_gw_flow = "jesterTOV.inference.flows.train_flow:main"
 
 [project.optional-dependencies]
 cuda12 = ["jax[cuda12]"]
-cuda13 = ["jax[cuda13]"]
 cpu = []  # CPU-only (default jax dependency)
-test = [
+tests = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "pytest-xdist>=3.0",
@@ -96,7 +99,8 @@ docs = [
     "nbsphinx>=0.9",
     "sphinx-autodoc-typehints>=1.12",
     "sphinx-copybutton>=0.5",
-    "myst-parser>=2.0"
+    "myst-parser>=2.0",
+    "sphinxcontrib-mermaid>=1.0"
 ]
 
 [tool.ruff]

@@ -2,8 +2,6 @@ r"""
 NICER X-ray timing likelihood implementations
 """
 
-from typing import Any
-
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -91,18 +89,22 @@ class NICERLikelihood(LikelihoodBase):
         self.N_masses_batch_size = N_masses_batch_size
 
         # Load samples from npz files
-        logger.info(f"Loading Amsterdam samples for {psr_name} from {amsterdam_samples_file}")
+        logger.info(
+            f"Loading Amsterdam samples for {psr_name} from {amsterdam_samples_file}"
+        )
         amsterdam_data = np.load(amsterdam_samples_file, allow_pickle=True)
 
-        logger.info(f"Loading Maryland samples for {psr_name} from {maryland_samples_file}")
+        logger.info(
+            f"Loading Maryland samples for {psr_name} from {maryland_samples_file}"
+        )
         maryland_data = np.load(maryland_samples_file, allow_pickle=True)
 
         # Extract mass and radius samples
         # File format: mass (Msun), radius (km)
-        amsterdam_mass = amsterdam_data['mass']
-        amsterdam_radius = amsterdam_data['radius']
-        maryland_mass = maryland_data['mass']
-        maryland_radius = maryland_data['radius']
+        amsterdam_mass = amsterdam_data["mass"]
+        amsterdam_radius = amsterdam_data["radius"]
+        maryland_mass = maryland_data["mass"]
+        maryland_radius = maryland_data["radius"]
 
         # Store mass samples as JAX arrays for random sampling
         self.amsterdam_masses = jnp.array(amsterdam_mass)
@@ -119,7 +121,7 @@ class NICERLikelihood(LikelihoodBase):
         self.maryland_posterior = gaussian_kde(maryland_mr)
         logger.info(f"Loaded JAX KDEs for {psr_name}")
 
-    def evaluate(self, params: dict[str, Float | Array], data: dict[str, Any]) -> Float:
+    def evaluate(self, params: dict[str, Float | Array]) -> Float:
         """
         Evaluate log likelihood for given EOS parameters
 
@@ -130,8 +132,6 @@ class NICERLikelihood(LikelihoodBase):
             - '_random_key': Random seed for mass sampling (cast to int64)
             - 'masses_EOS': Array of neutron star masses from EOS
             - 'radii_EOS': Array of neutron star radii from EOS
-        data : dict[str, Any]
-            Not used (data encapsulated in likelihood object)
 
         Returns
         -------
@@ -157,17 +157,21 @@ class NICERLikelihood(LikelihoodBase):
             key_amsterdam,
             len(self.amsterdam_masses),
             shape=(n_samples_per_group,),
-            replace=True
+            replace=True,
         )
         maryland_indices = jax.random.choice(
             key_maryland,
             len(self.maryland_masses),
             shape=(n_samples_per_group,),
-            replace=True
+            replace=True,
         )
 
-        amsterdam_mass_samples: Float[Array, " n_amsterdam_samples"] = self.amsterdam_masses[amsterdam_indices]
-        maryland_mass_samples: Float[Array, " n_maryland_samples"] = self.maryland_masses[maryland_indices]
+        amsterdam_mass_samples: Float[Array, " n_amsterdam_samples"] = (
+            self.amsterdam_masses[amsterdam_indices]
+        )
+        maryland_mass_samples: Float[Array, " n_maryland_samples"] = (
+            self.maryland_masses[maryland_indices]
+        )
 
         def process_sample_amsterdam(mass: Float) -> Float:
             """
@@ -225,13 +229,13 @@ class NICERLikelihood(LikelihoodBase):
         amsterdam_logprobs = jax.lax.map(
             process_sample_amsterdam,
             amsterdam_mass_samples,
-            batch_size=self.N_masses_batch_size
+            batch_size=self.N_masses_batch_size,
         )
 
         maryland_logprobs = jax.lax.map(
             process_sample_maryland,
             maryland_mass_samples,
-            batch_size=self.N_masses_batch_size
+            batch_size=self.N_masses_batch_size,
         )
 
         # Average over all samples for each group

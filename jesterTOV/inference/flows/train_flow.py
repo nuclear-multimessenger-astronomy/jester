@@ -1,84 +1,60 @@
-"""
-Training script for normalizing flows on gravitational wave posterior samples.
+"""Training script for normalizing flows on gravitational wave posterior samples.
 
-This module implements the complete pipeline for training flexible normalizing
-flow models that approximate gravitational wave (GW) posteriors in the space of
-binary component masses (m1, m2) and tidal deformabilities (λ1, λ2). The trained
-flows serve as efficient proposal distributions for importance sampling in
-equation of state inference.
-
-Physical Motivation
--------------------
-GW observations from binary neutron star mergers constrain the tidal deformability,
-which depends on the neutron star equation of state. By training a flow on the
-4D posterior from a specific GW event (e.g., GW170817), we capture the complex
-correlations between masses and tidal parameters. This flow can then accelerate
-inference for new EOS models by proposing samples from regions of parameter
-space that are consistent with the GW data.
+Trains normalizing flow models to approximate GW posteriors in (m1, m2, λ1, λ2) space.
+The trained flows serve as efficient proposal distributions for EOS inference.
 
 Training Pipeline
 -----------------
-1. **Data Loading**: Load posterior samples from npz file (mass_1_source,
-   mass_2_source, lambda_1, lambda_2)
-2. **Physics Constraints**: Optionally apply bijections to enforce m1 ≥ m2
-   and positivity constraints
-3. **Standardization**: Optionally standardize to [0, 1] domain for numerical stability
-4. **Flow Architecture**: Create flow (triangular spline, autoregressive, coupling, etc.)
-5. **Training**: Fit flow to data using maximum likelihood with early stopping
-6. **Saving**: Save trained weights, architecture config, and metadata
-7. **Validation**: Generate diagnostic plots (corner plots, loss curves)
+1. Load configuration from YAML file
+2. Load posterior samples from npz file
+3. Apply optional standardization
+4. Create flow architecture (autoregressive, coupling)
+5. Fit flow using maximum likelihood with early stopping
+6. Save trained weights, config, and metadata
+7. Generate validation plots
 
-Supported Flow Architectures
------------------------------
-- **triangular_spline_flow** (recommended): Rational-quadratic spline bijections
-  with triangular structure. Fast, flexible, exact sampling and density evaluation.
-- **block_neural_autoregressive_flow**: Neural autoregressive architecture with
-  block structure. Good expressiveness, analytical inverse during training.
-- **masked_autoregressive_flow**: Masked autoregressive flow with neural networks.
-  Flexible but slower due to sequential generation.
-- **coupling_flow**: Coupling layers with neural network transformations.
-  Good balance of speed and expressiveness.
+Supported Architectures
+-----------------------
+- coupling_flow: Balanced speed and expressiveness
+- block_neural_autoregressive_flow: Good expressiveness
+- masked_autoregressive_flow: Flexible but slower
 
-Physics Constraint Modes
--------------------------
-The --constrain-physics flag enables bijective transformations that enforce
-physical constraints:
+Configuration-Driven Usage
+---------------------------
+Create a YAML config file (e.g., config.yaml):
 
-1. **Simple mode** (--constrain-physics, default): Enforce positivity via
-   log transforms. Data must already satisfy m1 ≥ m2.
-2. **Chirp mass mode** (--constrain-physics --use-chirp-mass): Reparameterize
-   to (M_chirp, q, λ1, λ2) to automatically enforce m1 ≥ m2 via mass ratio q ∈ (0, 1).
+    posterior_file: data/gw170817_posterior.npz
+    output_dir: models/gw170817/
+    flow_type: masked_autoregressive_flow
+    num_epochs: 1000
+    learning_rate: 1.0e-3
+    standardize: true
+    plot_corner: true
+    plot_losses: true
 
-Command-Line Usage
-------------------
-Basic training with default settings:
+Then run:
 
-    python train_flow.py \\
-        --posterior-file data/gw170817_posterior.npz \\
-        --output-dir models/gw170817/
+    uv run python -m jesterTOV.inference.flows.train_flow config.yaml
 
-Advanced training with physics constraints and standardization:
+Or use the bash scripts for batch training:
 
-    python train_flow.py \\
-        --posterior-file data/gw170817_posterior.npz \\
-        --output-dir models/gw170817/ \\
-        --flow-type triangular_spline_flow \\
-        --flow-layers 6 \\
-        --knots 16 \\
-        --num-epochs 1000 \\
-        --learning-rate 1e-3 \\
-        --constrain-physics \\
-        --use-chirp-mass \\
-        --standardize \\
-        --batch-size 256
+    bash train_all_flows.sh
 
 Programmatic Usage
 ------------------
 For custom training workflows, use the provided functions:
 
->>> from train_flow import load_gw_posterior, create_flow, train_flow, save_model
+>>> from jesterTOV.inference.flows.train_flow import train_flow_from_config
+>>> from jesterTOV.inference.flows.config import FlowTrainingConfig
+>>> config = FlowTrainingConfig.from_yaml("config.yaml")
+>>> train_flow_from_config(config)
+
+Or use the lower-level functions directly:
+
+>>> from jesterTOV.inference.flows.flow import create_flow
+>>> from jesterTOV.inference.flows.train_flow import load_gw_posterior, train_flow, save_model
 >>> data, metadata = load_gw_posterior("gw170817.npz", max_samples=50000)
->>> flow = create_flow(jax.random.key(0), flow_type="triangular_spline_flow")
+>>> flow = create_flow(jax.random.key(0), flow_type="masked_autoregressive_flow")
 >>> trained_flow, losses = train_flow(flow, data, jax.random.key(1))
 >>> save_model(trained_flow, "models/gw170817/", flow_kwargs, metadata)
 
@@ -96,6 +72,7 @@ The training script saves:
 See Also
 --------
 jesterTOV.inference.flows.flow.Flow : High-level interface for loading trained flows
+jesterTOV.inference.flows.config.FlowTrainingConfig : Configuration schema
 
 Notes
 -----
@@ -103,307 +80,32 @@ Training requires:
 - JAX with GPU support recommended for large datasets
 - flowjax for flow architectures
 - equinox for model serialization
+- PyYAML for configuration loading
 - Optional: matplotlib and corner for plotting
 """
 
-import argparse
 import json
 import os
-from typing import Any, Dict, Tuple
+import sys
+from pathlib import Path
+from typing import Any, Dict, Tuple, Mapping
 
 import equinox as eqx
 import jax
-import jax.numpy as jnp
 import numpy as np
 from jax import Array
-from flowjax.distributions import Normal, Transformed
-from flowjax.flows import (
-    block_neural_autoregressive_flow,
-    coupling_flow,
-    masked_autoregressive_flow,
-    triangular_spline_flow,
-)
-from flowjax.bijections import (
-    RationalQuadraticSpline,
-    Affine,
-    AbstractBijection,
-    Stack,
-    Chain,
-    Exp,
-    Sigmoid,
-    Invert,
-    Identity,
-)
 from flowjax.train import fit_to_data
+
+from .config import FlowTrainingConfig
+from .flow import create_flow
 
 # # TODO: decide later on if this is necessary, but this might be much faster
 # # # Enable 64-bit precision for numerical accuracy
 # jax.config.update("jax_enable_x64", True)
 
+# TODO: this is for now: we assume the NF is only for vanilla GW inference which has these 4 keys, later on, we could generalize this...
 # Required keys in the posterior file
 REQUIRED_KEYS = ["mass_1_source", "mass_2_source", "lambda_1", "lambda_2"]
-
-
-class MassesAndLambdasToChirpMassRatio(AbstractBijection):
-    r"""
-    Bijection transforming GW parameters: (m1, m2, λ1, λ2) to (M_chirp, q, λ1, λ2).
-
-    This bijection enforces the physical constraint m1 >= m2 by construction
-    through the mass ratio parameterization, while leaving tidal parameters unchanged.
-
-    Forward transformation:
-        (m1, m2, λ1, λ2) -> (M_chirp, q, λ1, λ2)
-        where:
-            M_chirp = (m1 * m2)^(3/5) / (m1 + m2)^(1/5)
-            q = m2 / m1  (mass ratio, always <= 1 when m1 >= m2)
-            λ1, λ2 unchanged
-
-    Inverse transformation:
-        (M_chirp, q, λ1, λ2) -> (m1, m2, λ1, λ2)
-        where:
-            M_total = M_chirp * (1 + q)^(1/5) / q^(3/5)
-            m1 = M_total / (1 + q)
-            m2 = M_total * q / (1 + q)
-            λ1, λ2 unchanged
-
-    The Jacobian determinant is computed using JAX automatic differentiation
-    for numerical stability and correctness.
-
-    Note: This bijection operates on 4D arrays (last dimension = 4).
-    """
-
-    shape: tuple = (4,)
-    cond_shape: None = None
-
-    def transform(self, x, condition=None):
-        """Transform (m1, m2, λ1, λ2) to (M_chirp, q, λ1, λ2)."""
-        m1, m2, lam1, lam2 = x[..., 0], x[..., 1], x[..., 2], x[..., 3]
-        M_chirp = (m1 * m2) ** (3 / 5) / (m1 + m2) ** (1 / 5)
-        q = m2 / m1
-        return jnp.stack([M_chirp, q, lam1, lam2], axis=-1)
-
-    def inverse(self, y, condition=None):
-        """Transform (M_chirp, q, λ1, λ2) to (m1, m2, λ1, λ2)."""
-        M_chirp, q, lam1, lam2 = y[..., 0], y[..., 1], y[..., 2], y[..., 3]
-        prefac = (1 + q) ** (6 / 5) / q ** (3 / 5)
-        M_total = M_chirp * prefac
-        m1 = M_total / (1 + q)
-        m2 = q * m1
-        return jnp.stack([m1, m2, lam1, lam2], axis=-1)
-
-    def transform_and_log_det(self, x, condition=None):
-        """Transform (m1, m2, λ1, λ2) to (M_chirp, q, λ1, λ2) with log|det(Jacobian)|."""
-        # Compute transformation
-        y = self.transform(x, condition)
-
-        # Compute Jacobian determinant using autodiff
-        # Jacobian is 4x4 but block diagonal (masses don't affect lambdas)
-        def transform_fn(x_single):
-            return self.transform(x_single, condition)
-
-        # TODO: this might break jitting - check later
-        # Handle batched input
-        if x.ndim == 1:
-            jac = jax.jacobian(transform_fn)(x)
-            log_det = jnp.log(jnp.abs(jnp.linalg.det(jac)))
-        else:
-            # Vectorize over batch dimension
-            def single_log_det(x_single):
-                jac = jax.jacobian(transform_fn)(x_single)
-                return jnp.log(jnp.abs(jnp.linalg.det(jac)))
-
-            log_det = jax.vmap(single_log_det)(x)
-
-        return y, log_det
-
-    def inverse_and_log_det(self, y, condition=None):
-        """Transform (M_chirp, q, λ1, λ2) to (m1, m2, λ1, λ2) with log|det(Jacobian^-1)|."""
-        # Compute inverse transformation
-        x = self.inverse(y, condition)
-
-        # For inverse Jacobian: log|det(J^-1)| = -log|det(J)|
-        # Compute forward Jacobian at the resulting x
-        _, log_det_forward = self.transform_and_log_det(x, condition)
-        log_det_inverse = -log_det_forward
-
-        return x, log_det_inverse
-
-
-def parse_arguments() -> argparse.Namespace:
-    """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(
-        description="Train a normalizing flow on GW posterior samples"
-    )
-    parser.add_argument(
-        "--posterior-file",
-        type=str,
-        required=True,
-        help=f"Path to .npz file with GW posterior samples (must contain: {', '.join(REQUIRED_KEYS)})",
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=str,
-        required=True,
-        help="Directory to save model weights, kwargs, and plots",
-    )
-    parser.add_argument(
-        "--num-epochs",
-        type=int,
-        default=600,
-        help="Number of training epochs (default: 600)",
-    )
-    parser.add_argument(
-        "--learning-rate",
-        type=float,
-        default=1e-3,
-        help="Learning rate for training (default: 1e-3)",
-    )
-    parser.add_argument(
-        "--max-patience",
-        type=int,
-        default=50,
-        help="Early stopping patience (default: 50)",
-    )
-    parser.add_argument(
-        "--nn-depth",
-        type=int,
-        default=5,
-        help="Depth of neural network blocks (default: 5)",
-    )
-    parser.add_argument(
-        "--nn-block-dim",
-        type=int,
-        default=8,
-        help="Dimension of neural network blocks (default: 8)",
-    )
-    parser.add_argument(
-        "--flow-layers",
-        type=int,
-        default=1,
-        help="Number of flow layers (default: 1)",
-    )
-    parser.add_argument(
-        "--invert",
-        type=lambda x: str(x).lower() == "true",
-        default=True,
-        help="Whether to invert the flow (default: True). Must be True for block_neural_autoregressive_flow to enable analytical inverse during training.",
-    )
-    parser.add_argument(
-        "--cond-dim",
-        type=int,
-        default=None,
-        help="Conditional dimension for conditional flows (default: None)",
-    )
-    parser.add_argument(
-        "--max-samples",
-        type=int,
-        default=50_000,
-        help="Maximum number of samples to use for training (default: 50,000)",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=0,
-        help="Random seed for reproducibility (default: 0)",
-    )
-    parser.add_argument(
-        "--plot-corner",
-        action="store_true",
-        default=True,
-        help="Generate corner plot comparison (requires corner package, default: True)",
-    )
-    parser.add_argument(
-        "--plot-losses",
-        action="store_true",
-        default=True,
-        help="Plot training and validation losses (default: True)"
-    )
-    parser.add_argument(
-        "--flow-type",
-        type=str,
-        default="triangular_spline_flow",
-        choices=[
-            "block_neural_autoregressive_flow",
-            "masked_autoregressive_flow",
-            "coupling_flow",
-            "triangular_spline_flow",
-        ],
-        help="Type of normalizing flow to use (default: triangular_spline_flow)",
-    )
-    parser.add_argument(
-        "--nn-width",
-        type=int,
-        default=50,
-        help="Width of neural network hidden layers (for masked_autoregressive_flow and coupling_flow, default: 50)",
-    )
-    parser.add_argument(
-        "--knots",
-        type=int,
-        default=8,
-        help="Number of knots in splines (for triangular_spline_flow, default: 8)",
-    )
-    parser.add_argument(
-        "--tanh-max-val",
-        type=float,
-        default=3.0,
-        help="Maximum absolute value for tanh tails (for triangular_spline_flow, default: 3.0)",
-    )
-    parser.add_argument(
-        "--standardize",
-        action="store_true",
-        default=False,
-        help="Standardize input data to [0,1] domain using min-max scaling (default: False)",
-    )
-    parser.add_argument(
-        "--transformer",
-        type=str,
-        default="affine",
-        choices=["affine", "rational_quadratic_spline"],
-        help="Transformer type for masked_autoregressive_flow and coupling_flow (default: affine)",
-    )
-    parser.add_argument(
-        "--transformer-knots",
-        type=int,
-        default=8,
-        help="Number of knots for RationalQuadraticSpline transformer (default: 8)",
-    )
-    parser.add_argument(
-        "--transformer-interval",
-        type=float,
-        default=4.0,
-        help="Interval for RationalQuadraticSpline transformer (default: 4.0)",
-    )
-    parser.add_argument(
-        "--val-prop",
-        type=float,
-        default=0.2,
-        help="Proportion of data to use for validation (default: 0.2)",
-    )
-    parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=128,
-        help="Batch size for training (default: 128)",
-    )
-    parser.add_argument(
-        "--constrain-physics",
-        action="store_true",
-        default=False,
-        help="Apply physics constraints (m1>m2, lambdas>0) via bijections (default: True)",
-    )
-    parser.add_argument(
-        "--no-constrain-physics",
-        action="store_false",
-        dest="constrain_physics",
-        help="Disable physics constraints",
-    )
-    parser.add_argument(
-        "--use-chirp-mass",
-        action="store_true",
-        default=False,
-        help="Use chirp mass reparameterization (default: False, just enforce positivity)",
-    )
-    return parser.parse_args()
 
 
 def load_gw_posterior(
@@ -520,214 +222,6 @@ def inverse_standardize_data(
     return data
 
 
-def clip_data_for_bijection(data: np.ndarray, epsilon: float = 1e-5) -> np.ndarray:
-    """
-    Clip data away from boundaries for numerical stability with bijections.
-
-    Args:
-        data: Array of shape (n_samples, 4) with columns [m1, m2, λ1, λ2]
-        epsilon: Small value to avoid exact zeros and ones
-
-    Returns:
-        Clipped data ensuring:
-            - All values > epsilon (for log transforms)
-            - mass_ratio < 1 - epsilon (for logit transform)
-    """
-    data_clipped = data.copy()
-
-    # Ensure all positive values are bounded away from zero
-    data_clipped[:, 0] = np.maximum(data_clipped[:, 0], epsilon)  # m1
-    data_clipped[:, 2] = np.maximum(data_clipped[:, 2], epsilon)  # λ1
-    data_clipped[:, 3] = np.maximum(data_clipped[:, 3], epsilon)  # λ2
-
-    # Ensure m1 >= m2 (should already be true, but enforce)
-    # If m2 > m1, swap them
-    mask = data_clipped[:, 1] > data_clipped[:, 0]
-    if np.any(mask):
-        print(
-            f"Warning: {np.sum(mask)} samples had m2 > m1. Swapping to enforce m1 >= m2."
-        )
-        data_clipped[mask, [0, 1]] = data_clipped[mask, [1, 0]]
-        data_clipped[mask, [2, 3]] = data_clipped[mask, [3, 2]]  # Swap lambdas too
-
-    # Ensure m2 > epsilon and m2/m1 < 1 - epsilon
-    data_clipped[:, 1] = np.maximum(data_clipped[:, 1], epsilon)  # m2
-    # Ensure mass ratio q = m2/m1 < 1 - epsilon
-    q = data_clipped[:, 1] / data_clipped[:, 0]
-    q_clipped = np.minimum(q, 1 - epsilon)
-    data_clipped[:, 1] = q_clipped * data_clipped[:, 0]
-
-    return data_clipped
-
-
-def create_physics_constraint_bijection(use_chirp_mass: bool = False):
-    """
-    Create bijection that enforces physical constraints on GW parameters.
-
-    Args:
-        use_chirp_mass: If True, reparameterize to chirp mass + mass ratio.
-                       If False (default), only enforce positivity via log transforms.
-
-    Constraints enforced:
-        - m1, m2, lambda_1, lambda_2 > 0 (via log transform)
-        - If use_chirp_mass=True: also enforce m1 >= m2 via mass ratio
-
-    Returns:
-        Bijection mapping physical space to unbounded R^4.
-    """
-    if use_chirp_mass:
-        # Full reparameterization with chirp mass
-        # Physical: (m1, m2, λ1, λ2) -> (M_chirp, q, λ1, λ2) -> unbounded
-        mass_transform = MassesAndLambdasToChirpMassRatio()
-        unbounded_transform = Stack(
-            [
-                Invert(Exp()),  # M_chirp in (0, ∞) -> R
-                Invert(Sigmoid()),  # q in (0, 1) -> R
-                Invert(Exp()),  # λ1 in (0, ∞) -> R
-                Invert(Exp()),  # λ2 in (0, ∞) -> R
-            ]
-        )
-        return Chain([mass_transform, unbounded_transform])
-    else:
-        # Simple mode: just enforce positivity via log transforms
-        # Physical: (m1, m2, λ1, λ2) -> (log m1, log m2, log λ1, log λ2)
-        # Note: This doesn't enforce m1 >= m2, but data already has this property
-        return Stack(
-            [
-                Invert(Exp()),  # m1 in (0, ∞) -> R
-                Invert(Exp()),  # m2 in (0, ∞) -> R
-                Invert(Exp()),  # λ1 in (0, ∞) -> R
-                Invert(Exp()),  # λ2 in (0, ∞) -> R
-            ]
-        )
-
-
-def create_transformer(
-    transformer_type: str = "affine",
-    transformer_knots: int = 8,
-    transformer_interval: float = 4.0,
-) -> Any:
-    """
-    Create a transformer for masked_autoregressive_flow and coupling_flow.
-
-    Args:
-        transformer_type: Type of transformer ("affine", "rational_quadratic_spline")
-        transformer_knots: Number of knots for RationalQuadraticSpline
-        transformer_interval: Interval for RationalQuadraticSpline
-
-    Returns:
-        Transformer instance
-    """
-    if transformer_type == "affine":
-        return Affine()
-    elif transformer_type == "rational_quadratic_spline":
-        return RationalQuadraticSpline(knots=transformer_knots, interval=transformer_interval)
-    else:
-        raise ValueError(
-            f"Unknown transformer type: {transformer_type}. "
-            "Must be one of: affine, rational_quadratic_spline"
-        )
-
-
-def create_flow(
-    key: Array,
-    flow_type: str = "triangular_spline_flow",
-    nn_depth: int = 5,
-    nn_block_dim: int = 8,
-    nn_width: int = 50,
-    flow_layers: int = 1,
-    knots: int = 8,
-    tanh_max_val: float = 3.0,
-    invert: bool = True,
-    cond_dim: int | None = None,
-    transformer_type: str = "affine",
-    transformer_knots: int = 8,
-    transformer_interval: float = 4.0,
-) -> Any:
-    """
-    Create a normalizing flow of the specified type.
-
-    Args:
-        key: JAX random key
-        flow_type: Type of flow ("block_neural_autoregressive_flow",
-            "masked_autoregressive_flow", "coupling_flow", "triangular_spline_flow")
-        nn_depth: Depth of neural network (for block_neural_autoregressive_flow,
-            masked_autoregressive_flow, coupling_flow)
-        nn_block_dim: Block dimension (for block_neural_autoregressive_flow)
-        nn_width: Width of hidden layers (for masked_autoregressive_flow, coupling_flow)
-        flow_layers: Number of flow layers
-        knots: Number of spline knots (for triangular_spline_flow)
-        tanh_max_val: Maximum value for tanh tails (for triangular_spline_flow)
-        invert: Whether to invert the flow
-        cond_dim: Conditional dimension (None for unconditional flows)
-        transformer_type: Type of transformer for masked_autoregressive_flow and coupling_flow
-            ("affine", "rational_quadratic_spline")
-        transformer_knots: Number of knots for RationalQuadraticSpline
-        transformer_interval: Interval for RationalQuadraticSpline
-
-    Returns:
-        Untrained flowjax flow model
-    """
-    base_dist = Normal(jnp.zeros(4))  # 4D: m1, m2, lambda1, lambda2
-
-    if flow_type == "block_neural_autoregressive_flow":
-        flow = block_neural_autoregressive_flow(
-            key=key,
-            base_dist=base_dist,
-            nn_depth=nn_depth,
-            nn_block_dim=nn_block_dim,
-            flow_layers=flow_layers,
-            invert=invert,
-            cond_dim=cond_dim,
-        )
-    elif flow_type == "masked_autoregressive_flow":
-        transformer = create_transformer(
-            transformer_type, transformer_knots, transformer_interval
-        )
-        flow = masked_autoregressive_flow(
-            key=key,
-            base_dist=base_dist,
-            flow_layers=flow_layers,
-            nn_width=nn_width,
-            nn_depth=nn_depth,
-            invert=invert,
-            cond_dim=cond_dim,
-            transformer=transformer,
-        )
-    elif flow_type == "coupling_flow":
-        transformer = create_transformer(
-            transformer_type, transformer_knots, transformer_interval
-        )
-        flow = coupling_flow(
-            key=key,
-            base_dist=base_dist,
-            flow_layers=flow_layers,
-            nn_width=nn_width,
-            nn_depth=nn_depth,
-            invert=invert,
-            cond_dim=cond_dim,
-            transformer=transformer,
-        )
-    elif flow_type == "triangular_spline_flow":
-        flow = triangular_spline_flow(
-            key=key,
-            base_dist=base_dist,
-            flow_layers=flow_layers,
-            knots=knots,
-            tanh_max_val=tanh_max_val,
-            invert=invert,
-            cond_dim=cond_dim,
-        )
-    else:
-        raise ValueError(
-            f"Unknown flow type: {flow_type}. Must be one of: "
-            "block_neural_autoregressive_flow, masked_autoregressive_flow, "
-            "coupling_flow, triangular_spline_flow"
-        )
-
-    return flow
-
-
 def train_flow(
     flow: Any,
     data: np.ndarray,
@@ -737,7 +231,7 @@ def train_flow(
     max_patience: int = 50,
     val_prop: float = 0.2,
     batch_size: int = 128,
-) -> Tuple[Any, Dict[str, np.ndarray]]:
+) -> Tuple[Any, Dict[str, list]]:
     """
     Train the normalizing flow on data.
 
@@ -807,11 +301,8 @@ def save_model(
         json.dump(metadata, f, indent=2)
 
 
-# Flow class and load_model moved to jesterTOV.inference.flows.flow
-
-
-def plot_losses(losses: Dict[str, np.ndarray], output_path: str) -> None:
-    """Plot training and validation losses."""
+def plot_losses(losses: Mapping[str, np.ndarray | list], output_path: str) -> None:
+    """Plot training and validation losses (accepts dict or list values)."""
     try:
         import matplotlib.pyplot as plt
     except ImportError:
@@ -829,55 +320,6 @@ def plot_losses(losses: Dict[str, np.ndarray], output_path: str) -> None:
     plt.savefig(output_path, dpi=150)
     plt.close()
     print(f"Saved loss plot to {output_path}")
-
-
-def plot_transformed_data(
-    transformed_data: np.ndarray, output_path: str, labels: list[str] | None = None
-) -> None:
-    """
-    Plot the transformed (unbounded) data that the normalizing flow trains on.
-
-    This visualization shows what the flow "sees" after applying bijections.
-    For physics-constrained flows, this shows the data in unbounded R^4 space.
-
-    Args:
-        transformed_data: Array of shape (n_samples, 4) in unbounded space
-        output_path: Path to save the corner plot
-        labels: Optional custom labels for the 4 dimensions
-    """
-    try:
-        import corner
-        import matplotlib.pyplot as plt
-    except ImportError:
-        print("Warning: corner package not available, skipping transformed data plot")
-        return
-
-    if labels is None:
-        # Default labels (simple log transform mode)
-        labels = [
-            r"$\log(m_1)$",
-            r"$\log(m_2)$",
-            r"$\log(\Lambda_1)$",
-            r"$\log(\Lambda_2)$",
-        ]
-
-    fig = corner.corner(
-        transformed_data,
-        labels=labels,
-        color="purple",
-        bins=40,
-        smooth=1.0,
-        plot_datapoints=False,
-        plot_density=True,
-        fill_contours=False,
-        levels=[0.68, 0.95],
-        alpha=0.7,
-        hist_kwargs={"color": "purple", "density": True},
-    )
-
-    plt.savefig(output_path, dpi=150, bbox_inches="tight")
-    plt.close()
-    print(f"Saved transformed data plot to {output_path}")
 
 
 def plot_corner(data: np.ndarray, flow_samples: np.ndarray, output_path: str) -> None:
@@ -920,7 +362,7 @@ def plot_corner(data: np.ndarray, flow_samples: np.ndarray, output_path: str) ->
         color="red",
         bins=40,
         smooth=1.0,
-        plot_datapoints=True, # DO plot them for the flow, to check if it violates bounds
+        plot_datapoints=True,  # DO plot them for the flow, to check if it violates bounds
         plot_density=False,
         fill_contours=False,
         levels=[0.68, 0.95],
@@ -942,38 +384,36 @@ def plot_corner(data: np.ndarray, flow_samples: np.ndarray, output_path: str) ->
     print(f"Saved corner plot to {output_path}")
 
 
-def main():
-    """Main training script."""
-    args = parse_arguments()
+def train_flow_from_config(config: FlowTrainingConfig) -> None:
+    """
+    Train a normalizing flow using a configuration object.
 
+    Args:
+        config: FlowTrainingConfig with all training parameters
+    """
     # Print configuration
     print("=" * 60)
     print("GW Normalizing Flow Training")
     print("=" * 60)
-    print(f"Posterior file: {args.posterior_file}")
-    print(f"Output directory: {args.output_dir}")
-    print(f"Max samples: {args.max_samples}")
-    print(f"Flow type: {args.flow_type}")
-    print(f"NN depth: {args.nn_depth}")
-    print(f"NN block dim: {args.nn_block_dim}")
-    print(f"NN width: {args.nn_width}")
-    print(f"Flow layers: {args.flow_layers}")
-    print(f"Knots: {args.knots}")
-    print(f"Tanh max val: {args.tanh_max_val}")
-    print(f"Invert: {args.invert}")
-    print(f"Cond dim: {args.cond_dim}")
-    print(f"Transformer: {args.transformer}")
-    print(f"Transformer knots: {args.transformer_knots}")
-    print(f"Transformer interval: {args.transformer_interval}")
-    print(f"Standardize: {args.standardize}")
-    print(f"Max epochs: {args.num_epochs}")
-    print(f"Learning rate: {args.learning_rate}")
-    print(f"Patience: {args.max_patience}")
-    print(f"Val proportion: {args.val_prop}")
-    print(f"Seed: {args.seed}")
-    print(f"Constrain physics: {args.constrain_physics}")
-    if args.constrain_physics:
-        print(f"Use chirp mass: {args.use_chirp_mass}")
+    print(f"Posterior file: {config.posterior_file}")
+    print(f"Output directory: {config.output_dir}")
+    print(f"Max samples: {config.max_samples}")
+    print(f"Flow type: {config.flow_type}")
+    print(f"NN depth: {config.nn_depth}")
+    print(f"NN block dim: {config.nn_block_dim}")
+    print(f"NN width: {config.nn_width}")
+    print(f"Flow layers: {config.flow_layers}")
+    print(f"Invert: {config.invert}")
+    print(f"Cond dim: {config.cond_dim}")
+    print(f"Transformer: {config.transformer}")
+    print(f"Transformer knots: {config.transformer_knots}")
+    print(f"Transformer interval: {config.transformer_interval}")
+    print(f"Standardize: {config.standardize}")
+    print(f"Max epochs: {config.num_epochs}")
+    print(f"Learning rate: {config.learning_rate}")
+    print(f"Patience: {config.max_patience}")
+    print(f"Val proportion: {config.val_prop}")
+    print(f"Seed: {config.seed}")
     print("=" * 60)
 
     # Check for GPU
@@ -981,66 +421,18 @@ def main():
 
     # Load data
     print("\n[1/5] Loading posterior samples...")
-    data, load_metadata = load_gw_posterior(args.posterior_file, args.max_samples)
+    data, load_metadata = load_gw_posterior(config.posterior_file, config.max_samples)
     print(f"Data shape: {data.shape}")
     print("Original data ranges:")
     for i, name in enumerate(["m1", "m2", "lambda1", "lambda2"]):
         print(f"  {name}: [{data[:, i].min():.3f}, {data[:, i].max():.3f}]")
 
-    # Apply physics constraints if requested
-    physics_bijection = None
-    original_data = data.copy()  # Keep original for plotting
-    if args.constrain_physics:
-        print("\nApplying physics constraints via bijections...")
-        if args.use_chirp_mass:
-            print("  - Enforcing m1 >= m2 via chirp mass + mass ratio")
-            print("  - Enforcing λ1, λ2 > 0 via log transform")
-            print("  - Transforming to unbounded R^4 space")
-        else:
-            print("  - Enforcing m1, m2, λ1, λ2 > 0 via log transform")
-            print("  - Transforming to unbounded R^4 space (simple mode)")
-
-        # Clip data near boundaries for numerical stability
-        data = clip_data_for_bijection(data)
-
-        # Create bijection
-        physics_bijection = create_physics_constraint_bijection(args.use_chirp_mass)
-
-        # Transform data to unbounded space
-        data_jax = jnp.array(data)
-        data_unbounded = jax.vmap(physics_bijection.transform)(data_jax)
-        data = np.array(data_unbounded)
-
-        print("Unbounded data ranges:")
-        if args.use_chirp_mass:
-            labels = ["log(M_chirp)", "logit(q)", "log(λ1)", "log(λ2)"]
-        else:
-            labels = ["log(m1)", "log(m2)", "log(λ1)", "log(λ2)"]
-        for i, name in enumerate(labels):
-            print(f"  {name}: [{data[:, i].min():.3f}, {data[:, i].max():.3f}]")
-
-        # Plot transformed data to visualize what the flow will train on
-        figures_dir = os.path.join(args.output_dir, "figures")
-        os.makedirs(figures_dir, exist_ok=True)
-        transformed_plot_path = os.path.join(figures_dir, "transformed_training_data.png")
-        print(f"\nSaving transformed data visualization to {transformed_plot_path}")
-
-        # Set appropriate labels based on transformation mode
-        if args.use_chirp_mass:
-            plot_labels = [
-                r"$\log(\mathcal{M}_c)$",
-                r"$\mathrm{logit}(q)$",
-                r"$\log(\Lambda_1)$",
-                r"$\log(\Lambda_2)$",
-            ]
-        else:
-            plot_labels = None  # Use default labels
-
-        plot_transformed_data(data, transformed_plot_path, plot_labels)
+    # Keep copy of original data for corner plot
+    original_data = data.copy()
 
     # Standardize data if requested
     data_bounds = None
-    if args.standardize:
+    if config.standardize:
         print("\nStandardizing data to [0, 1] domain...")
         data, data_bounds = standardize_data(data)
         print("Standardized data ranges:")
@@ -1050,21 +442,19 @@ def main():
 
     # Create flow
     print("\n[2/5] Creating flow architecture...")
-    flow_key, train_key, sample_key = jax.random.split(jax.random.key(args.seed), 3)
+    flow_key, train_key, sample_key = jax.random.split(jax.random.key(config.seed), 3)
     flow = create_flow(
         key=flow_key,
-        flow_type=args.flow_type,
-        nn_depth=args.nn_depth,
-        nn_block_dim=args.nn_block_dim,
-        nn_width=args.nn_width,
-        flow_layers=args.flow_layers,
-        knots=args.knots,
-        tanh_max_val=args.tanh_max_val,
-        invert=args.invert,
-        cond_dim=args.cond_dim,
-        transformer_type=args.transformer,
-        transformer_knots=args.transformer_knots,
-        transformer_interval=args.transformer_interval,
+        flow_type=config.flow_type,
+        nn_depth=config.nn_depth,
+        nn_block_dim=config.nn_block_dim,
+        nn_width=config.nn_width,
+        flow_layers=config.flow_layers,
+        invert=config.invert,
+        cond_dim=config.cond_dim,
+        transformer_type=config.transformer,
+        transformer_knots=config.transformer_knots,
+        transformer_interval=config.transformer_interval,
     )
 
     # Train flow
@@ -1074,84 +464,66 @@ def main():
         flow,
         data,
         train_key,
-        learning_rate=args.learning_rate,
-        max_epochs=args.num_epochs,
-        max_patience=args.max_patience,
-        val_prop=args.val_prop,
-        batch_size=args.batch_size,
+        learning_rate=config.learning_rate,
+        max_epochs=config.num_epochs,
+        max_patience=config.max_patience,
+        val_prop=config.val_prop,
+        batch_size=config.batch_size,
     )
     print(f"Final train loss: {losses['train'][-1]:.4f}")
     print(f"Final val loss: {losses['val'][-1]:.4f}")
 
-    # Wrap flow with inverse bijection if physics constraints were applied
-    if args.constrain_physics and physics_bijection is not None:
-        print("\nWrapping flow with inverse physics bijection...")
-        print("  Flow now samples in physical space: (m1, m2, λ1, λ2)")
-        # Create inverse bijection: unbounded -> physical space
-        # physics_bijection.transform(): physical -> unbounded
-        # physics_bijection.inverse(): unbounded -> physical
-        # We need Transformed to apply the inverse, so use Invert
-        inverse_bijection = Invert(physics_bijection)
-        print(f"  Bijection type: {type(inverse_bijection)}")
-        trained_flow = Transformed(trained_flow, inverse_bijection)
-
     # Save model
     print("\n[4/5] Saving model...")
     flow_kwargs = {
-        "flow_type": args.flow_type,
-        "nn_depth": args.nn_depth,
-        "nn_block_dim": args.nn_block_dim,
-        "nn_width": args.nn_width,
-        "flow_layers": args.flow_layers,
-        "knots": args.knots,
-        "tanh_max_val": args.tanh_max_val,
-        "invert": args.invert,
-        "cond_dim": args.cond_dim,
-        "seed": args.seed,
-        "standardize": args.standardize,
-        "constrain_physics": args.constrain_physics,
-        "use_chirp_mass": args.use_chirp_mass,
-        "transformer_type": args.transformer,
-        "transformer_knots": args.transformer_knots,
-        "transformer_interval": args.transformer_interval,
+        "flow_type": config.flow_type,
+        "nn_depth": config.nn_depth,
+        "nn_block_dim": config.nn_block_dim,
+        "nn_width": config.nn_width,
+        "flow_layers": config.flow_layers,
+        "invert": config.invert,
+        "cond_dim": config.cond_dim,
+        "seed": config.seed,
+        "standardize": config.standardize,
+        "transformer_type": config.transformer,
+        "transformer_knots": config.transformer_knots,
+        "transformer_interval": config.transformer_interval,
     }
 
     # Add data bounds if standardization was used
-    if args.standardize and data_bounds is not None:
+    if config.standardize and data_bounds is not None:
         flow_kwargs["data_bounds_min"] = data_bounds["min"].tolist()
         flow_kwargs["data_bounds_max"] = data_bounds["max"].tolist()
 
     metadata = {
         **load_metadata,
-        "flow_type": args.flow_type,
+        "flow_type": config.flow_type,
         "num_epochs": len(losses["train"]),
-        "learning_rate": args.learning_rate,
-        "max_patience": args.max_patience,
-        "val_prop": args.val_prop,
-        "standardize": args.standardize,
-        "constrain_physics": args.constrain_physics,
-        "use_chirp_mass": args.use_chirp_mass,
+        "learning_rate": config.learning_rate,
+        "max_patience": config.max_patience,
+        "val_prop": config.val_prop,
+        "standardize": config.standardize,
     }
 
     # Add data bounds to metadata if standardization was used
-    if args.standardize and data_bounds is not None:
+    if config.standardize and data_bounds is not None:
         metadata["data_bounds_min"] = data_bounds["min"].tolist()
         metadata["data_bounds_max"] = data_bounds["max"].tolist()
 
-    save_model(trained_flow, args.output_dir, flow_kwargs, metadata)
+    save_model(trained_flow, config.output_dir, flow_kwargs, metadata)
 
     # Generate plots
     print("\n[5/5] Generating plots...")
 
     # Create figures subdirectory
-    figures_dir = os.path.join(args.output_dir, "figures")
+    figures_dir = os.path.join(config.output_dir, "figures")
     os.makedirs(figures_dir, exist_ok=True)
 
-    if args.plot_losses:
+    if config.plot_losses:
         loss_path = os.path.join(figures_dir, "losses.png")
         plot_losses(losses, loss_path)
 
-    if args.plot_corner:
+    if config.plot_corner:
         try:
             # Sample from trained flow
             n_plot_samples = min(10_000, data.shape[0])
@@ -1159,27 +531,44 @@ def main():
             flow_samples_np = np.array(flow_samples)
 
             # Inverse transform samples if data was standardized
-            if args.standardize and data_bounds is not None:
+            if config.standardize and data_bounds is not None:
                 flow_samples_np = inverse_standardize_data(flow_samples_np, data_bounds)
 
             corner_path = os.path.join(figures_dir, "corner.png")
             # Use original_data for corner plot comparison
             plot_corner(original_data, flow_samples_np, corner_path)
         except Exception as e:
-            print(f"Warning: Corner plot generation failed, skipping. Error: {type(e).__name__}")
+            print(
+                f"Warning: Corner plot generation failed, skipping. Error: {type(e).__name__}"
+            )
 
     print("\n" + "=" * 60)
     print("Training complete!")
-    print(f"Model saved to: {args.output_dir}")
-    print(f"Figures saved to: {os.path.join(args.output_dir, 'figures')}")
+    print(f"Model saved to: {config.output_dir}")
+    print(f"Figures saved to: {os.path.join(config.output_dir, 'figures')}")
     print("=" * 60)
     print("\nTo use the trained flow:")
     print(">>> from jesterTOV.inference.flows.flow import Flow")
-    print(f">>> flow = Flow.from_directory('{args.output_dir}')")
+    print(f">>> flow = Flow.from_directory('{config.output_dir}')")
     print(">>> samples = flow.sample(jax.random.key(0), (1000,))")
-    if args.standardize:
+    if config.standardize:
         print(">>> # Samples are automatically rescaled to original domain")
     print("=" * 60)
+
+
+def main():
+    """Main entry point for training script."""
+    if len(sys.argv) < 2:
+        print("Usage: python -m jesterTOV.inference.flows.train_flow <config.yaml>")
+        sys.exit(1)
+
+    config_path = Path(sys.argv[1])
+
+    # Load config from YAML
+    config = FlowTrainingConfig.from_yaml(config_path)
+
+    # Train flow
+    train_flow_from_config(config)
 
 
 if __name__ == "__main__":

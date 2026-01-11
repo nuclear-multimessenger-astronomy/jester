@@ -1,0 +1,23 @@
+{
+  "n_samples_total": 23138,
+  "n_samples_used": 23138,
+  "filepath": "../../../../../data/gw170817/gw170817_xp_nrtv3.npz",
+  "flow_type": "masked_autoregressive_flow",
+  "num_epochs": 3000,
+  "learning_rate": 0.0001,
+  "max_patience": 500,
+  "val_prop": 0.2,
+  "standardize": true,
+  "data_bounds_min": [
+    1.3617526862243516,
+    1.0472121186077818,
+    0.012692507040011018,
+    0.048367459752170154
+  ],
+  "data_bounds_max": [
+    1.805597753573829,
+    1.3697258647657622,
+    2606.8770775744206,
+    3550.6642365620446
+  ]
+}

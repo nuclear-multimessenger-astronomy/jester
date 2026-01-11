@@ -38,8 +38,6 @@ ChiEFTLikelihood : Low-density EOS constraints from chiral effective field theor
 RadioTimingLikelihood : Maximum mass constraints from pulsar timing
 """
 
-from typing import Any
-
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
@@ -177,10 +175,10 @@ def check_all_constraints(
     ...     print("TOV integration failed!")
     """
     return {
-        'n_tov_failures': check_tov_validity(masses, radii, lambdas),
-        'n_causality_violations': check_causality_violation(cs2),
-        'n_stability_violations': check_stability(cs2),
-        'n_pressure_violations': check_pressure_monotonicity(p),
+        "n_tov_failures": check_tov_validity(masses, radii, lambdas),
+        "n_causality_violations": check_causality_violation(cs2),
+        "n_stability_violations": check_stability(cs2),
+        "n_pressure_violations": check_pressure_monotonicity(p),
     }
 
 
@@ -232,7 +230,7 @@ class ConstraintEOSLikelihood(LikelihoodBase):
         self.penalty_stability = float(penalty_stability)
         self.penalty_pressure = float(penalty_pressure)
 
-    def evaluate(self, params: dict[str, Float | Array], data: dict[str, Any]) -> Float:
+    def evaluate(self, params: dict[str, Float | Array]) -> Float:
         """
         Evaluate EOS constraint log likelihood.
 
@@ -246,8 +244,6 @@ class ConstraintEOSLikelihood(LikelihoodBase):
             - 'n_causality_violations'
             - 'n_stability_violations'
             - 'n_pressure_violations'
-        data : dict
-            Not used (constraints are in params from transform)
 
         Returns
         -------
@@ -255,14 +251,18 @@ class ConstraintEOSLikelihood(LikelihoodBase):
             Sum of EOS penalties (0.0 if valid, large negative if invalid)
         """
         # Get violation counts from transform output (default to 0 if not present)
-        n_causality_violations = params.get('n_causality_violations', 0.0)
-        n_stability_violations = params.get('n_stability_violations', 0.0)
-        n_pressure_violations = params.get('n_pressure_violations', 0.0)
+        n_causality_violations = params.get("n_causality_violations", 0.0)
+        n_stability_violations = params.get("n_stability_violations", 0.0)
+        n_pressure_violations = params.get("n_pressure_violations", 0.0)
 
         # Apply penalties using jnp.where (JAX-compatible, no branching)
         # If count > 0, apply penalty, otherwise 0.0
-        penalty_caus = jnp.where(n_causality_violations > 0, self.penalty_causality, 0.0)
-        penalty_stab = jnp.where(n_stability_violations > 0, self.penalty_stability, 0.0)
+        penalty_caus = jnp.where(
+            n_causality_violations > 0, self.penalty_causality, 0.0
+        )
+        penalty_stab = jnp.where(
+            n_stability_violations > 0, self.penalty_stability, 0.0
+        )
         penalty_press = jnp.where(n_pressure_violations > 0, self.penalty_pressure, 0.0)
 
         # Sum all EOS penalties
@@ -306,7 +306,7 @@ class ConstraintTOVLikelihood(LikelihoodBase):
         super().__init__()
         self.penalty_tov = float(penalty_tov)
 
-    def evaluate(self, params: dict[str, float], data: dict) -> Float:
+    def evaluate(self, params: dict[str, float]) -> Float:
         """
         Evaluate TOV constraint log likelihood.
 
@@ -318,8 +318,6 @@ class ConstraintTOVLikelihood(LikelihoodBase):
         params : dict[str, float]
             Must contain TOV constraint violation counts from transform:
             - 'n_tov_failures'
-        data : dict
-            Not used (constraints are in params from transform)
 
         Returns
         -------
@@ -327,105 +325,10 @@ class ConstraintTOVLikelihood(LikelihoodBase):
             TOV penalty (0.0 if valid, large negative if invalid)
         """
         # Get violation count from transform output (default to 0 if not present)
-        n_tov_failures = params.get('n_tov_failures', 0.0)
+        n_tov_failures = params.get("n_tov_failures", 0.0)
 
         # Apply penalty using jnp.where (JAX-compatible, no branching)
         # If count > 0, apply penalty, otherwise 0.0
         penalty_tov = jnp.where(n_tov_failures > 0, self.penalty_tov, 0.0)
 
         return penalty_tov
-
-
-class ConstraintLikelihood(LikelihoodBase):
-    """
-    Combined constraint likelihood for enforcing EOS physical validity.
-
-    TODO: remove from src code in future commit.
-    
-    DEPRECATED: Use ConstraintEOSLikelihood and ConstraintTOVLikelihood instead
-    for better control and performance. This class is kept for backwards compatibility.
-
-    This likelihood reads constraint violation counts from the transform output
-    and applies penalties using JAX-compatible operations (jnp.where).
-
-    The transform must add violation counts to its output dictionary:
-    - 'n_tov_failures': Number of NaN in TOV solution
-    - 'n_causality_violations': Number of cs^2 > 1 points
-    - 'n_stability_violations': Number of cs^2 < 0 points
-    - 'n_pressure_violations': Number of non-monotonic pressure points
-
-    Parameters
-    ----------
-    penalty_tov : float, optional
-        Log likelihood penalty for TOV integration failure (default: -1e10)
-    penalty_causality : float, optional
-        Log likelihood penalty for causality violation (default: -1e10)
-    penalty_stability : float, optional
-        Log likelihood penalty for thermodynamic instability (default: -1e5)
-    penalty_pressure : float, optional
-        Log likelihood penalty for non-monotonic pressure (default: -1e5)
-
-    Examples
-    --------
-    >>> # In config.yaml (deprecated - use constraints_eos + constraints_tov instead)
-    >>> likelihoods:
-    >>>   - type: "constraints"
-    >>>     enabled: true
-    >>>     parameters:
-    >>>       penalty_tov: -1.0e10
-    >>>       penalty_causality: -1.0e10
-    """
-
-    def __init__(
-        self,
-        penalty_tov: float = -1e10,
-        penalty_causality: float = -1e10,
-        penalty_stability: float = -1e5,
-        penalty_pressure: float = -1e5,
-    ):
-        super().__init__()
-        self.penalty_tov = penalty_tov
-        self.penalty_causality = penalty_causality
-        self.penalty_stability = penalty_stability
-        self.penalty_pressure = penalty_pressure
-
-    def evaluate(self, params: dict[str, float], data: dict) -> Float:
-        """
-        Evaluate constraint log likelihood.
-
-        Returns 0.0 if all constraints satisfied, applies penalties otherwise.
-        Uses jnp.where for JAX compatibility (no Python if-statements).
-
-        Parameters
-        ----------
-        params : dict[str, float]
-            Must contain constraint violation counts from transform:
-            - 'n_tov_failures'
-            - 'n_causality_violations'
-            - 'n_stability_violations'
-            - 'n_pressure_violations'
-        data : dict
-            Not used (constraints are in params from transform)
-
-        Returns
-        -------
-        Float
-            Sum of penalties (0.0 if valid, large negative if invalid)
-        """
-        # Get violation counts from transform output (default to 0 if not present)
-        n_tov_failures = params.get('n_tov_failures', 0.0)
-        n_causality_violations = params.get('n_causality_violations', 0.0)
-        n_stability_violations = params.get('n_stability_violations', 0.0)
-        n_pressure_violations = params.get('n_pressure_violations', 0.0)
-
-        # Apply penalties using jnp.where (JAX-compatible, no branching)
-        # If count > 0, apply penalty, otherwise 0.0
-        penalty_tov = jnp.where(n_tov_failures > 0, self.penalty_tov, 0.0)
-        penalty_caus = jnp.where(n_causality_violations > 0, self.penalty_causality, 0.0)
-        penalty_stab = jnp.where(n_stability_violations > 0, self.penalty_stability, 0.0)
-        penalty_press = jnp.where(n_pressure_violations > 0, self.penalty_pressure, 0.0)
-
-        # Sum all penalties
-        log_likelihood = penalty_tov + penalty_caus + penalty_stab + penalty_press
-
-        return log_likelihood

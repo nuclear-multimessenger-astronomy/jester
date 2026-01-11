@@ -1,0 +1,23 @@
+{
+  "n_samples_total": 4041,
+  "n_samples_used": 4041,
+  "filepath": "../../../../../data/gw170817/gw170817_gwtc1_highspin_posterior.npz",
+  "flow_type": "masked_autoregressive_flow",
+  "num_epochs": 2227,
+  "learning_rate": 0.0001,
+  "max_patience": 500,
+  "val_prop": 0.2,
+  "standardize": true,
+  "data_bounds_min": [
+    1.362742970891118,
+    0.7845496914771016,
+    0.029158364117449764,
+    0.0024889001868118044
+  ],
+  "data_bounds_max": [
+    2.5374421814176693,
+    1.36820031748107,
+    2993.731758542959,
+    4959.947040950935
+  ]
+}

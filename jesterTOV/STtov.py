@@ -152,8 +152,10 @@ def tov_solver(eos, pc):
                 args=eos,
                 saveat=SaveAt(t1=True),
                 stepsize_controller=PIDController(rtol=1e-5, atol=1e-6),
+                throw=False,
             )
 
+            assert sol_iter.ys is not None, "TOV solver failed to produce solution"
             R = sol_iter.ys[0][-1]
             M_s = sol_iter.ys[1][-1]
             nu_s = sol_iter.ys[2][-1]
@@ -172,8 +174,10 @@ def tov_solver(eos, pc):
                 y0=y_surf,
                 saveat=SaveAt(t1=True),
                 stepsize_controller=PIDController(rtol=1e-5, atol=1e-6),
+                throw=False,
             )
 
+            assert sol_ext.ys is not None, "TOV solver failed to produce solution"
             M_inf = sol_ext.ys[0][-1]
             nu_inf = sol_ext.ys[1][-1]
             phi_inf = sol_ext.ys[2][-1]
@@ -207,8 +211,10 @@ def tov_solver(eos, pc):
             args=eos,
             saveat=SaveAt(t1=True),
             stepsize_controller=PIDController(rtol=1e-5, atol=1e-6),
+            throw=False,
         )
 
+        assert sol_iter.ys is not None, "TOV solver failed to produce solution"
         R = sol_iter.ys[0][-1]
         M_s = sol_iter.ys[1][-1]
         nu_s = sol_iter.ys[2][-1]
@@ -226,6 +232,7 @@ def tov_solver(eos, pc):
             y0=y_surf,
             saveat=SaveAt(t1=True),
             stepsize_controller=PIDController(rtol=1e-5, atol=1e-6),
+            throw=False,
         )
 
         return R_final, M_inf_final, nu_inf_final, phi_inf_final, sol_ext_final
@@ -309,8 +316,10 @@ def tov_solver_printsol(eos, pc):
                 args=eos,
                 saveat=SaveAt(t1=True),
                 stepsize_controller=PIDController(rtol=1e-5, atol=1e-6),
+                throw=False,
             )
 
+            assert sol_iter.ys is not None, "TOV solver failed to produce solution"
             R = sol_iter.ys[0][-1]
             M_s = sol_iter.ys[1][-1]
             nu_s = sol_iter.ys[2][-1]
@@ -329,8 +338,10 @@ def tov_solver_printsol(eos, pc):
                 y0=y_surf,
                 saveat=SaveAt(t1=True),
                 stepsize_controller=PIDController(rtol=1e-5, atol=1e-6),
+                throw=False,
             )
 
+            assert sol_ext.ys is not None, "TOV solver failed to produce solution"
             M_inf = sol_ext.ys[0][-1]
             nu_inf = sol_ext.ys[1][-1]
             phi_inf = sol_ext.ys[2][-1]
@@ -376,8 +387,10 @@ def tov_solver_printsol(eos, pc):
             # saveat=SaveAt(t1=True),
             saveat=SaveAt(ts=jnp.linspace(h0, 0, 500)),
             stepsize_controller=PIDController(rtol=1e-5, atol=1e-6),
+            throw=False,
         )
 
+        assert sol_iter.ys is not None, "TOV solver failed to produce solution"
         R = sol_iter.ys[0][-1]
         M_s = sol_iter.ys[1][-1]
         nu_s = sol_iter.ys[2][-1]

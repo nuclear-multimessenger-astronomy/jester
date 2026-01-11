@@ -24,6 +24,7 @@ extensions = [
     "nbsphinx",
     "sphinx_copybutton",
     "sphinx_autodoc_typehints",
+    "sphinxcontrib.mermaid",
 ]
 
 templates_path = ["_templates"]
@@ -72,6 +73,13 @@ autodoc_default_options = {
     "undoc-members": True,
     "show-inheritance": True,
 }
+
+# Mock imports for optional dependencies that may not be available during docs build
+autodoc_mock_imports = [
+    "flowMC.nfmodel",
+    "flowMC.proposal",
+    "flowMC.Sampler",
+]
 
 add_module_names = False
 autodoc_inherit_docstrings = False

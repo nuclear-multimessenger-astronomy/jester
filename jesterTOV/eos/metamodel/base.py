@@ -289,6 +289,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             self.max_n_crust + 1e-5, self.nmin_MM, self.ndat_spline, endpoint=False
         )
 
+    # TODO: improve type hinting here
     def construct_eos(self, NEP_dict: dict) -> tuple:
         r"""
         Construct the complete equation of state from nuclear empirical parameters.

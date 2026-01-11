@@ -1,3 +1,5 @@
+# TODO: still needs to be implemented. For now, raises NotImplementedError
+
 r"""
 PREX and CREX neutron skin measurement constraints.
 
@@ -122,7 +124,7 @@ class REXLikelihood(LikelihoodBase):
         self.counter = 0
         self.posterior = posterior
 
-    def evaluate(self, params: dict[str, Float | Array], data: dict[str, Any]) -> Float:
+    def evaluate(self, params: dict[str, Float | Array]) -> Float:
         """Evaluate the log-likelihood for PREX/CREX constraints.
 
         Parameters
@@ -132,9 +134,6 @@ class REXLikelihood(LikelihoodBase):
             - "E_sym" : Symmetry energy at saturation density (MeV)
             - "L_sym" : Slope of symmetry energy (MeV)
             Other parameters in the dict are ignored.
-        data : dict[str, Any]
-            Unused; included for API compatibility. All experimental data is
-            encoded in the KDE provided during initialization.
 
         Returns
         -------

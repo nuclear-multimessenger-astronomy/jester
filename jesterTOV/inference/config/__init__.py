@@ -6,6 +6,7 @@ from .schema import (
     TransformConfig,
     PriorConfig,
     LikelihoodConfig,
+    BaseSamplerConfig,
     SamplerConfig,
 )
 
@@ -15,5 +16,6 @@ __all__ = [
     "TransformConfig",
     "PriorConfig",
     "LikelihoodConfig",
+    "BaseSamplerConfig",
     "SamplerConfig",
 ]

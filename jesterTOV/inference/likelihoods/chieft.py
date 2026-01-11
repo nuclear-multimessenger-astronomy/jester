@@ -7,13 +7,12 @@ theory (chiEFT) predictions for the nuclear equation of state at low densities
 on the pressure-density relationship derived from fundamental interactions,
 serving as a complementary constraint to high-density astrophysical observations.
 
-The current implementation uses the pressure bands from Koehn et al.,
-Phys. Rev. X 15, 021014 (2025), which provide upper and lower bounds on the
-allowed pressure at each density.
+The current implementation uses the pressure bands from [chieft1]_, which
+provide upper and lower bounds on the allowed pressure at each density.
 
 References
 ----------
-.. [1] Koehn et al., "Equation of state constraints from multi-messenger
+.. [chieft1] Koehn et al., "Equation of state constraints from multi-messenger
    observations of neutron stars," Phys. Rev. X 15, 021014 (2025).
 
 Notes
@@ -23,12 +22,13 @@ low-density constraints beyond the current pressure band implementation.
 """
 
 from pathlib import Path
-from typing import Any, Callable
+from typing import Callable
 
 import jax.numpy as jnp
 import numpy as np
 from jaxtyping import Array, Float
 
+from jesterTOV import utils
 from jesterTOV.inference.base import LikelihoodBase
 
 
@@ -160,7 +160,7 @@ class ChiEFTLikelihood(LikelihoodBase):
 
         self.nb_n = nb_n
 
-    def evaluate(self, params: dict[str, Float | Array], data: dict[str, Any]) -> Float:
+    def evaluate(self, params: dict[str, Float | Array]) -> Float:
         """Evaluate the log-likelihood for chiEFT constraints.
 
         Parameters
@@ -170,9 +170,6 @@ class ChiEFTLikelihood(LikelihoodBase):
             - "n" : Baryon number density grid (geometric units)
             - "p" : Pressure values on density grid (geometric units)
             - "nbreak" : Breaking density where CSE begins (fm⁻³)
-        data : dict[str, Any]
-            Unused; included for API compatibility. All chiEFT data is loaded
-            during initialization.
 
         Returns
         -------
@@ -191,17 +188,14 @@ class ChiEFTLikelihood(LikelihoodBase):
         - Input densities converted from geometric to fm⁻³ units
         - Input pressures converted from geometric to MeV/fm³ units
         """
-        # Import here to avoid circular dependency # FIXME: what circular dependency?
-        from jesterTOV import utils as jose_utils
-
         # Get relevant parameters
         n, p = params["n"], params["p"]
         nbreak = params["nbreak"]
 
         # Convert to nsat for convenience
         nbreak = nbreak / 0.16
-        n = n / jose_utils.fm_inv3_to_geometric / 0.16
-        p = p / jose_utils.MeV_fm_inv3_to_geometric
+        n = n / utils.fm_inv3_to_geometric / 0.16
+        p = p / utils.MeV_fm_inv3_to_geometric
 
         # Lower limit is at 0.12 fm-3
         this_n_array = jnp.linspace(0.75, nbreak, self.nb_n)

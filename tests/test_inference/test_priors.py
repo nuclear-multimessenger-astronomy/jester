@@ -1,12 +1,11 @@
 """Tests for inference prior system (parser and library)."""
 
 import pytest
-from pathlib import Path
 import jax
 import jax.numpy as jnp
 
 from jesterTOV.inference.priors import parser
-from jesterTOV.inference.base import Prior, CombinePrior, UniformPrior
+from jesterTOV.inference.base import CombinePrior, UniformPrior
 
 
 class TestPriorParser:
@@ -60,15 +59,17 @@ class TestPriorParser:
     def test_parse_cse_parameter_count(self, sample_prior_file_with_cse):
         """Test that CSE parameter count is correct for different nb_CSE values."""
         test_cases = [
-            (0, 8),      # No CSE: 8 NEP only
-            (4, 8 + 1 + 4*2 + 1),   # 8 NEP + nbreak + 4*2 grid + 1 final = 18
-            (8, 8 + 1 + 8*2 + 1),   # 8 NEP + nbreak + 8*2 grid + 1 final = 26
-            (16, 8 + 1 + 16*2 + 1), # 8 NEP + nbreak + 16*2 grid + 1 final = 42
+            (0, 8),  # No CSE: 8 NEP only
+            (4, 8 + 1 + 4 * 2 + 1),  # 8 NEP + nbreak + 4*2 grid + 1 final = 18
+            (8, 8 + 1 + 8 * 2 + 1),  # 8 NEP + nbreak + 8*2 grid + 1 final = 26
+            (16, 8 + 1 + 16 * 2 + 1),  # 8 NEP + nbreak + 16*2 grid + 1 final = 42
         ]
 
         for nb_CSE, expected_dim in test_cases:
             prior = parser.parse_prior_file(sample_prior_file_with_cse, nb_CSE=nb_CSE)
-            assert prior.n_dim == expected_dim, f"Expected {expected_dim} for nb_CSE={nb_CSE}, got {prior.n_dim}"
+            assert (
+                prior.n_dim == expected_dim
+            ), f"Expected {expected_dim} for nb_CSE={nb_CSE}, got {prior.n_dim}"
 
     def test_parse_nonexistent_file_fails(self):
         """Test that parsing nonexistent file raises FileNotFoundError."""
@@ -97,10 +98,12 @@ class TestPriorParser:
         This tests that parameters not ending in _sat or _sym are still included.
         """
         custom_prior = temp_dir / "custom.prior"
-        custom_prior.write_text("""
+        custom_prior.write_text(
+            """
 K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
 custom_param = UniformPrior(0.0, 1.0, parameter_names=["custom_param"])
-""")
+"""
+        )
 
         prior = parser.parse_prior_file(custom_prior, nb_CSE=0)
 
@@ -122,13 +125,15 @@ custom_param = UniformPrior(0.0, 1.0, parameter_names=["custom_param"])
             n_cse_vals = samples[f"n_CSE_{i}_u"]
             cs2_cse_vals = samples[f"cs2_CSE_{i}"]
 
-            assert jnp.all(n_cse_vals >= 0.0) and jnp.all(n_cse_vals <= 1.0), \
-                f"n_CSE_{i}_u out of bounds"
-            assert jnp.all(cs2_cse_vals >= 0.0) and jnp.all(cs2_cse_vals <= 1.0), \
-                f"cs2_CSE_{i} out of bounds"
+            assert jnp.all(n_cse_vals >= 0.0) and jnp.all(
+                n_cse_vals <= 1.0
+            ), f"n_CSE_{i}_u out of bounds"
+            assert jnp.all(cs2_cse_vals >= 0.0) and jnp.all(
+                cs2_cse_vals <= 1.0
+            ), f"cs2_CSE_{i} out of bounds"
 
         # Check final cs2 parameter
-        cs2_final_vals = samples[f"cs2_CSE_8"]
+        cs2_final_vals = samples["cs2_CSE_8"]
         assert jnp.all(cs2_final_vals >= 0.0) and jnp.all(cs2_final_vals <= 1.0)
 
 
@@ -318,7 +323,8 @@ class TestPriorIntegration:
         are physically reasonable for neutron star EOS inference.
         """
         realistic_prior = temp_dir / "realistic.prior"
-        realistic_prior.write_text("""
+        realistic_prior.write_text(
+            """
 # Saturation density parameters (MeV)
 E_sat = UniformPrior(-17.0, -15.0, parameter_names=["E_sat"])
 K_sat = UniformPrior(200.0, 280.0, parameter_names=["K_sat"])
@@ -331,7 +337,8 @@ L_sym = UniformPrior(40.0, 120.0, parameter_names=["L_sym"])
 K_sym = UniformPrior(-200.0, 100.0, parameter_names=["K_sym"])
 Q_sym = UniformPrior(-500.0, 500.0, parameter_names=["Q_sym"])
 Z_sym = UniformPrior(-1000.0, 1000.0, parameter_names=["Z_sym"])
-""")
+"""
+        )
 
         prior = parser.parse_prior_file(realistic_prior, nb_CSE=0)
 

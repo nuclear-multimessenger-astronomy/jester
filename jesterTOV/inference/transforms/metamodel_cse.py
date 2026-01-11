@@ -51,6 +51,7 @@ class MetaModelCSETransform(JesterTransformBase):
         CSE region. Default is 100.
     **kwargs
         Additional arguments passed to JesterTransformBase, including:
+
         - ndat_metamodel : int
             Number of density grid points for low-density MetaModel region
         - nmax_nsat : float
@@ -132,8 +133,6 @@ class MetaModelCSETransform(JesterTransformBase):
 
         # Set transform function
         self.transform_func = self.transform_func_MM_CSE
-
-        # NOTE: Cannot log here - transforms may be instantiated inside JAX-traced code
 
     def get_eos_type(self) -> str:
         """Return the EOS parametrization identifier.
@@ -250,7 +249,7 @@ class MetaModelCSETransform(JesterTransformBase):
         ns, ps, hs, es, dloge_dlogps, _, cs2 = self.eos.construct_eos(
             NEP, ngrids, cs2grids
         )
-        eos_tuple = (ns, ps, hs, es, dloge_dlogps)
+        eos_tuple = (ns, ps, hs, es, dloge_dlogps, cs2)
 
         # Solve the TOV equations
         logpc_EOS, masses_EOS, radii_EOS, Lambdas_EOS = self._solve_tov(eos_tuple)

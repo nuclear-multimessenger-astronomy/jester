@@ -141,14 +141,16 @@ class JesterTransformBase(NtoMTransform, ABC):
         pass
 
     def _solve_tov(
-        self, eos_tuple: tuple[Array, Array, Array, Array, Array]
-    ) -> tuple[Float[Array, " n"], Float[Array, " n"], Float[Array, " n"], Float[Array, " n"]]:
+        self, eos_tuple: tuple[Array, Array, Array, Array, Array, Array]
+    ) -> tuple[
+        Float[Array, " n"], Float[Array, " n"], Float[Array, " n"], Float[Array, " n"]
+    ]:
         """Solve TOV equations for a given EOS.
 
         Parameters
         ----------
-        eos_tuple : tuple[Array, Array, Array, Array, Array]
-            Tuple of (ns, ps, hs, es, dloge_dlogps) arrays
+        eos_tuple : tuple[Array, Array, Array, Array, Array, Array]
+            Tuple of (ns, ps, hs, es, dloge_dlogps, cs2) EOS arrays.
 
         Returns
         -------
@@ -231,10 +233,10 @@ class JesterTransformBase(NtoMTransform, ABC):
             "dloge_dlogp": dloge_dlogps,
             "cs2": cs2,
             # Constraint violation counts (scalars for JAX compatibility)
-            "n_tov_failures": constraints['n_tov_failures'],
-            "n_causality_violations": constraints['n_causality_violations'],
-            "n_stability_violations": constraints['n_stability_violations'],
-            "n_pressure_violations": constraints['n_pressure_violations'],
+            "n_tov_failures": constraints["n_tov_failures"],
+            "n_causality_violations": constraints["n_causality_violations"],
+            "n_stability_violations": constraints["n_stability_violations"],
+            "n_pressure_violations": constraints["n_pressure_violations"],
         }
 
     def set_keep_names(self, keep_names: list[str] | None) -> None:
@@ -270,8 +272,6 @@ class JesterTransformBase(NtoMTransform, ABC):
         dict[str, Float]
             Transformed parameter dictionary with keep_names preserved
         """
-        import jax
-
         # Save parameters that should be kept
         kept_params = {name: x[name] for name in self.keep_names if name in x}
 

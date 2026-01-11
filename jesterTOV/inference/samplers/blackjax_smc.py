@@ -6,19 +6,21 @@ Supports two MCMC kernels:
 - Gaussian Random Walk Metropolis-Hastings
 """
 
-from typing import Any
+from typing import Any, Literal, overload
 import time
+from pathlib import Path
 
 import jax
 import jax.numpy as jnp
 import jax.random
 from jax.flatten_util import ravel_pytree
 from jax.tree_util import tree_map
+from jax.experimental import io_callback
 from jaxtyping import Array, PRNGKeyArray
 
 from ..base import LikelihoodBase, Prior, BijectiveTransform, NtoMTransform
 from ..config.schema import SMCSamplerConfig
-from .jester_sampler import JesterSampler
+from .jester_sampler import JesterSampler, SamplerOutput
 from jesterTOV.logging_config import get_logger
 
 logger = get_logger("jester")
@@ -107,14 +109,23 @@ class BlackJAXSMCSampler(JesterSampler):
 
         logger.info("Initializing BlackJAX SMC sampler")
         logger.info(f"Kernel type: {config.kernel_type}")
-        logger.info(f"Configuration: {config.n_particles} particles, "
-                    f"{config.n_mcmc_steps} MCMC steps per tempering stage")
-        logger.info(f"Target ESS: {config.target_ess}")
 
-        # Note: The actual SMC sampler is created in sample() method
+        # Warn about experimental NUTS kernel
+        if config.kernel_type == "nuts":
+            logger.warning(
+                "NUTS kernel is experimental and has not been thoroughly tested yet. "
+                "Use with caution and validate results carefully."
+            )
+
+        logger.info(
+            f"Configuration: {config.n_particles} particles, "
+            f"{config.n_mcmc_steps} MCMC steps per tempering stage"
+        )
+        logger.info(f"Target ESS: {config.target_ess}")
 
     def _build_mass_matrix(self) -> Array:
         """Create diagonal mass matrix with per-parameter scaling.
+        TODO: need to check if there are ways to make a better mass matrix?
 
         Returns
         -------
@@ -129,14 +140,18 @@ class BlackJAXSMCSampler(JesterSampler):
                 idx = self.parameter_names.index(param_name)
                 mass_matrix_scale_array = mass_matrix_scale_array.at[idx].set(scale)
             except ValueError:
-                logger.warning(f"Parameter '{param_name}' not found in parameter list, "
-                               f"ignoring mass matrix scale")
+                logger.warning(
+                    f"Parameter '{param_name}' not found in parameter list, "
+                    f"ignoring mass matrix scale"
+                )
 
         # Mass matrix diagonal = (base * scale)^2
         mass_matrix_diag = (self.config.mass_matrix_base * mass_matrix_scale_array) ** 2
         return jnp.diag(mass_matrix_diag)
 
-    def sample(self, key: PRNGKeyArray, initial_position: Array = jnp.array([])) -> None:
+    def sample(
+        self, key: PRNGKeyArray, initial_position: Array = jnp.array([])
+    ) -> None:
         """Run SMC until λ = 1 (posterior).
 
         Parameters
@@ -162,7 +177,9 @@ class BlackJAXSMCSampler(JesterSampler):
 
         # Sample initial particles from prior
         key, subkey = jax.random.split(key)
-        initial_position_dict: dict[str, Array] = self.prior.sample(subkey, self.config.n_particles)
+        initial_position_dict: dict[str, Array] = self.prior.sample(
+            subkey, self.config.n_particles
+        )
 
         # Apply sample transforms if any
         for transform in self.sample_transforms:
@@ -183,54 +200,72 @@ class BlackJAXSMCSampler(JesterSampler):
         # Flatten particles to arrays for BlackJAX SMC
         # NOTE: ravel_pytree uses alphabetical key ordering (deterministic)
         single_sample_dict = tree_map(lambda x: x[0], initial_position_dict)
-        single_sample_flat, self._unflatten_fn = ravel_pytree(single_sample_dict)
+        _, self._unflatten_fn = ravel_pytree(single_sample_dict)
+        self._flatten_fn = lambda x: ravel_pytree(x)[0]
 
-        # Flatten all particles
-        initial_position_flat = jax.vmap(lambda x: ravel_pytree(x)[0])(initial_position_dict)
+        # Flatten all particles using the flatten function
+        initial_position_flat = jax.vmap(self._flatten_fn)(initial_position_dict)
 
         # Ensure float dtype for NUTS compatibility
         if not jnp.issubdtype(initial_position_flat.dtype, jnp.floating):
-            logger.warning(f"Converting initial_position_flat from {initial_position_flat.dtype} to float64")
+            logger.warning(
+                f"Converting initial_position_flat from {initial_position_flat.dtype} to float64"
+            )
             initial_position_flat = initial_position_flat.astype(jnp.float64)
+
+        # Helper function to unflatten and apply inverse transforms
+        @overload
+        def _unflatten_and_inverse_transform(
+            x_flat: Array, return_jacobian: Literal[True]
+        ) -> tuple[dict[str, Any], float]: ...
+
+        @overload
+        def _unflatten_and_inverse_transform(
+            x_flat: Array, return_jacobian: Literal[False] = False
+        ) -> dict[str, Any]: ...
+
+        def _unflatten_and_inverse_transform(
+            x_flat: Array, return_jacobian: bool = False
+        ) -> dict[str, Any] | tuple[dict[str, Any], float]:
+            """Unflatten particle and apply inverse sample transforms."""
+            x_flat = jnp.atleast_1d(x_flat)
+            x_dict = self._unflatten_fn(x_flat)
+
+            transform_jacobian = 0.0
+            for transform in reversed(self.sample_transforms):
+                x_dict, jacobian = transform.inverse(x_dict)
+                if return_jacobian:
+                    transform_jacobian += jacobian
+
+            return (x_dict, transform_jacobian) if return_jacobian else x_dict
 
         # Create logprior and loglikelihood functions that work with flat arrays
         # NOTE: BlackJAX adaptive_tempered_smc will vmap these internally for ESS solver
         # So these should work on SINGLE particles, not batches
         def logprior_fn(x_flat: Array) -> float:
             """Log prior for single particle in flattened space."""
-            # Ensure x_flat is at least 1D (vmap may reduce scalar to ())
-            x_flat = jnp.atleast_1d(x_flat)
-            x_dict = self._unflatten_fn(x_flat)
-
-            # Apply inverse sample transforms if any
-            transform_jacobian = 0.0
-            for transform in reversed(self.sample_transforms):
-                x_dict, jacobian = transform.inverse(x_dict)
-                transform_jacobian += jacobian
-
+            x_dict, transform_jacobian = _unflatten_and_inverse_transform(
+                x_flat, return_jacobian=True
+            )
             return self.prior.log_prob(x_dict) + transform_jacobian
 
         def loglikelihood_fn(x_flat: Array) -> float:
             """Log likelihood for single particle in flattened space."""
-            # Ensure x_flat is at least 1D (vmap may reduce scalar to ())
-            x_flat = jnp.atleast_1d(x_flat)
-            x_dict = self._unflatten_fn(x_flat)
-
-            # Apply inverse sample transforms if any
-            for transform in reversed(self.sample_transforms):
-                x_dict, _ = transform.inverse(x_dict)
+            x_dict = _unflatten_and_inverse_transform(x_flat, return_jacobian=False)
 
             # Apply likelihood transforms
             for transform in self.likelihood_transforms:
                 x_dict = transform.forward(x_dict)
 
-            return self.likelihood.evaluate(x_dict, {})
+            return self.likelihood.evaluate(x_dict)
 
         # Create posterior for NUTS Hessian initialization (single particle)
         logposterior_fn = lambda x: logprior_fn(x) + loglikelihood_fn(x)
 
         # Setup kernel-specific parameters and functions
         if self.config.kernel_type == "nuts":
+            # TODO: Thoroughly test NUTS kernel with real inference problems to validate
+            # correctness of Hessian-based mass matrix adaptation and convergence properties
             logger.info("Initializing SMC with NUTS kernel...")
 
             # Hessian for NUTS mass matrix adaptation
@@ -253,8 +288,12 @@ class BlackJAXSMCSampler(JesterSampler):
                 """Adapt mass matrix and step size using Hessian at best particle."""
                 # Extract log posteriors from NUTS trajectory endpoints
                 last_step_info = jax.tree.map(lambda x: x[-1], info.update_info)
-                log_posteriors_left = last_step_info.trajectory_leftmost_state.logdensity
-                log_posteriors_right = last_step_info.trajectory_rightmost_state.logdensity
+                log_posteriors_left = (
+                    last_step_info.trajectory_leftmost_state.logdensity
+                )
+                log_posteriors_right = (
+                    last_step_info.trajectory_rightmost_state.logdensity
+                )
 
                 # Take maximum logdensity between endpoints
                 log_posteriors = jnp.maximum(log_posteriors_left, log_posteriors_right)
@@ -306,9 +345,6 @@ class BlackJAXSMCSampler(JesterSampler):
         elif self.config.kernel_type == "random_walk":
             logger.info("Initializing SMC with Gaussian Random Walk kernel...")
 
-            # Create random step function for Gaussian random walk
-            random_step_fn = random_walk.normal(jnp.ones(self.prior.n_dim) * self.config.random_walk_sigma)
-
             # Initial parameters for random walk
             init_params = {}  # Random walk doesn't need parameters
 
@@ -343,7 +379,9 @@ class BlackJAXSMCSampler(JesterSampler):
             def mcmc_step_fn(rng_key, state, logdensity_fn, **params):
                 """Random walk step function matching NUTS signature."""
                 # Update random step with current sigma
-                step_fn = random_walk.normal(jnp.ones(self.prior.n_dim) * current_sigma["value"])
+                step_fn = random_walk.normal(
+                    jnp.ones(self.prior.n_dim) * current_sigma["value"]
+                )
                 return kernel(rng_key, state, logdensity_fn, step_fn)
 
             # Init function for random walk
@@ -370,15 +408,42 @@ class BlackJAXSMCSampler(JesterSampler):
         key, subkey = jax.random.split(key)
         state = smc_alg.init(initial_position_flat, subkey)
 
+        # Progress callback for live updates during sampling
+        def progress_callback(
+            step: int, lmbda: float, ess: float, acceptance: float
+        ) -> None:
+            """Print progress update during sampling (called via io_callback)."""
+            # Create progress bar
+            bar_length = 30
+            filled = int(lmbda * bar_length)
+            bar = "█" * filled + "░" * (bar_length - filled)
+
+            # Print update
+            logger.info(
+                f"Step {step:4d} | λ={lmbda:.6f} | ESS={ess*100:5.1f}% | "
+                f"Accept={acceptance*100:5.1f}% | {bar}"
+            )
+
         # Define loop conditions
         def cond_fn(carry):
-            state, _, _, _, _, _ = carry
+            state, _, _, _, _, _, _ = carry
             return state.sampler_state.lmbda < 1  # type: ignore[attr-defined]
 
         def body_fn(carry):
-            state, key, step_count, lmbda_history, ess_history, acceptance_history = carry
+            (
+                state,
+                key,
+                step_count,
+                lmbda_history,
+                ess_history,
+                acceptance_history,
+                log_evidence,
+            ) = carry
             key, subkey = jax.random.split(key, 2)
             state, info = smc_alg.step(subkey, state)
+
+            # Accumulate log evidence from log_likelihood_increment TODO: double check the maths here
+            log_evidence = log_evidence + info.log_likelihood_increment  # type: ignore[attr-defined]
 
             # Compute ESS
             weights = state.sampler_state.weights  # type: ignore[attr-defined]
@@ -394,20 +459,72 @@ class BlackJAXSMCSampler(JesterSampler):
             ess_history = ess_history.at[step_count].set(ess_value)
             acceptance_history = acceptance_history.at[step_count].set(acceptance_rate)
 
-            return (state, key, step_count + 1, lmbda_history, ess_history, acceptance_history)
+            # Print progress update using io_callback
+            io_callback(
+                progress_callback,
+                None,  # No return value
+                step_count,
+                state.sampler_state.lmbda,  # type: ignore[attr-defined]
+                ess_value,
+                acceptance_rate,
+            )
+
+            return (
+                state,
+                key,
+                step_count + 1,
+                lmbda_history,
+                ess_history,
+                acceptance_history,
+                log_evidence,
+            )
 
         # Run SMC with JAX while_loop
-        logger.info("Running adaptive tempering...")
+        logger.info("=" * 70)
+        logger.info("STARTING ADAPTIVE TEMPERING")
+        logger.info("=" * 70)
+        logger.info(f"Kernel: {self.config.kernel_type.upper()}")
+        logger.info(f"Particles: {self.config.n_particles}")
+        logger.info(f"MCMC steps per tempering: {self.config.n_mcmc_steps}")
+        logger.info(f"Target ESS: {self.config.target_ess * 100:.0f}%")
+        logger.info(f"Target acceptance: {self.config.target_acceptance * 100:.0f}%")
+        if self.config.kernel_type == "random_walk":
+            logger.info(f"Initial sigma: {self.config.random_walk_sigma}")
+            logger.info(f"Adaptation rate: {self.config.adaptation_rate}")
+        logger.info("Temperature progression: lambda = 0 (prior) -> 1 (posterior)")
+        logger.info("Progress updates will be shown after each annealing step")
+        logger.info("=" * 70)
+
         max_steps = 1000
         lmbda_history = jnp.zeros(max_steps)
         ess_history = jnp.zeros(max_steps)
         acceptance_history = jnp.zeros(max_steps)
+        log_evidence = 0.0  # Initialize log evidence accumulator
 
-        init_carry = (state, key, 0, lmbda_history, ess_history, acceptance_history)
-        state, key, steps, lmbda_history, ess_history, acceptance_history = jax.lax.while_loop(
-            cond_fn, body_fn, init_carry
+        init_carry = (
+            state,
+            key,
+            0,
+            lmbda_history,
+            ess_history,
+            acceptance_history,
+            log_evidence,
         )
 
+        logger.info("Running SMC loop (this may take several minutes)...")
+        loop_start_time = time.time()
+
+        (
+            state,
+            key,
+            steps,
+            lmbda_history,
+            ess_history,
+            acceptance_history,
+            log_evidence,
+        ) = jax.lax.while_loop(cond_fn, body_fn, init_carry)
+
+        loop_end_time = time.time()
         steps = int(steps)
         end_time = time.time()
 
@@ -420,25 +537,41 @@ class BlackJAXSMCSampler(JesterSampler):
         assert self._weights is not None
         ess = jnp.sum(self._weights) ** 2 / jnp.sum(self._weights**2)
 
+        # Compute summary statistics
+        mean_ess = float(jnp.mean(ess_history[:steps]))
+        min_ess = float(jnp.min(ess_history[:steps]))
+        mean_acceptance = float(jnp.mean(acceptance_history[:steps]))
+
+        # Compute evidence error estimate
+        # Simple estimate: use sqrt(variance / n_steps) as uncertainty
+        # Note: This is a rough estimate; proper SMC evidence error requires
+        # tracking incremental variances, which BlackJAX doesn't provide directly
+        # FIXME: Implement proper evidence error estimation if needed
+        log_evidence_err = (
+            0.0  # Placeholder - proper error estimation would require more info
+        )
+
         # Store metadata
         self.metadata = {
-            'sampler': 'blackjax_smc',
-            'kernel_type': self.config.kernel_type,
-            'n_particles': self.config.n_particles,
-            'n_mcmc_steps': self.config.n_mcmc_steps,
-            'target_ess': self.config.target_ess,
-            'annealing_steps': steps,
-            'final_ess': float(ess),
-            'final_ess_percent': float(ess / self.config.n_particles * 100),
-            'sampling_time_seconds': end_time - start_time,
-            'lmbda_history': lmbda_history[:steps].tolist(),
-            'ess_history': ess_history[:steps].tolist(),
-            'acceptance_history': acceptance_history[:steps].tolist(),
+            "sampler": "blackjax_smc",
+            "kernel_type": self.config.kernel_type,
+            "n_particles": self.config.n_particles,
+            "n_mcmc_steps": self.config.n_mcmc_steps,
+            "target_ess": self.config.target_ess,
+            "annealing_steps": steps,
+            "final_ess": float(ess),
+            "final_ess_percent": float(ess / self.config.n_particles * 100),
+            "mean_ess": mean_ess,
+            "min_ess": min_ess,
+            "mean_acceptance": mean_acceptance,
+            "logZ": float(log_evidence),
+            "logZ_err": float(log_evidence_err),
+            "sampling_time_seconds": end_time - start_time,
+            "loop_time_seconds": loop_end_time - loop_start_time,
+            "lmbda_history": lmbda_history[:steps].tolist(),
+            "ess_history": ess_history[:steps].tolist(),
+            "acceptance_history": acceptance_history[:steps].tolist(),
         }
-
-        logger.info(f"SMC sampling completed in {end_time - start_time:.2f}s")
-        logger.info(f"Annealing steps: {steps}")
-        logger.info(f"Final ESS: {ess:.1f} ({ess/self.config.n_particles*100:.1f}%)")
 
     def print_summary(self, transform: bool = True) -> None:
         """Print summary of SMC run.
@@ -447,28 +580,121 @@ class BlackJAXSMCSampler(JesterSampler):
         ----------
         transform : bool, optional
             Not used for SMC
-        """
-        logger.info("=" * 70)
-        logger.info("SMC SUMMARY")
-        logger.info("=" * 70)
 
+        Notes
+        -----
+        Summary information is already displayed during and after sampling,
+        so this method does nothing to avoid redundancy.
+        """
+        # Summary already displayed during sampling - no need to repeat
+        pass
+
+    def plot_diagnostics(
+        self, outdir: str | Path = ".", filename: str = "smc_diagnostics.png"
+    ) -> None:
+        """Generate diagnostic plots for SMC sampling run.
+
+        Creates a 3-panel figure showing:
+        - Temperature (lambda) progression from 0 to 1
+        - Effective Sample Size (ESS) evolution
+        - Acceptance rate evolution
+
+        Parameters
+        ----------
+        outdir : str or Path, optional
+            Output directory for saving the plot (default: current directory)
+        filename : str, optional
+            Filename for the diagnostic plot (default: "smc_diagnostics.png")
+
+        Notes
+        -----
+        This method requires matplotlib to be installed. It should be called after
+        sampling is complete (after calling `sample()`).
+        """
         if self.final_state is None:
             logger.warning("No samples yet - run sample() first")
             return
 
-        logger.info(f"Particles: {self.config.n_particles}")
-        logger.info(f"Annealing steps: {self.metadata['annealing_steps']}")
-        logger.info(f"Final ESS: {self.metadata['final_ess']:.1f} "
-                    f"({self.metadata['final_ess_percent']:.1f}%)")
-        logger.info(f"Sampling time: {self.metadata['sampling_time_seconds']:.1f}s")
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError:
+            logger.warning("matplotlib not found. Install with: pip install matplotlib")
+            return
 
-    def get_samples(self, training: bool = False) -> dict:
+        # Extract histories from metadata
+        lmbda_history = self.metadata["lmbda_history"]
+        ess_history = self.metadata["ess_history"]
+        acceptance_history = self.metadata["acceptance_history"]
+        n_steps = self.metadata["annealing_steps"]
+
+        # Create figure with 3 subplots
+        fig, axes = plt.subplots(3, 1, figsize=(10, 9), sharex=True)
+        fig.suptitle(
+            f"SMC Diagnostics ({self.config.kernel_type.upper()} kernel)",
+            fontsize=14,
+            fontweight="bold",
+        )
+
+        # Plot 1: Lambda (temperature) progression
+        axes[0].plot(range(n_steps), lmbda_history, "b-o", linewidth=2)
+        axes[0].set_ylabel(r"Temperature $\lambda$", fontsize=12)
+        axes[0].grid(True, alpha=0.3)
+        axes[0].set_ylim(-0.05, 1.05)
+        axes[0].axhline(y=0, color="black", linestyle="--", alpha=0.3, linewidth=1)
+        axes[0].axhline(y=1, color="black", linestyle="--", alpha=0.3, linewidth=1)
+
+        # Plot 2: ESS evolution
+        ess_percent = [ess * 100 for ess in ess_history]
+        axes[1].plot(range(n_steps), ess_percent, "g-o", linewidth=2)
+        axes[1].axhline(
+            y=self.config.target_ess * 100,
+            color="black",
+            linestyle="--",
+            alpha=0.5,
+            linewidth=1.5,
+            label=f"Target ({self.config.target_ess*100:.0f}%)",
+        )
+        axes[1].set_ylabel("ESS (%)", fontsize=12)
+        axes[1].grid(True, alpha=0.3)
+        axes[1].legend(loc="best", fontsize=10)
+        axes[1].set_ylim(0, 105)
+
+        # Plot 3: Acceptance rate evolution
+        acceptance_percent = [acc * 100 for acc in acceptance_history]
+        axes[2].plot(
+            range(n_steps),
+            acceptance_percent,
+            "orange",
+            linestyle="-",
+            marker="o",
+            linewidth=2,
+        )
+        axes[2].axhline(
+            y=self.config.target_acceptance * 100,
+            color="black",
+            linestyle="--",
+            alpha=0.5,
+            linewidth=1.5,
+            label=f"Target ({self.config.target_acceptance*100:.0f}%)",
+        )
+        axes[2].set_ylabel("Acceptance Rate (%)", fontsize=12)
+        axes[2].set_xlabel("Annealing Step", fontsize=12)
+        axes[2].grid(True, alpha=0.3)
+        axes[2].legend(loc="best", fontsize=10)
+        axes[2].set_ylim(0, 105)
+
+        plt.tight_layout()
+
+        # Save figure
+        outdir_path = Path(outdir)
+        outdir_path.mkdir(parents=True, exist_ok=True)
+        output_path = outdir_path / filename
+        plt.savefig(output_path, dpi=150, bbox_inches="tight")
+        logger.info(f"Saved diagnostic plot to {output_path}")
+        plt.close(fig)
+
+    def get_samples(self) -> dict:
         """Return final particle positions.
-
-        Parameters
-        ----------
-        training : bool, optional
-            Not used for SMC (no train/production split)
 
         Returns
         -------
@@ -478,7 +704,11 @@ class BlackJAXSMCSampler(JesterSampler):
             - 'weights': particle weights
             - 'ess': effective sample size
         """
-        if self.final_state is None or self._particles_flat is None or self._weights is None:
+        if (
+            self.final_state is None
+            or self._particles_flat is None
+            or self._weights is None
+        ):
             raise RuntimeError("No samples available - run sample() first")
 
         # Transform particles back to structured format (guaranteed non-None after check above)
@@ -491,7 +721,9 @@ class BlackJAXSMCSampler(JesterSampler):
             particles_list = []
             n_particles = len(self._particles_flat)
             for i in range(n_particles):
-                particle_dict = {name: particles_dict[name][i] for name in particles_dict.keys()}
+                particle_dict = {
+                    name: particles_dict[name][i] for name in particles_dict.keys()
+                }
                 transformed_dict, _ = transform.inverse(particle_dict)
                 particles_list.append(transformed_dict)
             # Reconstruct dict of arrays
@@ -501,18 +733,13 @@ class BlackJAXSMCSampler(JesterSampler):
             }
 
         # Add weights and ESS to output
-        particles_dict['weights'] = self._weights
-        particles_dict['ess'] = self.metadata['final_ess']
+        particles_dict["weights"] = self._weights
+        particles_dict["ess"] = self.metadata["final_ess"]
 
         return particles_dict
 
-    def get_log_prob(self, training: bool = False) -> Array:
+    def get_log_prob(self) -> Array:
         """Get log posterior probabilities from SMC.
-
-        Parameters
-        ----------
-        training : bool, optional
-            Not used for SMC (no train/production split)
 
         Returns
         -------
@@ -525,38 +752,81 @@ class BlackJAXSMCSampler(JesterSampler):
             raise RuntimeError("No samples available - run sample() first")
 
         # For SMC at λ=1, we have log posterior values
-        # These are stored in the final state
-        # Placeholder: compute from particles using self.posterior
-        logger.warning("get_log_prob() for SMC: computing from particles")
+        # Compute from particles using batched processing
+        # logger.info(f"Computing log probabilities from {len(self._particles_flat)} particles using batched processing...")
+        # logger.info(f"Batch size: {self.config.log_prob_batch_size}")
 
-        # Compute log posterior for each particle (guaranteed non-None after check above)
+        # CRITICAL: Must use _unflatten_fn because ravel_pytree uses alphabetical ordering,
+        # which differs from self.parameter_names ordering used by add_name()
         assert self._particles_flat is not None
-        log_probs = []
-        for particle in self._particles_flat:
-            log_prob = self.posterior(particle, {})
-            log_probs.append(log_prob)
 
-        return jnp.array(log_probs)
+        def compute_log_prob(particle_flat):
+            # Convert from flat array (alphabetical order) to dict using _unflatten_fn
+            x_dict = self._unflatten_fn(particle_flat)
+            # Use base class method to compute posterior from dict
+            return self.posterior_from_dict(x_dict, {})
 
-    def get_n_samples(self, training: bool = False) -> int:
+        # Use batched processing for efficiency
+        log_probs = jax.lax.map(
+            compute_log_prob,
+            self._particles_flat,
+            batch_size=self.config.log_prob_batch_size,
+        )
+        logger.info(f"Computed {len(log_probs)} log probability values")
+
+        return log_probs
+
+    def get_n_samples(self) -> int:
         """Get number of particles from SMC.
-
-        Parameters
-        ----------
-        training : bool, optional
-            If True, returns 0 (SMC has no training phase).
-            If False, returns number of particles.
 
         Returns
         -------
         int
-            Number of particles (0 if training=True)
+            Number of particles
         """
-        # SMC has no training phase - return 0 if training requested
-        if training:
-            return 0
-
         if self._particles_flat is None:
             return 0
 
         return len(self._particles_flat)
+
+    def get_sampler_output(self) -> SamplerOutput:
+        """
+        Get standardized sampler output.
+
+        Returns
+        -------
+        SamplerOutput
+            - samples: Parameter samples (dict of arrays, no weights/ess)
+            - log_prob: Log posterior at λ=1 (final tempering)
+            - metadata: {"weights": Array, "ess": float}
+
+        Raises
+        ------
+        RuntimeError
+            If sampling has not been run yet.
+        """
+        if self._particles_flat is None:
+            raise RuntimeError("No samples available. Run sample() first.")
+
+        # Get current samples dict (includes weights, ess)
+        all_data = self.get_samples()
+
+        # Separate parameters from metadata
+        samples: dict[str, Array] = {}
+        metadata: dict[str, Any] = {}
+
+        metadata_keys = {"weights", "ess"}
+        for key, value in all_data.items():
+            if key in metadata_keys:
+                metadata[key] = value
+            else:
+                samples[key] = value
+
+        # Get log probabilities
+        log_prob = self.get_log_prob()
+
+        return SamplerOutput(
+            samples=samples,
+            log_prob=log_prob,
+            metadata=metadata,
+        )

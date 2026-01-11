@@ -43,6 +43,7 @@ class MetaModelTransform(JesterTransformBase):
         the transformed quantities. Default is to keep all input parameters.
     **kwargs
         Additional arguments passed to JesterTransformBase, including:
+
         - ndat_metamodel : int
             Number of density grid points for EOS construction (default: 100)
         - nmax_nsat : float
@@ -102,8 +103,6 @@ class MetaModelTransform(JesterTransformBase):
 
         # Set transform function
         self.transform_func = self.transform_func_MM
-
-        # NOTE: Cannot log here - transforms may be instantiated inside JAX-traced code
 
     def get_eos_type(self) -> str:
         """Return the EOS parametrization identifier.
@@ -175,7 +174,7 @@ class MetaModelTransform(JesterTransformBase):
         re-interpolated onto a regular density grid spanning from the crust
         to this causality limit.
         """
-        # Update with fixed parameters (currently empty)
+        # Update with fixed parameters (currently empty) # TODO: this needs to be handled in the base class, so it is always done?
         params.update(self.fixed_params)
 
         # Extract NEP parameters
@@ -190,9 +189,13 @@ class MetaModelTransform(JesterTransformBase):
 
         # Limit cs2 so that it is causal (cs2 < 1)
         # Find first index where cs2 >= 1
+        # Note: argmax returns 0 if all values are False, so we need to check if any are True
+        has_non_causal = jnp.any(cs2 >= 1.0)
         idx = jnp.argmax(cs2 >= 1.0)
-        final_n = ns.at[idx].get()
-        first_n = ns.at[0].get()
+        # If EOS is everywhere causal, use last index; otherwise use first non-causal index
+        idx = jnp.where(has_non_causal, idx, len(ns) - 1)
+        final_n = ns.at[idx].get()  # .at[].get() is correct for dynamic indexing in JIT
+        first_n = ns[0]  # Constant index, can use direct indexing
 
         # Re-interpolate to ensure causal EOS
         ns_interp = jnp.linspace(first_n, final_n, len(ns))
@@ -203,7 +206,14 @@ class MetaModelTransform(JesterTransformBase):
         cs2_interp = jnp.interp(ns_interp, ns, cs2)
 
         # Solve the TOV equations
-        eos_tuple = (ns_interp, ps_interp, hs_interp, es_interp, dloge_dlogps_interp)
+        eos_tuple = (
+            ns_interp,
+            ps_interp,
+            hs_interp,
+            es_interp,
+            dloge_dlogps_interp,
+            cs2_interp,
+        )
         logpc_EOS, masses_EOS, radii_EOS, Lambdas_EOS = self._solve_tov(eos_tuple)
 
         # Create and return standardized output dictionary

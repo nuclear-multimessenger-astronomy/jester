@@ -76,7 +76,7 @@ def explore_text_file(file_path: Path, max_lines: int = 20) -> dict:
 
     try:
         # Try reading as text first to see header
-        with open(file_path, 'r') as f:
+        with open(file_path, "r") as f:
             lines = f.readlines()
             info["n_lines"] = len(lines)
             info["readable"] = True
@@ -99,32 +99,38 @@ def explore_text_file(file_path: Path, max_lines: int = 20) -> dict:
         print(f"{'='*80}")
 
         # Try different separators
-        for sep in [' ', '\t', ',', '  ', '   ']:
+        for sep in [" ", "\t", ",", "  ", "   "]:
             try:
                 # Try reading with pandas, skipping different numbers of header lines
                 for skiprows in [0, 1, 6]:  # Common header sizes
                     try:
-                        df = pd.read_csv(file_path, sep=sep, skiprows=skiprows, header=None)
+                        df = pd.read_csv(
+                            file_path, sep=sep, skiprows=skiprows, header=None
+                        )
 
                         # Check if we got reasonable data (more than 1 column, reasonable number of rows)
                         if df.shape[1] > 1 and df.shape[0] > 10:
-                            print(f"\n✓ Successfully parsed with sep='{sep}', skiprows={skiprows}")
+                            print(
+                                f"\n✓ Successfully parsed with sep='{sep}', skiprows={skiprows}"
+                            )
                             print(f"  Shape: {df.shape} (rows × columns)")
                             print(f"  Columns: {list(df.columns)}")
 
                             # Show data types
-                            print(f"\n  Data types:")
+                            print("\n  Data types:")
                             for col in df.columns:
                                 dtype = df[col].dtype
                                 n_unique = df[col].nunique()
-                                print(f"    Column {col}: {dtype}, {n_unique} unique values")
+                                print(
+                                    f"    Column {col}: {dtype}, {n_unique} unique values"
+                                )
 
                             # Show basic statistics for numeric columns
-                            print(f"\n  Statistics for first few columns:")
-                            print(df.iloc[:, :min(5, df.shape[1])].describe())
+                            print("\n  Statistics for first few columns:")
+                            print(df.iloc[:, : min(5, df.shape[1])].describe())
 
                             # Show first few rows
-                            print(f"\n  First 10 rows:")
+                            print("\n  First 10 rows:")
                             print(df.head(10))
 
                             # Store info
@@ -133,7 +139,9 @@ def explore_text_file(file_path: Path, max_lines: int = 20) -> dict:
                             info["sample_data"] = df.head(10)
 
                             # Try to identify M and R columns
-                            print(f"\n  Attempting to identify Mass and Radius columns...")
+                            print(
+                                "\n  Attempting to identify Mass and Radius columns..."
+                            )
                             for col in df.columns:
                                 data = df[col]
                                 if data.dtype in [np.float64, np.float32, float]:
@@ -144,17 +152,23 @@ def explore_text_file(file_path: Path, max_lines: int = 20) -> dict:
 
                                     # Mass typically 1-3 Msun
                                     if 1.0 < mean_val < 3.0 and 0.1 < std_val < 0.5:
-                                        print(f"    Column {col} might be MASS (mean={mean_val:.3f}, std={std_val:.3f}, range=[{min_val:.3f}, {max_val:.3f}])")
+                                        print(
+                                            f"    Column {col} might be MASS (mean={mean_val:.3f}, std={std_val:.3f}, range=[{min_val:.3f}, {max_val:.3f}])"
+                                        )
 
                                     # Radius typically 10-15 km
                                     if 8.0 < mean_val < 18.0 and 0.5 < std_val < 5.0:
-                                        print(f"    Column {col} might be RADIUS (mean={mean_val:.3f}, std={std_val:.3f}, range=[{min_val:.3f}, {max_val:.3f}])")
+                                        print(
+                                            f"    Column {col} might be RADIUS (mean={mean_val:.3f}, std={std_val:.3f}, range=[{min_val:.3f}, {max_val:.3f}])"
+                                        )
 
                                     # Weight typically 0-1 or all 1s
                                     if 0.0 <= min_val and max_val <= 1.1:
                                         n_unique = data.nunique()
                                         if n_unique == 1 or (0.0 < std_val < 0.5):
-                                            print(f"    Column {col} might be WEIGHT (mean={mean_val:.3f}, std={std_val:.3f}, n_unique={n_unique})")
+                                            print(
+                                                f"    Column {col} might be WEIGHT (mean={mean_val:.3f}, std={std_val:.3f}, n_unique={n_unique})"
+                                            )
 
                             return info
                     except Exception:
@@ -170,7 +184,9 @@ def explore_text_file(file_path: Path, max_lines: int = 20) -> dict:
     return info
 
 
-def explore_dataset(psr_name: str, group: str, version: str, download_dir: Path) -> None:
+def explore_dataset(
+    psr_name: str, group: str, version: str, download_dir: Path
+) -> None:
     """
     Explore a NICER dataset
 
@@ -200,7 +216,7 @@ def explore_dataset(psr_name: str, group: str, version: str, download_dir: Path)
     print("\nSearching for data files (.txt, .dat, .csv, .h5)...")
     print("=" * 80)
 
-    data_extensions = ['.txt', '.dat', '.csv', '.h5', '.fits']
+    data_extensions = [".txt", ".dat", ".csv", ".h5", ".fits"]
     data_files = []
     for ext in data_extensions:
         data_files.extend(download_dir.rglob(f"*{ext}"))
@@ -215,16 +231,14 @@ def explore_dataset(psr_name: str, group: str, version: str, download_dir: Path)
 
     # Explore each data file
     for data_file in data_files:
-        if data_file.suffix in ['.txt', '.dat', '.csv']:
+        if data_file.suffix in [".txt", ".dat", ".csv"]:
             explore_text_file(data_file)
         else:
             print(f"\nSkipping binary file: {data_file.name}")
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Explore NICER datasets from Zenodo"
-    )
+    parser = argparse.ArgumentParser(description="Explore NICER datasets from Zenodo")
     parser.add_argument(
         "--psr",
         type=str,
@@ -282,12 +296,12 @@ def main():
 
     # Explore all datasets
     if args.explore_all:
-        print("\n" + "!"*80)
+        print("\n" + "!" * 80)
         print("! WARNING: This will download ALL NICER datasets!")
         print("! This may take a long time and use significant disk space.")
-        print("!"*80)
+        print("!" * 80)
         response = input("\nContinue? [y/N]: ")
-        if response.lower() != 'y':
+        if response.lower() != "y":
             print("Aborted.")
             return
 
@@ -307,7 +321,9 @@ def main():
 
     # Explore single dataset
     if not args.psr or not args.group or not args.version:
-        parser.error("Must specify --psr, --group, and --version (or use --list/--explore-all)")
+        parser.error(
+            "Must specify --psr, --group, and --version (or use --list/--explore-all)"
+        )
 
     # Download dataset
     if not args.no_download:

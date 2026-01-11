@@ -2,7 +2,6 @@
 
 import pytest
 import jax.numpy as jnp
-from jaxtyping import Array, Float
 
 from jesterTOV.inference.config import schema
 from jesterTOV.inference.likelihoods import factory
@@ -10,7 +9,6 @@ from jesterTOV.inference.likelihoods.combined import ZeroLikelihood, CombinedLik
 from jesterTOV.inference.likelihoods.constraints import (
     ConstraintEOSLikelihood,
     ConstraintTOVLikelihood,
-    ConstraintLikelihood,
     check_tov_validity,
     check_causality_violation,
     check_stability,
@@ -31,14 +29,14 @@ class TestZeroLikelihood:
 
         # Any params should give 0.0
         params = {"K_sat": 220.0, "L_sym": 90.0}
-        result = likelihood.evaluate(params, {})
+        result = likelihood.evaluate(params)
 
         assert result == 0.0
 
     def test_zero_likelihood_with_empty_params(self):
         """Test ZeroLikelihood with empty parameter dict."""
         likelihood = ZeroLikelihood()
-        result = likelihood.evaluate({}, {})
+        result = likelihood.evaluate({})
         assert result == 0.0
 
 
@@ -52,7 +50,7 @@ class TestCombinedLikelihood:
         likelihood2 = ZeroLikelihood()
 
         combined = CombinedLikelihood([likelihood1, likelihood2])
-        result = combined.evaluate({}, {})
+        result = combined.evaluate({})
 
         assert result == 0.0
 
@@ -61,7 +59,7 @@ class TestCombinedLikelihood:
         likelihood = ZeroLikelihood()
         combined = CombinedLikelihood([likelihood])
 
-        result = combined.evaluate({}, {})
+        result = combined.evaluate({})
         assert result == 0.0
 
     def test_combined_likelihood_initialization(self):
@@ -148,10 +146,10 @@ class TestConstraintHelperFunctions:
 
         constraints = check_all_constraints(masses, radii, lambdas, cs2, p)
 
-        assert constraints['n_tov_failures'] == 0.0
-        assert constraints['n_causality_violations'] == 0.0
-        assert constraints['n_stability_violations'] == 0.0
-        assert constraints['n_pressure_violations'] == 0.0
+        assert constraints["n_tov_failures"] == 0.0
+        assert constraints["n_causality_violations"] == 0.0
+        assert constraints["n_stability_violations"] == 0.0
+        assert constraints["n_pressure_violations"] == 0.0
 
     def test_check_all_constraints_with_violations(self):
         """Test check_all_constraints with multiple violations."""
@@ -163,10 +161,10 @@ class TestConstraintHelperFunctions:
 
         constraints = check_all_constraints(masses, radii, lambdas, cs2, p)
 
-        assert constraints['n_tov_failures'] == 1.0
-        assert constraints['n_causality_violations'] == 1.0
-        assert constraints['n_stability_violations'] == 1.0
-        assert constraints['n_pressure_violations'] == 1.0
+        assert constraints["n_tov_failures"] == 1.0
+        assert constraints["n_causality_violations"] == 1.0
+        assert constraints["n_stability_violations"] == 1.0
+        assert constraints["n_pressure_violations"] == 1.0
 
 
 class TestConstraintEOSLikelihood:
@@ -178,12 +176,12 @@ class TestConstraintEOSLikelihood:
 
         # Valid params (no violations)
         params = {
-            'n_causality_violations': 0.0,
-            'n_stability_violations': 0.0,
-            'n_pressure_violations': 0.0,
+            "n_causality_violations": 0.0,
+            "n_stability_violations": 0.0,
+            "n_pressure_violations": 0.0,
         }
 
-        result = likelihood.evaluate(params, {})
+        result = likelihood.evaluate(params)
         assert result == 0.0
 
     def test_constraint_eos_likelihood_causality_violation(self):
@@ -192,12 +190,12 @@ class TestConstraintEOSLikelihood:
 
         # Causality violation
         params = {
-            'n_causality_violations': 1.0,  # One violation
-            'n_stability_violations': 0.0,
-            'n_pressure_violations': 0.0,
+            "n_causality_violations": 1.0,  # One violation
+            "n_stability_violations": 0.0,
+            "n_pressure_violations": 0.0,
         }
 
-        result = likelihood.evaluate(params, {})
+        result = likelihood.evaluate(params)
         assert result == -1e10
 
     def test_constraint_eos_likelihood_multiple_violations(self):
@@ -210,12 +208,12 @@ class TestConstraintEOSLikelihood:
 
         # Multiple violations
         params = {
-            'n_causality_violations': 1.0,
-            'n_stability_violations': 2.0,
-            'n_pressure_violations': 1.0,
+            "n_causality_violations": 1.0,
+            "n_stability_violations": 2.0,
+            "n_pressure_violations": 1.0,
         }
 
-        result = likelihood.evaluate(params, {})
+        result = likelihood.evaluate(params)
         # Should sum all penalties
         assert result == -1e10 + -1e5 + -1e5
 
@@ -226,7 +224,7 @@ class TestConstraintEOSLikelihood:
         # Empty params - should use defaults
         params = {}
 
-        result = likelihood.evaluate(params, {})
+        result = likelihood.evaluate(params)
         assert result == 0.0
 
 
@@ -238,9 +236,9 @@ class TestConstraintTOVLikelihood:
         likelihood = ConstraintTOVLikelihood()
 
         # Valid TOV (no NaN)
-        params = {'n_tov_failures': 0.0}
+        params = {"n_tov_failures": 0.0}
 
-        result = likelihood.evaluate(params, {})
+        result = likelihood.evaluate(params)
         assert result == 0.0
 
     def test_constraint_tov_likelihood_with_failures(self):
@@ -248,9 +246,9 @@ class TestConstraintTOVLikelihood:
         likelihood = ConstraintTOVLikelihood(penalty_tov=-1e10)
 
         # TOV failure (NaN in output)
-        params = {'n_tov_failures': 3.0}  # Multiple NaN
+        params = {"n_tov_failures": 3.0}  # Multiple NaN
 
-        result = likelihood.evaluate(params, {})
+        result = likelihood.evaluate(params)
         assert result == -1e10
 
     def test_constraint_tov_likelihood_missing_key(self):
@@ -260,49 +258,8 @@ class TestConstraintTOVLikelihood:
         # Empty params - should use default
         params = {}
 
-        result = likelihood.evaluate(params, {})
+        result = likelihood.evaluate(params)
         assert result == 0.0
-
-
-class TestConstraintLikelihood:
-    """Test ConstraintLikelihood (combined EOS + TOV constraints, deprecated)."""
-
-    def test_constraint_likelihood_all_valid(self):
-        """Test ConstraintLikelihood with all valid constraints."""
-        likelihood = ConstraintLikelihood()
-
-        # All valid
-        params = {
-            'n_tov_failures': 0.0,
-            'n_causality_violations': 0.0,
-            'n_stability_violations': 0.0,
-            'n_pressure_violations': 0.0,
-        }
-
-        result = likelihood.evaluate(params, {})
-        assert result == 0.0
-
-    def test_constraint_likelihood_all_violations(self):
-        """Test ConstraintLikelihood with all constraint types violated."""
-        likelihood = ConstraintLikelihood(
-            penalty_tov=-1e10,
-            penalty_causality=-1e10,
-            penalty_stability=-1e5,
-            penalty_pressure=-1e5,
-        )
-
-        # All violated
-        params = {
-            'n_tov_failures': 1.0,
-            'n_causality_violations': 1.0,
-            'n_stability_violations': 1.0,
-            'n_pressure_violations': 1.0,
-        }
-
-        result = likelihood.evaluate(params, {})
-        # Should sum all penalties
-        expected = -1e10 + -1e10 + -1e5 + -1e5
-        assert result == expected
 
 
 class TestChiEFTLikelihood:
@@ -326,8 +283,43 @@ class TestChiEFTLikelihood:
 
     def test_chieft_likelihood_with_custom_files(self):
         """Test ChiEFTLikelihood with custom file paths."""
-        # This test documents the expected API, but will skip if files don't exist
-        pytest.skip("Requires ChiEFT data files - test documents expected API")
+        from pathlib import Path
+
+        # Use the actual ChiEFT data files
+        data_dir = (
+            Path(__file__).parent.parent.parent
+            / "jesterTOV"
+            / "inference"
+            / "data"
+            / "chiEFT"
+            / "2402.04172"
+        )
+        low_file = data_dir / "low.dat"
+        high_file = data_dir / "high.dat"
+
+        # Verify files exist
+        assert low_file.exists(), f"ChiEFT low data file not found: {low_file}"
+        assert high_file.exists(), f"ChiEFT high data file not found: {high_file}"
+
+        # Create likelihood with custom file paths
+        likelihood = ChiEFTLikelihood(
+            low_filename=str(low_file),
+            high_filename=str(high_file),
+            nb_n=100,
+        )
+
+        # Check basic properties
+        assert likelihood.nb_n == 100
+        assert len(likelihood.n_low) > 0
+        assert len(likelihood.p_low) > 0
+        assert len(likelihood.n_high) > 0
+        assert len(likelihood.p_high) > 0
+
+        # Check interpolation functions exist and work
+        test_density = 1.0  # 1.0 * n_sat
+        low_pressure = likelihood.EFT_low(test_density)
+        high_pressure = likelihood.EFT_high(test_density)
+        assert low_pressure < high_pressure  # Low bound should be less than high bound
 
 
 class TestRadioTimingLikelihood:
@@ -338,7 +330,7 @@ class TestRadioTimingLikelihood:
         likelihood = RadioTimingLikelihood(
             psr_name="J0348+0432",
             mean=2.01,  # Solar masses
-            std=0.04,   # Uncertainty
+            std=0.04,  # Uncertainty
             nb_masses=100,
         )
 
@@ -366,10 +358,10 @@ class TestRadioTimingLikelihood:
         # Realistic NS mass range: 1.0 - 2.5 solar masses
         masses_eos = jnp.linspace(1.0, 2.5, 100)
         params = {
-            'masses_EOS': masses_eos,
+            "masses_EOS": masses_eos,
         }
 
-        result = likelihood.evaluate(params, {})
+        result = likelihood.evaluate(params)
 
         # Should return a finite log likelihood
         assert jnp.isfinite(result)
@@ -460,13 +452,13 @@ class TestLikelihoodFactory:
             type="gw",
             enabled=True,
             parameters={
-                "events": [
-                    {"name": "GW170817", "model_dir": "/path/to/data"}
-                ],
+                "events": [{"name": "GW170817", "model_dir": "/path/to/data"}],
             },
         )
 
-        with pytest.raises(RuntimeError, match="should be created via create_combined_likelihood"):
+        with pytest.raises(
+            RuntimeError, match="should be created via create_combined_likelihood"
+        ):
             factory.create_likelihood(config)
 
     def test_create_nicer_likelihood_via_factory_raises_error(self):
@@ -485,7 +477,9 @@ class TestLikelihoodFactory:
             },
         )
 
-        with pytest.raises(RuntimeError, match="should be created via create_combined_likelihood"):
+        with pytest.raises(
+            RuntimeError, match="should be created via create_combined_likelihood"
+        ):
             factory.create_likelihood(config)
 
     def test_invalid_likelihood_type_raises_error(self):
@@ -586,6 +580,122 @@ class TestCombinedLikelihoodFactory:
         assert isinstance(likelihood, RadioTimingLikelihood)
 
 
+class TestGWEventPresets:
+    """Test GW event preset path functionality."""
+
+    def test_get_gw_model_dir_gw170817_preset(self):
+        """Test that GW170817 uses preset path when model_dir not provided."""
+        result = factory.get_gw_model_dir("GW170817", None)
+
+        # Should contain the expected path components
+        assert "gw170817_xp_nrtv3" in result
+        assert result.endswith("gw170817_xp_nrtv3")
+
+    def test_get_gw_model_dir_gw190425_preset(self):
+        """Test that GW190425 uses preset path when model_dir not provided."""
+        result = factory.get_gw_model_dir("GW190425", None)
+
+        # Should contain the expected path components
+        assert "gw190425_xp_nrtv3" in result
+        assert result.endswith("gw190425_xp_nrtv3")
+
+    def test_get_gw_model_dir_case_insensitive(self):
+        """Test that event name matching is case-insensitive."""
+        # Lowercase should work
+        result_lower = factory.get_gw_model_dir("gw170817", None)
+        assert "gw170817_xp_nrtv3" in result_lower
+
+        # Mixed case should work
+        result_mixed = factory.get_gw_model_dir("Gw170817", None)
+        assert "gw170817_xp_nrtv3" in result_mixed
+
+        # Uppercase should work
+        result_upper = factory.get_gw_model_dir("GW170817", None)
+        assert "gw170817_xp_nrtv3" in result_upper
+
+    def test_get_gw_model_dir_custom_path(self):
+        """Test that custom model_dir takes precedence over preset."""
+        custom_path = "/custom/path/to/model"
+        result = factory.get_gw_model_dir("GW170817", custom_path)
+
+        # Should use the custom path, not preset
+        assert "custom/path/to/model" in result
+        assert "gw170817_xp_nrtv3" not in result
+
+    def test_get_gw_model_dir_empty_string_uses_preset(self):
+        """Test that empty string for model_dir triggers preset."""
+        result = factory.get_gw_model_dir("GW170817", "")
+
+        # Empty string should trigger preset
+        assert "gw170817_xp_nrtv3" in result
+
+    def test_get_gw_model_dir_unknown_event_raises_error(self):
+        """Test that unknown event without model_dir raises ValueError."""
+        with pytest.raises(ValueError, match="not in presets"):
+            factory.get_gw_model_dir("GW999999", None)
+
+        # Error message should list available presets
+        with pytest.raises(ValueError, match="GW170817.*GW190425"):
+            factory.get_gw_model_dir("GW999999", None)
+
+    def test_get_gw_model_dir_returns_absolute_path(self):
+        """Test that preset paths are resolved to absolute paths."""
+        result = factory.get_gw_model_dir("GW170817", None)
+
+        # Should be an absolute path
+        from pathlib import Path
+
+        assert Path(result).is_absolute()
+
+    def test_gw_preset_paths_exist(self):
+        """Test that preset flow model directories actually exist."""
+        from pathlib import Path
+
+        for event_name in ["GW170817", "GW190425"]:
+            model_dir = factory.get_gw_model_dir(event_name, None)
+            model_path = Path(model_dir)
+
+            # Directory should exist
+            assert model_path.exists(), f"Preset path does not exist: {model_dir}"
+            assert model_path.is_dir(), f"Preset path is not a directory: {model_dir}"
+
+            # Required flow files should exist
+            required_files = ["flow_weights.eqx", "flow_kwargs.json", "metadata.json"]
+            for fname in required_files:
+                file_path = model_path / fname
+                assert file_path.exists(), f"Missing required file: {file_path}"
+
+    def test_load_flow_from_preset_gw170817(self):
+        """Test that Flow can actually be loaded from GW170817 preset path."""
+        from jesterTOV.inference.flows.flow import Flow
+
+        model_dir = factory.get_gw_model_dir("GW170817", None)
+
+        # Should load without errors
+        flow = Flow.from_directory(model_dir)
+
+        # Verify flow is properly initialized
+        assert flow is not None
+        assert hasattr(flow, "flow")
+        assert hasattr(flow, "metadata")
+        assert hasattr(flow, "standardize")
+
+    def test_load_flow_from_preset_gw190425(self):
+        """Test that Flow can actually be loaded from GW190425 preset path."""
+        from jesterTOV.inference.flows.flow import Flow
+
+        model_dir = factory.get_gw_model_dir("GW190425", None)
+
+        # Should load without errors
+        flow = Flow.from_directory(model_dir)
+
+        # Verify flow is properly initialized
+        assert flow is not None
+        assert hasattr(flow, "flow")
+        assert hasattr(flow, "metadata")
+        assert hasattr(flow, "standardize")
+
+
 class TestLikelihoodIntegration:
     """Integration tests for likelihood system."""
 
@@ -601,7 +711,7 @@ class TestLikelihoodIntegration:
 
         for likelihood in likelihoods:
             assert isinstance(likelihood, LikelihoodBase)
-            assert hasattr(likelihood, 'evaluate')
+            assert hasattr(likelihood, "evaluate")
             assert callable(likelihood.evaluate)
 
     def test_likelihood_chaining(self):
@@ -614,13 +724,13 @@ class TestLikelihoodIntegration:
 
         # All valid params should give 0.0
         params = {
-            'n_tov_failures': 0.0,
-            'n_causality_violations': 0.0,
-            'n_stability_violations': 0.0,
-            'n_pressure_violations': 0.0,
+            "n_tov_failures": 0.0,
+            "n_causality_violations": 0.0,
+            "n_stability_violations": 0.0,
+            "n_pressure_violations": 0.0,
         }
 
-        result = combined.evaluate(params, {})
+        result = combined.evaluate(params)
         assert result == 0.0
 
     def test_likelihood_with_violations_propagates(self):
@@ -632,12 +742,12 @@ class TestLikelihoodIntegration:
 
         # Both violated
         params = {
-            'n_causality_violations': 1.0,
-            'n_tov_failures': 1.0,
-            'n_stability_violations': 0.0,
-            'n_pressure_violations': 0.0,
+            "n_causality_violations": 1.0,
+            "n_tov_failures": 1.0,
+            "n_stability_violations": 0.0,
+            "n_pressure_violations": 0.0,
         }
 
-        result = combined.evaluate(params, {})
+        result = combined.evaluate(params)
         # Should sum both penalties
         assert result == -2e10

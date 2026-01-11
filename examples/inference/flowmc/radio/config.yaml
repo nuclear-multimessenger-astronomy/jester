@@ -56,6 +56,7 @@ likelihoods:
 
 # MCMC sampler configuration
 sampler:
+  type: "flowmc"
   n_chains: 1000
   n_loop_training: 30
   n_loop_production: 30

@@ -33,6 +33,7 @@ likelihoods:
 # MCMC sampler configuration
 # Note: Prior-only sampling typically requires fewer production loops
 sampler:
+  type: "flowmc"
   n_chains: 1000               # Number of parallel chains
   n_loop_training: 10         # Training loops (fewer needed for prior sampling)
   n_loop_production: 10       # Production loops (fewer needed for prior sampling)

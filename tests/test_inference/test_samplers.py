@@ -7,7 +7,10 @@ import jax.numpy as jnp
 from jesterTOV.inference.samplers.jester_sampler import JesterSampler
 from jesterTOV.inference.samplers.flowmc import FlowMCSampler
 from jesterTOV.inference.base import UniformPrior, CombinePrior, LikelihoodBase
-from jesterTOV.inference.base.transform import BijectiveTransform, NtoMTransform, ScaleTransform
+from jesterTOV.inference.base.transform import (
+    NtoMTransform,
+    ScaleTransform,
+)
 from jesterTOV.inference.config.schema import FlowMCSamplerConfig
 
 
@@ -15,7 +18,7 @@ from jesterTOV.inference.config.schema import FlowMCSamplerConfig
 class MockLikelihood(LikelihoodBase):
     """Simple mock likelihood that returns 0.0 (prior-only sampling)."""
 
-    def evaluate(self, params, data):
+    def evaluate(self, params):
         return 0.0
 
 
@@ -52,10 +55,12 @@ class TestJesterSamplerBase:
 
     def test_jester_sampler_add_name(self):
         """Test JesterSampler.add_name converts array to dict."""
-        prior = CombinePrior([
-            UniformPrior(0.0, 1.0, parameter_names=["x"]),
-            UniformPrior(10.0, 20.0, parameter_names=["y"]),
-        ])
+        prior = CombinePrior(
+            [
+                UniformPrior(0.0, 1.0, parameter_names=["x"]),
+                UniformPrior(10.0, 20.0, parameter_names=["y"]),
+            ]
+        )
         likelihood = MockLikelihood()
 
         sampler = JesterSampler(likelihood, prior)
@@ -93,7 +98,7 @@ class TestJesterSamplerBase:
 
         # Create likelihood that expects transformed parameter "y"
         class TransformedLikelihood(LikelihoodBase):
-            def evaluate(self, params, data):
+            def evaluate(self, params):
                 # Expect "y" parameter (from transform)
                 assert "y" in params
                 return 0.0
@@ -124,7 +129,10 @@ class TestJesterSamplerBase:
 
         sampler = JesterSampler(likelihood, prior)
 
-        with pytest.raises(NotImplementedError, match="must be implemented by backend-specific subclass"):
+        with pytest.raises(
+            NotImplementedError,
+            match="must be implemented by backend-specific subclass",
+        ):
             sampler.sample(jax.random.PRNGKey(42))
 
     def test_jester_sampler_print_summary_not_implemented(self):
@@ -134,7 +142,10 @@ class TestJesterSamplerBase:
 
         sampler = JesterSampler(likelihood, prior)
 
-        with pytest.raises(NotImplementedError, match="must be implemented by backend-specific subclass"):
+        with pytest.raises(
+            NotImplementedError,
+            match="must be implemented by backend-specific subclass",
+        ):
             sampler.print_summary()
 
     def test_jester_sampler_get_samples_not_implemented(self):
@@ -144,7 +155,10 @@ class TestJesterSamplerBase:
 
         sampler = JesterSampler(likelihood, prior)
 
-        with pytest.raises(NotImplementedError, match="must be implemented by backend-specific subclass"):
+        with pytest.raises(
+            NotImplementedError,
+            match="must be implemented by backend-specific subclass",
+        ):
             sampler.get_samples()
 
 
@@ -172,7 +186,9 @@ class TestFlowMCSampler:
             likelihood,
             prior,
             config,
-            local_sampler_arg={"step_size": jnp.array([1e-3])},  # Required for GaussianRandomWalk
+            local_sampler_arg={
+                "step_size": jnp.array([1e-3])
+            },  # Required for GaussianRandomWalk
         )
 
         # Should create flowMC sampler
@@ -229,10 +245,12 @@ class TestFlowMCSampler:
 
     def test_flowmc_sampler_diagonal_extraction_for_gaussian_random_walk(self):
         """Test that FlowMCSampler extracts diagonal from matrix step_size for GaussianRandomWalk."""
-        prior = CombinePrior([
-            UniformPrior(0.0, 1.0, parameter_names=["x"]),
-            UniformPrior(0.0, 1.0, parameter_names=["y"]),
-        ])
+        prior = CombinePrior(
+            [
+                UniformPrior(0.0, 1.0, parameter_names=["x"]),
+                UniformPrior(0.0, 1.0, parameter_names=["y"]),
+            ]
+        )
         likelihood = MockLikelihood()
 
         config = FlowMCSamplerConfig(
@@ -348,11 +366,13 @@ class TestFlowMCSamplerParameterOrdering:
         to preserve dictionary order.
         """
         # Create prior with multiple parameters (order matters!)
-        prior = CombinePrior([
-            UniformPrior(0.0, 1.0, parameter_names=["a"]),
-            UniformPrior(10.0, 20.0, parameter_names=["b"]),
-            UniformPrior(100.0, 200.0, parameter_names=["c"]),
-        ])
+        prior = CombinePrior(
+            [
+                UniformPrior(0.0, 1.0, parameter_names=["a"]),
+                UniformPrior(10.0, 20.0, parameter_names=["b"]),
+                UniformPrior(100.0, 200.0, parameter_names=["c"]),
+            ]
+        )
         likelihood = MockLikelihood()
 
         config = FlowMCSamplerConfig(
@@ -423,7 +443,7 @@ class TestSamplerIntegration:
         sampler.sample(key)
 
         # Should have samples
-        samples = sampler.get_samples(training=False)
+        samples = sampler.get_samples()
 
         assert "x" in samples
         assert jnp.isfinite(samples["x"]).all()
@@ -542,11 +562,13 @@ class TestBlackJAXSMCSampler:
         from jesterTOV.inference.config.schema import SMCSamplerConfig
 
         # Multi-dimensional prior
-        prior = CombinePrior([
-            UniformPrior(0.0, 1.0, parameter_names=["x"]),
-            UniformPrior(0.0, 1.0, parameter_names=["y"]),
-            UniformPrior(0.0, 1.0, parameter_names=["z"]),
-        ])
+        prior = CombinePrior(
+            [
+                UniformPrior(0.0, 1.0, parameter_names=["x"]),
+                UniformPrior(0.0, 1.0, parameter_names=["y"]),
+                UniformPrior(0.0, 1.0, parameter_names=["z"]),
+            ]
+        )
         likelihood = MockLikelihood()
 
         # Custom mass matrix scales
@@ -837,14 +859,17 @@ class TestSamplerFactory:
         """Test factory creates FlowMC sampler from config."""
         from jesterTOV.inference.samplers.factory import create_sampler
         from jesterTOV.inference.samplers.flowmc import FlowMCSampler
-        from jesterTOV.inference.config.schema import InferenceConfig, FlowMCSamplerConfig
+        from jesterTOV.inference.config.schema import (
+            InferenceConfig,
+            FlowMCSamplerConfig,
+        )
 
         # Create full inference config
         config = InferenceConfig(
             seed=42,
             transform={"type": "metamodel", "nb_CSE": 0},
             prior={"specification_file": "test.prior"},
-            likelihoods=[],
+            likelihoods=[{"type": "zero", "enabled": True, "parameters": {}}],
             sampler=FlowMCSamplerConfig(
                 type="flowmc",
                 n_chains=2,
@@ -946,3 +971,168 @@ class TestSamplerFactory:
                 sample_transforms=[],
                 likelihood_transforms=[],
             )
+
+
+class TestSamplerOutputInterface:
+    """Test standardized SamplerOutput interface across all samplers."""
+
+    def test_sampler_output_dataclass_structure(self):
+        """Test SamplerOutput has expected fields."""
+        from jesterTOV.inference.samplers import SamplerOutput
+
+        samples = {"x": jnp.array([1.0, 2.0, 3.0])}
+        log_prob = jnp.array([-1.0, -2.0, -3.0])
+        metadata = {"weights": jnp.array([0.3, 0.3, 0.4])}
+
+        output = SamplerOutput(
+            samples=samples,
+            log_prob=log_prob,
+            metadata=metadata,
+        )
+
+        assert output.samples == samples
+        assert jnp.array_equal(output.log_prob, log_prob)
+        assert output.metadata == metadata
+
+    def test_sampler_output_default_metadata(self):
+        """Test SamplerOutput metadata defaults to empty dict."""
+        from jesterTOV.inference.samplers import SamplerOutput
+
+        output = SamplerOutput(
+            samples={"x": jnp.array([1.0])},
+            log_prob=jnp.array([-1.0]),
+        )
+
+        assert output.metadata == {}
+
+    @pytest.mark.slow
+    def test_flowmc_sampler_output_interface(self):
+        """Test FlowMC implements get_sampler_output() correctly."""
+        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
+        likelihood = MockLikelihood()
+
+        config = FlowMCSamplerConfig(
+            type="flowmc",
+            n_chains=2,
+            n_loop_training=1,
+            n_loop_production=1,
+            n_local_steps=2,
+            n_global_steps=2,
+            n_epochs=2,
+            output_dir="./test_output/",
+        )
+
+        sampler = FlowMCSampler(likelihood, prior, config)
+        sampler.sample(jax.random.PRNGKey(42))
+
+        # Get output via new interface (production samples)
+        output = sampler.get_sampler_output()
+
+        # Verify structure
+        assert "x" in output.samples
+        assert output.log_prob.shape[0] == output.samples["x"].shape[0]
+        assert output.metadata == {}  # FlowMC has no metadata
+
+        # Verify consistency with old interface
+        old_samples = sampler.get_samples()
+        old_log_prob = sampler.get_log_prob()
+
+        assert jnp.array_equal(output.samples["x"], old_samples["x"])
+        assert jnp.array_equal(output.log_prob, old_log_prob)
+
+        # Test FlowMC-specific training sample access
+        training_output = sampler.get_training_sampler_output()
+        assert "x" in training_output.samples
+        assert (
+            training_output.log_prob.shape[0] == training_output.samples["x"].shape[0]
+        )
+        assert training_output.metadata == {}
+
+        # Test training sample count
+        n_training = sampler.get_n_training_samples()
+        assert n_training > 0
+        assert n_training == len(training_output.log_prob)
+
+    @pytest.mark.slow
+    def test_smc_sampler_output_interface(self):
+        """Test SMC implements get_sampler_output() correctly."""
+        pytest.importorskip("blackjax")
+
+        from jesterTOV.inference.samplers.blackjax_smc import BlackJAXSMCSampler
+        from jesterTOV.inference.config.schema import SMCSamplerConfig
+
+        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
+        likelihood = MockLikelihood()
+
+        config = SMCSamplerConfig(
+            kernel_type="nuts",
+            n_particles=50,
+            n_mcmc_steps=2,
+            output_dir="./test_output/",
+        )
+
+        sampler = BlackJAXSMCSampler(likelihood, prior, [], [], config)
+        sampler.sample(jax.random.PRNGKey(42))
+
+        # Get output via new interface
+        output = sampler.get_sampler_output()
+
+        # Verify structure
+        assert "x" in output.samples
+        assert "weights" not in output.samples  # Should be in metadata
+        assert "weights" in output.metadata
+        assert "ess" in output.metadata
+        assert output.log_prob.shape[0] == output.samples["x"].shape[0]
+
+        # Verify consistency with old interface
+        old_samples = sampler.get_samples()
+        old_log_prob = sampler.get_log_prob()
+
+        assert jnp.array_equal(output.samples["x"], old_samples["x"])
+        assert jnp.array_equal(output.metadata["weights"], old_samples["weights"])
+        assert jnp.array_equal(output.log_prob, old_log_prob)
+
+    def test_ns_aw_sampler_output_before_sampling(self):
+        """Test NS-AW raises error before sampling."""
+        pytest.importorskip("blackjax")
+
+        from jesterTOV.inference.samplers.blackjax_ns_aw import BlackJAXNSAWSampler
+        from jesterTOV.inference.config.schema import BlackJAXNSAWConfig
+
+        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
+        likelihood = MockLikelihood()
+
+        config = BlackJAXNSAWConfig(
+            n_live=100,
+            output_dir="./test_output/",
+        )
+
+        sampler = BlackJAXNSAWSampler(likelihood, prior, [], [], config)
+
+        # Before sampling, should raise error
+        with pytest.raises(RuntimeError, match="No samples available"):
+            sampler.get_sampler_output()
+
+    def test_sampler_output_separates_parameters_from_metadata(self):
+        """Test that samples dict contains only parameters, not metadata."""
+        from jesterTOV.inference.samplers import SamplerOutput
+
+        # Simulate SMC output
+        output = SamplerOutput(
+            samples={"mass": jnp.array([1.5, 1.6, 1.7])},
+            log_prob=jnp.array([-10.0, -11.0, -12.0]),
+            metadata={
+                "weights": jnp.array([0.3, 0.4, 0.3]),
+                "ess": 2.5,
+            },
+        )
+
+        # Parameters should only be in samples
+        assert "mass" in output.samples
+        assert "weights" not in output.samples
+        assert "ess" not in output.samples
+
+        # Metadata should only be in metadata
+        assert "weights" in output.metadata
+        assert "ess" in output.metadata
+        assert "mass" not in output.metadata

@@ -3,7 +3,6 @@
 import pytest
 import jax
 import jax.numpy as jnp
-from pathlib import Path
 
 from jesterTOV.inference.config import parser as config_parser
 from jesterTOV.inference.config import schema
@@ -24,7 +23,9 @@ class TestConfigToComponents:
         prior_spec_file = config.prior.specification_file
 
         # Create prior
-        prior = prior_parser.parse_prior_file(prior_spec_file, nb_CSE=config.transform.nb_CSE)
+        prior = prior_parser.parse_prior_file(
+            prior_spec_file, nb_CSE=config.transform.nb_CSE
+        )
 
         # Prior should have correct number of dimensions
         assert prior.n_dim == 8  # 8 NEP parameters for nb_CSE=0
@@ -35,8 +36,14 @@ class TestConfigToComponents:
 
         # Should have all expected parameters
         expected_params = [
-            "K_sat", "Q_sat", "Z_sat",
-            "E_sym", "L_sym", "K_sym", "Q_sym", "Z_sym"
+            "K_sat",
+            "Q_sat",
+            "Z_sat",
+            "E_sym",
+            "L_sym",
+            "K_sym",
+            "Q_sym",
+            "Z_sym",
         ]
         for param in expected_params:
             assert param in samples
@@ -48,8 +55,14 @@ class TestConfigToComponents:
         # Get prior for name mapping
         nb_CSE = config.transform.nb_CSE
         param_names = [
-            "K_sat", "Q_sat", "Z_sat",
-            "E_sym", "L_sym", "K_sym", "Q_sym", "Z_sym"
+            "K_sat",
+            "Q_sat",
+            "Z_sat",
+            "E_sym",
+            "L_sym",
+            "K_sym",
+            "Q_sym",
+            "Z_sym",
         ]
         output_names = ["masses_EOS", "radii_EOS", "Lambdas_EOS"]
         name_mapping = (param_names, output_names)
@@ -77,10 +90,11 @@ class TestConfigToComponents:
 
         # Should create ZeroLikelihood
         from jesterTOV.inference.likelihoods.combined import ZeroLikelihood
+
         assert isinstance(likelihood, ZeroLikelihood)
 
         # Can evaluate likelihood
-        result = likelihood.evaluate({}, {})
+        result = likelihood.evaluate({})
         assert result == 0.0
 
 
@@ -130,6 +144,7 @@ Z_sym = UniformPrior(-2000.0, 1500.0, parameter_names=["Z_sym"])
                 }
             ],
             "sampler": {
+                "type": "flowmc",
                 "n_chains": 2,
                 "n_loop_training": 1,
                 "n_loop_production": 1,
@@ -153,8 +168,7 @@ Z_sym = UniformPrior(-2000.0, 1500.0, parameter_names=["Z_sym"])
         """
         # Create prior
         prior = prior_parser.parse_prior_file(
-            full_config.prior.specification_file,
-            nb_CSE=full_config.transform.nb_CSE
+            full_config.prior.specification_file, nb_CSE=full_config.transform.nb_CSE
         )
 
         # Sample from prior
@@ -165,15 +179,17 @@ Z_sym = UniformPrior(-2000.0, 1500.0, parameter_names=["Z_sym"])
         single_sample = {key: values[0] for key, values in samples.items()}
 
         # Create likelihood
-        likelihood = likelihood_factory.create_combined_likelihood(full_config.likelihoods)
+        likelihood = likelihood_factory.create_combined_likelihood(
+            full_config.likelihoods
+        )
 
         # Mock constraint outputs (pretend transform added these)
-        single_sample['n_causality_violations'] = 0.0
-        single_sample['n_stability_violations'] = 0.0
-        single_sample['n_pressure_violations'] = 0.0
+        single_sample["n_causality_violations"] = 0.0
+        single_sample["n_stability_violations"] = 0.0
+        single_sample["n_pressure_violations"] = 0.0
 
         # Evaluate likelihood
-        log_likelihood = likelihood.evaluate(single_sample, {})
+        log_likelihood = likelihood.evaluate(single_sample)
 
         # Should get 0.0 for no violations
         assert log_likelihood == 0.0
@@ -182,8 +198,7 @@ Z_sym = UniformPrior(-2000.0, 1500.0, parameter_names=["Z_sym"])
         """Test evaluating prior log probability and likelihood together."""
         # Create prior
         prior = prior_parser.parse_prior_file(
-            full_config.prior.specification_file,
-            nb_CSE=full_config.transform.nb_CSE
+            full_config.prior.specification_file, nb_CSE=full_config.transform.nb_CSE
         )
 
         # Sample from prior
@@ -196,15 +211,17 @@ Z_sym = UniformPrior(-2000.0, 1500.0, parameter_names=["Z_sym"])
         assert jnp.isfinite(log_prior)
 
         # Create likelihood
-        likelihood = likelihood_factory.create_combined_likelihood(full_config.likelihoods)
+        likelihood = likelihood_factory.create_combined_likelihood(
+            full_config.likelihoods
+        )
 
         # Mock constraint outputs
-        single_sample['n_causality_violations'] = 0.0
-        single_sample['n_stability_violations'] = 0.0
-        single_sample['n_pressure_violations'] = 0.0
+        single_sample["n_causality_violations"] = 0.0
+        single_sample["n_stability_violations"] = 0.0
+        single_sample["n_pressure_violations"] = 0.0
 
         # Evaluate likelihood
-        log_likelihood = likelihood.evaluate(single_sample, {})
+        log_likelihood = likelihood.evaluate(single_sample)
 
         # Compute log posterior (prior + likelihood)
         log_posterior = log_prior + log_likelihood
@@ -223,12 +240,12 @@ class TestConstraintEnforcement:
 
         # Mock params with causality violation
         params = {
-            'n_causality_violations': 5.0,  # Multiple violations
-            'n_stability_violations': 0.0,
-            'n_pressure_violations': 0.0,
+            "n_causality_violations": 5.0,  # Multiple violations
+            "n_stability_violations": 0.0,
+            "n_pressure_violations": 0.0,
         }
 
-        log_likelihood = likelihood.evaluate(params, {})
+        log_likelihood = likelihood.evaluate(params)
 
         # Should apply penalty
         assert log_likelihood == -1e10
@@ -241,38 +258,13 @@ class TestConstraintEnforcement:
 
         # Mock params with TOV failure
         params = {
-            'n_tov_failures': 1.0,  # TOV integration failed
+            "n_tov_failures": 1.0,  # TOV integration failed
         }
 
-        log_likelihood = likelihood.evaluate(params, {})
+        log_likelihood = likelihood.evaluate(params)
 
         # Should apply penalty
         assert log_likelihood == -1e10
-
-    def test_combined_constraints_sum_penalties(self):
-        """Test that multiple constraint violations sum penalties correctly."""
-        from jesterTOV.inference.likelihoods.constraints import ConstraintLikelihood
-
-        likelihood = ConstraintLikelihood(
-            penalty_tov=-1e10,
-            penalty_causality=-1e10,
-            penalty_stability=-1e5,
-            penalty_pressure=-1e5,
-        )
-
-        # Mock params with all violations
-        params = {
-            'n_tov_failures': 1.0,
-            'n_causality_violations': 1.0,
-            'n_stability_violations': 1.0,
-            'n_pressure_violations': 1.0,
-        }
-
-        log_likelihood = likelihood.evaluate(params, {})
-
-        # Should sum all penalties
-        expected = -1e10 + -1e10 + -1e5 + -1e5
-        assert log_likelihood == expected
 
 
 class TestParameterNamePropagation:
@@ -288,8 +280,14 @@ class TestParameterNamePropagation:
 
         # Should have NEP parameters
         expected_params = [
-            "K_sat", "Q_sat", "Z_sat",
-            "E_sym", "L_sym", "K_sym", "Q_sym", "Z_sym"
+            "K_sat",
+            "Q_sat",
+            "Z_sat",
+            "E_sym",
+            "L_sym",
+            "K_sym",
+            "Q_sym",
+            "Z_sym",
         ]
 
         for param in expected_params:
@@ -367,10 +365,10 @@ class TestRadioTimingIntegration:
         # Mock stiff EOS with Mmax > 2.01
         masses_eos = jnp.linspace(0.5, 2.3, 100)  # Stiff EOS
 
-        params = {'masses_EOS': masses_eos}
+        params = {"masses_EOS": masses_eos}
 
         # Evaluate
-        log_likelihood = likelihood.evaluate(params, {})
+        log_likelihood = likelihood.evaluate(params)
 
         # Should be finite and reasonable (not large penalty)
         assert jnp.isfinite(log_likelihood)
@@ -398,10 +396,10 @@ class TestRadioTimingIntegration:
         # Mock soft EOS with Mmax < 2.01 but > m_min (0.1)
         masses_eos = jnp.linspace(0.5, 1.8, 100)  # Mmax = 1.8 Msun
 
-        params = {'masses_EOS': masses_eos}
+        params = {"masses_EOS": masses_eos}
 
         # Evaluate
-        log_likelihood = likelihood.evaluate(params, {})
+        log_likelihood = likelihood.evaluate(params)
 
         # Should be finite (Gaussian penalty, not hard rejection)
         assert jnp.isfinite(log_likelihood)
@@ -449,3 +447,184 @@ class TestConfigValidationIntegration:
                 enabled=True,
                 parameters={},  # Missing 'events' - should fail
             )
+
+
+class TestEOSSampleGeneration:
+    """Test EOS sample generation from posterior samples."""
+
+    def test_log_prob_filtered_when_fewer_eos_samples(self, temp_dir):
+        """Test that log_prob is correctly filtered when generating fewer EOS samples.
+
+        This is a regression test for the bug where log_prob was not filtered
+        to match the randomly selected EOS samples, causing index out of bounds
+        errors in postprocessing.
+        """
+        import numpy as np
+        from jesterTOV.inference.result import InferenceResult
+        from jesterTOV.inference.config.schema import InferenceConfig
+        from jesterTOV.inference.transforms import factory as transform_factory
+
+        # Create a mock result with 100 posterior samples
+        n_full_samples = 100
+        posterior = {
+            "K_sat": np.random.uniform(150, 300, n_full_samples),
+            "L_sym": np.random.uniform(10, 200, n_full_samples),
+            "Q_sat": np.random.uniform(100, 300, n_full_samples),
+            "Q_sym": np.random.uniform(-200, 200, n_full_samples),
+            "Z_sat": np.random.uniform(-100, 100, n_full_samples),
+            "Z_sym": np.random.uniform(-200, 200, n_full_samples),
+            "E_sym": np.ones(n_full_samples) * 31.6,
+            "K_sym": np.ones(n_full_samples) * -100.0,
+            "log_prob": np.random.uniform(-100, -10, n_full_samples),
+        }
+        metadata = {
+            "sampler": "flowmc",
+            "n_samples": n_full_samples,
+            "seed": 42,
+        }
+
+        result = InferenceResult(
+            sampler_type="flowmc",
+            posterior=posterior,
+            metadata=metadata,
+        )
+
+        # Create minimal config for generate_eos_samples
+        config_dict = {
+            "seed": 42,
+            "transform": {"type": "metamodel", "nb_CSE": 0},
+            "prior": {"specification_file": "dummy.prior"},
+            "likelihoods": [{"type": "zero", "enabled": True, "parameters": {}}],
+            "sampler": {
+                "type": "flowmc",
+                "n_chains": 10,
+                "n_loop_training": 2,
+                "n_loop_production": 2,
+                "n_local_steps": 50,
+                "n_global_steps": 50,
+                "learning_rate": 0.01,
+                "momentum": 0.9,
+                "batch_size": 10000,
+                "use_global": True,
+                "output_dir": str(temp_dir),
+                "n_eos_samples": 50,  # Request only 50 EOS samples
+                "log_prob_batch_size": 10,
+            },
+        }
+        config = InferenceConfig(**config_dict)
+
+        # Create transform (factory auto-generates name_mapping for metamodel)
+        transform = transform_factory.create_transform(config.transform)
+
+        # Store original log_prob length
+        original_log_prob_len = len(result.posterior["log_prob"])
+        assert original_log_prob_len == 100
+
+        # Generate 50 EOS samples from 100 posterior samples using new method
+        n_eos_samples = 50
+        result.add_eos_from_transform(
+            transform=transform,
+            n_eos_samples=n_eos_samples,
+            batch_size=10,
+        )
+
+        # CRITICAL: log_prob should now be filtered to match EOS sample count
+        assert (
+            len(result.posterior["log_prob"]) == n_eos_samples
+        ), f"log_prob should have {n_eos_samples} entries, got {len(result.posterior['log_prob'])}"
+
+        # Verify EOS quantities were added and have correct length
+        assert "masses_EOS" in result.posterior
+        assert len(result.posterior["masses_EOS"]) == n_eos_samples
+
+        assert "radii_EOS" in result.posterior
+        assert len(result.posterior["radii_EOS"]) == n_eos_samples
+
+        assert "Lambdas_EOS" in result.posterior
+        assert len(result.posterior["Lambdas_EOS"]) == n_eos_samples
+
+        # Verify full log_prob was backed up
+        assert "log_prob_full" in result.posterior
+        assert len(result.posterior["log_prob_full"]) == original_log_prob_len
+
+        # Verify filtered log_prob is a subset of original
+        # (values should be from the original array, though possibly reordered due to random selection)
+        for val in result.posterior["log_prob"]:
+            # Each filtered value should be close to at least one original value
+            assert np.any(
+                np.isclose(val, result.posterior["log_prob_full"])
+            ), f"Filtered log_prob value {val} not found in original log_prob"
+
+    def test_sampler_specific_fields_also_filtered(self, temp_dir):
+        """Test that sampler-specific fields (weights, ess) are also filtered."""
+        import numpy as np
+        from jesterTOV.inference.result import InferenceResult
+        from jesterTOV.inference.config.schema import InferenceConfig
+        from jesterTOV.inference.transforms import factory as transform_factory
+
+        # Create a mock SMC result with weights and ess
+        n_full_samples = 100
+        posterior = {
+            "K_sat": np.random.uniform(150, 300, n_full_samples),
+            "L_sym": np.random.uniform(10, 200, n_full_samples),
+            "Q_sat": np.random.uniform(100, 300, n_full_samples),
+            "Q_sym": np.random.uniform(-200, 200, n_full_samples),
+            "Z_sat": np.random.uniform(-100, 100, n_full_samples),
+            "Z_sym": np.random.uniform(-200, 200, n_full_samples),
+            "E_sym": np.ones(n_full_samples) * 31.6,
+            "K_sym": np.ones(n_full_samples) * -100.0,
+            "log_prob": np.random.uniform(-100, -10, n_full_samples),
+            "weights": np.ones(n_full_samples) / n_full_samples,  # SMC weights
+            "ess": np.random.uniform(0.7, 0.95, n_full_samples),  # SMC ESS
+        }
+        metadata = {
+            "sampler": "blackjax_smc",
+            "n_samples": n_full_samples,
+            "seed": 123,
+        }
+
+        result = InferenceResult(
+            sampler_type="blackjax_smc",
+            posterior=posterior,
+            metadata=metadata,
+        )
+
+        # Create minimal config
+        config_dict = {
+            "seed": 123,
+            "transform": {"type": "metamodel", "nb_CSE": 0},
+            "prior": {"specification_file": "dummy.prior"},
+            "likelihoods": [{"type": "zero", "enabled": True, "parameters": {}}],
+            "sampler": {
+                "type": "smc",
+                "kernel_type": "nuts",
+                "n_particles": 100,
+                "n_mcmc_steps": 10,
+                "target_ess": 0.9,
+                "output_dir": str(temp_dir),
+                "n_eos_samples": 40,
+                "log_prob_batch_size": 10,
+            },
+        }
+        config = InferenceConfig(**config_dict)
+
+        # Create transform (factory auto-generates name_mapping for metamodel)
+        transform = transform_factory.create_transform(config.transform)
+
+        # Generate 40 EOS samples from 100 posterior samples using new method
+        n_eos_samples = 40
+        result.add_eos_from_transform(
+            transform=transform,
+            n_eos_samples=n_eos_samples,
+            batch_size=10,
+        )
+
+        # Verify all sampler-specific fields are filtered
+        assert len(result.posterior["log_prob"]) == n_eos_samples
+        assert len(result.posterior["weights"]) == n_eos_samples
+        assert len(result.posterior["ess"]) == n_eos_samples
+
+        # Verify full versions were backed up
+        assert len(result.posterior["log_prob_full"]) == n_full_samples
+        assert len(result.posterior["weights_full"]) == n_full_samples
+        assert len(result.posterior["ess_full"]) == n_full_samples

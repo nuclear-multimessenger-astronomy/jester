@@ -3,7 +3,6 @@
 import pytest
 import jax
 import jax.numpy as jnp
-from jaxtyping import Array, Float
 
 from jesterTOV.inference.base import (
     Prior,
@@ -18,7 +17,6 @@ from jesterTOV.inference.base.prior import (
 from jesterTOV.inference.base.transform import (
     Transform,
     NtoMTransform,
-    BijectiveTransform,
     ScaleTransform,
     OffsetTransform,
     LogitTransform,
@@ -441,6 +439,7 @@ class TestLikelihoodBase:
 
     def test_likelihood_base_requires_evaluate(self):
         """Test that subclasses must implement evaluate method."""
+
         # Create a minimal subclass without evaluate
         class IncompleteLikelihood(LikelihoodBase):
             pass
@@ -451,14 +450,15 @@ class TestLikelihoodBase:
 
     def test_likelihood_base_with_evaluate(self):
         """Test that LikelihoodBase can be subclassed with evaluate."""
+
         # Create a complete subclass
         class CompleteLikelihood(LikelihoodBase):
-            def evaluate(self, params, data):
+            def evaluate(self, params):
                 return 0.0
 
         # Should succeed
         likelihood = CompleteLikelihood()
-        assert likelihood.evaluate({}, {}) == 0.0
+        assert likelihood.evaluate({}) == 0.0
 
 
 class TestNtoMTransform:
@@ -516,8 +516,8 @@ class TestBijectiveTransform:
         transform = ScaleTransform((["x"], ["y"]), scale=2.0)
 
         # Should have both forward and inverse functions
-        assert hasattr(transform, 'transform_func')
-        assert hasattr(transform, 'inverse_transform_func')
+        assert hasattr(transform, "transform_func")
+        assert hasattr(transform, "inverse_transform_func")
 
     def test_bijective_transform_backward(self):
         """Test BijectiveTransform.backward (inverse without Jacobian)."""

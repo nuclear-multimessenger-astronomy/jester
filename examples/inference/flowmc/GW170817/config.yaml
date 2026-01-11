@@ -22,23 +22,25 @@ transform:
 prior:
   specification_file: "prior.prior"
 
-# Likelihood constraints (only GW170817 enabled)
+# Likelihood constraints (only GW170817 enabled with pre-sampling)
 likelihoods:
   - type: "constraints_eos"
     enabled: true
-  - type: "gw"
+  - type: "gw"  # NEW: Pre-sampled masses for deterministic evaluation
     enabled: true
     parameters:
       events:
         - name: "GW170817"
-          model_dir: "../../../../jesterTOV/inference/flows/models/gw_maf/gw170817/gw170817_gwtc1_lowspin_posterior"
+          # model_dir is optional - defaults to flow trained on XP-NRTv3 posterior samples
+          # To use a different flow, specify: model_dir: "/path/to/flow/model/"
       penalty_value: -99999.0
-      N_masses_evaluation: 1
-      N_masses_batch_size: 1
-      
+      N_masses_evaluation: 2000  # Large N recommended - cheap on GPU!
+      N_masses_batch_size: 1000   # Batch size for jax.lax.map
+      seed: 42
 
 # MCMC sampler configuration
 sampler:
+  type: "flowmc"
   n_chains: 1000
   n_loop_training: 30
   n_loop_production: 30

@@ -1,7 +1,7 @@
 r"""Parser for .prior specification files in bilby-style Python format."""
 
 from pathlib import Path
-from typing import Union, Any
+from typing import Union, Any, Dict
 from jesterTOV.inference.base import CombinePrior, Prior, UniformPrior
 
 
@@ -69,13 +69,11 @@ def parse_prior_file(
     try:
         exec(prior_code, namespace)
     except Exception as e:
-        raise ValueError(
-            f"Error executing prior file {prior_file}: {e}"
-        ) from e
+        raise ValueError(f"Error executing prior file {prior_file}: {e}") from e
 
     # Extract all Prior objects from the namespace
     excluded_keys = {"__builtins__", "UniformPrior"}
-    all_priors = {}
+    all_priors: Dict[str, Prior] = {}
 
     for key, value in namespace.items():
         if key not in excluded_keys and isinstance(value, Prior):
@@ -100,9 +98,7 @@ def parse_prior_file(
     if nb_CSE > 0:
         for i in range(nb_CSE):
             # Add n_CSE_i_u parameters (uniform [0, 1])
-            prior_list.append(
-                UniformPrior(0.0, 1.0, parameter_names=[f"n_CSE_{i}_u"])
-            )
+            prior_list.append(UniformPrior(0.0, 1.0, parameter_names=[f"n_CSE_{i}_u"]))
             # Add cs2_CSE_i parameters (uniform [0, 1])
             prior_list.append(UniformPrior(0.0, 1.0, parameter_names=[f"cs2_CSE_{i}"]))
 

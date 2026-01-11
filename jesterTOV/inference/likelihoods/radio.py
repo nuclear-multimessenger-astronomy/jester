@@ -17,13 +17,12 @@ on the true mass.
 
 References
 ----------
-.. [1] Demorest et al., "A two-solar-mass neutron star measured using Shapiro delay,"
-   Nature 467, 1081-1083 (2010).
-.. [2] Fonseca et al., "Refined Mass and Geometric Measurements of the High-Mass
-   PSR J0740+6620," ApJL 915, L12 (2021).
-"""
+Demorest et al., "A two-solar-mass neutron star measured using Shapiro delay,"
+Nature 467, 1081-1083 (2010).
 
-from typing import Any
+Fonseca et al., "Refined Mass and Geometric Measurements of the High-Mass
+PSR J0740+6620," ApJL 915, L12 (2021).
+"""
 
 import jax.numpy as jnp
 from jax.scipy.special import logsumexp
@@ -42,10 +41,10 @@ class RadioTimingLikelihood(LikelihoodBase):
     all possible true masses between some minimum value and M_TOV.
 
     The marginalization assumes:
-    - The measured mass follows a Gaussian distribution: M_obs ~ N(M_true, σ)
-    - The true mass has a uniform prior: P(M_true | M_TOV) = 1/M_TOV for M_true ∈ [0, M_TOV]
+    - The measured mass follows a Gaussian distribution: :math:`M_{\text{obs}} \sim \mathcal{N}(M_{\text{true}}, \sigma)`
+    - The true mass has a uniform prior: :math:`P(M_{\text{true}} | M_{\text{TOV}}) = 1/M_{\text{TOV}}` for :math:`M_{\text{true}} \in [0, M_{\text{TOV}}]`
 
-    This gives the marginal likelihood:
+    This gives the marginal likelihood: # TODO: check equations here
 
     .. math::
         \mathcal{L}(M_{\text{TOV}} | M_{\text{obs}}, \sigma) =
@@ -61,10 +60,10 @@ class RadioTimingLikelihood(LikelihoodBase):
         Pulsar designation for identification (e.g., "J1614-2230", "J0740+6620").
         Used for logging and tracking which pulsar constraint is being applied.
     mean : float
-        Measured pulsar mass in solar masses (M_☉). This is typically the
+        Measured pulsar mass in solar masses (:math:`M_{\odot}`). This is typically the
         reported value from timing analysis.
     std : float
-        Measurement uncertainty (1σ) in solar masses. This combines statistical
+        Measurement uncertainty (:math:`1\sigma`) in solar masses. This combines statistical
         and systematic uncertainties from the timing analysis.
     nb_masses : int, optional
         Number of grid points for numerical integration of the marginalization
@@ -73,7 +72,7 @@ class RadioTimingLikelihood(LikelihoodBase):
     m_min : float, optional
         Minimum mass for the integration grid in solar masses. This should be
         well below any physical neutron star mass to avoid truncation effects.
-        Default is 0.1 M_☉.
+        Default is 0.1 :math:`M_{\odot}`.
 
     Attributes
     ----------
@@ -103,7 +102,7 @@ class RadioTimingLikelihood(LikelihoodBase):
 
     Examples
     --------
-    Create a likelihood for PSR J0740+6620 (Fonseca et al. 2021: 2.08 ± 0.07 M_☉):
+    Create a likelihood for PSR J0740+6620 (Fonseca et al. 2021: 2.08 ± 0.07 :math:`M_{\odot}`):
 
     >>> from jesterTOV.inference.likelihoods import RadioTimingLikelihood
     >>> likelihood = RadioTimingLikelihood("J0740+6620", mean=2.08, std=0.07)
@@ -134,9 +133,9 @@ class RadioTimingLikelihood(LikelihoodBase):
         self.mean = mean
         self.std = std
         self.nb_masses = nb_masses
-        self.m_min = m_min  # Minimum mass for integration (M_☉)
+        self.m_min = m_min  # Minimum mass for integration (solar masses)
 
-    def evaluate(self, params: dict[str, Float | Array], data: dict[str, Any]) -> Float:
+    def evaluate(self, params: dict[str, Float | Array]) -> Float:
         """Evaluate the marginalized log-likelihood for the pulsar mass measurement.
 
         This method computes the marginal likelihood by:
@@ -151,11 +150,9 @@ class RadioTimingLikelihood(LikelihoodBase):
         params : dict[str, Float | Array]
             Dictionary containing TOV solution outputs from the transform.
             Required keys:
+
             - "masses_EOS" : Array of neutron star masses (solar masses) at
               different central pressures. The maximum value is taken as M_TOV.
-        data : dict[str, Any]
-            Unused; included for API compatibility. All observational data
-            (mean, std) is stored in the likelihood object during initialization.
 
         Returns
         -------
@@ -183,7 +180,7 @@ class RadioTimingLikelihood(LikelihoodBase):
 
         # Create mass grid for integration from m_min to M_max
         # Per Eq. (X): P(θ_EOS | d_radio) ∝ (1/M_TOV) ∫₀^M_TOV P(M | d_radio) dM
-        # Note: Start at m_min (default 0.1 M_☉) instead of 0 to avoid numerical issues
+        # Note: Start at m_min (default 0.1 solar masses) instead of 0 to avoid numerical issues
         m = jnp.linspace(self.m_min, mtov, self.nb_masses)
 
         # Gaussian log likelihood with proper normalization constant

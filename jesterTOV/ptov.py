@@ -252,8 +252,10 @@ def tov_solver(eos, pc):
         args=eos,
         saveat=SaveAt(t1=True),
         stepsize_controller=PIDController(rtol=1e-5, atol=1e-6),
+        throw=False,
     )
 
+    assert sol.ys is not None, "TOV solver failed to produce solution"
     R = sol.ys[0][-1]
     M = sol.ys[1][-1]
     H = sol.ys[2][-1]

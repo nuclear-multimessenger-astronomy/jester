@@ -33,9 +33,9 @@ def downsample_file(filepath: Path, max_samples: int = 100000, dry_run: bool = F
     """
     # Load data
     data = np.load(filepath, allow_pickle=True)
-    radius = data['radius']
-    mass = data['mass']
-    metadata = data['metadata'].item()
+    radius = data["radius"]
+    mass = data["mass"]
+    metadata = data["metadata"].item()
 
     n_samples = len(radius)
     original_size_mb = filepath.stat().st_size / (1024**2)
@@ -58,17 +58,14 @@ def downsample_file(filepath: Path, max_samples: int = 100000, dry_run: bool = F
     mass_downsampled = mass[indices]
 
     # Update metadata
-    metadata['original_n_samples'] = n_samples
-    metadata['downsampled_to'] = max_samples
-    metadata['downsampling_method'] = 'random_choice'
-    metadata['downsampling_seed'] = 42
+    metadata["original_n_samples"] = n_samples
+    metadata["downsampled_to"] = max_samples
+    metadata["downsampling_method"] = "random_choice"
+    metadata["downsampling_seed"] = 42
 
     # Save downsampled data
     np.savez(
-        filepath,
-        radius=radius_downsampled,
-        mass=mass_downsampled,
-        metadata=metadata
+        filepath, radius=radius_downsampled, mass=mass_downsampled, metadata=metadata
     )
 
     new_size_mb = filepath.stat().st_size / (1024**2)
@@ -78,27 +75,27 @@ def downsample_file(filepath: Path, max_samples: int = 100000, dry_run: bool = F
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Downsample NICER mass-radius posterior samples',
+        description="Downsample NICER mass-radius posterior samples",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__
+        epilog=__doc__,
     )
     parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Show what would be downsampled without modifying files'
+        "--dry-run",
+        action="store_true",
+        help="Show what would be downsampled without modifying files",
     )
     parser.add_argument(
-        '--max-samples',
+        "--max-samples",
         type=int,
         default=100000,
-        help='Maximum number of samples per file (default: 100000)'
+        help="Maximum number of samples per file (default: 100000)",
     )
 
     args = parser.parse_args()
 
     # Get all npz files
     nicer_dir = Path(__file__).parent
-    npz_files = sorted(nicer_dir.glob('*.npz'))
+    npz_files = sorted(nicer_dir.glob("*.npz"))
 
     if not npz_files:
         print("No npz files found in NICER directory")
@@ -128,8 +125,10 @@ def main():
             reduction = (1 - new_size / original_size) * 100
             status = "would downsample" if args.dry_run else "downsampled"
             print(f"✓ {filepath.name}")
-            print(f"  {status}: {original_size:.2f} MB → {new_size:.2f} MB "
-                  f"({reduction:.1f}% reduction)")
+            print(
+                f"  {status}: {original_size:.2f} MB → {new_size:.2f} MB "
+                f"({reduction:.1f}% reduction)"
+            )
         else:
             files_skipped += 1
 
@@ -139,8 +138,10 @@ def main():
     print(f"  Files downsampled: {files_downsampled}")
     print(f"  Files skipped: {files_skipped} (already ≤{args.max_samples:,} samples)")
     print(f"  Total size: {total_original:.2f} MB → {total_new:.2f} MB")
-    print(f"  Total reduction: {total_original - total_new:.2f} MB "
-          f"({(1 - total_new/total_original)*100:.1f}%)")
+    print(
+        f"  Total reduction: {total_original - total_new:.2f} MB "
+        f"({(1 - total_new/total_original)*100:.1f}%)"
+    )
 
     if args.dry_run:
         print()

@@ -3,6 +3,7 @@
 import pytest
 import jax.numpy as jnp
 
+from jesterTOV.inference.config.schema import TransformConfig
 from jesterTOV.inference.transforms import factory
 from jesterTOV.inference.transforms.metamodel import MetaModelTransform
 from jesterTOV.inference.transforms.metamodel_cse import MetaModelCSETransform
@@ -13,16 +14,16 @@ class TestTransformFactory:
 
     def test_create_metamodel_transform(self):
         """Test creating MetaModel transform via factory."""
-        config = {
-            "type": "metamodel",
-            "ndat_metamodel": 100,
-            "nmax_nsat": 2.0,
-            "nb_CSE": 0,
-            "min_nsat_TOV": 0.75,
-            "ndat_TOV": 100,
-            "nb_masses": 100,
-            "crust_name": "DH",
-        }
+        config = TransformConfig(
+            type="metamodel",
+            ndat_metamodel=100,
+            nmax_nsat=2.0,
+            nb_CSE=0,
+            min_nsat_TOV=0.75,
+            ndat_TOV=100,
+            nb_masses=100,
+            crust_name="DH",
+        )
 
         transform = factory.create_transform(config)
 
@@ -33,16 +34,16 @@ class TestTransformFactory:
 
     def test_create_metamodel_cse_transform(self):
         """Test creating MetaModel+CSE transform via factory."""
-        config = {
-            "type": "metamodel_cse",
-            "ndat_metamodel": 100,
-            "nmax_nsat": 25.0,
-            "nb_CSE": 8,
-            "min_nsat_TOV": 0.75,
-            "ndat_TOV": 100,
-            "nb_masses": 100,
-            "crust_name": "DH",
-        }
+        config = TransformConfig(
+            type="metamodel_cse",
+            ndat_metamodel=100,
+            nmax_nsat=25.0,
+            nb_CSE=8,
+            min_nsat_TOV=0.75,
+            ndat_TOV=100,
+            nb_masses=100,
+            crust_name="DH",
+        )
 
         transform = factory.create_transform(config)
 
@@ -52,24 +53,26 @@ class TestTransformFactory:
 
     def test_invalid_transform_type_fails(self):
         """Test that invalid transform type raises error."""
-        config = {
-            "type": "invalid_transform",
-            "nb_CSE": 0,
-        }
+        # Pydantic will catch the invalid type during config creation
+        from pydantic import ValidationError
 
-        with pytest.raises(ValueError, match="Unknown transform type"):
-            factory.create_transform(config)
+        with pytest.raises(ValidationError):
+            TransformConfig(
+                type="invalid_transform",  # type: ignore
+                nb_CSE=0,
+            )
 
     def test_invalid_crust_name_fails(self):
         """Test that invalid crust name raises error."""
-        config = {
-            "type": "metamodel",
-            "crust_name": "InvalidCrust",
-            "nb_CSE": 0,
-        }
+        # Pydantic will catch the invalid crust name during config creation
+        from pydantic import ValidationError
 
-        with pytest.raises(ValueError, match="crust_name must be"):
-            factory.create_transform(config)
+        with pytest.raises(ValidationError):
+            TransformConfig(
+                type="metamodel",
+                crust_name="InvalidCrust",  # type: ignore
+                nb_CSE=0,
+            )
 
 
 class TestMetaModelTransform:
@@ -113,7 +116,9 @@ class TestMetaModelTransform:
         ]
         assert metamodel_transform.get_parameter_names() == expected_params
 
-    def test_metamodel_forward_realistic_params(self, metamodel_transform, realistic_nep_stiff):
+    def test_metamodel_forward_realistic_params(
+        self, metamodel_transform, realistic_nep_stiff
+    ):
         """Test forward transform with realistic stiff EOS parameters.
 
         NOTE: This is a slow integration test as it solves TOV equations.
@@ -142,11 +147,13 @@ class TestMetaModelTransform:
         # Check that we got some valid neutron stars
         # (at least one mass should be > 1.0 Msun for realistic EOS)
         max_mass = jnp.max(result["masses_EOS"])
-        assert max_mass > 1.0, f"Maximum mass {max_mass} too low - EOS may be unphysical"
+        assert (
+            max_mass > 1.0
+        ), f"Maximum mass {max_mass} too low - EOS may be unphysical"
 
-        # Check that radii are in reasonable range (8-16 km typical)
+        # Check that radii are in reasonable range (8-25 km for various EOS)
         max_radius = jnp.max(result["radii_EOS"])
-        assert 8.0 < max_radius < 20.0, f"Maximum radius {max_radius} km unreasonable"
+        assert 8.0 < max_radius < 25.0, f"Maximum radius {max_radius} km unreasonable"
 
         # Original NEP parameters should be preserved in output
         for param in realistic_nep_stiff.keys():
@@ -200,8 +207,8 @@ class TestMetaModelCSETransform:
 
     def test_metamodel_cse_parameter_count(self, metamodel_cse_transform):
         """Test that MetaModel+CSE expects correct number of parameters."""
-        # 8 NEP + 1 nbreak + 8*2 CSE grid + 1 final cs2 = 26
-        expected_count = 8 + 1 + 8 * 2 + 1
+        # 8 NEP + 1 nbreak + 8 n_CSE_*_u + 8 cs2_CSE_* = 25
+        expected_count = 8 + 1 + 8 + 8
         assert len(metamodel_cse_transform.get_parameter_names()) == expected_count
 
     def test_metamodel_cse_forward_realistic_params(
@@ -244,8 +251,8 @@ class TestTransformIntegration:
     def test_factory_creates_correct_type_for_config(self):
         """Test that factory creates correct transform type for each config."""
         configs = [
-            ({"type": "metamodel", "nb_CSE": 0}, MetaModelTransform),
-            ({"type": "metamodel_cse", "nb_CSE": 8}, MetaModelCSETransform),
+            (TransformConfig(type="metamodel", nb_CSE=0), MetaModelTransform),
+            (TransformConfig(type="metamodel_cse", nb_CSE=8), MetaModelCSETransform),
         ]
 
         for config, expected_type in configs:

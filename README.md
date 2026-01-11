@@ -4,39 +4,65 @@
 
 # JESTER
 
-JAX-accelerated nuclear equation of state code and TOV solver - with support for automatic differentiation!
+JAX-accelerated equation of state inference and TOV solvers
+
+`jester` is a package to perform inference on the equation of state (EOS) with Bayesian inference and accelerates the TOV solver calls and the entire sampling procedure by using GPU hardware through `jax`. 
+
+Currently, `jester` supports the following EOS parametrizations:
+- **Metamodel**: Taylor expansion of the energy density.
+- **Metamodel+CSE**: Metamodel up to breakdown density (varied on-the-fly), and speed-of-sound extrapolation above the breakdown density parametrized by linear interpolation through a grid of speed of sound values.
+- **Metamodel+peakCSE**: Metamodel up to breakdown density (varied on-the-fly), and speed-of-sound extrapolation above the breakdown density parametrized to have a Gaussian peak.
+
+Moreover, the following samplers are supported:
+- **Sequential Monte Carlo** (Recommended): Implemented with [`blackjax`](https://github.com/blackjax-devs/blackjax)
+- **flowMC** ([GitHub](https://github.com/kazewong/flowMC)): Normalizing flow-enhanced MCMC sampling
+- **Nested sampling**: Implemented in `blackjax` in [this specific fork](https://github.com/handley-lab/blackjax)
+
+📚 **[Read the full documentation →](https://nuclear-multimessenger-astronomy.github.io/jester/)**
 
 ## Installation
 
+The latest stable release version can be installed with `pip`:
 ```bash
 pip install jesterTOV
 ```
 
-With optional dependencies:
+To run Bayesian inference, make sure to install support for CUDA or upgrade `jax` according to [the `jax` documentation page](https://docs.jax.dev/en/latest/installation.html):
 ```bash
-pip install jesterTOV[examples]  # For running example notebooks
-pip install jesterTOV[dev]       # For development (testing, pre-commit)
-pip install jesterTOV[docs]      # For building documentation
+pip install -U "jax[cuda12]"
 ```
 
-Or install from source:
+For developers, we recommend installing locally with `uv`:
 ```bash
-pip install git+https://github.com/nuclear-multimessenger-astronomy/jester
+git clone https://github.com/nuclear-multimessenger-astronomy/jester
+cd jester
+uv sync
 ```
 
-For GPU support:
+Extra dependencies can be installed as follows:
 ```bash
-pip install "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+uv sync --extra cuda12 # For GPU support
+uv sync --extra docs   # To work on documentation locally
+uv sync --extra tests  # To run tests locally 
 ```
 
-## Documentation
+## Examples
 
-📚 **[Read the full documentation →](https://nuclear-multimessenger-astronomy.github.io/jester/)**
+The `examples` folder shows how to use `jester`:
+- `eos_tov`: Showing basic functionality to create an EOS from the different parametrizations supported in `jester`
+- `kde_nf_validation`: Example usage of KDE and NF methods used for the NICER and GW likelihoods
+- `inference`: Configuration files to run Bayesian inference on different likelihoods and with different samplers
 
-### Building Documentation Locally
+To run the `inference` examples, navigate to the desired test case (organized as `<sampler>/<likelihood>`), and run
+```bash
+run_jester_inference config.yaml
+```
 
-To build and view the documentation on your local machine:
+Take a look at the `config.yaml` files, which contain all details for `jester` to execute the inference. Note that `jester` also needs a specified prior file. 
 
+## Notes for developers
+
+Building documentation locally:
 ```bash
 # Install documentation dependencies
 uv pip install -e ".[docs]"
@@ -49,10 +75,27 @@ open docs/_build/html/index.html  # macOS
 xdg-open docs/_build/html/index.html  # Linux
 ```
 
-## Example notebooks
+Running tests:
+```bash
+uv run pytest tests/
+```
 
-- `examples/eos_tov.ipynb`: Basic EOS and TOV solving
-- `examples/automatic_differentiation.ipynb`: Gradient-based optimization
+Code quality checks:
+```bash
+# Pre-commit checks (black, ruff, nbqa)
+uv run pre-commit run --all-files
+
+# Format and lint
+uv run black .
+uv run ruff check --fix .
+
+# Type checking (run separately, not via pre-commit)
+uv pip install pyright
+uv run pyright                 # All files
+uv run pyright jesterTOV/      # Specific directory
+```
+
+A CLAUDE.md file already exists in the repo for developers that want to use Claude Code. 
 
 ## Acknowledgements
 
@@ -71,5 +114,42 @@ If you use `jester` in your work, please cite our paper!
     number = "4",
     pages = "043037",
     year = "2025"
+}
+```
+
+If you use the `ptov.py` module, to enabble pressure anisotropy, please cite the following paper:
+```
+@article{Pang:2025fes,
+    author = "Pang, Peter T. H. and Brown, Stephanie M. and Wouters, Thibeau and Van Den Broeck, Chris",
+    title = "{Revealing tensions in neutron star observations with pressure anisotropy}",
+    eprint = "2507.13039",
+    archivePrefix = "arXiv",
+    primaryClass = "astro-ph.HE",
+    month = "7",
+    year = "2025"
+}
+```
+
+Additionally, make sure to cite the following software papers which form the backbone of `jester`:
+```bash 
+# JAX software paper
+@article{frostig2018compiling,
+  title={Compiling machine learning programs via high-level tracing. Syst},
+  author={Frostig, Roy and Johnson, MJ and Leary, Chris},
+  journal={Mach. Learn},
+  volume={4},
+  number={9},
+  year={2018}
+}
+
+# diffrax software paper
+@misc{kidger2022neuraldifferentialequations,
+      title={On Neural Differential Equations}, 
+      author={Patrick Kidger},
+      year={2022},
+      eprint={2202.02435},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2202.02435}, 
 }
 ```

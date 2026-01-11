@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code when working with the JESTER repository.
 
-## Important Guidelines
+## IMPORTANT GUIDELINES
 
 **Testing Philosophy**: When tests fail, investigate root causes rather than modifying tests to pass. Make notes in CLAUDE.md and fix underlying code issues.
 
@@ -10,52 +10,27 @@ This file provides guidance to Claude Code when working with the JESTER reposito
 
 **File Operations**: Use proper tools (Write, Edit, Read) instead of bash heredocs or cat redirection.
 
+**GitHub Issue Comments**: When posting comments on GitHub issues, always identify as "Claude" or "Claude Code" to make it clear the comment is AI-generated. Never post as if you were the human user. This maintains transparency about AI contributions to the project.
+
 ---
 
-## Current Status (December 2024)
+## Current Status
 
-### Multi-Sampler Architecture ✅ COMPLETE
+### Multi-Sampler Architecture
 
 Three sampler backends are now available for Bayesian inference:
 
 1. **FlowMC** (Production Ready) - Normalizing flow-enhanced MCMC
 2. **BlackJAX SMC** (Production Ready) - Sequential Monte Carlo with adaptive tempering
-   - NUTS kernel with Hessian-based mass matrix adaptation
-   - Gaussian Random Walk kernel with sigma adaptation
-   - ✅ All type errors fixed (0 errors)
-   - ✅ Example configs created
-   - ✅ Dry run validation passed
-3. **BlackJAX NS-AW** (Needs Type Checking) - Nested Sampling with Acceptance Walk
-   - ⚠️ Has 7 pyright type errors to fix
-   - Example configs created
-   - Prior-only test run successful
+   - Gaussian Random Walk kernel with sigma adaptation -- TESTED, THIS IS OUR "DEFAULT" SAMPLER
+   - NUTS kernel with Hessian-based mass matrix adaptation -- EXPERIMENTAL, REFRAIN FROM USING NOW
+3. **BlackJAX NS-AW** (Needs Testing) - Nested Sampling with Acceptance Walk, mimics bilby setup
 
 **Example Configs Available**:
+SMC is production ready and we usually test the following config, which can be executed locally on a laptop without GPU support
 ```bash
-# FlowMC (production ready)
-examples/inference/smc-nuts/config.yaml
-examples/inference/smc-random-walk/config.yaml
-
-# BlackJAX NS-AW (needs type fixes)
-examples/inference/blackjax-ns-aw/prior/config.yaml
-examples/inference/blackjax-ns-aw/GW170817/config.yaml
-examples/inference/blackjax-ns-aw/NICER_J0030/config.yaml
+examples/inference/smc_random_walk/chiEFT/config.yaml
 ```
-
-### Next Priority Tasks
-
-1. **Fix BlackJAX NS-AW type errors** (7 errors in `blackjax_ns_aw.py`)
-   - Run: `uv run pyright jesterTOV/inference/samplers/blackjax_ns_aw.py`
-   - See `jesterTOV/inference/CLAUDE.md` for detailed error list
-
-2. **Validate SMC with actual sampling runs**
-   - Test prior-only sampling (not just dry run)
-   - Test with real likelihoods (GW170817, NICER)
-   - Compare NUTS vs Random Walk performance
-
-3. **Expand test suite for samplers**
-   - Unit tests for SMC and NS-AW
-   - Integration tests with real inference workflows
 
 ---
 
@@ -94,15 +69,38 @@ uv run pytest tests/
 uv run pre-commit run --all-files
 ```
 
+### Search Performance
+```bash
+# When searching Python files with grep, use --include to avoid slowdowns
+grep -rn "pattern" --include="*.py" directory/
+
+# For other file types
+grep -rn "pattern" --include="*.yaml" directory/
+grep -rn "pattern" --include="*.md" directory/
+```
+
+### Check PR Status
+```bash
+# View PR status and CI checks
+gh pr view <PR_NUMBER> --json statusCheckRollup
+
+# Download CI logs for specific job
+gh api repos/nuclear-multimessenger-astronomy/jester/actions/jobs/<JOB_ID>/logs > logs.txt
+```
+
 ### Code Quality
 ```bash
-# Format and lint
+# Format and lint (also in pre-commit)
 uv run black .
 uv run ruff check --fix .
 
-# Type checking
+# Type checking (CI/CD uses pyright directly, not via pre-commit)
+uv pip install pyright
 uv run pyright                 # All files
 uv run pyright jesterTOV/      # Specific directory
+
+# Run all pre-commit checks (black, ruff, nbqa)
+uv run pre-commit run --all-files
 ```
 
 ### Testing
@@ -117,12 +115,11 @@ uv run pytest tests/test_inference/test_config.py
 uv run pytest -v tests/
 ```
 
-**Test Status**: All 97 tests passing ✅
+**CI/CD Test Dependencies**:
+- LaTeX packages (texlive-latex-base, texlive-latex-extra, dvipng, cm-super) for matplotlib plotting tests
+- IPython (added to `[tests]` dependencies) required by fastprogress (BlackJAX transitive dependency)
 
-**Key Testing Insights**:
-- Use realistic polytropic EOSs, not linear ones
-- MetaModel tested up to ~2 nsat; MetaModel+CSE can go to 6+ nsat
-- Stiff EOS: L_sym ≥ 90, Q_sat = 0, K_sym = 0 for realistic NS masses
+## Code Quality Standards
 
 ### Documentation
 ```bash
@@ -137,6 +134,19 @@ uv run sphinx-build -W --keep-going docs docs/_build/html
 
 **Docs URL**: https://nuclear-multimessenger-astronomy.github.io/jester/
 
+**Documentation Build Status**: ✅ All warnings fixed! CI/CD documentation builds should now pass.
+
+**Recent Fixes** (January 2026):
+- ✅ Added `inference_documentation_guide.md` and `inference_yaml_reference.md` to toctree in `index.rst`
+- ✅ Added MyST-style explicit anchors to all referenced sections in inference docs
+- ✅ Fixed `[chieft1]` citation reference in `jesterTOV/inference/likelihoods/chieft.py`
+- ✅ Converted external file links to plain text references
+- ✅ Installed and configured `sphinxcontrib-mermaid` extension
+- ✅ Converted mermaid code blocks to MyST directive syntax `{mermaid}`
+- ✅ Fixed all cross-references to use MyST `{ref}` syntax
+
+**Verification**: Run `uv run sphinx-build -W --keep-going docs docs/_build/html` - should complete with zero warnings.
+
 ---
 
 ## Inference System
@@ -146,8 +156,7 @@ uv run sphinx-build -W --keep-going docs docs/_build/html
 ### Running Inference
 ```bash
 # Run inference
-uv run run_jester_inference config.yaml
-
+run_jester_inference config.yaml
 # Validate config only
 # (set validate_only: true in config.yaml)
 
@@ -233,28 +242,9 @@ jesterTOV/inference/
 └── run_inference.py # Main entry point
 ```
 
-### Base Classes (jimgw Independence)
-The `base/` module contains copies of Jim v0.2.0 base classes to remove dependency on jimgw:
-- `LikelihoodBase` - Abstract likelihood interface
-- `Prior`, `CombinePrior`, `UniformPrior` - Prior system
-- `NtoMTransform`, `BijectiveTransform` - Transform interfaces
-
-Goal: Keep flowMC as only external sampler dependency.
-
-### Critical Design Notes
-- **JAX NaN handling**: Use `jnp.inf` instead of `jnp.nan` for initialization
-- **flowMC data argument**: Always pass empty dict `{}`, not `None`
-- **Geometric units**: Realistic NS: M~2000m, R~12000m, P~1e-11 m^-2
-- **LaTeX in docstrings**: Use raw strings `r"""..."""` to avoid warnings
-
 ---
 
 ## Known Issues & Workarounds
-
-### Testing Issues (Fixed)
-- ✅ LikelihoodConfig validation respects `enabled` field
-- ✅ Prior API uses `sample(rng_key, n_samples)` not `sample(u_array)`
-- ✅ Transform factory expects Pydantic config, not dict
 
 ### Open Issues
 - **UniformPrior boundaries**: `log_prob()` at exact boundaries causes errors (NaN at xmin, ZeroDivision at xmax)
@@ -262,6 +252,7 @@ Goal: Keep flowMC as only external sampler dependency.
   - Fix: Add numerical guards in LogitTransform
 - **TOV solver max_steps**: Some stiff EOS configs hit solver limits
   - May need to increase `max_steps` or adjust EOS parameters
+  - Needs further testing to understand when this happens, what the root cause is, and determine best solution
 
 ---
 

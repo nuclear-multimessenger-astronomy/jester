@@ -1,7 +1,5 @@
 r"""Combined and utility likelihood classes"""
 
-from typing import Any
-
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
@@ -33,7 +31,7 @@ class CombinedLikelihood(LikelihoodBase):
         self.likelihoods_list = likelihoods_list
         self.counter = 0
 
-    def evaluate(self, params: dict[str, Float | Array], data: dict[str, Any]) -> Float:
+    def evaluate(self, params: dict[str, Float | Array]) -> Float:
         """
         Evaluate combined log-likelihood
 
@@ -41,16 +39,16 @@ class CombinedLikelihood(LikelihoodBase):
         ----------
         params : dict[str, Float | Array]
             Parameter dictionary passed to all likelihoods
-        data : dict[str, Any]
-            Data dictionary passed to all likelihoods
 
         Returns
         -------
         Float
             Sum of all log-likelihoods
         """
+
+        # TODO: perhaps this can be improved performance wise, with vmap or pytree?
         all_log_likelihoods: Float[Array, " n_likelihoods"] = jnp.array(
-            [likelihood.evaluate(params, data) for likelihood in self.likelihoods_list]
+            [likelihood.evaluate(params) for likelihood in self.likelihoods_list]
         )
         return jnp.sum(all_log_likelihoods)
 
@@ -71,7 +69,7 @@ class ZeroLikelihood(LikelihoodBase):
         super().__init__()
         self.counter = 0
 
-    def evaluate(self, params: dict[str, Float | Array], data: dict[str, Any]) -> Float:
+    def evaluate(self, params: dict[str, Float | Array]) -> Float:
         """
         Evaluate zero log-likelihood
 
@@ -79,8 +77,6 @@ class ZeroLikelihood(LikelihoodBase):
         ----------
         params : dict[str, Float | Array]
             Parameter dictionary (ignored)
-        data : dict[str, Any]
-            Data dictionary (ignored)
 
         Returns
         -------

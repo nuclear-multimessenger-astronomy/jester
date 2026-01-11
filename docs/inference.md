@@ -5,18 +5,18 @@
 
 ## Table of Contents
 
-1. [Overview](#overview)
-2. [System Architecture](#system-architecture)
-3. [Quick Start](#quick-start)
-4. [Configuration System](#configuration-system)
-5. [Prior Specification](#prior-specification)
-6. [Transforms](#transforms)
-7. [Likelihoods](#likelihoods)
-8. [Data Management](#data-management)
-9. [Sampling](#sampling)
-10. [Complete Workflow](#complete-workflow)
-11. [Advanced Usage](#advanced-usage)
-12. [File Structure Reference](#file-structure-reference)
+1. Overview
+2. System Architecture
+3. Quick Start
+4. Configuration System
+5. Prior Specification
+6. Transforms
+7. Likelihoods
+8. Data Management
+9. Sampling
+10. Complete Workflow
+11. Advanced Usage
+12. File Structure Reference
 
 ---
 
@@ -239,11 +239,12 @@ uv run python -m jesterTOV.inference.run_inference --config config.yaml
 ls outdir/
 # results_production.npz  - MCMC samples
 # eos_samples.npz         - EOS curves (M, R, Λ)
-# runtime.txt             - Timing information
+# (Timing information stored in metadata)
 ```
 
 ---
 
+(configuration-system)=
 ## Configuration System
 
 ### YAML Configuration Structure
@@ -347,6 +348,7 @@ validate_only: false          # Only validate configuration
 data_paths: {}
 ```
 
+(configuration-validation)=
 ### Configuration Validation
 
 The system uses Pydantic for automatic validation:
@@ -373,6 +375,7 @@ prior:
 - Learning rate in (0, 1]
 - Valid crust name: "DH", "BPS", or "DH_fixed"
 
+(path-resolution)=
 ### Path Resolution
 
 Paths in configuration are resolved relative to the config file directory:
@@ -392,6 +395,7 @@ prior:
 
 ## Prior Specification
 
+(prior-file-format)=
 ### Prior File Format
 
 Prior files use a **bilby-style Python format** with direct variable assignment. The parser executes the Python code to extract Prior objects.
@@ -406,6 +410,7 @@ E_sym = UniformPrior(28.0, 45.0, parameter_names=["E_sym"])
 L_sym = UniformPrior(10.0, 200.0, parameter_names=["L_sym"])
 ```
 
+(prior-inclusion-rules)=
 ### Prior Inclusion Rules
 
 The parser automatically includes/excludes parameters based on configuration:
@@ -417,7 +422,55 @@ The parser automatically includes/excludes parameters based on configuration:
 | `mass_1_*`, `mass_2_*` | Only if GW event is enabled with `sample_masses: true` |
 | CSE grid parameters | Auto-generated if `nb_CSE > 0` |
 
-#### Example: Conditional Parameters
+(cse-grid-parameters)=
+### CSE Grid Parameters
+
+When `nb_CSE > 0`, the parser automatically adds CSE grid parameters:
+
+```python
+# For nb_CSE = 8, these are added automatically:
+# n_CSE_0_u = UniformPrior(0.0, 1.0, parameter_names=["n_CSE_0_u"])
+# cs2_CSE_0 = UniformPrior(0.0, 1.0, parameter_names=["cs2_CSE_0"])
+# n_CSE_1_u = UniformPrior(0.0, 1.0, parameter_names=["n_CSE_1_u"])
+# cs2_CSE_1 = UniformPrior(0.0, 1.0, parameter_names=["cs2_CSE_1"])
+# ... (continues for i = 0 to 7)
+# cs2_CSE_8 = UniformPrior(0.0, 1.0, parameter_names=["cs2_CSE_8"])
+```
+
+**Total parameters for MetaModel+CSE with nb_CSE=8**:
+- 8 NEP parameters (`*_sat`, `*_sym`)
+- 1 `nbreak`
+- 8 × 2 CSE grid parameters (`n_CSE_i_u`, `cs2_CSE_i`)
+- 1 final `cs2_CSE_8`
+- **Total: 26 parameters**
+
+### Available Prior Types
+
+Currently supported: `UniformPrior`
+
+```python
+from jesterTOV.inference.priors.simple_priors import SimpleUniformPrior
+
+# Uniform prior over [min, max]
+param = UniformPrior(
+    minimum=0.0,
+    maximum=1.0,
+    parameter_names=["param_name"]
+)
+```
+
+**Future support planned**: `LogUniformPrior`, `GaussianPrior`, `TruncatedGaussianPrior`
+
+---
+
+## Transforms
+
+Transforms convert EOS **parameters** (microscopic) to **observables** (macroscopic).
+
+### Transform Types
+
+(1-metamodel-transform)=
+#### 1. MetaModel Transform
 
 ```python
 # prior.prior
@@ -517,6 +570,7 @@ $$E(\rho, \delta) = E_0 + \sum_{n=2}^{4} \frac{K_n}{n!}x^n + \delta^2 \sum_{n=1}
 
 where $x = (\rho - \rho_0)/3\rho_0$, $\delta = (\rho_n - \rho_p)/\rho$.
 
+(2-metamodel-cse-transform)=
 #### 2. MetaModel+CSE Transform
 
 Extends MetaModel with a Constant Speed of Sound region at high densities.
@@ -574,6 +628,7 @@ transformed_params = transform.forward(sampled_params)
 
 Likelihoods quantify agreement between predicted observables and data.
 
+(available-likelihood-types)=
 ### Available Likelihood Types
 
 #### 1. Gravitational Wave (`gw`)
@@ -707,6 +762,72 @@ $$\log p(\theta | \text{all data}) = \sum_i \log p(\theta | \text{data}_i)$$
 
 ---
 
+## Advanced Usage
+
+(custom-likelihoods)=
+### Custom Likelihoods
+
+To add a new likelihood type:
+
+1. **Create likelihood class** in `likelihoods/my_likelihood.py`:
+
+```python
+from jesterTOV.inference.base import LikelihoodBase
+from jaxtyping import Array, Float
+
+class MyLikelihood(LikelihoodBase):
+    def __init__(self, param1, param2):
+        self.param1 = param1
+        self.param2 = param2
+
+    def evaluate(self, params: dict, data: dict) -> Float[Array, ""]:
+        """Evaluate log likelihood"""
+        # Extract needed parameters
+        masses = params["masses_EOS"]
+        radii = params["radii_EOS"]
+
+        # Compute log likelihood
+        log_like = ...  # Your computation here
+
+        return log_like
+```
+
+2. **Add to factory** in `likelihoods/factory.py`:
+
+```python
+from .my_likelihood import MyLikelihood
+
+def create_likelihood(config, data_loader):
+    # ... existing code ...
+
+    elif config.type == "my_type":
+        return MyLikelihood(
+            param1=config.parameters.get("param1"),
+            param2=config.parameters.get("param2")
+        )
+```
+
+3. **Update schema** in `config/schema.py`:
+
+```python
+class LikelihoodConfig(BaseModel):
+    type: Literal["gw", "nicer", "radio", "chieft", "rex", "zero", "my_type"]
+    # ...
+```
+
+4. **Use in config**:
+
+```yaml
+likelihoods:
+  - type: "my_type"
+    enabled: true
+    parameters:
+      param1: 42
+      param2: 3.14
+```
+
+---
+
 ## Data Management
 
 ### DataLoader Class
@@ -740,6 +861,7 @@ loader = DataLoader(data_paths={
 | GW NF model | `load_gw_nf_model(event)` | Equinox `.eqx` | NF model object |
 | REX posterior | `load_rex_posterior(exp)` | NPZ | `gaussian_kde` |
 
+(data-path-configuration)=
 ### Data Path Configuration
 
 **Method 1**: Use default paths (in `DataLoader._get_default_paths()`)
@@ -756,6 +878,7 @@ data_paths:
 loader = DataLoader(data_paths={"key": "path"})
 ```
 
+(caching-mechanism)=
 ### Caching Mechanism
 
 DataLoader caches all loaded data in `self._cache`:
@@ -776,21 +899,7 @@ assert kde1 is kde2  # Same object
 
 ## Sampling
 
-### JesterSampler
-
-The `JesterSampler` class (`samplers/jester_sampler.py`) is a standalone implementation wrapping flowMC. It provides a Jim-like interface with critical bug fixes.
-
-**Architecture**:
-```
-JesterSampler
-    ├─ Prior (CombinePrior)
-    ├─ Likelihood (LikelihoodBase)
-    ├─ Transforms (list of NtoMTransform)
-    └─ flowMC.Sampler
-        ├─ Local sampler (MALA or GaussianRandomWalk)
-        └─ Global sampler (MaskedCouplingRQSpline NF)
-```
-
+(sampler-parameters)=
 ### Sampler Parameters
 
 **Core parameters** (from `SamplerConfig`):
@@ -815,6 +924,22 @@ JesterSampler
 - `hidden_size`: [128, 128] (NF hidden layers)
 - `num_bins`: 8 (RQ spline bins)
 
+### JesterSampler
+
+The `JesterSampler` class (`samplers/jester_sampler.py`) is a standalone implementation wrapping flowMC. It provides a Jim-like interface with critical bug fixes.
+
+**Architecture**:
+```
+JesterSampler
+    ├─ Prior (CombinePrior)
+    ├─ Likelihood (LikelihoodBase)
+    ├─ Transforms (list of NtoMTransform)
+    └─ flowMC.Sampler
+        ├─ Local sampler (MALA or GaussianRandomWalk)
+        └─ Global sampler (MaskedCouplingRQSpline NF)
+```
+
+(sampling-phases)=
 ### Sampling Phases
 
 #### Phase 1: Training
@@ -864,6 +989,31 @@ def posterior(params_array, data):
 ```
 
 **Important**: The `data` argument is always passed as an empty dict `{}` in JESTER, since data is encapsulated in likelihood objects.
+
+(adjusting-step-sizes)=
+### Adjusting Step Sizes
+
+Tuning MCMC step sizes for better acceptance rates:
+
+```python
+# In samplers/flowmc.py or your script
+
+# Option 1: Global scaling
+eps_mass_matrix = 1e-3  # Decrease for higher acceptance
+
+# Option 2: Per-parameter scaling
+mass_matrix = jnp.diag(jnp.array([
+    1.0,   # K_sat
+    0.5,   # Q_sat (smaller steps)
+    2.0,   # Z_sat (larger steps)
+    # ... for all parameters
+]))
+local_sampler_arg = {"step_size": mass_matrix * eps_mass_matrix}
+```
+
+**Target acceptance rates**:
+- MALA: 50-70%
+- Gaussian Random Walk: 20-40%
 
 ---
 
@@ -1099,67 +1249,7 @@ print(f"Results saved to {outdir}")
 
 ## Advanced Usage
 
-### Custom Likelihoods
-
-To add a new likelihood type:
-
-1. **Create likelihood class** in `likelihoods/my_likelihood.py`:
-
-```python
-from jesterTOV.inference.base import LikelihoodBase
-from jaxtyping import Array, Float
-
-class MyLikelihood(LikelihoodBase):
-    def __init__(self, param1, param2):
-        self.param1 = param1
-        self.param2 = param2
-
-    def evaluate(self, params: dict, data: dict) -> Float[Array, ""]:
-        """Evaluate log likelihood"""
-        # Extract needed parameters
-        masses = params["masses_EOS"]
-        radii = params["radii_EOS"]
-
-        # Compute log likelihood
-        log_like = ...  # Your computation here
-
-        return log_like
-```
-
-2. **Add to factory** in `likelihoods/factory.py`:
-
-```python
-from .my_likelihood import MyLikelihood
-
-def create_likelihood(config, data_loader):
-    # ... existing code ...
-
-    elif config.type == "my_type":
-        return MyLikelihood(
-            param1=config.parameters.get("param1"),
-            param2=config.parameters.get("param2")
-        )
-```
-
-3. **Update schema** in `config/schema.py`:
-
-```python
-class LikelihoodConfig(BaseModel):
-    type: Literal["gw", "nicer", "radio", "chieft", "rex", "zero", "my_type"]
-    # ...
-```
-
-4. **Use in config**:
-
-```yaml
-likelihoods:
-  - type: "my_type"
-    enabled: true
-    parameters:
-      param1: 42
-      param2: 3.14
-```
-
+(custom-priors)=
 ### Custom Priors
 
 To add a new prior distribution:
@@ -1202,30 +1292,6 @@ namespace = {
 K_sat = MyPrior(param1=1.0, param2=2.0, parameter_names=["K_sat"])
 ```
 
-### Adjusting Step Sizes
-
-Tuning MCMC step sizes for better acceptance rates:
-
-```python
-# In samplers/flowmc.py or your script
-
-# Option 1: Global scaling
-eps_mass_matrix = 1e-3  # Decrease for higher acceptance
-
-# Option 2: Per-parameter scaling
-mass_matrix = jnp.diag(jnp.array([
-    1.0,   # K_sat
-    0.5,   # Q_sat (smaller steps)
-    2.0,   # Z_sat (larger steps)
-    # ... for all parameters
-]))
-local_sampler_arg = {"step_size": mass_matrix * eps_mass_matrix}
-```
-
-**Target acceptance rates**:
-- MALA: 50-70%
-- Gaussian Random Walk: 20-40%
-
 ### Resuming Runs
 
 Currently, resuming is not implemented. To resume a run:
@@ -1244,6 +1310,44 @@ checkpoint = np.load("checkpoint.npz")
 # Continue sampling
 ```
 
+(output-files)=
+### Output Files
+
+```
+outdir/
+├── results_production.npz   # MCMC samples
+│   ├── log_prob            # Log posterior values
+│   ├── K_sat               # Parameter samples
+│   ├── Q_sat
+│   └── ... (all parameters)
+│
+├── eos_samples.npz          # EOS curves (subset of samples)
+│   ├── log_prob
+│   ├── K_sat, Q_sat, ...   # Parameters
+│   ├── masses_EOS          # M-R-Λ curves
+│   ├── radii_EOS
+│   ├── Lambdas_EOS
+│   ├── n, p, e, h          # Thermodynamic quantities
+│   └── cs2                 # Sound speed
+```
+
+### Loading Results
+
+```python
+import numpy as np
+
+# Load MCMC samples
+results = np.load("outdir/results_production.npz")
+log_prob = results["log_prob"]
+K_sat_samples = results["K_sat"]
+
+# Load EOS curves
+eos = np.load("outdir/eos_samples.npz")
+masses = eos["masses_EOS"]  # Shape: (n_samples, nb_masses)
+radii = eos["radii_EOS"]
+```
+
+(parallel-runs)=
 ### Parallel Runs
 
 Run multiple inference jobs in parallel:
@@ -1264,6 +1368,7 @@ parallel run_jester_inference config_{}.yaml --output-dir ./run_{} ::: 1 2 3 4 5
 
 ## File Structure Reference
 
+(file-structure-reference)=
 ### Input Files
 
 ```
@@ -1284,44 +1389,6 @@ your_project/
     └── NFs/
         └── GW170817/
             └── model.eqx
-```
-
-### Output Files
-
-```
-outdir/
-├── results_production.npz   # MCMC samples
-│   ├── log_prob            # Log posterior values
-│   ├── K_sat               # Parameter samples
-│   ├── Q_sat
-│   └── ... (all parameters)
-│
-├── eos_samples.npz          # EOS curves (subset of samples)
-│   ├── log_prob
-│   ├── K_sat, Q_sat, ...   # Parameters
-│   ├── masses_EOS          # M-R-Λ curves
-│   ├── radii_EOS
-│   ├── Lambdas_EOS
-│   ├── n, p, e, h          # Thermodynamic quantities
-│   └── cs2                 # Sound speed
-│
-└── runtime.txt              # Timing information
-```
-
-### Loading Results
-
-```python
-import numpy as np
-
-# Load MCMC samples
-results = np.load("outdir/results_production.npz")
-log_prob = results["log_prob"]
-K_sat_samples = results["K_sat"]
-
-# Load EOS curves
-eos = np.load("outdir/eos_samples.npz")
-masses = eos["masses_EOS"]  # Shape: (n_samples, nb_masses)
-radii = eos["radii_EOS"]
 ```
 
 ---

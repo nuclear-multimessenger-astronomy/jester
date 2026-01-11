@@ -3,8 +3,9 @@ r"""Prior base classes for JESTER inference system.
 This module contains prior classes that were originally from Jim (jimgw v0.2.0).
 They are copied here to remove the dependency on jimgw.
 
-Note: These classes follow the Jim/jimgw architecture and are designed to work
-with flowMC's Distribution base class.
+Note: These classes follow the Jim/jimgw architecture with a dict-based interface
+for named parameters. The flowMC Distribution inheritance was removed to avoid
+interface conflicts while maintaining compatibility with JESTER's sampling backends.
 """
 
 from dataclasses import field
@@ -13,25 +14,32 @@ from typing import Any
 import jax
 import jax.numpy as jnp
 from beartype import beartype as typechecker
-from flowMC.nfmodel.base import Distribution
 from jaxtyping import Array, Float, PRNGKeyArray, jaxtyped
 
-from .transform import BijectiveTransform, LogitTransform, ScaleTransform, OffsetTransform
+from .transform import (
+    BijectiveTransform,
+    LogitTransform,
+    ScaleTransform,
+    OffsetTransform,
+)
 
 
-class Prior(Distribution):
+class Prior:
     """
-    A thin wrapper built on top of flowMC distributions to do book keeping.
+    Base class for JESTER prior distributions.
 
     Note: This class follows the Jim/jimgw architecture. Should not be used directly
     since it does not implement any of the real methods.
 
     The rationale behind this is to have a class that can be used to keep track of
     the names of the parameters and the transforms that are applied to them.
+
+    This class was previously inherited from flowMC's Distribution, but that
+    dependency has been removed to avoid interface conflicts.
     """
 
     parameter_names: list[str]
-    composite: bool = False
+    composite: bool
 
     @property
     def n_dim(self) -> int:
@@ -45,6 +53,7 @@ class Prior(Distribution):
             A list of names for the parameters of the prior.
         """
         self.parameter_names = parameter_names
+        self.composite = False
 
     def add_name(self, x: Float[Array, " n_dim"]) -> dict[str, Float]:
         """

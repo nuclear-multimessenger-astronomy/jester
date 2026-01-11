@@ -7,7 +7,6 @@ Install with: uv pip install zenodo-get
 import subprocess
 from pathlib import Path
 from typing import Optional
-import shutil
 import time
 
 
@@ -127,7 +126,7 @@ class ZenodoDownloader:
         self,
         zenodo_id: str,
         output_dir: Path,
-        timeout_seconds: int = 10*3600,
+        timeout_seconds: int = 10 * 3600,
         max_retries: int = 50,
         retry_delay: int = 5,
     ) -> bool:
@@ -166,7 +165,9 @@ class ZenodoDownloader:
 
         for attempt in range(max_retries):
             if attempt > 0:
-                print(f"\n⏳ Retrying in {retry_delay} seconds... (attempt {attempt + 1}/{max_retries})")
+                print(
+                    f"\n⏳ Retrying in {retry_delay} seconds... (attempt {attempt + 1}/{max_retries})"
+                )
                 time.sleep(retry_delay)
 
             print(f"\n{'='*60}")
@@ -190,19 +191,19 @@ class ZenodoDownloader:
                 else:
                     print(f"✗ Download failed with return code {result.returncode}")
                     if attempt < max_retries - 1:
-                        print(f"  (Will retry - this may be due to rate limiting)")
+                        print("  (Will retry - this may be due to rate limiting)")
 
             except subprocess.TimeoutExpired:
                 print(f"✗ Download timed out after {timeout_seconds} seconds")
                 if attempt < max_retries - 1:
-                    print(f"  (Will retry)")
+                    print("  (Will retry)")
             except KeyboardInterrupt:
-                print(f"\n✗ Download interrupted by user")
+                print("\n✗ Download interrupted by user")
                 return False
             except Exception as e:
                 print(f"✗ Error running zenodo_get: {e}")
                 if attempt < max_retries - 1:
-                    print(f"  (Will retry)")
+                    print("  (Will retry)")
 
         print(f"\n✗ Failed to download after {max_retries} attempts")
         return False
@@ -249,7 +250,9 @@ class ZenodoDownloader:
 
         if version not in ZENODO_DATASETS[psr_name][group]:
             print(f"Unknown version {version} for {psr_name}/{group}")
-            print(f"Available versions: {list(ZENODO_DATASETS[psr_name][group].keys())}")
+            print(
+                f"Available versions: {list(ZENODO_DATASETS[psr_name][group].keys())}"
+            )
             return None
 
         dataset_info = ZENODO_DATASETS[psr_name][group][version]
@@ -260,7 +263,9 @@ class ZenodoDownloader:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Check if files already exist (skip md5sums file)
-        existing_files = [f for f in output_dir.iterdir() if f.is_file() and f.name != "md5sums.txt"]
+        existing_files = [
+            f for f in output_dir.iterdir() if f.is_file() and f.name != "md5sums.txt"
+        ]
 
         if existing_files and not force:
             print(f"\n{'='*60}")
@@ -269,14 +274,14 @@ class ZenodoDownloader:
             print(f"Location: {output_dir}")
             print(f"Files found: {len(existing_files)}")
             print(f"{'='*60}")
-            print(f"\n✓ Skipping download (files already exist)")
-            print(f"  Use force=True to re-download")
+            print("\n✓ Skipping download (files already exist)")
+            print("  Use force=True to re-download")
             return output_dir
 
         if existing_files and force:
             print(f"\n{'='*60}")
             print(f"Re-downloading dataset (force=True): {dataset_info['name']}")
-            print(f"Existing files will be overwritten")
+            print("Existing files will be overwritten")
             print(f"{'='*60}\n")
 
         print(f"\n{'='*60}")
@@ -299,9 +304,9 @@ class ZenodoDownloader:
 
     def list_available_datasets(self) -> None:
         """Print information about all available datasets"""
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("AVAILABLE NICER DATASETS FROM ZENODO")
-        print("="*80 + "\n")
+        print("=" * 80 + "\n")
 
         for psr_name, psr_data in ZENODO_DATASETS.items():
             print(f"\n{psr_name}:")
@@ -313,9 +318,11 @@ class ZenodoDownloader:
                     print(f"      Zenodo ID: {dataset_info['zenodo_id']}")
                     print(f"      URL: {dataset_info['url']}")
                     print(f"      Description: {dataset_info['description']}")
-                    if dataset_info['hotspot_models']:
-                        print(f"      Hotspot models: {', '.join(dataset_info['hotspot_models'])}")
-        print("\n" + "="*80 + "\n")
+                    if dataset_info["hotspot_models"]:
+                        print(
+                            f"      Hotspot models: {', '.join(dataset_info['hotspot_models'])}"
+                        )
+        print("\n" + "=" * 80 + "\n")
 
 
 if __name__ == "__main__":

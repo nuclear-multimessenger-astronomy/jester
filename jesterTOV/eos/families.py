@@ -5,6 +5,7 @@ r"""Neutron star family construction utilities."""
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float, Int
+from diffrax import Solution
 
 from jesterTOV import utils, tov, ptov, STtov
 from jesterTOV.logging_config import get_logger
@@ -52,7 +53,7 @@ def construct_family(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> tuple[
         \frac{dp}{dr} &= -\frac{[\varepsilon(r) + p(r)][m(r) + 4\pi r^3 p(r)]}{r[r - 2m(r)]}
 
     Args:
-        eos (tuple): Tuple of the EOS data (ns, ps, hs, es, dloge_dlogps).
+        eos (tuple): Tuple of (ns, ps, hs, es, dloge_dlogps, cs2) EOS data.
         ndat (int, optional): Number of datapoints used when constructing the central pressure grid. Defaults to 50.
         min_nsat (int, optional): Starting density for central pressure in numbers of :math:`n_0`
                                  (assumed to be 0.16 :math:`\mathrm{fm}^{-3}`). Defaults to 2.
@@ -65,8 +66,8 @@ def construct_family(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> tuple[
             - :math:`R`: Circumferential radii [:math:`\mathrm{km}`]
             - :math:`\Lambda`: Dimensionless tidal deformabilities
     """
-    # Construct the dictionary
-    ns, ps, hs, es, dloge_dlogps = eos
+    # Unpack EOS
+    ns, ps, hs, es, dloge_dlogps, cs2 = eos
     eos_dict = dict(p=ps, h=hs, e=es, dloge_dlogp=dloge_dlogps)
 
     # calculate the pc_min
@@ -74,8 +75,7 @@ def construct_family(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> tuple[
         min_nsat * 0.16 * utils.fm_inv3_to_geometric, ns, ps
     )
 
-    # end at pc at pmax at which it is causal
-    cs2 = ps / es / dloge_dlogps
+    # End at pc at pmax at which it is causal
     pc_max = eos_dict["p"][locate_lowest_non_causal_point(cs2)]
 
     pcs = jnp.logspace(jnp.log10(pc_min), jnp.log10(pc_max), num=ndat)
@@ -131,7 +131,8 @@ def construct_family_nonGR(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> t
     and post-Newtonian parameters :math:`\alpha`, :math:`\beta`, :math:`\gamma`.
 
     Args:
-        eos (tuple): Extended EOS data including GR modification parameters.
+        eos (tuple): Extended EOS data (ns, ps, hs, es, dloge_dlogps, alpha, beta, gamma,
+            lambda_BL, lambda_DY, lambda_HB, cs2) including GR modification parameters.
         ndat (int, optional): Number of datapoints for central pressure grid. Defaults to 50.
         min_nsat (int, optional): Starting density in units of :math:`n_0`. Defaults to 2.
 
@@ -143,7 +144,7 @@ def construct_family_nonGR(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> t
             - :math:`R`: Circumferential radii [:math:`\mathrm{km}`]
             - :math:`\Lambda`: Dimensionless tidal deformabilities
     """
-    # Construct the dictionary
+    # Unpack EOS
     (
         ns,
         ps,
@@ -156,7 +157,9 @@ def construct_family_nonGR(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> t
         lambda_BL,
         lambda_DY,
         lambda_HB,
+        cs2,
     ) = eos
+
     eos_dict = dict(
         p=ps,
         h=hs,
@@ -175,8 +178,7 @@ def construct_family_nonGR(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> t
         min_nsat * 0.16 * utils.fm_inv3_to_geometric, ns, ps
     )
 
-    # end at pc at pmax at which it is causal
-    cs2 = ps / es / dloge_dlogps
+    # End at pc at pmax at which it is causal
     pc_max = eos_dict["p"][locate_lowest_non_causal_point(cs2)]
 
     pcs = jnp.logspace(jnp.log10(pc_min), jnp.log10(pc_max), num=ndat)
@@ -243,11 +245,14 @@ def construct_family_ST(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> tupl
     pc_max = eos_dict["p"][-1]
     pcs = jnp.logspace(jnp.log10(pc_min), jnp.log10(pc_max), num=ndat)
 
-    def solve_single_pc(pc):
-        """Solve for single pc value"""
-        return STtov.tov_solver(eos_dict, pc)
+    def solve_single_pc(pc: Array) -> tuple[float, float, int]:
+        """Solve for single pc value (returns scalars, vmap will vectorize)"""
+        return STtov.tov_solver(eos_dict, pc)  # type: ignore[return-value]
 
-    ms, rs, ks = jax.vmap(solve_single_pc)(pcs)
+    ms, rs, ks = jax.vmap(solve_single_pc)(pcs)  # type: ignore[misc]
+    ms = jnp.asarray(ms)
+    rs = jnp.asarray(rs)
+    ks = jnp.asarray(ks)
 
     # calculate the compactness
     cs = ms / rs
@@ -278,8 +283,8 @@ def construct_family_ST_sol(eos: tuple, ndat: Int = 1, min_nsat: Float = 2) -> t
     Float[Array, "ndat"],
     Float[Array, "ndat"],
     Float[Array, "ndat"],
-    Float[Array, "ndat"],
-    Float[Array, "ndat"],
+    Solution,
+    Solution,
 ]:
     r"""
     # TODO: complete the description
@@ -307,11 +312,14 @@ def construct_family_ST_sol(eos: tuple, ndat: Int = 1, min_nsat: Float = 2) -> t
     pc_max = eos_dict["p"][-1]
     pcs = jnp.logspace(jnp.log10(pc_min), jnp.log10(pc_max), num=ndat)
 
-    def solve_single_pc(pc):
-        """Solve for single pc value"""
-        return STtov.tov_solver_printsol(eos_dict, pc)
+    def solve_single_pc(pc: Array) -> tuple[float, float, int, Solution, Solution]:
+        """Solve for single pc value (returns scalars, vmap will vectorize)"""
+        return STtov.tov_solver_printsol(eos_dict, pc)  # type: ignore[return-value]
 
-    ms, rs, ks, sol_iter, solext = jax.vmap(solve_single_pc)(pcs)
+    ms, rs, ks, sol_iter, solext = jax.vmap(solve_single_pc)(pcs)  # type: ignore[misc]
+    ms = jnp.asarray(ms)
+    rs = jnp.asarray(rs)
+    ks = jnp.asarray(ks)
 
     # calculate the compactness
     cs = ms / rs

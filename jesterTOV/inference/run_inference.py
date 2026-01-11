@@ -7,10 +7,11 @@ Modular inference script for jesterTOV
 
 import os
 import time
+import warnings
+from pathlib import Path
 import numpy as np
 import jax
 import jax.numpy as jnp
-from pathlib import Path
 
 # FIXME: make a flag that turns this on/off and document it, turn ON by default
 # Enable 64-bit precision
@@ -20,18 +21,25 @@ jax.config.update("jax_enable_x64", True)
 # jax.config.update("jax_debug_nans", True)
 
 from .config.parser import load_config
+from .config.schema import InferenceConfig
 from .priors.parser import parse_prior_file
+from .base.prior import CombinePrior
+from .base.likelihood import LikelihoodBase
 from .transforms.factory import create_transform
+from .transforms.base import JesterTransformBase
 from .likelihoods.factory import create_combined_likelihood
 from .samplers.factory import create_sampler
 from .samplers.jester_sampler import JesterSampler
+from .result import InferenceResult
 from jesterTOV.logging_config import get_logger
 
 # Set up logger
 logger = get_logger("jester")
 
 
-def determine_keep_names(config, prior):
+def determine_keep_names(
+    config: InferenceConfig, prior: CombinePrior
+) -> list[str] | None:
     """
     Determine which parameters need to be preserved in transform output.
 
@@ -59,7 +67,9 @@ def determine_keep_names(config, prior):
     keep_names = []
 
     # ChiEFT likelihood requires 'nbreak' parameter
-    chieft_enabled = any(lk.enabled and lk.type == "chieft" for lk in config.likelihoods)
+    chieft_enabled = any(
+        lk.enabled and lk.type == "chieft" for lk in config.likelihoods
+    )
     if chieft_enabled:
         if "nbreak" not in prior.parameter_names:
             raise ValueError(
@@ -68,20 +78,14 @@ def determine_keep_names(config, prior):
                 f"Current prior parameters: {prior.parameter_names}"
             )
         keep_names.append("nbreak")
-        logger.info("ChiEFT likelihood enabled: 'nbreak' parameter will be preserved in transform output")
-
-    # Add future likelihood parameter requirements here
-    # Example:
-    # some_other_likelihood_enabled = any(lk.enabled and lk.type == "other" for lk in config.likelihoods)
-    # if some_other_likelihood_enabled:
-    #     if "some_param" not in prior.parameter_names:
-    #         raise ValueError("...")
-    #     keep_names.append("some_param")
+        logger.info(
+            "ChiEFT likelihood enabled: 'nbreak' parameter will be preserved in transform output"
+        )
 
     return keep_names if keep_names else None
 
 
-def setup_prior(config):
+def setup_prior(config: InferenceConfig) -> CombinePrior:
     """
     Setup prior from configuration
 
@@ -98,11 +102,10 @@ def setup_prior(config):
     from .base.prior import UniformPrior, CombinePrior
 
     # Determine conditional parameters
-    nb_CSE = (
-        config.transform.nb_CSE if config.transform.type == "metamodel_cse" else 0
-    )
+    nb_CSE = config.transform.nb_CSE if config.transform.type == "metamodel_cse" else 0
 
     # Check if GW or NICER likelihoods are enabled (both need _random_key)
+    # Note: gw_presampled does NOT need _random_key (uses fixed seed at init)
     needs_random_key = False
     for lk in config.likelihoods:
         if lk.enabled and lk.type in ["gw", "nicer"]:
@@ -127,7 +130,9 @@ def setup_prior(config):
     return prior
 
 
-def setup_transform(config, keep_names=None):
+def setup_transform(
+    config: InferenceConfig, keep_names: list[str] | None = None
+) -> JesterTransformBase:
     """
     Setup transform from configuration
 
@@ -148,7 +153,9 @@ def setup_transform(config, keep_names=None):
     return transform
 
 
-def setup_likelihood(config, transform, data_loader=None):
+def setup_likelihood(
+    config: InferenceConfig, transform: JesterTransformBase
+) -> LikelihoodBase:
     """
     Setup combined likelihood from configuration
 
@@ -158,23 +165,20 @@ def setup_likelihood(config, transform, data_loader=None):
         Configuration object
     transform : JesterTransformBase
         Transform instance
-    data_loader : None
-        DEPRECATED - data loading will be handled differently
 
     Returns
     -------
     LikelihoodBase
         Combined likelihood instance
     """
-    # FIXME: data_loader parameter is deprecated, pass None for now
-    return create_combined_likelihood(
-        config.likelihoods, data_loader
-    )
+    return create_combined_likelihood(config.likelihoods)
 
 
-def run_sampling(sampler, seed, outdir):
+def run_sampling(
+    sampler: JesterSampler, seed: int, config: InferenceConfig, outdir: str | Path
+) -> InferenceResult:
     """
-    Run MCMC sampling and save results
+    Run MCMC sampling and create InferenceResult
 
     Parameters
     ----------
@@ -182,13 +186,15 @@ def run_sampling(sampler, seed, outdir):
         JesterSampler instance (FlowMC, BlackJAX NS, or BlackJAX SMC)
     seed : int
         Random seed for sampling
+    config : InferenceConfig
+        Configuration object
     outdir : str or Path
         Output directory
 
     Returns
     -------
-    dict
-        Dictionary containing samples and log probabilities
+    InferenceResult
+        Result object containing samples, metadata, and histories
     """
     logger.info(f"Starting MCMC sampling with seed {seed}...")
     start = time.time()
@@ -201,61 +207,44 @@ def run_sampling(sampler, seed, outdir):
         f"Sampling complete! Runtime: {int(runtime / 60)} min {int(runtime % 60)} sec"
     )
 
-    ### POSTPROCESSING ###
+    # Generate diagnostic plots for SMC sampler
+    from .samplers.blackjax_smc import BlackJAXSMCSampler
 
-    # Get samples from sampler using unified interface
-    # All samplers now implement get_samples(), get_log_prob(), get_n_samples()
+    if isinstance(sampler, BlackJAXSMCSampler):
+        logger.info("Generating SMC diagnostic plots...")
+        sampler.plot_diagnostics(outdir=outdir, filename="smc_diagnostics.png")
 
-    # Get sample counts (FlowMC has train/production split, others don't)
-    nb_samples_training = sampler.get_n_samples(training=True)
-    nb_samples_production = sampler.get_n_samples(training=False)
-    total_nb_samples = nb_samples_training + nb_samples_production
+    # Create InferenceResult from sampler output
+    logger.info("Creating InferenceResult from sampler output...")
+    result = InferenceResult.from_sampler(
+        sampler=sampler,
+        config=config,
+        runtime=runtime,
+    )
 
-    # Get the samples as a dictionary (production/final samples)
-    samples_named = sampler.get_samples(training=False)
-    samples_named_for_saving = {k: np.array(v) for k, v in samples_named.items()}
-    samples_named_flat = {k: np.array(v).flatten() for k, v in samples_named.items()}
-
-    # Get the log probabilities (production/final samples)
-    log_prob = np.array(sampler.get_log_prob(training=False))
-
-    # Save the final results
-    logger.info(f"Saving results to {outdir}")
-    os.makedirs(outdir, exist_ok=True)
-
-    result_path = os.path.join(outdir, "results_production.npz")
-    np.savez(result_path, log_prob=log_prob, **samples_named_for_saving)
-
-    logger.info(f"Number of samples generated in training: {nb_samples_training}")
-    logger.info(f"Number of samples generated in production: {nb_samples_production}")
-    logger.info(f"Total number of samples: {total_nb_samples}")
-
-    # Save the runtime
-    with open(os.path.join(outdir, "runtime.txt"), "w") as f:
-        f.write(f"{runtime}\n")
-        f.write(f"Training samples: {nb_samples_training}\n")
-        f.write(f"Production samples: {nb_samples_production}\n")
-
-    return {
-        "samples": samples_named_flat,
-        "samples_for_saving": samples_named_for_saving,
-        "log_prob": log_prob,
-        "runtime": runtime,
-    }
+    return result
 
 
 def generate_eos_samples(
-    config, samples_dict, transform_eos, outdir, n_eos_samples=10_000
-):
+    config: InferenceConfig,
+    result: InferenceResult,
+    transform_eos: JesterTransformBase,
+    outdir: str | Path,
+    n_eos_samples: int = 10_000,
+) -> None:
     """
-    Generate EOS curves from sampled parameters
+    .. deprecated::
+        This function is deprecated and will be removed in a future version.
+        Use :meth:`InferenceResult.add_eos_from_transform` instead.
+
+    Generate EOS curves from sampled parameters and add to InferenceResult
 
     Parameters
     ----------
     config : InferenceConfig
         Configuration object
-    samples_dict : dict
-        Dictionary of sampled parameters
+    result : InferenceResult
+        Result object with posterior samples
     transform_eos : JesterTransformBase
         Transform for generating full EOS quantities
     outdir : str or Path
@@ -263,13 +252,22 @@ def generate_eos_samples(
     n_eos_samples : int, optional
         Number of EOS samples to generate
     """
-    samples = samples_dict["samples"]
-    log_prob = samples_dict["log_prob"]
+    warnings.warn(
+        "generate_eos_samples() is deprecated and will be removed in a future version. "
+        "Use InferenceResult.add_eos_from_transform() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
+    # Get log_prob from result
+    log_prob = result.posterior["log_prob"]
 
     # Cap n_eos_samples at available sample size
     n_available = len(log_prob)
     if n_eos_samples > n_available:
-        logger.warning(f"Requested {n_eos_samples} EOS samples but only {n_available} available.")
+        logger.warning(
+            f"Requested {n_eos_samples} EOS samples but only {n_available} available."
+        )
         logger.warning(f"Using all {n_available} samples instead.")
         n_eos_samples = n_available
 
@@ -278,34 +276,68 @@ def generate_eos_samples(
     # Randomly select samples
     idx = np.random.choice(np.arange(len(log_prob)), size=n_eos_samples, replace=False)
 
-    chosen_samples = {k: jnp.array(v[idx]) for k, v in samples.items()}
+    # Filter out metadata fields and derived EOS quantities that aren't transform parameters
+    # Only keep fields that are NEP/CSE parameters for the transform
+    exclude_keys = {
+        "weights",
+        "ess",
+        "logL",
+        "logL_birth",
+        "log_prob",
+        "_sampler_specific",
+        "masses_EOS",
+        "radii_EOS",
+        "Lambdas_EOS",
+        "n",
+        "p",
+        "e",
+        "cs2",
+    }
+    param_samples = {k: v for k, v in result.posterior.items() if k not in exclude_keys}
 
-    # Generate EOS curves (with JIT compilation)
-    logger.info("JIT compiling and running TOV solver...")
+    chosen_samples = {k: jnp.array(v[idx]) for k, v in param_samples.items()}
+
+    # NOTE: This function is currently unused - see InferenceResult.add_eos_from_transform() instead
+    # CRITICAL: If this function is ever re-enabled, remember to filter ALL arrays:
+    # - log_prob and sampler fields (weights, ess, logL, logL_birth)
+    # - NEP/CSE parameter arrays
+    # Store the original full log_prob for reference, then update with filtered version
+    result.posterior["log_prob_full"] = result.posterior["log_prob"].copy()
+    result.posterior["log_prob"] = result.posterior["log_prob"][idx]
+
+    # Filter other sampler-specific fields if present
+    sampler_fields_to_filter = ["weights", "ess", "logL", "logL_birth"]
+    for field in sampler_fields_to_filter:
+        if field in result.posterior:
+            result.posterior[f"{field}_full"] = result.posterior[field].copy()
+            result.posterior[field] = result.posterior[field][idx]
+
+    logger.info(
+        f"Filtered log_prob and sampler fields from {len(log_prob)} to {len(result.posterior['log_prob'])} samples"
+    )
+
+    # Generate EOS curves with batched processing
+    logger.info("Running TOV solver with batched processing...")
     my_forward = jax.jit(transform_eos.forward)
 
-    # Warm up JIT
-    warmup_size = min(100, n_available)
-    test_idx = np.random.choice(np.arange(len(log_prob)), size=warmup_size, replace=False)
-    test_samples = {k: jnp.array(v[test_idx]) for k, v in samples.items()}
-    _ = jax.vmap(my_forward)(test_samples)
+    # Get batch size from config
+    batch_size = config.sampler.log_prob_batch_size
+    logger.info(f"Using batch size: {batch_size}")
 
-    # Run full batch
+    # Run with batched processing (JIT compilation happens on first batch)
     TOV_start = time.time()
-    transformed_samples = jax.vmap(my_forward)(chosen_samples)
+    transformed_samples = jax.lax.map(my_forward, chosen_samples, batch_size=batch_size)
     TOV_end = time.time()
-    logger.info(f"TOV solve time: {TOV_end - TOV_start:.2f} s")
+    logger.info(
+        f"TOV solve time: {TOV_end - TOV_start:.2f} s ({n_eos_samples} samples)"
+    )
 
-    # Combine and save
-    chosen_samples.update(transformed_samples)
-    selected_log_prob = log_prob[idx]
-
-    eos_path = os.path.join(outdir, "eos_samples.npz")
-    np.savez(eos_path, log_prob=selected_log_prob, **chosen_samples)
-    logger.info(f"EOS samples saved to {outdir}/eos_samples.npz")
+    # Add derived EOS quantities to result
+    result.add_derived_eos(transformed_samples)
+    logger.info("Derived EOS quantities added to InferenceResult")
 
 
-def main(config_path: str):
+def main(config_path: str) -> None:
     """Main inference script
 
     Parameters
@@ -327,11 +359,6 @@ def main(config_path: str):
         logger.info("Configuration valid!")
         return
 
-    # FIXME: DataLoader was removed - need to implement data loading functionality
-    # The data_paths from config should be used to configure data loading functions
-    # For now, set data_loader to None
-    data_loader = None
-
     # Setup components
     logger.info("Setting up prior...")
     prior = setup_prior(config)
@@ -341,7 +368,7 @@ def main(config_path: str):
     logger.info(f"Prior parameter names: {prior.parameter_names}")
 
     # Get individual priors - CombinePrior stores them in base_prior attribute
-    if hasattr(prior, 'base_prior') and isinstance(prior.base_prior, list):
+    if hasattr(prior, "base_prior") and isinstance(prior.base_prior, list):
         individual_priors = prior.base_prior
     else:
         # For single priors, wrap in a list
@@ -351,7 +378,7 @@ def main(config_path: str):
     def flatten_priors(priors_list):
         result = []
         for p in priors_list:
-            if hasattr(p, 'base_prior') and isinstance(p.base_prior, list):
+            if hasattr(p, "base_prior") and isinstance(p.base_prior, list):
                 result.extend(flatten_priors(p.base_prior))
             else:
                 result.append(p)
@@ -363,8 +390,10 @@ def main(config_path: str):
     idx = 0
     for param_prior in all_priors:
         for name in param_prior.parameter_names:
-            if hasattr(param_prior, 'xmin') and hasattr(param_prior, 'xmax'):
-                logger.info(f"  [{idx}] {name}: Uniform({param_prior.xmin}, {param_prior.xmax})")
+            if hasattr(param_prior, "xmin") and hasattr(param_prior, "xmax"):
+                logger.info(
+                    f"  [{idx}] {name}: Uniform({param_prior.xmin}, {param_prior.xmax})"
+                )
             else:
                 logger.info(f"  [{idx}] {name}: {type(param_prior).__name__}")
             idx += 1
@@ -386,12 +415,8 @@ def main(config_path: str):
     if keep_names:
         logger.info(f"  Preserving parameters in output: {keep_names}")
 
-    # Create EOS-only transform for postprocessing
-    # TODO: This needs proper implementation with keep_names
-    transform_eos = setup_transform(config)
-
     logger.info("Setting up likelihood...")
-    likelihood = setup_likelihood(config, transform, data_loader)
+    likelihood = setup_likelihood(config, transform)
 
     # Log detailed likelihood information
     enabled_likelihoods = [lk for lk in config.likelihoods if lk.enabled]
@@ -401,26 +426,44 @@ def main(config_path: str):
         if lk.type == "gw":
             events = lk.parameters.get("events", [])
             logger.info(f"    Events: {[e['name'] for e in events]}")
-            logger.info(f"    N masses evaluation: {lk.parameters.get('N_masses_evaluation', 20)}")
+            logger.info(
+                f"    N masses evaluation: {lk.parameters.get('N_masses_evaluation', 20)}"
+            )
         elif lk.type == "nicer":
             pulsars = lk.parameters.get("pulsars", [])
             logger.info(f"    Pulsars: {[p['name'] for p in pulsars]}")
-            logger.info(f"    N masses evaluation: {lk.parameters.get('N_masses_evaluation', 100)}")
-            logger.info(f"    KDE bandwidth: {lk.parameters.get('kde_bandwidth', 0.02)}")
+            logger.info(
+                f"    N masses evaluation: {lk.parameters.get('N_masses_evaluation', 100)}"
+            )
+            logger.info(
+                f"    KDE bandwidth: {lk.parameters.get('kde_bandwidth', 0.02)}"
+            )
         elif lk.type == "radio":
             pulsars = lk.parameters.get("pulsars", [])
             logger.info(f"    Pulsars: {[p['name'] for p in pulsars]}")
         elif lk.type == "chieft":
-            logger.info(f"    Low bound file: {lk.parameters.get('low_filename', 'default')}")
-            logger.info(f"    High bound file: {lk.parameters.get('high_filename', 'default')}")
+            logger.info(
+                f"    Low bound file: {lk.parameters.get('low_filename', 'default')}"
+            )
+            logger.info(
+                f"    High bound file: {lk.parameters.get('high_filename', 'default')}"
+            )
             logger.info(f"    Integration points: {lk.parameters.get('nb_n', 100)}")
         elif lk.type == "rex":
-            logger.info(f"    Experiment: {lk.parameters.get('experiment_name', 'PREX')}")
+            logger.info(
+                f"    Experiment: {lk.parameters.get('experiment_name', 'PREX')}"
+            )
         elif lk.type == "constraints_eos":
-            logger.info(f"    Causality penalty: {lk.parameters.get('penalty_causality', -1e10)}")
-            logger.info(f"    Stability penalty: {lk.parameters.get('penalty_stability', -1e5)}")
+            logger.info(
+                f"    Causality penalty: {lk.parameters.get('penalty_causality', -1e10)}"
+            )
+            logger.info(
+                f"    Stability penalty: {lk.parameters.get('penalty_stability', -1e5)}"
+            )
         elif lk.type == "constraints_tov":
-            logger.info(f"    TOV failure penalty: {lk.parameters.get('penalty_tov', -1e10)}")
+            logger.info(
+                f"    TOV failure penalty: {lk.parameters.get('penalty_tov', -1e10)}"
+            )
 
     logger.info(f"Setting up {config.sampler.type} sampler...")
     sampler = create_sampler(
@@ -451,7 +494,7 @@ def main(config_path: str):
         logger.info(f"  Learning rate: {config.sampler.learning_rate}")
         logger.info(f"  Training thinning: {config.sampler.train_thinning}")
         logger.info(f"  Output thinning: {config.sampler.output_thinning}")
-    elif config.sampler.type == "nested_sampling":
+    elif config.sampler.type == "blackjax-ns-aw":
         logger.info(f"  Live points: {config.sampler.n_live}")
         logger.info(f"  Delete fraction: {config.sampler.n_delete_frac}")
         logger.info(f"  Target MCMC steps: {config.sampler.n_target}")
@@ -478,15 +521,25 @@ def main(config_path: str):
     logger.info("Testing likelihood evaluation...")
     test_samples = prior.sample(jax.random.PRNGKey(0), 3)
     test_samples_transformed = jax.vmap(transform.forward)(test_samples)
-    test_log_prob = jax.vmap(likelihood.evaluate)(test_samples_transformed, {})
+    test_log_prob = jax.vmap(likelihood.evaluate)(test_samples_transformed)
     logger.info(f"Test log probabilities: {test_log_prob}")
 
     # Run inference
-    results = run_sampling(sampler, config.seed, outdir)
+    result = run_sampling(sampler, config.seed, config, outdir)
 
-    # Generate EOS samples
-    n_eos_samples = config.sampler.n_eos_samples
-    generate_eos_samples(config, results, transform_eos, outdir, n_eos_samples)
+    # Generate EOS quantities from posterior samples
+    # Note: This requires recomputing the TOV solver for selected samples.
+    # Future optimization: implement transform caching outside JAX trace (see JesterSampler)
+    result.add_eos_from_transform(
+        transform=transform,  # Use the same transform from sampling
+        n_eos_samples=config.sampler.n_eos_samples,
+        batch_size=config.sampler.log_prob_batch_size,
+    )
+
+    # Save unified HDF5 file
+    result_path = os.path.join(outdir, "results.h5")
+    result.save(result_path)
+    logger.info(f"Results saved to {result_path}")
 
     # Run postprocessing if enabled
     if config.postprocessing.enabled:
@@ -502,14 +555,13 @@ def main(config_path: str):
             make_massradius_flag=config.postprocessing.make_massradius,
             make_pressuredensity_flag=config.postprocessing.make_pressuredensity,
             make_histograms_flag=config.postprocessing.make_histograms,
-            make_contours_flag=config.postprocessing.make_contours,
         )
         logger.info(f"\nPostprocessing complete! Plots saved to {outdir}")
 
     logger.info(f"\nInference complete! Results saved to {outdir}")
 
 
-def cli_entry_point():
+def cli_entry_point() -> None:
     """
     Entry point for console script.
 
@@ -526,8 +578,12 @@ def cli_entry_point():
         logger.error("Usage: run_jester_inference <config.yaml>")
         logger.info("\nExamples:")
         logger.info("  run_jester_inference config.yaml")
-        logger.info("  run_jester_inference examples/inference/full_inference/config.yaml")
-        logger.info("\nOptions like dry_run and validate_only should be set in the YAML config file.")
+        logger.info(
+            "  run_jester_inference examples/inference/full_inference/config.yaml"
+        )
+        logger.info(
+            "\nOptions like dry_run and validate_only should be set in the YAML config file."
+        )
         sys.exit(1)
 
     config_path = sys.argv[1]
