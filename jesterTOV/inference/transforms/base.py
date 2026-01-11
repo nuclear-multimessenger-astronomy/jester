@@ -94,9 +94,9 @@ class JesterTransformBase(NtoMTransform, ABC):
 
         # TODO: this should be inside the crust, not here, then fetch it here
         # Validate crust_name
-        if crust_name not in ["DH", "BPS", "DH_fixed"]:
+        if crust_name not in ["DH", "BPS", "DH_fixed", "SLy"]:
             raise ValueError(
-                f"crust_name must be 'DH', 'BPS', or 'DH_fixed', got {crust_name}"
+                f"crust_name must be 'DH', 'BPS', 'DH_fixed', or 'SLy', got {crust_name}"
             )
 
         # Save configuration

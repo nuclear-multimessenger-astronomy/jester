@@ -240,28 +240,29 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         # ε(x) = ε₀/μ(x) + (p₀/μ(x)) · Integral
         return e0 / mu + (p0 / mu) * integral
 
-    def _validate_gamma(self, gamma: Float[Array, "4"]) -> bool:
-        """
-        Validate spectral parameters.
+    # TODO: remove this or put as ConstraintsLikelihood, will not work in jax.jit
+    # def _validate_gamma(self, gamma: Float[Array, "4"]) -> bool:
+    #     """
+    #     Validate spectral parameters.
 
-        This implements XLALSimNeutronStarEOS4ParamSDGammaCheck from LALSuite.
-        Checks that Γ(x) ∈ [0.6, 4.5] for all x ∈ [0, xmax] as required for
-        TOV solver stability.
+    #     This implements XLALSimNeutronStarEOS4ParamSDGammaCheck from LALSuite.
+    #     Checks that Γ(x) ∈ [0.6, 4.5] for all x ∈ [0, xmax] as required for
+    #     TOV solver stability.
 
-        Args:
-            gamma: Spectral coefficients [γ₀, γ₁, γ₂, γ₃]
+    #     Args:
+    #         gamma: Spectral coefficients [γ₀, γ₁, γ₂, γ₃]
 
-        Returns:
-            True if valid, False otherwise
-        """
-        # Sample Γ(x) at 100 points as in LALSuite
-        x_test = jnp.linspace(0.0, self.xmax, 100)
-        gamma_vals = vmap(lambda x: self._adiabatic_index(x, gamma))(x_test)
+    #     Returns:
+    #         True if valid, False otherwise
+    #     """
+    #     # Sample Γ(x) at 100 points as in LALSuite
+    #     x_test = jnp.linspace(0.0, self.xmax, 100)
+    #     gamma_vals = vmap(lambda x: self._adiabatic_index(x, gamma))(x_test)
 
-        # Check bounds
-        valid = jnp.all((gamma_vals >= 0.6) & (gamma_vals <= 4.5))
+    #     # Check bounds
+    #     valid = jnp.all((gamma_vals >= 0.6) & (gamma_vals <= 4.5))
 
-        return bool(valid)
+    #     return bool(valid)
 
     def construct_eos(
         self,
@@ -288,14 +289,14 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         Raises:
             ValueError: If gamma parameters fail validation
         """
-        # Validate parameters
-        if not self._validate_gamma(gamma):
-            raise ValueError(
-                f"Gamma parameters {gamma} fail validation. "
-                f"Adiabatic index must be in [0.6, 4.5] for all pressures."
-            )
-
-        logger.info(f"Constructing spectral EOS with gamma={gamma}")
+        
+        # TODO: will be removed
+        # # Validate parameters
+        # if not self._validate_gamma(gamma):
+        #     raise ValueError(
+        #         f"Gamma parameters {gamma} fail validation. "
+        #         f"Adiabatic index must be in [0.6, 4.5] for all pressures."
+        #     )
 
         # Load low-density crust data
         n_crust, p_crust, e_crust = load_crust(self.crust_name)
@@ -313,12 +314,8 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         p_crust = p_crust[nonzero_mask]
         e_crust = e_crust[nonzero_mask]
 
-        logger.info(f"Loaded {len(n_crust)} crust points from {self.crust_name}")
-
         # Generate high-density spectral region
         n_high, p_high, e_high = self._generate_spectral_region(gamma, p_crust[-1])
-
-        logger.info(f"Generated {len(n_high)} high-density spectral points")
 
         # Stitch together
         n_full = jnp.concatenate([n_crust, n_high])
@@ -327,10 +324,6 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
 
         # Convert to geometric units and compute auxiliary quantities
         ns, ps, hs, es, dloge_dlogps = self.interpolate_eos(n_full, p_full, e_full)
-
-        logger.info(f"Final EOS: {len(ns)} points, "
-                   f"p: [{ps.min():.3e}, {ps.max():.3e}] geom, "
-                   f"e: [{es.min():.3e}, {es.max():.3e}] geom")
 
         return ns, ps, hs, es, dloge_dlogps
 
@@ -374,7 +367,6 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
 
         # Compute energy density for each x using spectral decomposition
         # This is the expensive step: nested integration for each point
-        logger.info("Computing energy densities (this may take a moment)...")
         e_high_geom = vmap(
             lambda x: self._compute_energy_density_geom(x, gamma)
         )(x_high)

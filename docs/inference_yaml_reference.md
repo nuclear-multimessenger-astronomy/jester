@@ -31,6 +31,7 @@ transform:
   ndat_metamodel: 100
   nmax_nsat: 25.0
   nb_CSE: 8
+  n_points_high: 500
   min_nsat_TOV: 0.75
   ndat_TOV: 100
   nb_masses: 100
@@ -88,7 +89,7 @@ data_paths: {}
 
 Defines how EOS parameters are transformed to observables.
 
-- `type`: `"metamodel" | "metamodel_cse"` (**required**)
+- `type`: `"metamodel" | "metamodel_cse" | "spectral"` (**required**)
 
 - `ndat_metamodel`: `int` (optional)
   - Default: `100`
@@ -99,6 +100,9 @@ Defines how EOS parameters are transformed to observables.
 - `nb_CSE`: `int` (optional)
   - Default: `8`
 
+- `n_points_high`: `int` (optional)
+  - Default: `500`
+
 - `min_nsat_TOV`: `float` (optional)
   - Default: `0.75`
 
@@ -108,7 +112,7 @@ Defines how EOS parameters are transformed to observables.
 - `nb_masses`: `int` (optional)
   - Default: `100`
 
-- `crust_name`: `"DH" | "BPS" | "DH_fixed"` (optional)
+- `crust_name`: `"DH" | "BPS" | "DH_fixed" | "SLy"` (optional)
   - Default: `"DH"`
 **Validation Rules**:
 - If `type: "metamodel"`, then `nb_CSE` must be 0 (or omitted)
@@ -124,7 +128,7 @@ Specifies prior distributions for parameters.
 
 List of observational constraints. Each likelihood has:
 
-- `type`: `"gw" | "nicer" | "radio" | "chieft" | "rex" | "constraints" | "constraints_eos" | "constraints_tov" | "zero"` (**required**)
+- `type`: `"gw" | "gw_resampled" | "nicer" | "radio" | "chieft" | "rex" | "constraints" | "constraints_eos" | "constraints_tov" | "zero"` (**required**)
 
 - `enabled`: `bool` (optional)
   - Default: `True`
@@ -203,14 +207,17 @@ The sampler configuration uses a discriminated union based on the `type` field. 
 
 Normalizing flow-enhanced MCMC with local and global sampling phases.
 
-- `type`: `"flowmc"` (optional)
-  - Default: `"flowmc"`
-
 - `output_dir`: `str` (optional)
   - Default: `"./outdir/"`
 
 - `n_eos_samples`: `int` (optional)
   - Default: `10000`
+
+- `log_prob_batch_size`: `int` (optional)
+  - Default: `1000`
+
+- `type`: `"flowmc"` (optional)
+  - Default: `"flowmc"`
 
 - `n_chains`: `int` (optional)
   - Default: `20`
@@ -247,14 +254,17 @@ Normalizing flow-enhanced MCMC with local and global sampling phases.
 
 BlackJAX nested sampling with acceptance walk for Bayesian evidence estimation.
 
-- `type`: `"blackjax-ns-aw"` (optional)
-  - Default: `"blackjax-ns-aw"`
-
 - `output_dir`: `str` (optional)
   - Default: `"./outdir/"`
 
 - `n_eos_samples`: `int` (optional)
   - Default: `10000`
+
+- `log_prob_batch_size`: `int` (optional)
+  - Default: `1000`
+
+- `type`: `"blackjax-ns-aw"` (optional)
+  - Default: `"blackjax-ns-aw"`
 
 - `n_live`: `int` (optional)
   - Default: `1000`
@@ -280,17 +290,20 @@ BlackJAX nested sampling with acceptance walk for Bayesian evidence estimation.
 
 BlackJAX SMC with adaptive tempering and NUTS kernel.
 
-- `type`: `"smc"` (optional)
-  - Default: `"smc"`
-
 - `output_dir`: `str` (optional)
   - Default: `"./outdir/"`
 
 - `n_eos_samples`: `int` (optional)
   - Default: `10000`
 
+- `log_prob_batch_size`: `int` (optional)
+  - Default: `1000`
+
+- `type`: `"smc"` (optional)
+  - Default: `"smc"`
+
 - `kernel_type`: `"nuts" | "random_walk"` (optional)
-  - Default: `"nuts"`
+  - Default: `"random_walk"`
 
 - `n_particles`: `int` (optional)
   - Default: `10000`
@@ -318,9 +331,6 @@ BlackJAX SMC with adaptive tempering and NUTS kernel.
 
 - `adaptation_rate`: `float` (optional)
   - Default: `0.3`
-
-- `log_prob_batch_size`: `int` (optional)
-  - Default: `1000`
 
 **Output**: Posterior samples and effective sample size (ESS) statistics.
 

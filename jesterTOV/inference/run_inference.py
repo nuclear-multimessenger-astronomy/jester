@@ -66,14 +66,15 @@ def determine_keep_names(
     """
     keep_names = []
 
-    # ChiEFT likelihood requires 'nbreak' parameter
+    # ChiEFT likelihood requires 'nbreak' parameter for CSE grid stitching
+    # Only check if using metamodel_cse transform
     chieft_enabled = any(
         lk.enabled and lk.type == "chieft" for lk in config.likelihoods
     )
-    if chieft_enabled:
+    if chieft_enabled and config.transform.type == "metamodel_cse":
         if "nbreak" not in prior.parameter_names:
             raise ValueError(
-                "ChiEFT likelihood is enabled but 'nbreak' parameter is not in the prior. "
+                "ChiEFT likelihood is enabled with metamodel_cse but 'nbreak' parameter is not in the prior. "
                 "Please add 'nbreak' to your prior specification file. "
                 f"Current prior parameters: {prior.parameter_names}"
             )
