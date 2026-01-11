@@ -2,11 +2,43 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Important developer guidelines
+
+- You do not know everything about samplers. Instead of just doing something that "seems right", please ask more information about samplers and best practices. We can provide src code. *Better to ask for help than to make wrong assumptions and write sloppy code!*
+- **blackjax**: For this, the src code is available at `/Users/Woute029/Documents/Code/projects/jester_review/blackjax`: use this to understand how to properly use blackjax samplers and best practices!
+
 ## Module Overview
 
 The `jesterTOV/inference/` module provides Bayesian inference for constraining neutron star equation of state (EOS) parameters using multi-messenger observations. It implements a modular, configuration-driven architecture with normalizing flow-enhanced MCMC sampling.
 
-**Status**: Fully functional - Modular architecture complete (Phases 1-7), data infrastructure in place, ready for production use
+### Key Concepts
+
+**Transforms**: Convert parameter spaces
+- Sample transforms: Applied during sampling with Jacobian (bijective)
+- Likelihood transforms: Applied before likelihood evaluation (N-to-M)
+- JESTER uses likelihood transforms: NEP → M-R-Λ via TOV solver
+
+**Priors**: Bilby-style Python syntax in `.prior` files
+```python
+K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
+L_sym = UniformPrior(10.0, 200.0, parameter_names=["L_sym"])
+```
+
+**Samplers**: Three backends available
+- `type: "flowmc"` - Flow-enhanced MCMC (production ready)
+- `type: "smc"` - Sequential Monte Carlo (production ready)
+  - `kernel_type: "nuts"` or `"random_walk"`
+- `type: "blackjax-ns-aw"` - Nested sampling (needs type fixes)
+
+### Inference Documentation
+- `docs/inference_index.md` - Navigation hub
+- `docs/inference_quickstart.md` - Quick start guide
+- `docs/inference.md` - Complete reference
+- `docs/inference_yaml_reference.md` - Auto-generated YAML reference
+
+Full details in `jesterTOV/inference/CLAUDE.md`
+
+---
 
 ## Running Inference
 
@@ -105,14 +137,13 @@ Priors are specified in `.prior` files using bilby-style Python syntax:
 K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
 L_sym = UniformPrior(10.0, 200.0, parameter_names=["L_sym"])
 
-# CSE breaking density (only if nb_CSE > 0)
+# CSE breaking density (for metamodel+CSE transform)
 nbreak = UniformPrior(0.16, 0.32, parameter_names=["nbreak"])
 ```
 
 The parser automatically:
 - Includes NEP parameters (`_sat` and `_sym` suffixes)
-- Includes `nbreak` only if `nb_CSE > 0` in config
-- Adds CSE grid parameters programmatically if `nb_CSE > 0`
+- Adds CSE grid parameters programmatically if `nb_CSE > 0` for metamodel+CSE EOS parametrization
 
 ## Key Design Principles
 
@@ -129,35 +160,9 @@ Transforms convert between parameter spaces. Two types:
    - Can be N-to-M mapping (e.g., NEP → M-R-Λ curves)
    - No Jacobian corrections
 
-**JESTER uses likelihood transforms**: NEP parameters → Mass-Radius-Tidal deformability curves via TOV solver.
-
-### Base Classes (jimgw Independence)
-
-The `base/` module contains copies of Jim v0.2.0 base classes to remove dependency on jimgw. This gives JESTER full control over interfaces and bug fixes.
-
-**Current dependencies from base/**:
-- `LikelihoodBase` - Abstract base class for likelihoods
-- `Prior`, `CombinePrior`, `UniformPrior` - Prior system
-- `NtoMTransform`, `BijectiveTransform` - Transform interfaces
-
-**Goal**: Keep flowMC as the only external sampler dependency.
-
 ### Sampler Architecture
 
-`JesterSampler` is a lightweight wrapper around flowMC that handles:
-- Posterior evaluation with transform Jacobians
-- Parameter name propagation through transforms
-- Converting between named dicts and arrays
-- Generic sampling interface
-
-**Critical bug fixes in JesterSampler**:
-- Uses `jnp.inf` instead of `jnp.nan` for initialization (avoids NaN propagation)
-- Preserves parameter ordering when converting dict → array
-
-**Critical prior handling for blackjax-ns-aw**:
-- The blackjax-ns-aw sampler requires a flat `CombinePrior` structure (list of `UniformPrior` only)
-- When adding `_random_key` prior for GW/NICER likelihoods, the code flattens the structure to avoid nested `CombinePrior` objects
-- See `run_inference.py:125` for implementation
+`JesterSampler` is a base class, with subclasses for different sampler algorithms implemented as subclasses of `JesterSampler`.
 
 ## Common Development Tasks
 
@@ -185,9 +190,6 @@ uv run run_jester_inference config.yaml --validate-only
 
 # Dry run (setup without sampling)
 uv run run_jester_inference config.yaml --dry-run
-
-# Quick test with minimal sampling
-uv run run_jester_inference config.yaml  # Edit config: n_chains=2, n_loop_training=1
 ```
 
 ## Important Notes
@@ -203,29 +205,6 @@ For debugging NaN issues, uncomment:
 ```python
 jax.config.update("jax_debug_nans", True)
 ```
-
-### flowMC Data Argument
-
-Likelihood signature is `likelihood.evaluate(params, data)`. In JESTER, observational data is encapsulated within likelihood objects, so **always pass an empty dict `{}`** as the data argument, not `None`.
-
-### Output Files
-
-Inference produces two output files in `outdir/`:
-- `results_production.npz` - All sampled parameters and log probabilities
-- `eos_samples.npz` - Subset with full EOS curves (Mass, Radius, Lambda)
-
-### Known Issues
-
-**Prior-only sampling with ZeroLikelihood** (December 2024) - ✅ RESOLVED:
-- **Issue**: NaN log probabilities and 0% acceptance rates in prior-only sampling
-- **Root cause**: Identified and fixed in sampler implementation
-- **Status**: Prior-only sampling now works correctly with ZeroLikelihood
-
-**Nested CombinePrior with blackjax-ns-aw** (December 2024) - ✅ RESOLVED:
-- **Issue**: ValueError when using blackjax-ns-aw with GW or NICER likelihoods: "BlackJAX NS-AW requires UniformPrior components, got CombinePrior"
-- **Root cause**: When adding `_random_key` prior for GW/NICER likelihoods, the code wrapped an existing `CombinePrior` inside another `CombinePrior`, creating nested structure
-- **Fix**: Modified `run_inference.py:125` to flatten the structure: `CombinePrior(prior.base_prior + [random_key_prior])` instead of `CombinePrior([prior, random_key_prior])`
-- **Status**: blackjax-ns-aw now works correctly with all likelihood combinations
 
 ## File Naming Conventions
 

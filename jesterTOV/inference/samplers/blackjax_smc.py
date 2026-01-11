@@ -34,8 +34,8 @@ class BlackJAXSMCSampler(JesterSampler):
     (no unit cube transforms needed).
 
     Supported kernels:
-    - NUTS: No-U-Turn Sampler with Hessian-based mass matrix adaptation
-    - Random Walk: Gaussian random walk Metropolis-Hastings
+    - Random Walk: Gaussian random walk Metropolis-Hastings (recommended)
+    - NUTS: No-U-Turn Sampler with Hessian-based mass matrix adaptation (experimental, use with care)
 
     Parameters
     ----------
@@ -123,6 +123,7 @@ class BlackJAXSMCSampler(JesterSampler):
         )
         logger.info(f"Target ESS: {config.target_ess}")
 
+    # TODO: array type hint that this is diagonal
     def _build_mass_matrix(self) -> Array:
         """Create diagonal mass matrix with per-parameter scaling.
         TODO: need to check if there are ways to make a better mass matrix?
@@ -206,7 +207,7 @@ class BlackJAXSMCSampler(JesterSampler):
         # Flatten all particles using the flatten function
         initial_position_flat = jax.vmap(self._flatten_fn)(initial_position_dict)
 
-        # Ensure float dtype for NUTS compatibility
+        # Ensure float dtype for NUTS compatibility # TODO: add a check for the NUTS kernel only? Or move to kernel setup below
         if not jnp.issubdtype(initial_position_flat.dtype, jnp.floating):
             logger.warning(
                 f"Converting initial_position_flat from {initial_position_flat.dtype} to float64"
@@ -214,6 +215,9 @@ class BlackJAXSMCSampler(JesterSampler):
             initial_position_flat = initial_position_flat.astype(jnp.float64)
 
         # Helper function to unflatten and apply inverse transforms
+        # Overloads for return_jacobian flag: if True, return jacobian too as second return value
+        # if False, return only unflattened dict
+        # TODO: check if we can remove this and just not use the Jacobian even if returned: jax will compile it away anyway
         @overload
         def _unflatten_and_inverse_transform(
             x_flat: Array, return_jacobian: Literal[True]
@@ -283,6 +287,7 @@ class BlackJAXSMCSampler(JesterSampler):
             # Track current step size for adaptation
             current_step_size = {"value": self.config.init_step_size}
 
+            # TODO: key, state, and info types?
             # Define parameter update function for Hessian-based adaptation
             def mcmc_parameter_update_fn(key, state, info):
                 """Adapt mass matrix and step size using Hessian at best particle."""
@@ -328,6 +333,7 @@ class BlackJAXSMCSampler(JesterSampler):
                 adapted_step_size = jnp.exp(log_step_size)
                 adapted_step_size = jnp.clip(adapted_step_size, 1e-10, 1e0)
 
+                # TODO: is this even being tracked then?
                 # Update tracked step size
                 current_step_size["value"] = adapted_step_size  # type: ignore[assignment]
 
@@ -352,6 +358,8 @@ class BlackJAXSMCSampler(JesterSampler):
             current_sigma = {"value": self.config.random_walk_sigma}
 
             # Define parameter update function for sigma adaptation
+            # TODO: key, state, and info types?
+            # TODO: jester debug logger or print statements with jax.io callback to see if adaptation works OK?
             def mcmc_parameter_update_fn(key, state, info):
                 """Adapt step size (sigma) based on acceptance rate."""
                 # Extract acceptance rates from last step
@@ -367,9 +375,12 @@ class BlackJAXSMCSampler(JesterSampler):
                 adapted_sigma = jnp.clip(adapted_sigma, 1e-10, 1e1)
 
                 # Update tracked sigma
+                # TODO: type ignore assignment: maybe move the assignment to some other place?
+                # TODO: is this even being tracked?
                 current_sigma["value"] = adapted_sigma  # type: ignore[assignment]
 
                 # Return empty params (random walk doesn't use them in the same way)
+                # TODO: so is the above code even used, then?
                 return extend_params({})
 
             # Setup random walk kernel with additive step
@@ -425,6 +436,7 @@ class BlackJAXSMCSampler(JesterSampler):
             )
 
         # Define loop conditions
+        # TODO: add type hint, so perhaps type: ignore[attr-defined] is OK
         def cond_fn(carry):
             state, _, _, _, _, _, _ = carry
             return state.sampler_state.lmbda < 1  # type: ignore[attr-defined]
