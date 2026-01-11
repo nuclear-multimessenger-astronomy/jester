@@ -1,26 +1,22 @@
-# Radio timing inference configuration
-# SMC with Random Walk kernel for constraining EOS using radio pulsar mass measurements
+# Example configuration for spectral decomposition EOS inference with chiEFT likelihood
+# This uses the spectral parametrization from Lindblom (2010) and Lackey & Wade (2018)
 
-seed: 43
+seed: 42
 
 # Execution options
-dry_run: false
+dry_run: false         # Set to false to run full MCMC sampling
 validate_only: false
 
-# Transform configuration: MetaModel + CSE for high-density region
 transform:
-  type: "metamodel_cse"
-  ndat_metamodel: 100
-  nmax_nsat: 25.0
-  nb_CSE: 8
-  min_nsat_TOV: 0.75
+  type: spectral
+  crust_name: SLy  # Required for spectral (LALSuite compatibility)
+  n_points_high: 500  # Number of high-density points in spectral region
   ndat_TOV: 100
   nb_masses: 100
-  crust_name: "DH"
+  min_nsat_TOV: 0.75
 
-# Prior specification file
 prior:
-  specification_file: "prior.prior"
+  specification_file: prior.prior
 
 # Likelihood constraints
 likelihoods:
