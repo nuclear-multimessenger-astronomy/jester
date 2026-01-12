@@ -50,43 +50,45 @@ GL_WEIGHTS_10 = jnp.array([
 ])
 
 
-def gauss_legendre_quad(
-    func,
-    a: float,
-    b: float,
-    *args
-) -> float:
+def get_gauss_legendre_nodes(a: float, b: float) -> Float[Array, "10"]:
     """
-    Compute integral of func from a to b using 10-point Gauss-Legendre quadrature.
+    Get Gauss-Legendre quadrature nodes mapped from [-1, 1] to [a, b].
+
+    Args:
+        a: Lower integration limit
+        b: Upper integration limit
+
+    Returns:
+        Array of 10 nodes in [a, b]
+    """
+    midpoint = (b + a) / 2.0
+    half_width = (b - a) / 2.0
+    return midpoint + half_width * GL_NODES_10
+
+
+def gauss_legendre_quad(
+    func_values: Float[Array, "10"],
+    a: float,
+    b: float
+) -> Float[Array, ""]:
+    """
+    Compute integral using precomputed function values at Gauss-Legendre nodes.
 
     This implements the transformation from [-1, 1] to [a, b]:
         ∫ₐᵇ f(x) dx = ((b-a)/2) Σᵢ wᵢ f((b-a)/2 * xᵢ + (b+a)/2)
 
     Args:
-        func: Function to integrate (must accept extra args)
+        func_values: Function values evaluated at GL nodes (from get_gauss_legendre_nodes)
         a: Lower integration limit
         b: Upper integration limit
-        *args: Additional arguments to pass to func
 
     Returns:
-        Integral value
+        Integral value (scalar array)
     """
-    # Map nodes from [-1, 1] to [a, b]
-    midpoint = (b + a) / 2.0
     half_width = (b - a) / 2.0
-
-    # Transform nodes to integration interval
-    nodes = midpoint + half_width * GL_NODES_10
-
-    # Evaluate function at all nodes using Python loop
-    # (JAX vmap doesn't work well with function arguments)
-    result = 0.0
-    for i in range(len(GL_NODES_10)):
-        result += GL_WEIGHTS_10[i] * func(nodes[i], *args)
-
-    result *= half_width
-
-    return result
+    # Vectorized weighted sum (no for loop!)
+    result = jnp.sum(GL_WEIGHTS_10 * func_values)
+    return result * half_width
 
 
 class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
@@ -142,7 +144,7 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
 
     @staticmethod
     @jit
-    def _log_gamma(x: float, gamma: Float[Array, "4"]) -> float:
+    def _log_gamma(x: float, gamma: Float[Array, "4"]) -> Float[Array, ""]:
         """
         Compute log Γ(x) from spectral expansion.
 
@@ -151,13 +153,13 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
             gamma: Spectral coefficients [γ₀, γ₁, γ₂, γ₃]
 
         Returns:
-            log Γ(x) = γ₀ + γ₁·x + γ₂·x² + γ₃·x³
+            log Γ(x) = γ₀ + γ₁·x + γ₂·x² + γ₃·x³ (scalar array)
         """
         return gamma[0] + gamma[1]*x + gamma[2]*x**2 + gamma[3]*x**3
 
     @staticmethod
     @jit
-    def _adiabatic_index(x: float, gamma: Float[Array, "4"]) -> float:
+    def _adiabatic_index(x: float, gamma: Float[Array, "4"]) -> Float[Array, ""]:
         """
         Compute adiabatic index Γ(x) = exp(log Γ(x)).
 
@@ -168,13 +170,13 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
             gamma: Spectral coefficients [γ₀, γ₁, γ₂, γ₃]
 
         Returns:
-            Γ(x) = exp(γ₀ + γ₁·x + γ₂·x² + γ₃·x³)
+            Γ(x) = exp(γ₀ + γ₁·x + γ₂·x² + γ₃·x³) (scalar array)
         """
         log_gamma_val = SpectralDecomposition_EOS_model._log_gamma(x, gamma)
         return jnp.exp(log_gamma_val)
 
     @staticmethod
-    def _compute_mu(x: float, gamma: Float[Array, "4"]) -> float:
+    def _compute_mu(x: float, gamma: Float[Array, "4"]) -> Float[Array, ""]:
         """
         Compute μ(x) = exp[-∫₀ˣ (1/Γ(x')) dx'].
 
@@ -186,20 +188,25 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
             gamma: Spectral coefficients [γ₀, γ₁, γ₂, γ₃]
 
         Returns:
-            μ(x) value
+            μ(x) value (scalar array)
         """
-        # Integrand: 1/Γ(x')
-        def integrand(xprime, gamma_arr):
-            return 1.0 / SpectralDecomposition_EOS_model._adiabatic_index(xprime, gamma_arr)
+        # Get quadrature nodes in [0, x]
+        nodes = get_gauss_legendre_nodes(0.0, x)
+
+        # Evaluate integrand: 1/Γ(x') at all nodes (vectorized!)
+        gamma_values = vmap(
+            lambda xprime: SpectralDecomposition_EOS_model._adiabatic_index(xprime, gamma)
+        )(nodes)
+        integrand_values = 1.0 / gamma_values
 
         # Compute ∫₀ˣ 1/Γ(x') dx' using Gauss-Legendre quadrature
-        integral = gauss_legendre_quad(integrand, 0.0, x, gamma)
+        integral = gauss_legendre_quad(integrand_values, 0.0, x)
 
         # μ(x) = exp(-integral)
         return jnp.exp(-integral)
 
     @staticmethod
-    def _compute_energy_density_geom(x: float, gamma: Float[Array, "4"]) -> float:
+    def _compute_energy_density_geom(x: float, gamma: Float[Array, "4"]) -> Float[Array, ""]:
         """
         Compute energy density ε(x) in geometric units.
 
@@ -228,14 +235,21 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         # Compute μ(x)
         mu = SpectralDecomposition_EOS_model._compute_mu(x, gamma)
 
-        # Integrand: μ(x') * exp(x') / Γ(x')
-        def integrand(xprime, gamma_arr):
-            mu_prime = SpectralDecomposition_EOS_model._compute_mu(xprime, gamma_arr)
-            gamma_prime = SpectralDecomposition_EOS_model._adiabatic_index(xprime, gamma_arr)
-            return mu_prime * jnp.exp(xprime) / gamma_prime
+        # Get quadrature nodes in [0, x]
+        nodes = get_gauss_legendre_nodes(0.0, x)
+
+        # Evaluate integrand: μ(x') * exp(x') / Γ(x') at all nodes (vectorized!)
+        # Note: This requires computing μ at each node (nested integration)
+        mu_values = vmap(
+            lambda xprime: SpectralDecomposition_EOS_model._compute_mu(xprime, gamma)
+        )(nodes)
+        gamma_values = vmap(
+            lambda xprime: SpectralDecomposition_EOS_model._adiabatic_index(xprime, gamma)
+        )(nodes)
+        integrand_values = mu_values * jnp.exp(nodes) / gamma_values
 
         # Compute ∫₀ˣ μ(x') exp(x') / Γ(x') dx'
-        integral = gauss_legendre_quad(integrand, 0.0, x, gamma)
+        integral = gauss_legendre_quad(integrand_values, 0.0, x)
 
         # ε(x) = ε₀/μ(x) + (p₀/μ(x)) · Integral
         return e0 / mu + (p0 / mu) * integral
@@ -330,7 +344,7 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
     def _generate_spectral_region(
         self,
         gamma: Float[Array, "4"],
-        p_stitch_nuclear: float
+        p_stitch_nuclear: Float[Array, ""] | float
     ) -> Tuple[Float[Array, "n_high"], Float[Array, "n_high"], Float[Array, "n_high"]]:
         """
         Generate high-density EOS points from spectral expansion.
@@ -343,7 +357,7 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
 
         Args:
             gamma: Spectral coefficients [γ₀, γ₁, γ₂, γ₃]
-            p_stitch_nuclear: Stitching pressure from crust [MeV fm⁻³]
+            p_stitch_nuclear: Stitching pressure from crust [MeV fm⁻³] (currently unused)
 
         Returns:
             Tuple of (n, p, e) in nuclear units [fm⁻³, MeV fm⁻³, MeV fm⁻³]
