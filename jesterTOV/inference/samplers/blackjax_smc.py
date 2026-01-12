@@ -716,20 +716,23 @@ class BlackJAXSMCRandomWalkSampler(BlackJAXSMCSampler):
         logposterior_fn: Callable,
         initial_particles: Array,
     ) -> tuple[Callable, Callable, dict, Callable]:
-        """Setup Random Walk kernel with covariance-based adaptation.
+        """Setup Random Walk kernel with covariance-based and scale adaptation.
 
-        This implementation follows the approach used in david_smc_setup.py,
-        using particles_covariance_matrix for adaptive proposal scaling.
+        This implementation combines:
+        1. Covariance matrix adaptation from particles (david_smc_setup.py approach)
+        2. Adaptive scale tuning based on acceptance rates (BlackJAX tuning)
         """
         from blackjax.mcmc import random_walk
         from blackjax.smc import extend_params
         from blackjax.smc.tuning.from_particles import particles_covariance_matrix
+        from blackjax.smc.tuning.from_kernel_info import update_scale_from_acceptance_rate
 
         # Type narrow config for this subclass
         config = cast(SMCRandomWalkSamplerConfig, self.config)
 
-        logger.info("Using covariance-based random walk adaptation")
+        logger.info("Using covariance-based random walk with adaptive scaling")
         logger.info(f"Initial sigma scaling: {config.random_walk_sigma}")
+        logger.info(f"Target acceptance rate: {config.target_acceptance}")
 
         # Setup random walk kernel with additive step
         kernel = random_walk.build_additive_step()
@@ -740,19 +743,44 @@ class BlackJAXSMCRandomWalkSampler(BlackJAXSMCSampler):
         init_cov = jnp.atleast_2d(init_cov)
         # Scale by sigma^2
         init_cov = init_cov * (config.random_walk_sigma ** 2)
+
+        # Initial scale (will be adapted) - track using mutable dict
+        current_scale_tracker = {"value": config.random_walk_sigma}
+
         init_params = {"cov": init_cov}
 
-        # Define parameter update function that computes covariance from particles
+        # Define parameter update function with covariance and scale adaptation
         def mcmc_parameter_update_fn(key, state, info):
-            """Adapt proposal covariance based on particle distribution."""
+            """Adapt proposal covariance and scale based on particle distribution and acceptance."""
             # Note: state here is TemperedSMCState, particles are at state.particles
-            # Compute covariance matrix from current particles
+
+            # 1. Compute covariance matrix from current particles
             cov = particles_covariance_matrix(state.particles)
             # Ensure 2D array (n_dim, n_dim) even for 1D problems
             cov = jnp.atleast_2d(cov)
 
-            # Scale by sigma parameter to control proposal size
-            scaled_cov = cov * (config.random_walk_sigma ** 2)
+            # 2. Update scale based on acceptance rates from last MCMC steps
+            last_step_info = jax.tree.map(lambda x: x[-1], info.update_info)
+            acceptance_rates = last_step_info.acceptance_rate
+
+            # Get current scale from tracker
+            current_scale = current_scale_tracker["value"]
+
+            # Create scale array for all particles (all use same scale)
+            scales = jnp.full(len(acceptance_rates), current_scale)
+
+            # Update scale using BlackJAX tuning
+            new_scales = update_scale_from_acceptance_rate(
+                scales, acceptance_rates, config.target_acceptance
+            )
+            # Take mean of updated scales as new global scale
+            adapted_scale = new_scales.mean()
+
+            # Update tracker
+            current_scale_tracker["value"] = adapted_scale  # type: ignore[assignment]
+
+            # 3. Scale covariance by adapted scale^2
+            scaled_cov = cov * (adapted_scale ** 2)
 
             return extend_params({"cov": scaled_cov})
 
