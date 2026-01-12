@@ -44,10 +44,10 @@ class TestInferenceResultBasic:
     def test_initialization_without_histories(self):
         """Test InferenceResult works without histories."""
         posterior = {"K_sat": np.array([220.0])}
-        metadata = {"sampler": "blackjax_smc"}
+        metadata = {"sampler": "blackjax_smc_rw"}
 
         result = InferenceResult(
-            sampler_type="blackjax_smc",
+            sampler_type="blackjax_smc_rw",
             posterior=posterior,
             metadata=metadata,
             histories=None,
@@ -125,7 +125,7 @@ class TestInferenceResultSaveLoad:
             },
         }
         metadata = {
-            "sampler": "blackjax_smc",
+            "sampler": "blackjax_smc_rw",
             "sampling_time": 1800.0,
             "n_samples": 4,
             "seed": 123,
@@ -152,7 +152,7 @@ class TestInferenceResultSaveLoad:
 
         # Create and save
         result = InferenceResult(
-            sampler_type="blackjax_smc",
+            sampler_type="blackjax_smc_rw",
             posterior=posterior,
             metadata=metadata,
             histories=histories,
@@ -164,7 +164,7 @@ class TestInferenceResultSaveLoad:
         # Load and verify
         loaded = InferenceResult.load(filepath)
 
-        assert loaded.sampler_type == "blackjax_smc"
+        assert loaded.sampler_type == "blackjax_smc_rw"
         assert loaded.metadata["kernel_type"] == "nuts"
         assert loaded.metadata["n_particles"] == 100
         assert loaded.metadata["logZ"] == pytest.approx(-1234.5)
@@ -411,7 +411,7 @@ class TestInferenceResultSummary:
         """Test summary for SMC results."""
         posterior = {"K_sat": np.array([220.0])}
         metadata = {
-            "sampler": "blackjax_smc",
+            "sampler": "blackjax_smc_rw",
             "sampling_time": 1800.0,
             "n_samples": 500,
             "seed": 123,
@@ -424,7 +424,7 @@ class TestInferenceResultSummary:
         }
 
         result = InferenceResult(
-            sampler_type="blackjax_smc",
+            sampler_type="blackjax_smc_rw",
             posterior=posterior,
             metadata=metadata,
         )
@@ -576,10 +576,10 @@ class TestInferenceResultEdgeCases:
                 # but we test array handling explicitly
             },
         }
-        metadata = {"sampler": "blackjax_smc"}
+        metadata = {"sampler": "blackjax_smc_rw"}
 
         result = InferenceResult(
-            sampler_type="blackjax_smc",
+            sampler_type="blackjax_smc_rw",
             posterior=posterior,
             metadata=metadata,
         )

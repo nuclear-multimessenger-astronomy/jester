@@ -34,8 +34,7 @@ likelihoods:
 # SMC configuration with Random Walk kernel
 # Aggressive settings for high-quality prior sampling
 sampler:
-  type: "smc"
-  kernel_type: "random_walk"  # Gaussian random walk kernel with sigma adaptation
+  type: "smc-rw"
   n_particles: 10000          # Number of particles for prior sampling (AGGRESSIVE)
   n_mcmc_steps: 20            # MCMC steps per tempering level
   target_ess: 0.9             # Target effective sample size (90%)

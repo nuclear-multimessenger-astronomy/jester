@@ -35,7 +35,7 @@ uv run run_jester_inference config.yaml
 ## Configuration Highlights
 
 ### Random Walk Kernel Settings
-- **`kernel_type: "random_walk"`** - Use Gaussian random walk kernel
+- **`type: "smc-rw"`** - SMC with Gaussian random walk kernel
 - **`n_particles: 1000`** - Reduced for testing (use 10000 for production)
 - **`n_mcmc_steps: 10`** - More steps needed compared to NUTS
 - **`random_walk_sigma: 0.1`** - Step size for Gaussian proposals
@@ -51,11 +51,11 @@ uv run run_jester_inference config.yaml
 
 ## Comparison with NUTS
 
-For the same problems using NUTS kernel, see `../smc_nuts/`
+For the same problems using NUTS kernel, use sampler type `"smc-nuts"` instead.
 
 **Random Walk vs NUTS Trade-offs**:
-- Random Walk: Simpler, lower per-step cost, needs more MCMC steps, easier to debug
-- NUTS: More efficient, needs fewer steps, automatic adaptation, higher per-step cost
+- Random Walk (`smc-rw`): Simpler, lower per-step cost, needs more MCMC steps, easier to debug
+- NUTS (`smc-nuts`): More efficient, needs fewer steps, automatic adaptation, higher per-step cost
 
 ## File Contents
 

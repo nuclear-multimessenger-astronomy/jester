@@ -26,7 +26,8 @@ from .schema import (
     LikelihoodConfig,
     FlowMCSamplerConfig,
     BlackJAXNSAWConfig,
-    SMCSamplerConfig,
+    SMCRandomWalkSamplerConfig,
+    SMCNUTSSamplerConfig,
 )
 
 
@@ -256,7 +257,7 @@ The JESTER inference system uses YAML configuration files validated by Pydantic 
 
     doc += "\n# Sampler configuration (choose one type)\n"
     doc += "sampler:\n"
-    doc += '  type: "flowmc"  # or "nested_sampling", "smc"\n'
+    doc += '  type: "flowmc"  # or "blackjax-ns-aw", "smc-rw", "smc-nuts"\n'
     doc += "  # See sampler-specific fields below\n"
 
     doc += "\n# Data paths (optional overrides)\n"
@@ -376,11 +377,18 @@ The JESTER inference system uses YAML configuration files validated by Pydantic 
     doc += generate_field_docs(ns_fields)
     doc += "\n**Output**: Evidence (logZ ± error) and posterior samples with importance weights.\n\n"
 
-    # SMC
-    doc += '#### Sequential Monte Carlo (`type: "smc"`)\n\n'
-    doc += "BlackJAX SMC with adaptive tempering and NUTS kernel.\n\n"
-    smc_fields = extract_field_info(SMCSamplerConfig)
-    doc += generate_field_docs(smc_fields)
+    # SMC Random Walk
+    doc += '#### Sequential Monte Carlo with Random Walk (`type: "smc-rw"`)\n\n'
+    doc += "BlackJAX SMC with adaptive tempering and Gaussian Random Walk kernel.\n\n"
+    smc_rw_fields = extract_field_info(SMCRandomWalkSamplerConfig)
+    doc += generate_field_docs(smc_rw_fields)
+    doc += "\n**Output**: Posterior samples and effective sample size (ESS) statistics.\n\n"
+
+    # SMC NUTS
+    doc += '#### Sequential Monte Carlo with NUTS (`type: "smc-nuts"`)\n\n'
+    doc += "BlackJAX SMC with adaptive tempering and NUTS kernel (EXPERIMENTAL).\n\n"
+    smc_nuts_fields = extract_field_info(SMCNUTSSamplerConfig)
+    doc += generate_field_docs(smc_nuts_fields)
     doc += "\n**Output**: Posterior samples and effective sample size (ESS) statistics.\n\n"
 
     # Data paths

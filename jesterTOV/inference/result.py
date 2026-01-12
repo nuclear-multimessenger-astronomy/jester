@@ -19,7 +19,7 @@ from jesterTOV.logging_config import get_logger
 
 logger = get_logger("jester")
 
-SamplerType = Literal["flowmc", "blackjax_smc", "blackjax_ns_aw"]
+SamplerType = Literal["flowmc", "blackjax_smc_rw", "blackjax_smc_nuts", "blackjax_ns_aw"]
 
 
 class InferenceResult:
@@ -34,7 +34,7 @@ class InferenceResult:
     Attributes
     ----------
     sampler_type : SamplerType
-        Sampler backend type ("flowmc", "blackjax_smc", or "blackjax_ns_aw")
+        Sampler backend type ("flowmc", "blackjax_smc_rw", "blackjax_smc_nuts", or "blackjax_ns_aw")
     posterior : Dict[str, np.ndarray]
         All posterior samples including parameters, derived quantities, and sampler-specific data
     metadata : Dict[str, Any]
@@ -111,8 +111,10 @@ class InferenceResult:
         sampler_class_name = sampler.__class__.__name__
         if "FlowMC" in sampler_class_name:
             sampler_type = "flowmc"
-        elif "SMC" in sampler_class_name:
-            sampler_type = "blackjax_smc"
+        elif "SMCRandomWalk" in sampler_class_name:
+            sampler_type = "blackjax_smc_rw"
+        elif "SMCNUTS" in sampler_class_name:
+            sampler_type = "blackjax_smc_nuts"
         elif "NS" in sampler_class_name or "NestedSampling" in sampler_class_name:
             sampler_type = "blackjax_ns_aw"
         else:
@@ -186,7 +188,7 @@ class InferenceResult:
                     # "loss_vals": np.array(state["loss_vals"]),
                 }
 
-        elif sampler_type == "blackjax_smc":
+        elif sampler_type in ["blackjax_smc_rw", "blackjax_smc_nuts"]:
             # SMC: Get metadata from sampler.metadata dict
             smc_metadata = sampler.metadata  # type: ignore[attr-defined]
 
@@ -660,7 +662,7 @@ class InferenceResult:
                 f"  Production loops: {self.metadata.get('n_loop_production', '?')}"
             )
 
-        elif self.sampler_type == "blackjax_smc":
+        elif self.sampler_type in ["blackjax_smc_rw", "blackjax_smc_nuts"]:
             lines.append("\nBlackJAX SMC Configuration:")
             lines.append(f"  Kernel type: {self.metadata.get('kernel_type', '?')}")
             lines.append(f"  Particles: {self.metadata.get('n_particles', '?')}")

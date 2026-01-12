@@ -56,8 +56,7 @@ likelihoods:
 # SMC configuration with Random Walk kernel
 # Aggressive settings for high-quality radio timing inference
 sampler:
-  type: "smc"
-  kernel_type: "random_walk"  # Gaussian random walk kernel with sigma adaptation
+  type: "smc-rw"
   n_particles: 5000          # Number of particles for full inference (AGGRESSIVE)
   n_mcmc_steps: 10            # MCMC steps per tempering level (AGGRESSIVE)
   target_ess: 0.9             # Target effective sample size (90%)
