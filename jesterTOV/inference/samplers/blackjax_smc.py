@@ -14,7 +14,7 @@ from pathlib import Path
 import jax
 import jax.numpy as jnp
 import jax.random
-from jax.flatten_util import ravel_pytree
+from jax import flatten_util
 from jax.tree_util import tree_map
 from jax.experimental import io_callback
 from jaxtyping import Array, PRNGKeyArray
@@ -112,7 +112,11 @@ class BlackJAXSMCSampler(JesterSampler):
 
     @abstractmethod
     def _setup_mcmc_kernel(
-        self, logprior_fn: Callable, loglikelihood_fn: Callable, logposterior_fn: Callable
+        self,
+        logprior_fn: Callable,
+        loglikelihood_fn: Callable,
+        logposterior_fn: Callable,
+        initial_particles: Array,
     ) -> tuple[Callable, Callable, dict, Callable]:
         """Setup kernel-specific components.
 
@@ -124,6 +128,8 @@ class BlackJAXSMCSampler(JesterSampler):
             Log likelihood function for single particle
         logposterior_fn : Callable
             Log posterior function for single particle (for NUTS Hessian)
+        initial_particles : Array
+            Initial particle positions (flat arrays, shape: (n_particles, n_dim))
 
         Returns
         -------
@@ -190,8 +196,8 @@ class BlackJAXSMCSampler(JesterSampler):
         # Flatten particles to arrays for BlackJAX SMC
         # NOTE: ravel_pytree uses alphabetical key ordering (deterministic)
         single_sample_dict = tree_map(lambda x: x[0], initial_position_dict)
-        _, self._unflatten_fn = ravel_pytree(single_sample_dict)
-        self._flatten_fn = lambda x: ravel_pytree(x)[0]
+        _, self._unflatten_fn = flatten_util.ravel_pytree(single_sample_dict)
+        self._flatten_fn = lambda x: flatten_util.ravel_pytree(x)[0]
 
         # Flatten all particles using the flatten function
         initial_position_flat = jax.vmap(self._flatten_fn)(initial_position_dict)
@@ -250,7 +256,9 @@ class BlackJAXSMCSampler(JesterSampler):
 
         # Setup kernel-specific components
         mcmc_step_fn, mcmc_init_fn, init_params, mcmc_parameter_update_fn = (
-            self._setup_mcmc_kernel(logprior_fn, loglikelihood_fn, logposterior_fn)
+            self._setup_mcmc_kernel(
+                logprior_fn, loglikelihood_fn, logposterior_fn, initial_position_flat
+            )
         )
 
         # Initialize SMC algorithm with kernel
@@ -702,59 +710,67 @@ class BlackJAXSMCRandomWalkSampler(BlackJAXSMCSampler):
         return "random_walk"
 
     def _setup_mcmc_kernel(
-        self, logprior_fn: Callable, loglikelihood_fn: Callable, logposterior_fn: Callable
+        self,
+        logprior_fn: Callable,
+        loglikelihood_fn: Callable,
+        logposterior_fn: Callable,
+        initial_particles: Array,
     ) -> tuple[Callable, Callable, dict, Callable]:
-        """Setup Random Walk kernel."""
+        """Setup Random Walk kernel with covariance-based adaptation.
+
+        This implementation follows the approach used in david_smc_setup.py,
+        using particles_covariance_matrix for adaptive proposal scaling.
+        """
         from blackjax.mcmc import random_walk
         from blackjax.smc import extend_params
+        from blackjax.smc.tuning.from_particles import particles_covariance_matrix
 
         # Type narrow config for this subclass
         config = cast(SMCRandomWalkSamplerConfig, self.config)
 
-        logger.info(f"Initial sigma: {config.random_walk_sigma}")
-        logger.info(f"Adaptation rate: {config.adaptation_rate}")
-
-        # Initial parameters (empty for random walk)
-        init_params = {}
-
-        # Track current sigma for adaptation
-        current_sigma = {"value": config.random_walk_sigma}
-
-        # Define parameter update function for sigma adaptation
-        def mcmc_parameter_update_fn(key, state, info):
-            """Adapt step size (sigma) based on acceptance rate."""
-            # Extract acceptance rates from last step
-            last_step_info = jax.tree.map(lambda x: x[-1], info.update_info)
-            mean_acceptance = last_step_info.acceptance_rate.mean()
-
-            # Adapt sigma using dual averaging
-            log_sigma = jnp.log(current_sigma["value"])
-            log_sigma += config.adaptation_rate * (
-                mean_acceptance - config.target_acceptance
-            )
-            adapted_sigma = jnp.exp(log_sigma)
-            adapted_sigma = jnp.clip(adapted_sigma, 1e-10, 1e1)
-
-            # Update tracked sigma
-            current_sigma["value"] = adapted_sigma  # type: ignore[assignment]
-
-            # Return empty params (random walk doesn't use them in the same way)
-            return extend_params({})
+        logger.info("Using covariance-based random walk adaptation")
+        logger.info(f"Initial sigma scaling: {config.random_walk_sigma}")
 
         # Setup random walk kernel with additive step
         kernel = random_walk.build_additive_step()
 
+        # Compute initial covariance from initial particles
+        init_cov = particles_covariance_matrix(initial_particles)
+        # Ensure 2D array (n_dim, n_dim) even for 1D problems
+        init_cov = jnp.atleast_2d(init_cov)
+        # Scale by sigma^2
+        init_cov = init_cov * (config.random_walk_sigma ** 2)
+        init_params = {"cov": init_cov}
+
+        # Define parameter update function that computes covariance from particles
+        def mcmc_parameter_update_fn(key, state, info):
+            """Adapt proposal covariance based on particle distribution."""
+            # Note: state here is TemperedSMCState, particles are at state.particles
+            # Compute covariance matrix from current particles
+            cov = particles_covariance_matrix(state.particles)
+            # Ensure 2D array (n_dim, n_dim) even for 1D problems
+            cov = jnp.atleast_2d(cov)
+
+            # Scale by sigma parameter to control proposal size
+            scaled_cov = cov * (config.random_walk_sigma ** 2)
+
+            return extend_params({"cov": scaled_cov})
+
         # Wrap kernel to match expected signature
         def mcmc_step_fn(rng_key, state, logdensity_fn, **params):
-            """Random walk step function matching expected signature."""
-            # Update random step with current sigma
-            step_fn = random_walk.normal(
-                jnp.ones(self.prior.n_dim) * current_sigma["value"]
-            )
-            return kernel(rng_key, state, logdensity_fn, step_fn)
+            """Random walk step function with multivariate normal proposal."""
+            cov = params.get("cov", init_cov)
 
-        # Init function for random walk
-        mcmc_init_fn = random_walk.init
+            def proposal_distribution(key, position):
+                """Multivariate normal proposal using covariance matrix."""
+                x, ravel_fn = flatten_util.ravel_pytree(position)
+                return ravel_fn(jax.random.multivariate_normal(key, jnp.zeros_like(x), cov))
+
+            return kernel(rng_key, state, logdensity_fn, proposal_distribution)
+
+        # Init function for random walk (use RMH init)
+        from blackjax.mcmc.random_walk import init as rmh_init
+        mcmc_init_fn = rmh_init
 
         return mcmc_step_fn, mcmc_init_fn, init_params, mcmc_parameter_update_fn
 
@@ -815,7 +831,11 @@ class BlackJAXSMCNUTSSampler(BlackJAXSMCSampler):
         return jnp.diag(mass_matrix_diag)
 
     def _setup_mcmc_kernel(
-        self, logprior_fn: Callable, loglikelihood_fn: Callable, logposterior_fn: Callable
+        self,
+        logprior_fn: Callable,
+        loglikelihood_fn: Callable,
+        logposterior_fn: Callable,
+        initial_particles: Array,
     ) -> tuple[Callable, Callable, dict, Callable]:
         """Setup NUTS kernel with Hessian adaptation."""
         from blackjax import nuts
