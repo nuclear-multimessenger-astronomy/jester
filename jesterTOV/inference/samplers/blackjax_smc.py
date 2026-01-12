@@ -729,9 +729,14 @@ class BlackJAXSMCRandomWalkSampler(BlackJAXSMCSampler):
         # Type narrow config for this subclass
         config = cast(SMCRandomWalkSamplerConfig, self.config)
 
-        logger.info("Using covariance-based random walk with adaptive scaling")
-        logger.info(f"Initial sigma scaling: {config.random_walk_sigma}")
-        logger.info(f"Target acceptance rate: {config.target_acceptance}")
+        if config.adaptation_rate is not None:
+            logger.info("Using covariance-based random walk with adaptive scaling")
+            logger.info(f"Initial sigma scaling: {config.random_walk_sigma}")
+            logger.info(f"Target acceptance rate: {config.target_acceptance}")
+            logger.info(f"Adaptation rate: {config.adaptation_rate}")
+        else:
+            logger.info("Using covariance-based random walk (fixed scale)")
+            logger.info(f"Fixed sigma scaling: {config.random_walk_sigma}")
 
         # Setup random walk kernel with additive step
         kernel = random_walk.build_additive_step()
@@ -748,12 +753,12 @@ class BlackJAXSMCRandomWalkSampler(BlackJAXSMCSampler):
 
         init_params = {"cov": init_cov}
 
-        # Define parameter update function with covariance and scale adaptation
+        # Define parameter update function with covariance and optional scale adaptation
         def mcmc_parameter_update_fn(key, state, info):
-            """Adapt proposal covariance and scale based on particle distribution and acceptance.
+            """Adapt proposal covariance and optionally scale based on particle distribution.
 
-            Uses damped log-scale adaptation to avoid overshooting:
-            log(scale_new) = log(scale_old) + rate * (acceptance - target)
+            If adaptation_rate is None: only adapt covariance, keep scale fixed
+            If adaptation_rate is not None: also adapt scale using damped log-scale adaptation
             """
             # Note: state here is TemperedSMCState, particles are at state.particles
 
@@ -762,25 +767,28 @@ class BlackJAXSMCRandomWalkSampler(BlackJAXSMCSampler):
             # Ensure 2D array (n_dim, n_dim) even for 1D problems
             cov = jnp.atleast_2d(cov)
 
-            # 2. Adapt scale based on mean acceptance rate
-            last_step_info = jax.tree.map(lambda x: x[-1], info.update_info)
-            acceptance_rates = last_step_info.acceptance_rate
-            mean_acceptance = acceptance_rates.mean()
+            # 2. Optionally adapt scale based on mean acceptance rate
+            if config.adaptation_rate is not None:
+                last_step_info = jax.tree.map(lambda x: x[-1], info.update_info)
+                acceptance_rates = last_step_info.acceptance_rate
+                mean_acceptance = acceptance_rates.mean()
 
-            # Get current scale from tracker
-            current_scale = current_scale_tracker["value"]
+                # Get current scale from tracker
+                current_scale = current_scale_tracker["value"]
 
-            # Damped adaptation in log space (similar to dual averaging but simpler)
-            # Use adaptation_rate from config (typically 0.3)
-            log_scale = jnp.log(current_scale)
-            log_scale += config.adaptation_rate * (mean_acceptance - config.target_acceptance)
-            adapted_scale = jnp.exp(log_scale)
+                # Damped adaptation in log space (similar to dual averaging but simpler)
+                log_scale = jnp.log(current_scale)
+                log_scale += config.adaptation_rate * (mean_acceptance - config.target_acceptance)
+                adapted_scale = jnp.exp(log_scale)
 
-            # Clip to reasonable range to prevent extreme values
-            adapted_scale = jnp.clip(adapted_scale, 1e-4, 1e1)
+                # Clip to reasonable range to prevent extreme values
+                adapted_scale = jnp.clip(adapted_scale, 1e-4, 1e1)
 
-            # Update tracker
-            current_scale_tracker["value"] = adapted_scale  # type: ignore[assignment]
+                # Update tracker
+                current_scale_tracker["value"] = adapted_scale  # type: ignore[assignment]
+            else:
+                # Use fixed scale
+                adapted_scale = current_scale_tracker["value"]
 
             # 3. Scale covariance by adapted scale^2
             scaled_cov = cov * (adapted_scale ** 2)

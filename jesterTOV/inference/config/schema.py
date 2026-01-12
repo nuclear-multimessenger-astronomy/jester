@@ -508,8 +508,10 @@ class SMCRandomWalkSamplerConfig(BaseSamplerConfig):
         Sigma for Gaussian random walk kernel (default: 0.1)
     target_acceptance : float
         Target acceptance rate (default: 0.5)
-    adaptation_rate : float
-        Adaptation rate for sigma tuning (default: 0.3)
+    adaptation_rate : float | None
+        Adaptation rate for sigma tuning (default: None = no adaptation).
+        If None, only covariance is adapted, not the overall scale.
+        Set to 0.3 for damped scale adaptation.
     """
 
     type: Literal["smc-rw"] = "smc-rw"  # Discriminator for Pydantic union
@@ -518,7 +520,7 @@ class SMCRandomWalkSamplerConfig(BaseSamplerConfig):
     target_ess: float = 0.9
     random_walk_sigma: float = 0.1
     target_acceptance: float = 0.5
-    adaptation_rate: float = 0.3
+    adaptation_rate: float | None = None
 
     @field_validator("n_particles", "n_mcmc_steps")
     @classmethod
@@ -528,12 +530,20 @@ class SMCRandomWalkSamplerConfig(BaseSamplerConfig):
             raise ValueError(f"Value must be positive, got: {v}")
         return v
 
-    @field_validator("target_ess", "target_acceptance", "adaptation_rate")
+    @field_validator("target_ess", "target_acceptance")
     @classmethod
     def validate_fraction(cls, v: float) -> float:
         """Validate that value is in (0, 1]."""
         if v <= 0 or v > 1:
             raise ValueError(f"Value must be in (0, 1], got: {v}")
+        return v
+
+    @field_validator("adaptation_rate")
+    @classmethod
+    def validate_adaptation_rate(cls, v: float | None) -> float | None:
+        """Validate that adaptation_rate is None or in (0, 1]."""
+        if v is not None and (v <= 0 or v > 1):
+            raise ValueError(f"adaptation_rate must be None or in (0, 1], got: {v}")
         return v
 
     @field_validator("random_walk_sigma")
