@@ -720,12 +720,11 @@ class BlackJAXSMCRandomWalkSampler(BlackJAXSMCSampler):
 
         This implementation combines:
         1. Covariance matrix adaptation from particles (david_smc_setup.py approach)
-        2. Adaptive scale tuning based on acceptance rates (BlackJAX tuning)
+        2. Damped log-scale adaptation based on acceptance rates (dual averaging style)
         """
         from blackjax.mcmc import random_walk
         from blackjax.smc import extend_params
         from blackjax.smc.tuning.from_particles import particles_covariance_matrix
-        from blackjax.smc.tuning.from_kernel_info import update_scale_from_acceptance_rate
 
         # Type narrow config for this subclass
         config = cast(SMCRandomWalkSamplerConfig, self.config)
@@ -751,7 +750,11 @@ class BlackJAXSMCRandomWalkSampler(BlackJAXSMCSampler):
 
         # Define parameter update function with covariance and scale adaptation
         def mcmc_parameter_update_fn(key, state, info):
-            """Adapt proposal covariance and scale based on particle distribution and acceptance."""
+            """Adapt proposal covariance and scale based on particle distribution and acceptance.
+
+            Uses damped log-scale adaptation to avoid overshooting:
+            log(scale_new) = log(scale_old) + rate * (acceptance - target)
+            """
             # Note: state here is TemperedSMCState, particles are at state.particles
 
             # 1. Compute covariance matrix from current particles
@@ -759,22 +762,22 @@ class BlackJAXSMCRandomWalkSampler(BlackJAXSMCSampler):
             # Ensure 2D array (n_dim, n_dim) even for 1D problems
             cov = jnp.atleast_2d(cov)
 
-            # 2. Update scale based on acceptance rates from last MCMC steps
+            # 2. Adapt scale based on mean acceptance rate
             last_step_info = jax.tree.map(lambda x: x[-1], info.update_info)
             acceptance_rates = last_step_info.acceptance_rate
+            mean_acceptance = acceptance_rates.mean()
 
             # Get current scale from tracker
             current_scale = current_scale_tracker["value"]
 
-            # Create scale array for all particles (all use same scale)
-            scales = jnp.full(len(acceptance_rates), current_scale)
+            # Damped adaptation in log space (similar to dual averaging but simpler)
+            # Use adaptation_rate from config (typically 0.3)
+            log_scale = jnp.log(current_scale)
+            log_scale += config.adaptation_rate * (mean_acceptance - config.target_acceptance)
+            adapted_scale = jnp.exp(log_scale)
 
-            # Update scale using BlackJAX tuning
-            new_scales = update_scale_from_acceptance_rate(
-                scales, acceptance_rates, config.target_acceptance
-            )
-            # Take mean of updated scales as new global scale
-            adapted_scale = new_scales.mean()
+            # Clip to reasonable range to prevent extreme values
+            adapted_scale = jnp.clip(adapted_scale, 1e-4, 1e1)
 
             # Update tracker
             current_scale_tracker["value"] = adapted_scale  # type: ignore[assignment]
