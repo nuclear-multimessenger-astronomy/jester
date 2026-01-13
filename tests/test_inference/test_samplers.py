@@ -135,18 +135,15 @@ class TestJesterSamplerBase:
         ):
             sampler.sample(jax.random.PRNGKey(42))
 
-    def test_jester_sampler_print_summary_not_implemented(self):
-        """Test that JesterSampler.print_summary raises NotImplementedError."""
+    def test_jester_sampler_print_summary_does_nothing(self):
+        """Test that JesterSampler.print_summary can be called without error (optional method)."""
         prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
         likelihood = MockLikelihood()
 
         sampler = JesterSampler(likelihood, prior)
 
-        with pytest.raises(
-            NotImplementedError,
-            match="must be implemented by backend-specific subclass",
-        ):
-            sampler.print_summary()
+        # Should not raise an error (just does nothing by default)
+        sampler.print_summary()
 
     def test_jester_sampler_get_samples_not_implemented(self):
         """Test that JesterSampler.get_samples raises NotImplementedError."""
