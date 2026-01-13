@@ -325,7 +325,13 @@ class BlackJAXSMCSampler(JesterSampler):
 
         def body_fn(
             carry: tuple[
-                StateWithParameterOverride, PRNGKeyArray, int, Array, Array, Array, float
+                StateWithParameterOverride,
+                PRNGKeyArray,
+                int,
+                Array,
+                Array,
+                Array,
+                float,
             ]
         ):
 
