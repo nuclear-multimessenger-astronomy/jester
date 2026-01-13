@@ -10,6 +10,7 @@ from abc import abstractmethod
 from typing import Any, Callable, cast
 import time
 from pathlib import Path
+import matplotlib.pyplot as plt
 
 import jax
 import jax.numpy as jnp
@@ -19,10 +20,19 @@ from jax.tree_util import tree_map
 from jax.experimental import io_callback
 from jaxtyping import Array, PRNGKeyArray
 
-from ..base import LikelihoodBase, Prior, BijectiveTransform, NtoMTransform
-from ..config.schema import SMCRandomWalkSamplerConfig, SMCNUTSSamplerConfig
-from .jester_sampler import JesterSampler, SamplerOutput
+from jesterTOV.inference.base import LikelihoodBase, Prior, BijectiveTransform, NtoMTransform
+from jesterTOV.inference.config.schema import SMCRandomWalkSamplerConfig, SMCNUTSSamplerConfig
+from jesterTOV.inference.samplers.jester_sampler import JesterSampler, SamplerOutput
 from jesterTOV.logging_config import get_logger
+
+from blackjax import inner_kernel_tuning, adaptive_tempered_smc, nuts
+from blackjax.mcmc import random_walk
+from blackjax.smc import extend_params
+from blackjax.smc.base import SMCInfo
+from blackjax.smc.inner_kernel_tuning import StateWithParameterOverride
+from blackjax.smc.resampling import systematic
+from blackjax.smc.tempered import TemperedSMCState
+from blackjax.smc.tuning.from_particles import particles_covariance_matrix
 
 logger = get_logger("jester")
 
@@ -161,16 +171,6 @@ class BlackJAXSMCSampler(JesterSampler):
         logger.info(f"Starting SMC sampling with {self._get_kernel_name()} kernel...")
         start_time = time.time()
 
-        # Import BlackJAX SMC
-        try:
-            from blackjax import inner_kernel_tuning, adaptive_tempered_smc
-            from blackjax.smc import extend_params
-            from blackjax.smc.resampling import systematic
-        except ImportError as e:
-            raise ImportError(
-                "BlackJAX SMC not found. Install with: pip install blackjax"
-            ) from e
-
         # Sample initial particles from prior
         key, subkey = jax.random.split(key)
         initial_position_dict: dict[str, Array] = self.prior.sample(
@@ -295,12 +295,20 @@ class BlackJAXSMCSampler(JesterSampler):
                 f"Accept={acceptance*100:5.1f}% | {bar}"
             )
 
-        # Define loop conditions
-        def cond_fn(carry):
+        # Define loop conditions with proper type hints
+        # Carry is: (StateWithParameterOverride, key, step_count, lmbda_history, ess_history, acceptance_history, log_evidence)
+        def cond_fn(
+            carry: tuple[StateWithParameterOverride, PRNGKeyArray, int, Array, Array, Array, float]
+        ) -> bool:
             state, _, _, _, _, _, _ = carry
-            return state.sampler_state.lmbda < 1  # type: ignore[attr-defined]
+            # Cast to proper type for type checker (runtime type is correct)
+            sampler_state = cast(TemperedSMCState, state.sampler_state)
+            return sampler_state.lmbda < 1
 
-        def body_fn(carry):
+        def body_fn(
+            carry: tuple[TemperedSMCState, PRNGKeyArray, int, Array, Array, Array, float]
+        ):
+            
             (
                 state,
                 key,
@@ -312,21 +320,26 @@ class BlackJAXSMCSampler(JesterSampler):
             ) = carry
             key, subkey = jax.random.split(key, 2)
             state, info = smc_alg.step(subkey, state)
+            # Cast to proper types for type checker (runtime types are correct)
+            state = cast(StateWithParameterOverride, state)
+            info = cast(SMCInfo, info)
+            sampler_state = cast(TemperedSMCState, state.sampler_state)
 
             # Accumulate log evidence from log_likelihood_increment
-            log_evidence = log_evidence + info.log_likelihood_increment  # type: ignore[attr-defined]
+            log_evidence = log_evidence + info.log_likelihood_increment
 
             # Compute ESS
-            weights = state.sampler_state.weights  # type: ignore[attr-defined]
+            weights = sampler_state.weights
             ess_value = (
                 jnp.sum(weights) ** 2 / jnp.sum(weights**2) / self.config.n_particles
             )
 
             # Extract acceptance rate
+            # Note: update_info is kernel-specific NamedTuple, not fully typed in blackjax
             acceptance_rate = info.update_info.acceptance_rate.mean()  # type: ignore[attr-defined]
 
             # Update histories
-            lmbda_history = lmbda_history.at[step_count].set(state.sampler_state.lmbda)  # type: ignore[attr-defined]
+            lmbda_history = lmbda_history.at[step_count].set(sampler_state.lmbda)
             ess_history = ess_history.at[step_count].set(ess_value)
             acceptance_history = acceptance_history.at[step_count].set(acceptance_rate)
 
@@ -335,7 +348,7 @@ class BlackJAXSMCSampler(JesterSampler):
                 progress_callback,
                 None,  # No return value
                 step_count,
-                state.sampler_state.lmbda,  # type: ignore[attr-defined]
+                sampler_state.lmbda,
                 ess_value,
                 acceptance_rate,
             )
@@ -358,7 +371,6 @@ class BlackJAXSMCSampler(JesterSampler):
         logger.info(f"Particles: {self.config.n_particles}")
         logger.info(f"MCMC steps per tempering: {self.config.n_mcmc_steps}")
         logger.info(f"Target ESS: {self.config.target_ess * 100:.0f}%")
-        logger.info(f"Target acceptance: {self.config.target_acceptance * 100:.0f}%")
         logger.info("Temperature progression: lambda = 0 (prior) -> 1 (posterior)")
         logger.info("Progress updates will be shown after each annealing step")
         logger.info("=" * 70)
@@ -382,6 +394,7 @@ class BlackJAXSMCSampler(JesterSampler):
         logger.info("Running SMC loop (this may take several minutes)...")
         loop_start_time = time.time()
 
+        # Note: pyright can't infer state type correctly from smc_alg.init()
         (
             state,
             key,
@@ -390,15 +403,17 @@ class BlackJAXSMCSampler(JesterSampler):
             ess_history,
             acceptance_history,
             log_evidence,
-        ) = jax.lax.while_loop(cond_fn, body_fn, init_carry)
+        ) = jax.lax.while_loop(cond_fn, body_fn, init_carry)  # type: ignore[arg-type]
 
         loop_end_time = time.time()
         steps = int(steps)
         end_time = time.time()
 
         # Extract final particles
-        self._particles_flat = state.sampler_state.particles  # type: ignore[attr-defined]
-        self._weights = state.sampler_state.weights  # type: ignore[attr-defined]
+        # Cast to proper type for type checker (runtime type is correct)
+        final_sampler_state = cast(TemperedSMCState, state.sampler_state)
+        self._particles_flat = cast(Array, final_sampler_state.particles)
+        self._weights = final_sampler_state.weights
         self.final_state = state
 
         # Compute final ESS (weights guaranteed non-None after assignment above)
@@ -435,22 +450,6 @@ class BlackJAXSMCSampler(JesterSampler):
             "acceptance_history": acceptance_history[:steps].tolist(),
         }
 
-    def print_summary(self, transform: bool = True) -> None:
-        """Print summary of SMC run.
-
-        Parameters
-        ----------
-        transform : bool, optional
-            Not used for SMC
-
-        Notes
-        -----
-        Summary information is already displayed during and after sampling,
-        so this method does nothing to avoid redundancy.
-        """
-        # Summary already displayed during sampling - no need to repeat
-        pass
-
     def plot_diagnostics(
         self, outdir: str | Path = ".", filename: str = "smc_diagnostics.png"
     ) -> None:
@@ -475,12 +474,6 @@ class BlackJAXSMCSampler(JesterSampler):
         """
         if self.final_state is None:
             logger.warning("No samples yet - run sample() first")
-            return
-
-        try:
-            import matplotlib.pyplot as plt
-        except ImportError:
-            logger.warning("matplotlib not found. Install with: pip install matplotlib")
             return
 
         # Extract histories from metadata
@@ -532,18 +525,9 @@ class BlackJAXSMCSampler(JesterSampler):
             marker="o",
             linewidth=2,
         )
-        axes[2].axhline(
-            y=self.config.target_acceptance * 100,
-            color="black",
-            linestyle="--",
-            alpha=0.5,
-            linewidth=1.5,
-            label=f"Target ({self.config.target_acceptance*100:.0f}%)",
-        )
         axes[2].set_ylabel("Acceptance Rate (%)", fontsize=12)
         axes[2].set_xlabel("Annealing Step", fontsize=12)
         axes[2].grid(True, alpha=0.3)
-        axes[2].legend(loc="best", fontsize=10)
         axes[2].set_ylim(0, 105)
 
         plt.tight_layout()
@@ -716,27 +700,16 @@ class BlackJAXSMCRandomWalkSampler(BlackJAXSMCSampler):
         logposterior_fn: Callable,
         initial_particles: Array,
     ) -> tuple[Callable, Callable, dict, Callable]:
-        """Setup Random Walk kernel with covariance-based and scale adaptation.
+        """Setup Random Walk kernel with covariance adaptation.
 
-        This implementation combines:
-        1. Covariance matrix adaptation from particles (david_smc_setup.py approach)
-        2. Damped log-scale adaptation based on acceptance rates (dual averaging style)
+        The proposal covariance is computed from current particles and scaled by a
+        fixed sigma^2 factor. Only the covariance shape is adapted, not the overall scale.
         """
-        from blackjax.mcmc import random_walk
-        from blackjax.smc import extend_params
-        from blackjax.smc.tuning.from_particles import particles_covariance_matrix
-
         # Type narrow config for this subclass
         config = cast(SMCRandomWalkSamplerConfig, self.config)
 
-        if config.adaptation_rate is not None:
-            logger.info("Using covariance-based random walk with adaptive scaling")
-            logger.info(f"Initial sigma scaling: {config.random_walk_sigma}")
-            logger.info(f"Target acceptance rate: {config.target_acceptance}")
-            logger.info(f"Adaptation rate: {config.adaptation_rate}")
-        else:
-            logger.info("Using covariance-based random walk (fixed scale)")
-            logger.info(f"Fixed sigma scaling: {config.random_walk_sigma}")
+        logger.info("Using random walk kernel")
+        logger.info(f"Fixed sigma scaling: {config.random_walk_sigma}")
 
         # Setup random walk kernel with additive step
         kernel = random_walk.build_additive_step()
@@ -745,53 +718,27 @@ class BlackJAXSMCRandomWalkSampler(BlackJAXSMCSampler):
         init_cov = particles_covariance_matrix(initial_particles)
         # Ensure 2D array (n_dim, n_dim) even for 1D problems
         init_cov = jnp.atleast_2d(init_cov)
-        # Scale by sigma^2
+        # Scale by fixed sigma^2
         init_cov = init_cov * (config.random_walk_sigma ** 2)
-
-        # Initial scale (will be adapted) - track using mutable dict
-        current_scale_tracker = {"value": config.random_walk_sigma}
 
         init_params = {"cov": init_cov}
 
-        # Define parameter update function with covariance and optional scale adaptation
+        # Define parameter update function with covariance adaptation only
         def mcmc_parameter_update_fn(key, state, info):
-            """Adapt proposal covariance and optionally scale based on particle distribution.
+            """Adapt proposal covariance based on current particle distribution.
 
-            If adaptation_rate is None: only adapt covariance, keep scale fixed
-            If adaptation_rate is not None: also adapt scale using damped log-scale adaptation
+            The covariance matrix is computed from current particles and scaled by
+            the fixed sigma^2 parameter. No scale adaptation is performed.
             """
             # Note: state here is TemperedSMCState, particles are at state.particles
 
-            # 1. Compute covariance matrix from current particles
+            # Compute covariance matrix from current particles
             cov = particles_covariance_matrix(state.particles)
             # Ensure 2D array (n_dim, n_dim) even for 1D problems
             cov = jnp.atleast_2d(cov)
 
-            # 2. Optionally adapt scale based on mean acceptance rate
-            if config.adaptation_rate is not None:
-                last_step_info = jax.tree.map(lambda x: x[-1], info.update_info)
-                acceptance_rates = last_step_info.acceptance_rate
-                mean_acceptance = acceptance_rates.mean()
-
-                # Get current scale from tracker
-                current_scale = current_scale_tracker["value"]
-
-                # Damped adaptation in log space (similar to dual averaging but simpler)
-                log_scale = jnp.log(current_scale)
-                log_scale += config.adaptation_rate * (mean_acceptance - config.target_acceptance)
-                adapted_scale = jnp.exp(log_scale)
-
-                # Clip to reasonable range to prevent extreme values
-                adapted_scale = jnp.clip(adapted_scale, 1e-4, 1e1)
-
-                # Update tracker
-                current_scale_tracker["value"] = adapted_scale  # type: ignore[assignment]
-            else:
-                # Use fixed scale
-                adapted_scale = current_scale_tracker["value"]
-
-            # 3. Scale covariance by adapted scale^2
-            scaled_cov = cov * (adapted_scale ** 2)
+            # Scale covariance by fixed sigma^2
+            scaled_cov = cov * (config.random_walk_sigma ** 2)
 
             return extend_params({"cov": scaled_cov})
 
@@ -807,9 +754,8 @@ class BlackJAXSMCRandomWalkSampler(BlackJAXSMCSampler):
 
             return kernel(rng_key, state, logdensity_fn, proposal_distribution)
 
-        # Init function for random walk (use RMH init)
-        from blackjax.mcmc.random_walk import init as rmh_init
-        mcmc_init_fn = rmh_init
+        # Init function for random walk
+        mcmc_init_fn = random_walk.init
 
         return mcmc_step_fn, mcmc_init_fn, init_params, mcmc_parameter_update_fn
 
@@ -877,8 +823,6 @@ class BlackJAXSMCNUTSSampler(BlackJAXSMCSampler):
         initial_particles: Array,
     ) -> tuple[Callable, Callable, dict, Callable]:
         """Setup NUTS kernel with Hessian adaptation."""
-        from blackjax import nuts
-        from blackjax.smc import extend_params
 
         # Type narrow config for this subclass
         config = cast(SMCNUTSSamplerConfig, self.config)

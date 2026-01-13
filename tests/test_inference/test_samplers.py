@@ -519,7 +519,7 @@ class TestBlackJAXSMCRandomWalkSampler:
         # Valid config
         config = SMCRandomWalkSamplerConfig(output_dir="./test/")
         assert config.type == "smc-rw"
-        assert config.random_walk_sigma == 0.1  # default
+        assert config.random_walk_sigma == 1.0  # default (uses empirical covariance directly)
 
 
 class TestBlackJAXSMCNUTSSampler:
