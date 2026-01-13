@@ -505,15 +505,65 @@ class BlackJAXNSAWConfig(BaseSamplerConfig):
         return v
 
 
-class SMCSamplerConfig(BaseSamplerConfig):
-    """Configuration for Sequential Monte Carlo (BlackJAX SMC with adaptive tempering).
+class SMCRandomWalkSamplerConfig(BaseSamplerConfig):
+    """Configuration for Sequential Monte Carlo with Random Walk kernel.
 
     Attributes
     ----------
-    type : Literal["smc"]
+    type : Literal["smc-rw"]
         Sampler type identifier
-    kernel_type : Literal["nuts", "random_walk"]
-        Type of MCMC kernel to use (default: "random_walk")
+    n_particles : int
+        Number of particles (default: 10000)
+    n_mcmc_steps : int
+        Number of MCMC steps per tempering level (default: 1)
+    target_ess : float
+        Target effective sample size for adaptive tempering (default: 0.9)
+    random_walk_sigma : float
+        Fixed sigma scaling for Gaussian random walk kernel (default: 1.0).
+        The proposal covariance is computed from particles and scaled by sigma^2.
+        Default of 1.0 uses the empirical covariance directly.
+    """
+
+    type: Literal["smc-rw"] = "smc-rw"  # Discriminator for Pydantic union
+    n_particles: int = 10000
+    n_mcmc_steps: int = 1
+    target_ess: float = 0.9
+    random_walk_sigma: float = 1.0
+
+    @field_validator("n_particles", "n_mcmc_steps")
+    @classmethod
+    def validate_positive(cls, v: int) -> int:
+        """Validate that value is positive."""
+        if v <= 0:
+            raise ValueError(f"Value must be positive, got: {v}")
+        return v
+
+    @field_validator("target_ess")
+    @classmethod
+    def validate_fraction(cls, v: float) -> float:
+        """Validate that value is in (0, 1]."""
+        if v <= 0 or v > 1:
+            raise ValueError(f"Value must be in (0, 1], got: {v}")
+        return v
+
+    @field_validator("random_walk_sigma")
+    @classmethod
+    def validate_positive_float(cls, v: float) -> float:
+        """Validate that value is positive."""
+        if v <= 0:
+            raise ValueError(f"Value must be positive, got: {v}")
+        return v
+
+
+class SMCNUTSSamplerConfig(BaseSamplerConfig):
+    """Configuration for Sequential Monte Carlo with NUTS kernel (EXPERIMENTAL).
+
+    WARNING: This sampler is experimental and should be used with caution.
+
+    Attributes
+    ----------
+    type : Literal["smc-nuts"]
+        Sampler type identifier
     n_particles : int
         Number of particles (default: 10000)
     n_mcmc_steps : int
@@ -522,25 +572,21 @@ class SMCSamplerConfig(BaseSamplerConfig):
         Target effective sample size for adaptive tempering (default: 0.9)
     init_step_size : float
         Initial NUTS step size (default: 1e-2)
-    random_walk_sigma : float
-        Sigma for Gaussian random walk kernel (default: 0.1, only used with kernel_type="random_walk")
     mass_matrix_base : float
-        Base value for diagonal mass matrix (default: 2e-1, only used with kernel_type="nuts")
+        Base value for diagonal mass matrix (default: 2e-1)
     mass_matrix_param_scales : dict[str, float]
-        Per-parameter scaling for mass matrix (default: {}, only used with kernel_type="nuts")
+        Per-parameter scaling for mass matrix (default: {})
     target_acceptance : float
-        Target acceptance rate for NUTS (default: 0.7)
+        Target acceptance rate (default: 0.7)
     adaptation_rate : float
         Adaptation rate for step size tuning (default: 0.3)
     """
 
-    type: Literal["smc"] = "smc"
-    kernel_type: Literal["nuts", "random_walk"] = "random_walk"
+    type: Literal["smc-nuts"] = "smc-nuts"  # Discriminator for Pydantic union
     n_particles: int = 10000
     n_mcmc_steps: int = 1
     target_ess: float = 0.9
     init_step_size: float = 1e-2
-    random_walk_sigma: float = 0.1
     mass_matrix_base: float = 2e-1
     mass_matrix_param_scales: Dict[str, float] = Field(default_factory=dict)
     target_acceptance: float = 0.7
@@ -574,7 +620,12 @@ class SMCSamplerConfig(BaseSamplerConfig):
 # Discriminated union for sampler configurations
 # This allows Pydantic to automatically select the correct config class based on the 'type' field
 SamplerConfig = Annotated[
-    Union[FlowMCSamplerConfig, BlackJAXNSAWConfig, SMCSamplerConfig],
+    Union[
+        FlowMCSamplerConfig,
+        BlackJAXNSAWConfig,
+        SMCRandomWalkSamplerConfig,
+        SMCNUTSSamplerConfig,
+    ],
     Discriminator("type"),
 ]
 

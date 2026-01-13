@@ -2,7 +2,8 @@
 
 This module creates appropriate transforms based on the sampler type:
 - BlackJAX NS with Acceptance Walk: BoundToBound [0,1] unit cube transforms
-- SMC: No transforms (works in prior space)
+- SMC Random Walk: No transforms (works in prior space)
+- SMC NUTS: No transforms (works in prior space)
 - FlowMC: No transforms (current behavior)
 """
 
@@ -19,7 +20,8 @@ def create_sample_transforms(
 
     Different samplers require different parameter space transformations:
     - BlackJAX NS-AW requires unit cube [0, 1] transforms for all parameters
-    - SMC works best without transforms (in prior space)
+    - SMC Random Walk works best without transforms (in prior space)
+    - SMC NUTS works best without transforms (in prior space)
     - FlowMC can optionally use unbounded transforms (currently none)
 
     Parameters
@@ -42,8 +44,11 @@ def create_sample_transforms(
     if sampler_config.type == "blackjax-ns-aw":
         # BlackJAX NS-AW requires unit cube transforms for acceptance walk algorithm
         return create_unit_cube_transforms(prior)
-    elif sampler_config.type == "smc":
-        # SMC works in prior space without transforms
+    elif sampler_config.type == "smc-rw":
+        # SMC Random Walk works in prior space without transforms
+        return []
+    elif sampler_config.type == "smc-nuts":
+        # SMC NUTS works in prior space without transforms
         return []
     elif sampler_config.type == "flowmc":
         # FlowMC currently uses no sample transforms

@@ -149,56 +149,6 @@ uv run sphinx-build -W --keep-going docs docs/_build/html
 
 ---
 
-## Inference System
-
-**Status**: Fully functional modular architecture (config-driven, replaces old argparse interface)
-
-### Running Inference
-```bash
-# Run inference
-run_jester_inference config.yaml
-# Validate config only
-# (set validate_only: true in config.yaml)
-
-# Dry run without sampling
-# (set dry_run: true in config.yaml)
-```
-
-### Key Concepts
-
-**Transforms**: Convert parameter spaces
-- Sample transforms: Applied during sampling with Jacobian (bijective)
-- Likelihood transforms: Applied before likelihood evaluation (N-to-M)
-- JESTER uses likelihood transforms: NEP → M-R-Λ via TOV solver
-
-**Priors**: Bilby-style Python syntax in `.prior` files
-```python
-K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
-L_sym = UniformPrior(10.0, 200.0, parameter_names=["L_sym"])
-```
-
-**Samplers**: Three backends available
-- `type: "flowmc"` - Flow-enhanced MCMC (production ready)
-- `type: "smc"` - Sequential Monte Carlo (production ready)
-  - `kernel_type: "nuts"` or `"random_walk"`
-- `type: "blackjax-ns-aw"` - Nested sampling (needs type fixes)
-
-**YAML Config Auto-Generation**:
-```bash
-# When modifying config/schema.py, regenerate docs
-uv run python -m jesterTOV.inference.config.generate_yaml_reference
-```
-
-### Inference Documentation
-- `docs/inference_index.md` - Navigation hub
-- `docs/inference_quickstart.md` - Quick start guide
-- `docs/inference.md` - Complete reference
-- `docs/inference_yaml_reference.md` - Auto-generated YAML reference
-
-Full details in `jesterTOV/inference/CLAUDE.md`
-
----
-
 ## Type Hinting Standards
 
 **All new code MUST include comprehensive type hints.**
@@ -252,7 +202,7 @@ jesterTOV/inference/
   - Fix: Add numerical guards in LogitTransform
 - **TOV solver max_steps**: Some stiff EOS configs hit solver limits
   - May need to increase `max_steps` or adjust EOS parameters
-  - Needs further testing to understand when this happens, what the root cause is, and determine best solution
+  - Needs further testing to understand *when* this happens, what the root cause is, and determine best solution
 
 ---
 

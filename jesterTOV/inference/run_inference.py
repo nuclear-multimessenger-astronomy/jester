@@ -208,10 +208,13 @@ def run_sampling(
         f"Sampling complete! Runtime: {int(runtime / 60)} min {int(runtime % 60)} sec"
     )
 
-    # Generate diagnostic plots for SMC sampler
-    from .samplers.blackjax_smc import BlackJAXSMCSampler
+    # Generate diagnostic plots for SMC samplers
+    from .samplers.blackjax_smc import (
+        BlackJAXSMCRandomWalkSampler,
+        BlackJAXSMCNUTSSampler,
+    )
 
-    if isinstance(sampler, BlackJAXSMCSampler):
+    if isinstance(sampler, (BlackJAXSMCRandomWalkSampler, BlackJAXSMCNUTSSampler)):
         logger.info("Generating SMC diagnostic plots...")
         sampler.plot_diagnostics(outdir=outdir, filename="smc_diagnostics.png")
 
@@ -500,7 +503,7 @@ def main(config_path: str) -> None:
         logger.info(f"  Delete fraction: {config.sampler.n_delete_frac}")
         logger.info(f"  Target MCMC steps: {config.sampler.n_target}")
         logger.info(f"  Termination dlogZ: {config.sampler.termination_dlogz}")
-    elif config.sampler.type == "smc":
+    elif config.sampler.type in ["smc-rw", "smc-nuts"]:
         logger.info(f"  Particles: {config.sampler.n_particles}")
         logger.info(f"  MCMC steps: {config.sampler.n_mcmc_steps}")
         logger.info(f"  Target ESS: {config.sampler.target_ess}")

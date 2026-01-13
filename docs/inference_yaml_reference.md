@@ -72,7 +72,7 @@ data_paths: {}
 
 - `likelihoods`: `list[LikelihoodConfig]` (**required**)
 
-- `sampler`: `typing.Union[jesterTOV.inference.config.schema.FlowMCSamplerConfig, jesterTOV.inference.config.schema.BlackJAXNSAWConfig, jesterTOV.inference.config.schema.SMCSamplerConfig]` (**required**)
+- `sampler`: `typing.Union[jesterTOV.inference.config.schema.FlowMCSamplerConfig, jesterTOV.inference.config.schema.BlackJAXNSAWConfig, jesterTOV.inference.config.schema.SMCRandomWalkSamplerConfig, jesterTOV.inference.config.schema.SMCNUTSSamplerConfig]` (**required**)
 
 - `postprocessing`: `PostprocessingConfig` (optional)
   - Default: `enabled=True make_cornerplot=True make_massradius=True make_pressuredensity=True make_histograms=True make_contours=True prior_dir=None`
@@ -286,9 +286,9 @@ BlackJAX nested sampling with acceptance walk for Bayesian evidence estimation.
 
 **Output**: Evidence (logZ ± error) and posterior samples with importance weights.
 
-#### Sequential Monte Carlo (`type: "smc"`)
+#### Sequential Monte Carlo with Random Walk (`type: "smc-rw"`)
 
-BlackJAX SMC with adaptive tempering and NUTS kernel.
+BlackJAX SMC with adaptive tempering and Gaussian Random Walk kernel.
 
 - `output_dir`: `str` (optional)
   - Default: `"./outdir/"`
@@ -299,11 +299,38 @@ BlackJAX SMC with adaptive tempering and NUTS kernel.
 - `log_prob_batch_size`: `int` (optional)
   - Default: `1000`
 
-- `type`: `"smc"` (optional)
-  - Default: `"smc"`
+- `type`: `"smc-rw"` (optional)
+  - Default: `"smc-rw"`
 
-- `kernel_type`: `"nuts" | "random_walk"` (optional)
-  - Default: `"random_walk"`
+- `n_particles`: `int` (optional)
+  - Default: `10000`
+
+- `n_mcmc_steps`: `int` (optional)
+  - Default: `1`
+
+- `target_ess`: `float` (optional)
+  - Default: `0.9`
+
+- `random_walk_sigma`: `float` (optional)
+  - Default: `1.0`
+
+**Output**: Posterior samples and effective sample size (ESS) statistics.
+
+#### Sequential Monte Carlo with NUTS (`type: "smc-nuts"`)
+
+BlackJAX SMC with adaptive tempering and NUTS kernel (EXPERIMENTAL).
+
+- `output_dir`: `str` (optional)
+  - Default: `"./outdir/"`
+
+- `n_eos_samples`: `int` (optional)
+  - Default: `10000`
+
+- `log_prob_batch_size`: `int` (optional)
+  - Default: `1000`
+
+- `type`: `"smc-nuts"` (optional)
+  - Default: `"smc-nuts"`
 
 - `n_particles`: `int` (optional)
   - Default: `10000`
@@ -316,9 +343,6 @@ BlackJAX SMC with adaptive tempering and NUTS kernel.
 
 - `init_step_size`: `float` (optional)
   - Default: `0.01`
-
-- `random_walk_sigma`: `float` (optional)
-  - Default: `0.1`
 
 - `mass_matrix_base`: `float` (optional)
   - Default: `0.2`
