@@ -69,7 +69,8 @@ def create_sampler(
     if sample_transforms is None:
         # Create sample transforms based on sampler type
         # - blackjax-ns-aw: BoundToBound [0,1] for all parameters
-        # - smc: No transforms (empty list)
+        # - smc-rw: No transforms (empty list)
+        # - smc-nuts: No transforms (empty list)
         # - flowmc: No transforms (current behavior)
         sample_transforms = create_sample_transforms(config, prior)
     else:
@@ -104,10 +105,22 @@ def create_sampler(
             seed=seed,
         )
 
-    elif config.type == "smc":
-        from .blackjax_smc import BlackJAXSMCSampler
+    elif config.type == "smc-rw":
+        from .blackjax_smc import BlackJAXSMCRandomWalkSampler
 
-        return BlackJAXSMCSampler(
+        return BlackJAXSMCRandomWalkSampler(
+            likelihood=likelihood,
+            prior=prior,
+            sample_transforms=sample_transforms,
+            likelihood_transforms=likelihood_transforms,
+            config=config,
+            seed=seed,
+        )
+
+    elif config.type == "smc-nuts":
+        from .blackjax_smc import BlackJAXSMCNUTSSampler
+
+        return BlackJAXSMCNUTSSampler(
             likelihood=likelihood,
             prior=prior,
             sample_transforms=sample_transforms,
@@ -119,5 +132,5 @@ def create_sampler(
     else:
         raise ValueError(
             f"Unknown sampler type: {config.type}. "
-            f"Expected one of: flowmc, blackjax-ns-aw, smc"
+            f"Expected one of: flowmc, blackjax-ns-aw, smc-rw, smc-nuts"
         )

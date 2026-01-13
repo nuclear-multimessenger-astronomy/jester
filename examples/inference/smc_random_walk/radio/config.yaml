@@ -35,17 +35,10 @@ likelihoods:
     enabled: true
     parameters:
       pulsars:
-      # TODO: double check the references here
-        # PSR J1614-2230: 1.94 ± 0.06 M_☉
-        # Demorest et al. (2010), Nature 467, 1081
         - name: "J1614"
           mass_mean: 1.94
           mass_std: 0.06
 
-        # PSR J0740+6620: 2.08 ± 0.14 M_☉
-        # Fonseca et al. (2021), ApJL 915, L12
-        # Note: This is the radio timing constraint only
-        # For NICER X-ray constraint on J0740, use nicer likelihood
         - name: "J0740"
           mass_mean: 2.08
           mass_std: 0.14
@@ -54,17 +47,13 @@ likelihoods:
       nb_masses: 100
 
 # SMC configuration with Random Walk kernel
-# Aggressive settings for high-quality radio timing inference
 sampler:
-  type: "smc"
-  kernel_type: "random_walk"  # Gaussian random walk kernel with sigma adaptation
-  n_particles: 5000          # Number of particles for full inference (AGGRESSIVE)
-  n_mcmc_steps: 10            # MCMC steps per tempering level (AGGRESSIVE)
-  target_ess: 0.9             # Target effective sample size (90%)
-  random_walk_sigma: 0.05      # Initial sigma for Gaussian random walk
-  target_acceptance: 0.8
-  adaptation_rate: 0.3        # Adaptation rate for sigma tuning
-  n_eos_samples: 5000         # Number of EOS samples to generate after inference
+  type: "smc-rw"
+  n_particles: 5000         # Number of particles evolved at each inference step
+  n_mcmc_steps: 10          # MCMC steps per tempering level
+  target_ess: 0.9           # Target effective sample size (90%)
+  random_walk_sigma: 0.05   # Gaussian random walk step size scale
+  n_eos_samples: 5000       # Number of EOS samples to generate after inference
   output_dir: "./outdir/"
 
 # Postprocessing configuration

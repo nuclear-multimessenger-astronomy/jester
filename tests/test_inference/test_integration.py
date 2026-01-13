@@ -578,13 +578,13 @@ class TestEOSSampleGeneration:
             "ess": np.random.uniform(0.7, 0.95, n_full_samples),  # SMC ESS
         }
         metadata = {
-            "sampler": "blackjax_smc",
+            "sampler": "blackjax_smc_rw",
             "n_samples": n_full_samples,
             "seed": 123,
         }
 
         result = InferenceResult(
-            sampler_type="blackjax_smc",
+            sampler_type="blackjax_smc_rw",
             posterior=posterior,
             metadata=metadata,
         )
@@ -596,8 +596,7 @@ class TestEOSSampleGeneration:
             "prior": {"specification_file": "dummy.prior"},
             "likelihoods": [{"type": "zero", "enabled": True, "parameters": {}}],
             "sampler": {
-                "type": "smc",
-                "kernel_type": "nuts",
+                "type": "smc-rw",
                 "n_particles": 100,
                 "n_mcmc_steps": 10,
                 "target_ess": 0.9,

@@ -11,12 +11,13 @@ This file is maintained for discoverability and completeness.
 from .jester_sampler import JesterSampler, SamplerOutput
 from .flowmc import FlowMCSampler
 from .blackjax_ns_aw import BlackJAXNSAWSampler
-from .blackjax_smc import BlackJAXSMCSampler
+from .blackjax_smc import BlackJAXSMCRandomWalkSampler, BlackJAXSMCNUTSSampler
 
 __all__ = [
     "JesterSampler",
     "SamplerOutput",
     "FlowMCSampler",
     "BlackJAXNSAWSampler",
-    "BlackJAXSMCSampler",
+    "BlackJAXSMCRandomWalkSampler",
+    "BlackJAXSMCNUTSSampler",
 ]

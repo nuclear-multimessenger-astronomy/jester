@@ -71,7 +71,7 @@ data_paths: {}
 
 - `likelihoods`: `list[LikelihoodConfig]` (**required**)
 
-- `sampler`: `typing.Union[jesterTOV.inference.config.schema.FlowMCSamplerConfig, jesterTOV.inference.config.schema.BlackJAXNSAWConfig, jesterTOV.inference.config.schema.SMCSamplerConfig]` (**required**)
+- `sampler`: `typing.Union[jesterTOV.inference.config.schema.FlowMCSamplerConfig, jesterTOV.inference.config.schema.BlackJAXNSAWConfig, jesterTOV.inference.config.schema.SMCRandomWalkSamplerConfig, jesterTOV.inference.config.schema.SMCNUTSSamplerConfig]` (**required**)
 
 - `postprocessing`: `PostprocessingConfig` (optional)
   - Default: `enabled=True make_cornerplot=True make_massradius=True make_pressuredensity=True make_histograms=True make_contours=True prior_dir=None`
@@ -124,7 +124,7 @@ Specifies prior distributions for parameters.
 
 List of observational constraints. Each likelihood has:
 
-- `type`: `"gw" | "nicer" | "radio" | "chieft" | "rex" | "constraints" | "constraints_eos" | "constraints_tov" | "zero"` (**required**)
+- `type`: `"gw" | "gw_resampled" | "nicer" | "radio" | "chieft" | "rex" | "constraints" | "constraints_eos" | "constraints_tov" | "zero"` (**required**)
 
 - `enabled`: `bool` (optional)
   - Default: `True`
@@ -203,14 +203,17 @@ The sampler configuration uses a discriminated union based on the `type` field. 
 
 Normalizing flow-enhanced MCMC with local and global sampling phases.
 
-- `type`: `"flowmc"` (optional)
-  - Default: `"flowmc"`
-
 - `output_dir`: `str` (optional)
   - Default: `"./outdir/"`
 
 - `n_eos_samples`: `int` (optional)
   - Default: `10000`
+
+- `log_prob_batch_size`: `int` (optional)
+  - Default: `1000`
+
+- `type`: `"flowmc"` (optional)
+  - Default: `"flowmc"`
 
 - `n_chains`: `int` (optional)
   - Default: `20`
@@ -247,14 +250,17 @@ Normalizing flow-enhanced MCMC with local and global sampling phases.
 
 BlackJAX nested sampling with acceptance walk for Bayesian evidence estimation.
 
-- `type`: `"blackjax-ns-aw"` (optional)
-  - Default: `"blackjax-ns-aw"`
-
 - `output_dir`: `str` (optional)
   - Default: `"./outdir/"`
 
 - `n_eos_samples`: `int` (optional)
   - Default: `10000`
+
+- `log_prob_batch_size`: `int` (optional)
+  - Default: `1000`
+
+- `type`: `"blackjax-ns-aw"` (optional)
+  - Default: `"blackjax-ns-aw"`
 
 - `n_live`: `int` (optional)
   - Default: `1000`
@@ -276,12 +282,9 @@ BlackJAX nested sampling with acceptance walk for Bayesian evidence estimation.
 
 **Output**: Evidence (logZ ± error) and posterior samples with importance weights.
 
-#### Sequential Monte Carlo (`type: "smc"`)
+#### Sequential Monte Carlo with Random Walk (`type: "smc-rw"`)
 
-BlackJAX SMC with adaptive tempering and NUTS kernel.
-
-- `type`: `"smc"` (optional)
-  - Default: `"smc"`
+BlackJAX SMC with adaptive tempering and Gaussian Random Walk kernel.
 
 - `output_dir`: `str` (optional)
   - Default: `"./outdir/"`
@@ -289,8 +292,41 @@ BlackJAX SMC with adaptive tempering and NUTS kernel.
 - `n_eos_samples`: `int` (optional)
   - Default: `10000`
 
-- `kernel_type`: `"nuts" | "random_walk"` (optional)
-  - Default: `"nuts"`
+- `log_prob_batch_size`: `int` (optional)
+  - Default: `1000`
+
+- `type`: `"smc-rw"` (optional)
+  - Default: `"smc-rw"`
+
+- `n_particles`: `int` (optional)
+  - Default: `10000`
+
+- `n_mcmc_steps`: `int` (optional)
+  - Default: `1`
+
+- `target_ess`: `float` (optional)
+  - Default: `0.9`
+
+- `random_walk_sigma`: `float` (optional)
+  - Default: `1.0`
+
+**Output**: Posterior samples and effective sample size (ESS) statistics.
+
+#### Sequential Monte Carlo with NUTS (`type: "smc-nuts"`)
+
+BlackJAX SMC with adaptive tempering and NUTS kernel (EXPERIMENTAL).
+
+- `output_dir`: `str` (optional)
+  - Default: `"./outdir/"`
+
+- `n_eos_samples`: `int` (optional)
+  - Default: `10000`
+
+- `log_prob_batch_size`: `int` (optional)
+  - Default: `1000`
+
+- `type`: `"smc-nuts"` (optional)
+  - Default: `"smc-nuts"`
 
 - `n_particles`: `int` (optional)
   - Default: `10000`
@@ -304,9 +340,6 @@ BlackJAX SMC with adaptive tempering and NUTS kernel.
 - `init_step_size`: `float` (optional)
   - Default: `0.01`
 
-- `random_walk_sigma`: `float` (optional)
-  - Default: `0.1`
-
 - `mass_matrix_base`: `float` (optional)
   - Default: `0.2`
 
@@ -318,9 +351,6 @@ BlackJAX SMC with adaptive tempering and NUTS kernel.
 
 - `adaptation_rate`: `float` (optional)
   - Default: `0.3`
-
-- `log_prob_batch_size`: `int` (optional)
-  - Default: `1000`
 
 **Output**: Posterior samples and effective sample size (ESS) statistics.
 
