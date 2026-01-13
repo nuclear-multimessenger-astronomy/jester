@@ -252,21 +252,15 @@ class JesterSampler:
         """
         Print summary of sampling run.
 
-        This method must be implemented by backend-specific subclasses.
+        This method can be implemented by backend-specific subclasses.
 
         Parameters
         ----------
         transform : bool, optional
             Whether to apply inverse sample transforms to results (default: True)
-
-        Raises
-        ------
-        NotImplementedError
-            This is an abstract method that must be implemented by subclasses
         """
-        raise NotImplementedError(
-            "print_summary() must be implemented by backend-specific subclass"
-        )
+        # Optionally overridden by subclasses, but if not, then just do nothing
+        pass
 
     def get_samples(self) -> dict:
         """

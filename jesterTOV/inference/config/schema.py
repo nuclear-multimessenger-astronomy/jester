@@ -505,22 +505,16 @@ class SMCRandomWalkSamplerConfig(BaseSamplerConfig):
     target_ess : float
         Target effective sample size for adaptive tempering (default: 0.9)
     random_walk_sigma : float
-        Sigma for Gaussian random walk kernel (default: 0.1)
-    target_acceptance : float
-        Target acceptance rate (default: 0.5)
-    adaptation_rate : float | None
-        Adaptation rate for sigma tuning (default: None = no adaptation).
-        If None, only covariance is adapted, not the overall scale.
-        Set to 0.3 for damped scale adaptation.
+        Fixed sigma scaling for Gaussian random walk kernel (default: 1.0).
+        The proposal covariance is computed from particles and scaled by sigma^2.
+        Default of 1.0 uses the empirical covariance directly.
     """
 
     type: Literal["smc-rw"] = "smc-rw"  # Discriminator for Pydantic union
     n_particles: int = 10000
     n_mcmc_steps: int = 1
     target_ess: float = 0.9
-    random_walk_sigma: float = 0.1
-    target_acceptance: float = 0.5
-    adaptation_rate: float | None = None
+    random_walk_sigma: float = 1.0
 
     @field_validator("n_particles", "n_mcmc_steps")
     @classmethod
@@ -530,20 +524,12 @@ class SMCRandomWalkSamplerConfig(BaseSamplerConfig):
             raise ValueError(f"Value must be positive, got: {v}")
         return v
 
-    @field_validator("target_ess", "target_acceptance")
+    @field_validator("target_ess")
     @classmethod
     def validate_fraction(cls, v: float) -> float:
         """Validate that value is in (0, 1]."""
         if v <= 0 or v > 1:
             raise ValueError(f"Value must be in (0, 1], got: {v}")
-        return v
-
-    @field_validator("adaptation_rate")
-    @classmethod
-    def validate_adaptation_rate(cls, v: float | None) -> float | None:
-        """Validate that adaptation_rate is None or in (0, 1]."""
-        if v is not None and (v <= 0 or v > 1):
-            raise ValueError(f"adaptation_rate must be None or in (0, 1], got: {v}")
         return v
 
     @field_validator("random_walk_sigma")
@@ -620,7 +606,12 @@ class SMCNUTSSamplerConfig(BaseSamplerConfig):
 # Discriminated union for sampler configurations
 # This allows Pydantic to automatically select the correct config class based on the 'type' field
 SamplerConfig = Annotated[
-    Union[FlowMCSamplerConfig, BlackJAXNSAWConfig, SMCRandomWalkSamplerConfig, SMCNUTSSamplerConfig],
+    Union[
+        FlowMCSamplerConfig,
+        BlackJAXNSAWConfig,
+        SMCRandomWalkSamplerConfig,
+        SMCNUTSSamplerConfig,
+    ],
     Discriminator("type"),
 ]
 

@@ -47,7 +47,6 @@ sampler:
   n_particles: 5000          # Number of particles for full inference (AGGRESSIVE)
   n_mcmc_steps: 10            # MCMC steps per tempering level (AGGRESSIVE)
   target_ess: 0.9             # Target effective sample size (90%)
-  random_walk_sigma: 0.05      # Initial sigma for Gaussian random walk
   n_eos_samples: 5000         # Number of EOS samples to generate after inference
   output_dir: "./outdir/"
 
