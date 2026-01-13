@@ -394,7 +394,7 @@ class BlackJAXSMCSampler(JesterSampler):
         logger.info("Running SMC loop (this may take several minutes)...")
         loop_start_time = time.time()
 
-        # Note: pyright can't infer state type correctly from smc_alg.init()
+        # TODO: pyright can't infer state type correctly from smc_alg.init()
         (
             state,
             key,
