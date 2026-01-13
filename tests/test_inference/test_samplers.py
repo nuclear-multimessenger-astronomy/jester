@@ -623,7 +623,6 @@ class TestBlackJAXSMCNUTSSampler:
         likelihood = MockLikelihood()
 
         config = SMCRandomWalkSamplerConfig(
-            # kernel_type removed
             n_particles=100,
             output_dir="./test_output/",
         )
@@ -660,7 +659,6 @@ class TestBlackJAXSMCNUTSSampler:
         transform = ScaleTransform((["x"], ["y"]), scale=2.0)
 
         config = SMCRandomWalkSamplerConfig(
-            # kernel_type removed
             n_particles=100,
             output_dir="./test_output/",
         )
@@ -739,7 +737,6 @@ class TestBlackJAXSMCNUTSSampler:
         likelihood = MockLikelihood()
 
         config = SMCRandomWalkSamplerConfig(
-            # kernel_type removed
             n_particles=50,
             n_mcmc_steps=10,  # More steps needed for random walk
             target_ess=0.8,
@@ -914,7 +911,6 @@ class TestSamplerFactory:
 
         config = SMCRandomWalkSamplerConfig(
             type="smc-rw",
-            # kernel_type removed
             n_particles=100,
             output_dir="./test/",
         )
@@ -1080,7 +1076,6 @@ class TestSamplerOutputInterface:
         likelihood = MockLikelihood()
 
         config = SMCRandomWalkSamplerConfig(
-            # kernel_type removed
             n_particles=50,
             n_mcmc_steps=2,
             output_dir="./test_output/",
