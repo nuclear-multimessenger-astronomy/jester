@@ -208,7 +208,10 @@ def run_sampling(
     )
 
     # Generate diagnostic plots for SMC samplers
-    from .samplers.blackjax_smc import BlackJAXSMCRandomWalkSampler, BlackJAXSMCNUTSSampler
+    from .samplers.blackjax_smc import (
+        BlackJAXSMCRandomWalkSampler,
+        BlackJAXSMCNUTSSampler,
+    )
 
     if isinstance(sampler, (BlackJAXSMCRandomWalkSampler, BlackJAXSMCNUTSSampler)):
         logger.info("Generating SMC diagnostic plots...")

@@ -20,8 +20,16 @@ from jax.tree_util import tree_map
 from jax.experimental import io_callback
 from jaxtyping import Array, PRNGKeyArray
 
-from jesterTOV.inference.base import LikelihoodBase, Prior, BijectiveTransform, NtoMTransform
-from jesterTOV.inference.config.schema import SMCRandomWalkSamplerConfig, SMCNUTSSamplerConfig
+from jesterTOV.inference.base import (
+    LikelihoodBase,
+    Prior,
+    BijectiveTransform,
+    NtoMTransform,
+)
+from jesterTOV.inference.config.schema import (
+    SMCRandomWalkSamplerConfig,
+    SMCNUTSSamplerConfig,
+)
 from jesterTOV.inference.samplers.jester_sampler import JesterSampler, SamplerOutput
 from jesterTOV.logging_config import get_logger
 
@@ -113,7 +121,9 @@ class BlackJAXSMCSampler(JesterSampler):
                 "without sample transforms (in prior space). Proceeding anyway."
             )
 
-        logger.info(f"Initializing BlackJAX SMC sampler with {self._get_kernel_name()} kernel")
+        logger.info(
+            f"Initializing BlackJAX SMC sampler with {self._get_kernel_name()} kernel"
+        )
         logger.info(
             f"Configuration: {config.n_particles} particles, "
             f"{config.n_mcmc_steps} MCMC steps per tempering stage"
@@ -298,7 +308,15 @@ class BlackJAXSMCSampler(JesterSampler):
         # Define loop conditions with proper type hints
         # Carry is: (StateWithParameterOverride, key, step_count, lmbda_history, ess_history, acceptance_history, log_evidence)
         def cond_fn(
-            carry: tuple[StateWithParameterOverride, PRNGKeyArray, int, Array, Array, Array, float]
+            carry: tuple[
+                StateWithParameterOverride,
+                PRNGKeyArray,
+                int,
+                Array,
+                Array,
+                Array,
+                float,
+            ]
         ) -> bool:
             state, _, _, _, _, _, _ = carry
             # Cast to proper type for type checker (runtime type is correct)
@@ -306,9 +324,11 @@ class BlackJAXSMCSampler(JesterSampler):
             return sampler_state.lmbda < 1
 
         def body_fn(
-            carry: tuple[TemperedSMCState, PRNGKeyArray, int, Array, Array, Array, float]
+            carry: tuple[
+                TemperedSMCState, PRNGKeyArray, int, Array, Array, Array, float
+            ]
         ):
-            
+
             (
                 state,
                 key,
@@ -403,7 +423,9 @@ class BlackJAXSMCSampler(JesterSampler):
             ess_history,
             acceptance_history,
             log_evidence,
-        ) = jax.lax.while_loop(cond_fn, body_fn, init_carry)  # type: ignore[arg-type]
+        ) = jax.lax.while_loop(
+            cond_fn, body_fn, init_carry
+        )  # type: ignore[arg-type]
 
         loop_end_time = time.time()
         steps = int(steps)
@@ -687,7 +709,9 @@ class BlackJAXSMCRandomWalkSampler(BlackJAXSMCSampler):
         seed: int = 0,
     ) -> None:
         """Initialize Random Walk SMC sampler."""
-        super().__init__(likelihood, prior, sample_transforms, likelihood_transforms, config, seed)
+        super().__init__(
+            likelihood, prior, sample_transforms, likelihood_transforms, config, seed
+        )
 
     def _get_kernel_name(self) -> str:
         """Return kernel name."""
@@ -719,7 +743,7 @@ class BlackJAXSMCRandomWalkSampler(BlackJAXSMCSampler):
         # Ensure 2D array (n_dim, n_dim) even for 1D problems
         init_cov = jnp.atleast_2d(init_cov)
         # Scale by fixed sigma^2
-        init_cov = init_cov * (config.random_walk_sigma ** 2)
+        init_cov = init_cov * (config.random_walk_sigma**2)
 
         init_params = {"cov": init_cov}
 
@@ -738,7 +762,7 @@ class BlackJAXSMCRandomWalkSampler(BlackJAXSMCSampler):
             cov = jnp.atleast_2d(cov)
 
             # Scale covariance by fixed sigma^2
-            scaled_cov = cov * (config.random_walk_sigma ** 2)
+            scaled_cov = cov * (config.random_walk_sigma**2)
 
             return extend_params({"cov": scaled_cov})
 
@@ -750,7 +774,9 @@ class BlackJAXSMCRandomWalkSampler(BlackJAXSMCSampler):
             def proposal_distribution(key, position):
                 """Multivariate normal proposal using covariance matrix."""
                 x, ravel_fn = flatten_util.ravel_pytree(position)
-                return ravel_fn(jax.random.multivariate_normal(key, jnp.zeros_like(x), cov))
+                return ravel_fn(
+                    jax.random.multivariate_normal(key, jnp.zeros_like(x), cov)
+                )
 
             return kernel(rng_key, state, logdensity_fn, proposal_distribution)
 
@@ -777,7 +803,9 @@ class BlackJAXSMCNUTSSampler(BlackJAXSMCSampler):
         seed: int = 0,
     ) -> None:
         """Initialize with EXPERIMENTAL warning."""
-        super().__init__(likelihood, prior, sample_transforms, likelihood_transforms, config, seed)
+        super().__init__(
+            likelihood, prior, sample_transforms, likelihood_transforms, config, seed
+        )
         logger.warning(
             "NUTS kernel is experimental and has not been thoroughly tested yet. "
             "Use with caution and validate results carefully."
@@ -850,12 +878,8 @@ class BlackJAXSMCNUTSSampler(BlackJAXSMCSampler):
             """Adapt mass matrix and step size using Hessian at best particle."""
             # Extract log posteriors from NUTS trajectory endpoints
             last_step_info = jax.tree.map(lambda x: x[-1], info.update_info)
-            log_posteriors_left = (
-                last_step_info.trajectory_leftmost_state.logdensity
-            )
-            log_posteriors_right = (
-                last_step_info.trajectory_rightmost_state.logdensity
-            )
+            log_posteriors_left = last_step_info.trajectory_leftmost_state.logdensity
+            log_posteriors_right = last_step_info.trajectory_rightmost_state.logdensity
 
             # Take maximum logdensity between endpoints
             log_posteriors = jnp.maximum(log_posteriors_left, log_posteriors_right)

@@ -484,7 +484,9 @@ class TestBlackJAXSMCRandomWalkSampler:
 
     def test_smc_rw_sampler_initialization(self):
         """Test SMC Random Walk sampler initializes correctly."""
-        from jesterTOV.inference.samplers.blackjax_smc import BlackJAXSMCRandomWalkSampler
+        from jesterTOV.inference.samplers.blackjax_smc import (
+            BlackJAXSMCRandomWalkSampler,
+        )
         from jesterTOV.inference.config.schema import SMCRandomWalkSamplerConfig
 
         prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
@@ -519,7 +521,9 @@ class TestBlackJAXSMCRandomWalkSampler:
         # Valid config
         config = SMCRandomWalkSamplerConfig(output_dir="./test/")
         assert config.type == "smc-rw"
-        assert config.random_walk_sigma == 1.0  # default (uses empirical covariance directly)
+        assert (
+            config.random_walk_sigma == 1.0
+        )  # default (uses empirical covariance directly)
 
 
 class TestBlackJAXSMCNUTSSampler:
@@ -613,7 +617,9 @@ class TestBlackJAXSMCNUTSSampler:
 
     def test_smc_sampler_methods_before_sampling_raise_errors(self):
         """Test SMC sampler methods raise errors when called before sampling."""
-        from jesterTOV.inference.samplers.blackjax_smc import BlackJAXSMCRandomWalkSampler
+        from jesterTOV.inference.samplers.blackjax_smc import (
+            BlackJAXSMCRandomWalkSampler,
+        )
         from jesterTOV.inference.config.schema import SMCRandomWalkSamplerConfig
 
         prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
@@ -645,7 +651,9 @@ class TestBlackJAXSMCNUTSSampler:
 
     def test_smc_sampler_with_sample_transforms_warns(self):
         """Test SMC sampler warns when given sample transforms (works in prior space)."""
-        from jesterTOV.inference.samplers.blackjax_smc import BlackJAXSMCRandomWalkSampler
+        from jesterTOV.inference.samplers.blackjax_smc import (
+            BlackJAXSMCRandomWalkSampler,
+        )
         from jesterTOV.inference.config.schema import SMCRandomWalkSamplerConfig
 
         prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
@@ -725,7 +733,9 @@ class TestBlackJAXSMCNUTSSampler:
     @pytest.mark.slow
     def test_smc_sampler_minimal_run_random_walk(self):
         """Test SMC sampler can run minimal sampling with random walk kernel (slow test)."""
-        from jesterTOV.inference.samplers.blackjax_smc import BlackJAXSMCRandomWalkSampler
+        from jesterTOV.inference.samplers.blackjax_smc import (
+            BlackJAXSMCRandomWalkSampler,
+        )
         from jesterTOV.inference.config.schema import SMCRandomWalkSamplerConfig
 
         prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
@@ -900,7 +910,9 @@ class TestSamplerFactory:
     def test_create_smc_sampler_from_config(self):
         """Test factory creates SMC sampler from config."""
         from jesterTOV.inference.samplers.factory import create_sampler
-        from jesterTOV.inference.samplers.blackjax_smc import BlackJAXSMCRandomWalkSampler
+        from jesterTOV.inference.samplers.blackjax_smc import (
+            BlackJAXSMCRandomWalkSampler,
+        )
         from jesterTOV.inference.config.schema import SMCRandomWalkSamplerConfig
 
         config = SMCRandomWalkSamplerConfig(
@@ -1062,7 +1074,9 @@ class TestSamplerOutputInterface:
         """Test SMC implements get_sampler_output() correctly."""
         pytest.importorskip("blackjax")
 
-        from jesterTOV.inference.samplers.blackjax_smc import BlackJAXSMCRandomWalkSampler
+        from jesterTOV.inference.samplers.blackjax_smc import (
+            BlackJAXSMCRandomWalkSampler,
+        )
         from jesterTOV.inference.config.schema import SMCRandomWalkSamplerConfig
 
         prior = UniformPrior(0.0, 1.0, parameter_names=["x"])

@@ -606,7 +606,12 @@ class SMCNUTSSamplerConfig(BaseSamplerConfig):
 # Discriminated union for sampler configurations
 # This allows Pydantic to automatically select the correct config class based on the 'type' field
 SamplerConfig = Annotated[
-    Union[FlowMCSamplerConfig, BlackJAXNSAWConfig, SMCRandomWalkSamplerConfig, SMCNUTSSamplerConfig],
+    Union[
+        FlowMCSamplerConfig,
+        BlackJAXNSAWConfig,
+        SMCRandomWalkSamplerConfig,
+        SMCNUTSSamplerConfig,
+    ],
     Discriminator("type"),
 ]
 

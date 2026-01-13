@@ -19,7 +19,9 @@ from jesterTOV.logging_config import get_logger
 
 logger = get_logger("jester")
 
-SamplerType = Literal["flowmc", "blackjax_smc_rw", "blackjax_smc_nuts", "blackjax_ns_aw"]
+SamplerType = Literal[
+    "flowmc", "blackjax_smc_rw", "blackjax_smc_nuts", "blackjax_ns_aw"
+]
 
 
 class InferenceResult:
