@@ -310,12 +310,6 @@ BlackJAX SMC with adaptive tempering and Gaussian Random Walk kernel.
 - `random_walk_sigma`: `float` (optional)
   - Default: `0.1`
 
-- `target_acceptance`: `float` (optional)
-  - Default: `0.5`
-
-- `adaptation_rate`: `float` (optional)
-  - Default: `0.3`
-
 **Output**: Posterior samples and effective sample size (ESS) statistics.
 
 #### Sequential Monte Carlo with NUTS (`type: "smc-nuts"`)
