@@ -930,6 +930,33 @@ class TestSamplerFactory:
         assert isinstance(sampler, BlackJAXSMCRandomWalkSampler)
         assert sampler.config.type == "smc-rw"
 
+    def test_create_smc_nuts_sampler_from_config(self):
+        """Test factory creates SMC NUTS sampler from config."""
+        from jesterTOV.inference.samplers.factory import create_sampler
+        from jesterTOV.inference.samplers.blackjax_smc import BlackJAXSMCNUTSSampler
+        from jesterTOV.inference.config.schema import SMCNUTSSamplerConfig
+
+        config = SMCNUTSSamplerConfig(
+            type="smc-nuts",
+            n_particles=100,
+            output_dir="./test/",
+        )
+
+        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
+        likelihood = MockLikelihood()
+
+        sampler = create_sampler(
+            config,
+            prior,
+            likelihood,
+            sample_transforms=[],
+            likelihood_transforms=[],
+            seed=42,
+        )
+
+        assert isinstance(sampler, BlackJAXSMCNUTSSampler)
+        assert sampler.config.type == "smc-nuts"
+
     def test_create_ns_aw_sampler_from_config(self):
         """Test factory creates NS-AW sampler from config."""
         pytest.importorskip("blackjax")
