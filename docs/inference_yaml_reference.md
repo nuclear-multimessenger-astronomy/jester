@@ -308,7 +308,7 @@ BlackJAX SMC with adaptive tempering and Gaussian Random Walk kernel.
   - Default: `0.9`
 
 - `random_walk_sigma`: `float` (optional)
-  - Default: `0.1`
+  - Default: `1.0`
 
 **Output**: Posterior samples and effective sample size (ESS) statistics.
 
