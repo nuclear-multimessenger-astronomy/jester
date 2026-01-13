@@ -1,5 +1,5 @@
 #!/bin/bash
-# Submit all SMC-RandomWalk inference jobs
+# Clean all SMC-RandomWalk inference jobs, so we can check them from scratch
 
 SKIP_DIRS=("prior")
 
@@ -15,8 +15,6 @@ for dir in */; do
     # Submit if submit.sh exists
     if [ -f "$dir/submit.sh" ]; then
         echo "Cleaning $dir"
-        cd "$dir"
-        rm -r outdir
-        cd ..
+        rm -rf "$dir/outdir"
     fi
 done

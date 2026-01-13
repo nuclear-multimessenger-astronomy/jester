@@ -36,17 +36,16 @@ likelihoods:
           amsterdam_samples_file: "../../../../jesterTOV/inference/data/NICER/J00300451_amsterdam_ST_PST_NICER_only_Riley2019.npz"
           maryland_samples_file: "../../../../jesterTOV/inference/data/NICER/J00300451_maryland_2spot_NICER_only_RM.npz"
       N_masses_evaluation: 20
-      N_masses_batch_size: 10
+      N_masses_batch_size: 20
 
 # SMC configuration with Random Walk kernel
-# Aggressive settings for high-quality NICER inference
 sampler:
   type: "smc-rw"
-  n_particles: 5000          # Number of particles for full inference (AGGRESSIVE)
-  n_mcmc_steps: 10            # MCMC steps per tempering level (AGGRESSIVE)
-  target_ess: 0.9             # Target effective sample size (90%)
-  random_walk_sigma: 0.05      # Fixed sigma scaling for Gaussian random walk
-  n_eos_samples: 5000         # Number of EOS samples to generate after inference
+  n_particles: 5000         # Number of particles evolved at each inference step
+  n_mcmc_steps: 10          # MCMC steps per tempering level
+  target_ess: 0.9           # Target effective sample size (90%)
+  random_walk_sigma: 0.05   # Gaussian random walk step size scale
+  n_eos_samples: 5000       # Number of EOS samples to generate after inference
   output_dir: "./outdir/"
 
 # Postprocessing configuration

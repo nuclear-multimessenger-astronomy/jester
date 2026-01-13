@@ -28,7 +28,7 @@ prior:
 likelihoods:
   - type: "constraints_eos"
     enabled: true
-  - type: "gw"  # NEW: Pre-sampled masses for deterministic evaluation
+  - type: "gw"
     enabled: true
     parameters:
       events:
@@ -36,19 +36,18 @@ likelihoods:
           # model_dir is optional - defaults to flow trained on XP-NRTv3 posterior samples
           # To use a different flow, specify: model_dir: "/path/to/flow/model/"
       penalty_value: -99999.0
-      N_masses_evaluation: 2000  # Large N recommended - cheap on GPU!
-      N_masses_batch_size: 1000   # Batch size for jax.lax.map
-      seed: 42                     # Fixed seed for mass pre-sampling
+      N_masses_evaluation: 2000  # Number of points used for evaluating the likelihood
+      N_masses_batch_size: 1000  # Batch size for jax.lax.map for likelihood evaluation
+      seed: 42                   # Fixed seed for mass the pre-sampling described above
 
 # SMC configuration with Random Walk kernel
-# Aggressive settings for high-quality GW inference
 sampler:
   type: "smc-rw"
-  n_particles: 5000          # Number of particles for full inference (AGGRESSIVE)
-  n_mcmc_steps: 10            # MCMC steps per tempering level (AGGRESSIVE)
-  target_ess: 0.9             # Target effective sample size (90%)
-  random_walk_sigma: 0.05      # Fixed sigma scaling for Gaussian random walk
-  n_eos_samples: 5000         # Number of EOS samples to generate after inference
+  n_particles: 5000         # Number of particles evolved at each inference step
+  n_mcmc_steps: 10          # MCMC steps per tempering level
+  target_ess: 0.9           # Target effective sample size (90%)
+  random_walk_sigma: 0.05   # Gaussian random walk step size scale
+  n_eos_samples: 5000       # Number of EOS samples to generate after inference
   output_dir: "./outdir/"
 
 # Postprocessing configuration
