@@ -875,6 +875,7 @@ class BlackJAXSMCNUTSSampler(BlackJAXSMCSampler):
             "inverse_mass_matrix": init_inverse_mass_matrix,
         }
 
+        # TODO: remove this tracking in case we don't want this for NUTS
         # Track current step size for adaptation
         current_step_size = {"value": config.init_step_size}
 
@@ -902,6 +903,7 @@ class BlackJAXSMCNUTSSampler(BlackJAXSMCSampler):
             # Compute Hessian at best particle
             hessian = hessian_fn(best_particle)
 
+            # TODO: investigate if this is stable when Lambdas are near zero
             # Eigen decomposition with SoftAbs regularization
             lambdas, V = jnp.linalg.eigh(-hessian)
             soft_lambdas = lambdas / jnp.tanh(5e-3 * lambdas)
