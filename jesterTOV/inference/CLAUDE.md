@@ -26,8 +26,8 @@ L_sym = UniformPrior(10.0, 200.0, parameter_names=["L_sym"])
 
 **Samplers**: Three backends available
 - `type: "flowmc"` - Flow-enhanced MCMC (production ready)
-- `type: "smc"` - Sequential Monte Carlo (production ready)
-  - `kernel_type: "nuts"` or `"random_walk"`
+- `type: "smc-rw"` - Sequential Monte Carlo with Random Walk kernel (production ready)
+- `type: "smc-nuts"` - Sequential Monte Carlo with NUTS kernel (production ready)
 - `type: "blackjax-ns-aw"` - Nested sampling (needs type fixes)
 
 ### Inference Documentation
