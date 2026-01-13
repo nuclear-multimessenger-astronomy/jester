@@ -597,7 +597,6 @@ class TestEOSSampleGeneration:
             "likelihoods": [{"type": "zero", "enabled": True, "parameters": {}}],
             "sampler": {
                 "type": "smc-rw",
-                "kernel_type": "nuts",
                 "n_particles": 100,
                 "n_mcmc_steps": 10,
                 "target_ess": 0.9,
