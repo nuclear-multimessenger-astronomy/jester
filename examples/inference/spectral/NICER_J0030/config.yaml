@@ -1,0 +1,54 @@
+# NICER PSR J0030+0451-only inference configuration
+# SMC with Random Walk kernel for constraining EOS using NICER X-ray timing
+
+seed: 44
+
+# Execution options
+dry_run: false
+validate_only: false
+
+# Transform configuration: spectral EOS parameterization
+transform:
+  type: spectral
+  crust_name: SLy  # Required for spectral (LALSuite compatibility)
+  n_points_high: 100  # Number of high-density points in spectral region
+  ndat_TOV: 100
+  nb_masses: 100
+  min_nsat_TOV: 0.75
+
+# Prior specification file
+prior:
+  specification_file: "prior.prior"
+
+# Likelihood constraints
+likelihoods:
+  - type: "constraints_eos"
+    enabled: true
+
+  # NICER X-ray timing constraint (PSR J0030+0451)
+  - type: "nicer"
+    enabled: true
+    parameters:
+      pulsars:
+        - name: "J0030"
+          amsterdam_samples_file: "../../../../jesterTOV/inference/data/NICER/J00300451_amsterdam_ST_PST_NICER_only_Riley2019.npz"
+          maryland_samples_file: "../../../../jesterTOV/inference/data/NICER/J00300451_maryland_2spot_NICER_only_RM.npz"
+      N_masses_evaluation: 20
+      N_masses_batch_size: 20
+
+# SMC configuration with Random Walk kernel
+sampler:
+  type: "smc-rw"
+  n_particles: 1000         # Number of particles evolved at each inference step
+  n_mcmc_steps: 10          # MCMC steps per tempering level
+  target_ess: 0.9           # Target effective sample size (90%)
+  random_walk_sigma: 0.05   # Gaussian random walk step size scale
+  n_eos_samples: 1000       # Number of EOS samples to generate after inference
+  output_dir: "./outdir/"
+
+# Postprocessing configuration
+postprocessing:
+  enabled: true
+  make_cornerplot: true
+  make_massradius: true
+  make_pressuredensity: true
