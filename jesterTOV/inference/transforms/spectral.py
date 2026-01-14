@@ -6,6 +6,9 @@ to observable neutron star properties by solving the TOV equations with the
 spectral decomposition EOS parametrization. The spectral EOS follows Lindblom (2010)
 PRD 82, 103011 and Lackey & Wade (2018) PRD 98, 063004, matching LALSuite's
 implementation exactly.
+
+NOTE: We follow LALSuite and the above papers and hard-code a 4-parameter spectral
+decomposition. Extensions to more parameters are possible but not currently implemented.
 """
 
 import jax.numpy as jnp
@@ -20,7 +23,7 @@ logger = get_logger("jester")
 
 
 class SpectralTransform(JesterTransformBase):
-    """Transform from spectral parameters to neutron star observables.
+    r"""Transform from spectral parameters to neutron star observables.
 
     This transform maps the 4-parameter spectral decomposition space to neutron star
     mass-radius-tidal deformability curves by constructing an equation of state and
@@ -28,8 +31,11 @@ class SpectralTransform(JesterTransformBase):
     represents the adiabatic index as a polynomial in log-pressure space.
 
     The adiabatic index is parametrized as:
-        log Γ(x) = γ₀ + γ₁·x + γ₂·x² + γ₃·x³
-    where x = log(p/p₀) is the dimensionless log-pressure.
+
+    .. math::
+        \log \Gamma(x) = \gamma_0 + \gamma_1 x + \gamma_2 x^2 + \gamma_3 x^3
+
+    where :math:`x = \log(p/p_0)` is the dimensionless log-pressure.
 
     Parameters
     ----------
@@ -55,16 +61,16 @@ class SpectralTransform(JesterTransformBase):
     Notes
     -----
     The 4 spectral parameters are:
-    - gamma_0, gamma_1, gamma_2, gamma_3 : Coefficients of log Γ(x) polynomial expansion
+    - gamma_0, gamma_1, gamma_2, gamma_3 : Coefficients of :math:`\log \Gamma(x)` polynomial expansion
 
     Typical parameter ranges from Lackey & Wade (2018):
-    - γ₀ ∈ [0.2, 2.0]
-    - γ₁ ∈ [-1.6, 1.7]
-    - γ₂ ∈ [-0.6, 0.6]
-    - γ₃ ∈ [-0.02, 0.02]
+    - :math:`\gamma_0 \in [0.2, 2.0]`
+    - :math:`\gamma_1 \in [-1.6, 1.7]`
+    - :math:`\gamma_2 \in [-0.6, 0.6]`
+    - :math:`\gamma_3 \in [-0.02, 0.02]`
 
-    The EOS enforces causality through parameter validation: Γ(x) must lie in [0.6, 4.5]
-    for all pressures, which automatically ensures cs² ≤ 1.
+    The EOS enforces causality through parameter validation: :math:`\Gamma(x)` must lie in :math:`[0.6, 4.5]`
+    for all pressures, which automatically ensures :math:`c_s^2 \leq 1`.
 
     See Also
     --------
@@ -124,46 +130,46 @@ class SpectralTransform(JesterTransformBase):
         return "spectral"
 
     def get_parameter_names(self) -> list[str]:
-        """Return the list of spectral parameter names.
+        r"""Return the list of spectral parameter names.
 
         Returns
         -------
         list[str]
             The 4 spectral parameter names: ["gamma_0", "gamma_1", "gamma_2", "gamma_3"].
-            These define the polynomial expansion of log Γ(x) in dimensionless log-pressure.
+            These define the polynomial expansion of :math:`\log \Gamma(x)` in dimensionless log-pressure.
         """
         return ["gamma_0", "gamma_1", "gamma_2", "gamma_3"]
 
     def _check_gamma_bounds(self, gamma: Float[Array, "4"]) -> Float:
-        """
+        r"""
         Check for gamma parameter violations of LALSuite bounds.
 
-        LALSuite requires Γ(x) ∈ [0.6, 4.5] for all x ∈ [0, xmax] to ensure
-        physical validity and numerical stability. This method samples Γ(x)
+        LALSuite requires :math:`\Gamma(x) \in [0.6, 4.5]` for all :math:`x \in [0, x_{\mathrm{max}}]` to ensure
+        physical validity and numerical stability. This method samples :math:`\Gamma(x)`
         at 100 points and counts violations.
 
         Parameters
         ----------
         gamma : Float[Array, "4"]
-            Spectral coefficients [γ₀, γ₁, γ₂, γ₃]
+            Spectral coefficients :math:`[\gamma_0, \gamma_1, \gamma_2, \gamma_3]`
 
         Returns
         -------
         Float
-            Number of points where Γ(x) violates bounds (0 = valid, >0 = violation)
+            Number of points where :math:`\Gamma(x)` violates bounds (0 = valid, >0 = violation)
             Returns a scalar for JAX compatibility
         """
-        # Sample Γ(x) at 100 points as in LALSuite validation
+        # Sample Gamma(x) at 100 points as in LALSuite validation
         x_test = jnp.linspace(0.0, self.eos.xmax, 100)
         gamma_vals = vmap(lambda x: self.eos._adiabatic_index(x, gamma))(x_test)
 
-        # Count violations: Γ < 0.6 or Γ > 4.5
+        # Count violations: Gamma < 0.6 or Gamma > 4.5
         n_violations = jnp.sum((gamma_vals < 0.6) | (gamma_vals > 4.5))
 
         return n_violations
 
     def transform_func_spectral(self, params: dict[str, Float]) -> dict[str, Float]:
-        """Compute neutron star observables from spectral decomposition parameters.
+        r"""Compute neutron star observables from spectral decomposition parameters.
 
         This method constructs the equation of state from the spectral parameters,
         validates that the adiabatic index stays within physical bounds, and solves
@@ -180,7 +186,7 @@ class SpectralTransform(JesterTransformBase):
         dict[str, Float]
             Dictionary containing EOS and TOV solution quantities:
 
-            - logpc_EOS : Log10 of central pressures (geometric units)
+            - logpc_EOS : :math:`\log_{10}` of central pressures (geometric units)
             - masses_EOS : Neutron star masses at each central pressure (solar masses)
             - radii_EOS : Neutron star radii at each central pressure (km)
             - Lambdas_EOS : Dimensionless tidal deformabilities
@@ -188,19 +194,13 @@ class SpectralTransform(JesterTransformBase):
             - p : Pressure values on density grid (geometric units)
             - h : Specific enthalpy values (geometric units)
             - e : Energy density values (geometric units)
-            - dloge_dlogp : Logarithmic derivative d(log e)/d(log p)
+            - dloge_dlogp : Logarithmic derivative :math:`d(\log \varepsilon)/d(\log p)`
             - cs2 : Sound speed squared (computed from dloge_dlogp)
             - n_tov_failures : Number of TOV solver failures (scalar)
             - n_causality_violations : Number of causality violations (scalar)
             - n_stability_violations : Number of stability violations (scalar)
             - n_pressure_violations : Number of pressure violations (scalar)
-            - n_gamma_violations : Number of Gamma bound violations (scalar): this is specific to spsectral EOS
-
-        Notes
-        -----
-        The EOS construction automatically validates that Γ(x) ∈ [0.6, 4.5] for all
-        pressures. If validation fails, a ValueError is raised. This ensures causality
-        (cs² ≤ 1) and thermodynamic stability.
+            - n_gamma_violations : Number of :math:`\Gamma` bound violations (scalar): this is specific to spectral EOS
         """
         # Update with fixed parameters (currently empty)
         params.update(self.fixed_params)
@@ -221,10 +221,10 @@ class SpectralTransform(JesterTransformBase):
 
         # TODO: double check this math, and perhaps document somewhere better
         # Compute sound speed squared from dloge_dlogp
-        # cs² = dp/de = 1 / (de/dp) = 1 / Γ
-        # But we have dloge_dlogp = d(log e)/d(log p) = (de/dp) * (p/e)
-        # So: Γ = de/dp = dloge_dlogp * (e/p)
-        # Therefore: cs² = 1/Γ = p / (e * dloge_dlogp)
+        # c_s² = dp/dε = 1 / (dε/dp) = 1 / Γ
+        # But we have dloge_dlogp = d(log ε)/d(log p) = (dε/dp) * (p/ε)
+        # So: Γ = dε/dp = dloge_dlogp * (ε/p)
+        # Therefore: c_s² = 1/Γ = p / (ε * dloge_dlogp)
         cs2 = ps / (es * dloge_dlogps)
 
         # Solve the TOV equations

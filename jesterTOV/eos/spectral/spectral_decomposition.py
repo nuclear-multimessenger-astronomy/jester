@@ -3,6 +3,8 @@ Spectral decomposition equation of state model.
 
 This module implements the spectral decomposition EOS following Lindblom (2010) PRD 82, 103011
 and Lackey & Wade (2018) PRD 98, 063004, exactly matching the LALSuite implementation.
+NOTE: This is hard-coded for the 4-parameter spectral decomposition model, although we might
+consider making it more flexible in the future.
 
 The implementation uses 10-point Gauss-Legendre quadrature for numerical integration and
 stitches a low-density SLy crust to the high-density spectral expansion.
@@ -69,7 +71,7 @@ def gauss_legendre_quad(
     func_values: Float[Array, "10"],
     a: float,
     b: float
-) -> Float[Array, ""]:
+) -> Float:
     r"""
     Compute integral using precomputed function values at Gauss-Legendre nodes.
 
@@ -84,10 +86,11 @@ def gauss_legendre_quad(
         b: Upper integration limit
 
     Returns:
-        Integral value (scalar array)
+        Integral value (scalar)
     """
     half_width = (b - a) / 2.0
     result = jnp.sum(GL_WEIGHTS_10 * func_values)
+    result = float(result)
     return result * half_width
 
 
@@ -138,13 +141,13 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
             crust_name: Name of crust model to use ('SLy', 'DH', 'BPS').
                        Default 'SLy' for LALSuite compatibility.
             n_points_high: Number of high-density points to generate.
-                          Default 500 to match LALSuite.
+                          Default 500 to match LALSuite although this is a bit high.
         """
         super().__init__()
         self.crust_name = crust_name
         self.n_points_high = n_points_high
         
-                # Load low-density crust data
+        # Load low-density crust data
         n_crust, p_crust, e_crust = load_crust(self.crust_name)
         
         # TODO: After testing is done, we should use crust EOS code for this
@@ -169,8 +172,8 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         self.pmax_nuclear = self.p0_geom * jnp.exp(self.xmax) / utils.MeV_fm_inv3_to_geometric
 
     @staticmethod
-    @jit
-    def _log_adiabatic_index(x: float, gamma: Float[Array, "4"]) -> Float[Array, ""]:
+    # @jit # TODO: investigate if this affects the performance significantly?
+    def _log_adiabatic_index(x: float, gamma: Float[Array, "4"]) -> Float:
         r"""
         Compute :math:`\log \Gamma(x)` from spectral expansion.
 
@@ -179,13 +182,13 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
             gamma: Spectral coefficients :math:`[\gamma_0, \gamma_1, \gamma_2, \gamma_3]`
 
         Returns:
-            :math:`\log \Gamma(x) = \gamma_0 + \gamma_1 x + \gamma_2 x^2 + \gamma_3 x^3` (scalar array)
+            :math:`\log \Gamma(x) = \gamma_0 + \gamma_1 x + \gamma_2 x^2 + \gamma_3 x^3` (scalar)
         """
-        return gamma[0] + gamma[1]*x + gamma[2]*x**2 + gamma[3]*x**3
+        return float(gamma[0] + gamma[1]*x + gamma[2]*x**2 + gamma[3]*x**3)
 
     @staticmethod
-    @jit
-    def _adiabatic_index(x: float, gamma: Float[Array, "4"]) -> Float[Array, ""]:
+    # @jit # TODO: investigate if this affects the performance significantly?
+    def _adiabatic_index(x: float, gamma: Float[Array, "4"]) -> Float:
         r"""
         Compute adiabatic index :math:`\Gamma(x) = \exp(\log \Gamma(x))`.
 
@@ -196,13 +199,14 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
             gamma: Spectral coefficients :math:`[\gamma_0, \gamma_1, \gamma_2, \gamma_3]`
 
         Returns:
-            :math:`\Gamma(x) = \exp(\gamma_0 + \gamma_1 x + \gamma_2 x^2 + \gamma_3 x^3)` (scalar array)
+            :math:`\Gamma(x) = \exp(\gamma_0 + \gamma_1 x + \gamma_2 x^2 + \gamma_3 x^3)` (scalar)
         """
         log_gamma_val = SpectralDecomposition_EOS_model._log_adiabatic_index(x, gamma)
-        return jnp.exp(log_gamma_val)
+        gamma_val = jnp.exp(log_gamma_val)
+        return float(gamma_val)
 
     @staticmethod
-    def _compute_mu(x: float, gamma: Float[Array, "4"]) -> Float[Array, ""]:
+    def _compute_mu(x: float, gamma: Float[Array, "4"]) -> Float:
         r"""
         Compute :math:`\mu(x) = \exp\left[-\int_0^x \frac{1}{\Gamma(x')} \, dx'\right]`.
 
@@ -217,7 +221,7 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
             gamma: Spectral coefficients :math:`[\gamma_0, \gamma_1, \gamma_2, \gamma_3]`
 
         Returns:
-            :math:`\mu(x)` value (scalar array)
+            :math:`\mu(x)` value (scalar)
         """
         # Get quadrature nodes in [0, x]
         nodes = get_gauss_legendre_nodes(0.0, x)
@@ -232,10 +236,11 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         integral = gauss_legendre_quad(integrand_values, 0.0, x)
 
         # Return μ(x) = exp(-integral)
-        return jnp.exp(-integral)
+        mu = jnp.exp(-integral)
+        return float(mu)
 
     @staticmethod
-    def _compute_energy_density_geom(x: float, gamma: Float[Array, "4"]) -> Float[Array, ""]:
+    def _compute_energy_density_geom(x: float, gamma: Float[Array, "4"]) -> Float:
         r"""
         Compute energy density :math:`\varepsilon(x)` in geometric units.
 
@@ -284,38 +289,9 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         # Compute integral using Gauss-Legendre quadrature
         integral = gauss_legendre_quad(integrand_values, 0.0, x)
 
-        # Return ε(x) using Eq. 7
-        return e0 / mu + (p0 / mu) * integral
-
-    # TODO: this must be migrated into something like ConstraintEOSLikelihood
-    def _validate_gamma(self, gamma: Float[Array, "4"]) -> bool:
-        r"""
-        Validate spectral parameters by checking adiabatic index bounds.
-
-        This implements XLALSimNeutronStarEOS4ParamSDGammaCheck from LALSuite.
-        Checks that :math:`\Gamma(x) \in [0.6, 4.5]` for all :math:`x \in [0, x_\mathrm{max}]`
-        as required for physical EOS and TOV solver stability.
-
-        NOTE: This validation is not JIT-friendly due to the boolean return.
-        It is called during EOS construction (outside JIT) to catch invalid
-        parameters early. For production inference with JIT-compiled likelihoods,
-        consider implementing as a soft constraint (e.g., :math:`\log \pi = -\infty` for
-        invalid parameters) instead of hard validation.
-
-        Args:
-            gamma: Spectral coefficients :math:`[\gamma_0, \gamma_1, \gamma_2, \gamma_3]`
-
-        Returns:
-            True if :math:`\Gamma(x) \in [0.6, 4.5]` for all :math:`x \in [0, x_\mathrm{max}]`, False otherwise
-        """
-        # Sample Γ(x) at 100 points as in LALSuite
-        x_test = jnp.linspace(0.0, self.xmax, 100)
-        gamma_vals = vmap(lambda x: self._adiabatic_index(x, gamma))(x_test)
-
-        # Check bounds
-        valid = jnp.all((gamma_vals >= 0.6) & (gamma_vals <= 4.5))
-
-        return bool(valid)
+        # Return (using Eq. 7 in 2010 paper)
+        eps = e0 / mu + (p0 / mu) * integral
+        return float(eps)
 
     def construct_eos(
         self,
