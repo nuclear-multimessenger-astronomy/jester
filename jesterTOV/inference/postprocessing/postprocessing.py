@@ -2,10 +2,11 @@ r"""Modular postprocessing script for EOS inference results.
 
 This script provides comprehensive visualization tools for analyzing equation of state (EOS)
 inference results. It generates various plots including cornerplots, mass-radius diagrams,
-and pressure-density relationships with posterior probability color coding.
+pressure-density relationships, and speed of sound squared vs density with posterior
+probability color coding.
 
 Usage:
-    run_jester_postprocessing --outdir <path> [--make-cornerplot] [--make-massradius] [--make-pressuredensity]
+    run_jester_postprocessing --outdir <path> [--make-cornerplot] [--make-massradius] [--make-pressuredensity] [--make-cs2]
 
 Example:
     run_jester_postprocessing --outdir ./results --make-all
@@ -550,6 +551,121 @@ def make_pressure_density_plot(
 
 
 # TODO: Make hdi_prob a variable at the top of the script, fill histograms between the two edges and not fill outside of it, and put the hdi_prob in the title of the histogram)
+def make_cs2_plot(
+    data: Dict[str, Any],
+    prior_data: Optional[Dict[str, Any]],
+    outdir: str,
+    use_crest_cmap: bool = True,
+):
+    """Create plot of speed of sound squared vs density.
+
+    Parameters
+    ----------
+    data : dict
+        EOS data dictionary
+    prior_data : dict or None
+        Prior EOS data for comparison
+    outdir : str
+        Output directory
+    use_crest_cmap : bool, optional
+        Whether to use seaborn crest colormap, by default True
+    """
+    logger.info("Creating cs2-density plot...")
+
+    plt.figure(figsize=(11, 6))
+
+    # Plot prior first (background)
+    if prior_data is not None:
+        n_prior, cs2_prior = prior_data["densities"], prior_data["cs2"]
+        for i in range(len(n_prior)):
+            mask = (n_prior[i] > 0.5) * (n_prior[i] < 6.0)
+            plt.plot(
+                n_prior[i][mask],
+                cs2_prior[i][mask],
+                color=COLORS_DICT["prior"],
+                alpha=0.1,
+                rasterized=True,
+                zorder=1,
+            )
+
+    # Plot posterior with probability coloring
+    m, r, l = data["masses"], data["radii"], data["lambdas"]
+    n, cs2 = data["densities"], data["cs2"]
+    log_prob = data["log_prob"]
+    nb_samples = np.shape(m)[0]
+
+    # Verify log_prob matches EOS sample count
+    if len(log_prob) != nb_samples:
+        raise ValueError(
+            f"Mismatch between log_prob ({len(log_prob)}) and EOS samples ({nb_samples}). "
+            "This indicates a bug in the EOS sample generation code."
+        )
+
+    # Normalize probabilities for coloring
+    prob = np.exp(log_prob - np.max(log_prob))
+    norm = Normalize(vmin=np.min(prob), vmax=np.max(prob))
+    cmap = (
+        DEFAULT_COLORMAP
+        if use_crest_cmap
+        else sns.color_palette("viridis", as_cmap=True)
+    )
+
+    bad_counter = 0
+    logger.info(f"Plotting {len(prob)} cs2-n curves...")
+    for i in range(len(prob)):
+        # Skip invalid samples
+        if any(np.isnan(m[i])) or any(np.isnan(r[i])) or any(np.isnan(l[i])):
+            bad_counter += 1
+            continue
+
+        if any(l[i] < 0):
+            bad_counter += 1
+            continue
+
+        if any((m[i] > 1.0) * (r[i] > 20.0)):
+            bad_counter += 1
+            continue
+
+        # Get color and plot
+        normalized_value = norm(prob[i])
+        color = cmap(normalized_value)
+
+        mask = (n[i] > 0.5) * (n[i] < 6.0)
+        plt.plot(
+            n[i][mask],
+            cs2[i][mask],
+            color=color,
+            alpha=1.0,
+            rasterized=True,
+            zorder=1e10 + normalized_value,
+        )
+
+    logger.info(f"Excluded {bad_counter} invalid samples")
+
+    xlabel = r"$n$ [$n_{\rm{sat}}$]" if TEX_ENABLED else "n [n_sat]"
+    ylabel = r"$c_s^2$" if TEX_ENABLED else "cs2"
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.xlim(0.5, 6.0)
+    plt.ylim(0.0, 1.2)  # Speed of sound squared should be between 0 and 1 (c=1)
+
+    # Add legend for prior
+    if prior_data is not None:
+        from matplotlib.lines import Line2D
+
+        legend_elements = [
+            Line2D([0], [0], color=COLORS_DICT["prior"], lw=2, alpha=0.7, label="Prior")
+        ]
+        plt.legend(handles=legend_elements, loc="upper left")
+
+    # Save figure
+    save_name = os.path.join(outdir, "cs2_density_plot.pdf")
+    plt.savefig(save_name, bbox_inches="tight")
+    plt.close()
+    logger.info(f"cs2-density plot saved to {save_name}")
+
+
+# TODO: Make hdi_prob a variable at the top of the script, fill histograms between the two edges and not fill outside of it, and put the hdi_prob in the title of the histogram)
 def make_parameter_histograms(
     data: Dict[str, Any], prior_data: Optional[Dict[str, Any]], outdir: str
 ):
@@ -827,6 +943,7 @@ def generate_all_plots(
     make_massradius_flag: bool = True,
     make_pressuredensity_flag: bool = True,
     make_histograms_flag: bool = True,
+    make_cs2_flag: bool = True,
 ):
     """Generate selected plots for the specified output directory.
 
@@ -844,6 +961,8 @@ def generate_all_plots(
         Whether to generate pressure-density plot, by default True
     make_histograms_flag : bool, optional
         Whether to generate parameter histograms, by default True
+    make_cs2_flag : bool, optional
+        Whether to generate cs2-density plot, by default True
     """
     logger.info(f"Generating plots for directory: {outdir}")
 
@@ -879,6 +998,9 @@ def generate_all_plots(
 
     if make_histograms_flag:
         make_parameter_histograms(data, prior_data, figures_dir)
+
+    if make_cs2_flag:
+        make_cs2_plot(data, prior_data, figures_dir)
 
     # TODO: Decide whether to keep mass-radius and pressure-density contour plots
     # These are currently commented out pending decision on their utility
@@ -941,6 +1063,9 @@ Examples:
     parser.add_argument(
         "--make-histograms", action="store_true", help="Generate parameter histograms"
     )
+    parser.add_argument(
+        "--make-cs2", action="store_true", help="Generate cs2-density plot"
+    )
 
     # Additional options
     parser.add_argument(
@@ -977,6 +1102,7 @@ Examples:
             args.make_massradius,
             args.make_pressuredensity,
             args.make_histograms,
+            args.make_cs2,
         ]
     )
 
@@ -988,6 +1114,7 @@ Examples:
         make_massradius_flag=make_all or args.make_massradius,
         make_pressuredensity_flag=make_all or args.make_pressuredensity,
         make_histograms_flag=make_all or args.make_histograms,
+        make_cs2_flag=make_all or args.make_cs2,
     )
 
 

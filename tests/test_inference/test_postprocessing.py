@@ -15,6 +15,7 @@ from jesterTOV.inference.postprocessing.postprocessing import (
     make_cornerplot,
     make_mass_radius_plot,
     make_pressure_density_plot,
+    make_cs2_plot,
 )
 from jesterTOV.inference.result import InferenceResult
 
@@ -276,6 +277,32 @@ class TestPlotGeneration:
 
         plt.close("all")
 
+    def test_make_cs2_plot_basic(self, mock_data, temp_dir):
+        """Test cs2-density plot generation doesn't crash."""
+        make_cs2_plot(data=mock_data, prior_data=None, outdir=str(temp_dir))
+
+        # Check that plot file was created
+        expected_file = temp_dir / "cs2_density_plot.pdf"
+        assert expected_file.exists()
+
+        plt.close("all")
+
+    def test_make_cs2_plot_with_prior(self, mock_data, temp_dir):
+        """Test cs2-density plot with prior samples."""
+        # Create smaller prior data
+        prior_data = {
+            "densities": mock_data["densities"][:10],
+            "cs2": mock_data["cs2"][:10],
+            "log_prob": mock_data["log_prob"][:10],
+        }
+
+        make_cs2_plot(data=mock_data, prior_data=prior_data, outdir=str(temp_dir))
+
+        expected_file = temp_dir / "cs2_density_plot.pdf"
+        assert expected_file.exists()
+
+        plt.close("all")
+
     def test_plots_handle_small_sample_size(self, temp_dir):
         """Test plots work with very small sample sizes."""
         # Minimal data (just 2 samples)
@@ -378,6 +405,7 @@ class TestIntegrationWithInferenceResult:
         make_cornerplot(data, outdir=str(temp_dir), max_params=4)
         make_mass_radius_plot(data, prior_data=None, outdir=str(temp_dir))
         make_pressure_density_plot(data, prior_data=None, outdir=str(temp_dir))
+        make_cs2_plot(data, prior_data=None, outdir=str(temp_dir))
 
         # Verify all plots created (note: some are PDF, some are PDF/PNG)
         assert (temp_dir / "cornerplot.pdf").exists()
@@ -386,5 +414,6 @@ class TestIntegrationWithInferenceResult:
         assert (temp_dir / "pressure_density_plot.pdf").exists() or (
             temp_dir / "pressure_density_plot.png"
         ).exists()
+        assert (temp_dir / "cs2_density_plot.pdf").exists()
 
         plt.close("all")
