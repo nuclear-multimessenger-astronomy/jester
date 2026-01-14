@@ -50,15 +50,15 @@ GL_WEIGHTS_10 = jnp.array([
 
 
 def get_gauss_legendre_nodes(a: float, b: float) -> Float[Array, "10"]:
-    """
-    Get Gauss-Legendre quadrature nodes mapped from [-1, 1] to [a, b].
+    r"""
+    Get Gauss-Legendre quadrature nodes mapped from :math:`[-1, 1]` to :math:`[a, b]`.
 
     Args:
         a: Lower integration limit
         b: Upper integration limit
 
     Returns:
-        Array of 10 nodes in [a, b]
+        Array of 10 nodes in :math:`[a, b]`
     """
     midpoint = (b + a) / 2.0
     half_width = (b - a) / 2.0
@@ -70,11 +70,13 @@ def gauss_legendre_quad(
     a: float,
     b: float
 ) -> Float[Array, ""]:
-    """
+    r"""
     Compute integral using precomputed function values at Gauss-Legendre nodes.
 
-    This implements the transformation from [-1, 1] to [a, b]:
-        ∫ₐᵇ f(x) dx = ((b-a)/2) Σᵢ wᵢ f((b-a)/2 * xᵢ + (b+a)/2)
+    This implements the transformation from :math:`[-1, 1]` to :math:`[a, b]`:
+
+    .. math::
+        \int_a^b f(x) \, dx = \frac{b-a}{2} \sum_i w_i f\left(\frac{b-a}{2} x_i + \frac{b+a}{2}\right)
 
     Args:
         func_values: Function values evaluated at GL nodes (from get_gauss_legendre_nodes)
@@ -99,17 +101,22 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
     exactly.
 
     The adiabatic index is parametrized as:
-        log Γ(x) = γ₀ + γ₁·x + γ₂·x² + γ₃·x³
-    where x = log(p/p₀) is the dimensionless log-pressure.
+
+    .. math::
+        \log \Gamma(x) = \gamma_0 + \gamma_1 x + \gamma_2 x^2 + \gamma_3 x^3
+
+    where :math:`x = \log(p/p_0)` is the dimensionless log-pressure.
 
     Reference values (geometric units):
-        e₀ = 9.54629006×10⁻¹¹ m⁻²
-        p₀ = 4.43784199×10⁻¹³ m⁻²
+        :math:`\varepsilon_0 = 9.54629006 \times 10^{-11} \, \mathrm{m}^{-2}`
+        :math:`p_0 = 4.43784199 \times 10^{-13} \, \mathrm{m}^{-2}`
 
     Thermodynamic relations from PRD 82, 103011 (2010):
-        μ(x) = exp[-∫₀ˣ (1/Γ(x')) dx']
-        ε(x) = e₀ · exp[∫₀ˣ μ(x')/(1+μ(x')) dx']
-        p(x) = p₀ · exp(x)
+
+    .. math::
+        \mu(x) &= \exp\left[-\int_0^x \frac{1}{\Gamma(x')} \, dx'\right] \\
+        \varepsilon(x) &= \varepsilon_0 \cdot \exp\left[\int_0^x \frac{\mu(x')}{1+\mu(x')} \, dx'\right] \\
+        p(x) &= p_0 \cdot \exp(x)
     """
     
     # Reference values in geometric units (from LALSuite): Minimum pressure and energy density of core EOS geom
@@ -136,6 +143,23 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         super().__init__()
         self.crust_name = crust_name
         self.n_points_high = n_points_high
+        
+                # Load low-density crust data
+        n_crust, p_crust, e_crust = load_crust(self.crust_name)
+        
+        # TODO: After testing is done, we should use crust EOS code for this
+        # For SLy crust from LALSuite, take first 69 points
+        # (LALSuite hardcodes this)
+        if self.crust_name == 'SLy':
+            n_crust = n_crust[:69]
+            p_crust = p_crust[:69]
+            e_crust = e_crust[:69]
+
+        # Filter out zero pressure points (causes issues with log in enthalpy calculation)
+        nonzero_mask = p_crust > 0
+        self.n_crust = n_crust[nonzero_mask]
+        self.p_crust = p_crust[nonzero_mask]
+        self.e_crust = e_crust[nonzero_mask]
 
         logger.info(f"Initialized SpectralDecomposition_EOS_model with crust={crust_name}, "
                    f"n_points={n_points_high}")
@@ -147,53 +171,53 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
     @staticmethod
     @jit
     def _log_adiabatic_index(x: float, gamma: Float[Array, "4"]) -> Float[Array, ""]:
-        """
-        Compute log Γ(x) from spectral expansion.
+        r"""
+        Compute :math:`\log \Gamma(x)` from spectral expansion.
 
         Args:
-            x: Dimensionless log-pressure log(p/p₀)
-            gamma: Spectral coefficients [γ₀, γ₁, γ₂, γ₃]
+            x: Dimensionless log-pressure :math:`\log(p/p_0)`
+            gamma: Spectral coefficients :math:`[\gamma_0, \gamma_1, \gamma_2, \gamma_3]`
 
         Returns:
-            log Γ(x) = γ₀ + γ₁·x + γ₂·x² + γ₃·x³ (scalar array)
+            :math:`\log \Gamma(x) = \gamma_0 + \gamma_1 x + \gamma_2 x^2 + \gamma_3 x^3` (scalar array)
         """
         return gamma[0] + gamma[1]*x + gamma[2]*x**2 + gamma[3]*x**3
 
     @staticmethod
     @jit
     def _adiabatic_index(x: float, gamma: Float[Array, "4"]) -> Float[Array, ""]:
-        """
-        Compute adiabatic index Γ(x) = exp(log Γ(x)).
+        r"""
+        Compute adiabatic index :math:`\Gamma(x) = \exp(\log \Gamma(x))`.
 
         This matches LALSuite's AdiabaticIndex function.
 
         Args:
-            x: Dimensionless log-pressure log(p/p₀)
-            gamma: Spectral coefficients [γ₀, γ₁, γ₂, γ₃]
+            x: Dimensionless log-pressure :math:`\log(p/p_0)`
+            gamma: Spectral coefficients :math:`[\gamma_0, \gamma_1, \gamma_2, \gamma_3]`
 
         Returns:
-            Γ(x) = exp(γ₀ + γ₁·x + γ₂·x² + γ₃·x³) (scalar array)
+            :math:`\Gamma(x) = \exp(\gamma_0 + \gamma_1 x + \gamma_2 x^2 + \gamma_3 x^3)` (scalar array)
         """
         log_gamma_val = SpectralDecomposition_EOS_model._log_adiabatic_index(x, gamma)
         return jnp.exp(log_gamma_val)
 
     @staticmethod
     def _compute_mu(x: float, gamma: Float[Array, "4"]) -> Float[Array, ""]:
-        """
-        Compute μ(x) = exp[-∫₀ˣ (1/Γ(x')) dx'].
+        r"""
+        Compute :math:`\mu(x) = \exp\left[-\int_0^x \frac{1}{\Gamma(x')} \, dx'\right]`.
 
         This implements the integral in Eq. 8 of PRD 82, 103011 (2010) using
-        10-point Gauss-Legendre quadrature, exactly matching LALSuite.  
-        
+        10-point Gauss-Legendre quadrature, exactly matching LALSuite.
+
         Note: the paper shows the integral with pressure being the variable of the integral,
-        but the LALSuite implementation and this code use x = log(p/p0) as the variable.
+        but the LALSuite implementation and this code use :math:`x = \log(p/p_0)` as the variable.
 
         Args:
-            x: Dimensionless log-pressure log(p/p₀)
-            gamma: Spectral coefficients [γ₀, γ₁, γ₂, γ₃]
+            x: Dimensionless log-pressure :math:`\log(p/p_0)`
+            gamma: Spectral coefficients :math:`[\gamma_0, \gamma_1, \gamma_2, \gamma_3]`
 
         Returns:
-            μ(x) value (scalar array)
+            :math:`\mu(x)` value (scalar array)
         """
         # Get quadrature nodes in [0, x]
         nodes = get_gauss_legendre_nodes(0.0, x)
@@ -204,35 +228,39 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         )(nodes)
         integrand_values = 1.0 / gamma_values
 
-        # Compute ∫₀ˣ 1/Γ(x') dx' using Gauss-Legendre quadrature
+        # Compute integral using Gauss-Legendre quadrature
         integral = gauss_legendre_quad(integrand_values, 0.0, x)
 
-        # μ(x) = exp(-integral)
+        # Return μ(x) = exp(-integral)
         return jnp.exp(-integral)
 
     @staticmethod
     def _compute_energy_density_geom(x: float, gamma: Float[Array, "4"]) -> Float[Array, ""]:
-        """
-        Compute energy density ε(x) in geometric units.
+        r"""
+        Compute energy density :math:`\varepsilon(x)` in geometric units.
 
         This implements Eq. 7 of PRD 82, 103011 (2010) as coded in LALSuite:
-            ε(x) = ε₀/μ(x) + (p₀/μ(x)) · Integral
+
+        .. math::
+            \varepsilon(x) = \frac{\varepsilon_0}{\mu(x)} + \frac{p_0}{\mu(x)} \cdot I(x)
 
         where:
-            Integral = ∫₀ˣ μ(x') exp(x') / Γ(x') dx'
+
+        .. math::
+            I(x) = \int_0^x \frac{\mu(x') \exp(x')}{\Gamma(x')} \, dx'
 
         The implementation uses nested Gauss-Legendre quadrature exactly as in LALSuite,
-        where μ(x') must be recomputed for each evaluation point in the outer integral.
+        where :math:`\mu(x')` must be recomputed for each evaluation point in the outer integral.
 
-        This is the most computationally intensive function, with O(n²) evaluations
+        This is the most computationally intensive function, with :math:`O(n^2)` evaluations
         due to the nested integration structure.
 
         Args:
-            x: Dimensionless log-pressure log(p/p₀)
-            gamma: Spectral coefficients [γ₀, γ₁, γ₂, γ₃]
+            x: Dimensionless log-pressure :math:`\log(p/p_0)`
+            gamma: Spectral coefficients :math:`[\gamma_0, \gamma_1, \gamma_2, \gamma_3]`
 
         Returns:
-            Energy density ε(x) in geometric units [m⁻²]
+            Energy density :math:`\varepsilon(x)` in geometric units [:math:`\mathrm{m}^{-2}`]
         """
         e0 = SpectralDecomposition_EOS_model.e0_geom
         p0 = SpectralDecomposition_EOS_model.p0_geom
@@ -243,7 +271,7 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         # Get quadrature nodes in [0, x]
         nodes = get_gauss_legendre_nodes(0.0, x)
 
-        # Evaluate integrand: μ(x') * exp(x') / Γ(x') at all nodes (vectorized!)
+        # Evaluate integrand at all nodes (vectorized)
         # Note: This requires computing μ at each node (nested integration)
         mu_values = vmap(
             lambda xprime: SpectralDecomposition_EOS_model._compute_mu(xprime, gamma)
@@ -253,32 +281,32 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         )(nodes)
         integrand_values = mu_values * jnp.exp(nodes) / gamma_values
 
-        # Compute ∫₀ˣ μ(x') exp(x') / Γ(x') dx'
+        # Compute integral using Gauss-Legendre quadrature
         integral = gauss_legendre_quad(integrand_values, 0.0, x)
 
-        # ε(x) = ε₀/μ(x) + (p₀/μ(x)) · Integral
+        # Return ε(x) using Eq. 7
         return e0 / mu + (p0 / mu) * integral
 
     # TODO: this must be migrated into something like ConstraintEOSLikelihood
     def _validate_gamma(self, gamma: Float[Array, "4"]) -> bool:
-        """
+        r"""
         Validate spectral parameters by checking adiabatic index bounds.
 
         This implements XLALSimNeutronStarEOS4ParamSDGammaCheck from LALSuite.
-        Checks that Γ(x) ∈ [0.6, 4.5] for all x ∈ [0, xmax] as required for
-        physical EOS and TOV solver stability.
+        Checks that :math:`\Gamma(x) \in [0.6, 4.5]` for all :math:`x \in [0, x_\mathrm{max}]`
+        as required for physical EOS and TOV solver stability.
 
         NOTE: This validation is not JIT-friendly due to the boolean return.
         It is called during EOS construction (outside JIT) to catch invalid
         parameters early. For production inference with JIT-compiled likelihoods,
-        consider implementing as a soft constraint (e.g., log_prior = -∞ for
+        consider implementing as a soft constraint (e.g., :math:`\log \pi = -\infty` for
         invalid parameters) instead of hard validation.
 
         Args:
-            gamma: Spectral coefficients [γ₀, γ₁, γ₂, γ₃]
+            gamma: Spectral coefficients :math:`[\gamma_0, \gamma_1, \gamma_2, \gamma_3]`
 
         Returns:
-            True if Γ(x) ∈ [0.6, 4.5] for all x ∈ [0, xmax], False otherwise
+            True if :math:`\Gamma(x) \in [0.6, 4.5]` for all :math:`x \in [0, x_\mathrm{max}]`, False otherwise
         """
         # Sample Γ(x) at 100 points as in LALSuite
         x_test = jnp.linspace(0.0, self.xmax, 100)
@@ -295,7 +323,7 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
     ) -> Tuple[Float[Array, "n_points"], Float[Array, "n_points"],
                Float[Array, "n_points"], Float[Array, "n_points"],
                Float[Array, "n_points"]]:
-        """
+        r"""
         Construct full EOS from spectral parameters.
 
         This method:
@@ -306,7 +334,7 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         5. Converts to geometric units and computes auxiliary quantities
 
         Args:
-            gamma: Spectral coefficients [γ₀, γ₁, γ₂, γ₃]
+            gamma: Spectral coefficients :math:`[\gamma_0, \gamma_1, \gamma_2, \gamma_3]`
 
         Returns:
             Tuple of (ns, ps, hs, es, dloge_dlogps) in geometric units
@@ -315,41 +343,13 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
             ValueError: If gamma parameters fail validation
         """
 
-        # TODO: this must be migrated into something like ConstraintEOSLikelihood
-        # # Validate the parameters
-        # if not self._validate_gamma(gamma):
-        #     raise ValueError(
-        #         f"Gamma parameters {gamma} fail validation. "
-        #         f"Adiabatic index Γ(x) must be in [0.6, 4.5] for all x ∈ [0, {self.xmax:.4f}]. "
-        #         f"This indicates the prior is too wide and needs to be constrained."
-        #     )
-
-        # Load low-density crust data
-        n_crust, p_crust, e_crust = load_crust(self.crust_name)
-        
-        # TODO: this should be moved to init
-        # TODO: After testing is done, we should use crust EOS code for this
-
-        # For SLy crust from LALSuite, take first 69 points
-        # (LALSuite hardcodes this)
-        if self.crust_name == 'SLy':
-            n_crust = n_crust[:69]
-            p_crust = p_crust[:69]
-            e_crust = e_crust[:69]
-
-        # Filter out zero pressure points (causes issues with log in enthalpy calculation)
-        nonzero_mask = p_crust > 0
-        n_crust = n_crust[nonzero_mask]
-        p_crust = p_crust[nonzero_mask]
-        e_crust = e_crust[nonzero_mask]
-
         # Generate high-density spectral region
         n_high, p_high, e_high = self._generate_spectral_region(gamma)
 
-        # Stitch together
-        n_full = jnp.concatenate([n_crust, n_high])
-        p_full = jnp.concatenate([p_crust, p_high])
-        e_full = jnp.concatenate([e_crust, e_high])
+        # Stitch on top of the crust
+        n_full = jnp.concatenate([self.n_crust, n_high])
+        p_full = jnp.concatenate([self.p_crust, p_high])
+        e_full = jnp.concatenate([self.e_crust, e_high])
 
         # Convert to geometric units and compute auxiliary quantities
         ns, ps, hs, es, dloge_dlogps = self.interpolate_eos(n_full, p_full, e_full)
@@ -360,19 +360,18 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         self,
         gamma: Float[Array, "4"],
     ) -> Tuple[Float[Array, "n_high"], Float[Array, "n_high"], Float[Array, "n_high"]]:
-        """
+        r"""
         Generate high-density EOS points from spectral expansion.
 
-        This generates a logarithmically-spaced pressure grid from p0 (reference pressure)
+        This generates a logarithmically-spaced pressure grid from :math:`p_0` (reference pressure)
         to the maximum pressure, then computes energy density using the spectral
         decomposition formulas. This matches LALSuite implementation exactly.
 
         Args:
-            gamma: Spectral coefficients [γ₀, γ₁, γ₂, γ₃]
-            p_stitch_nuclear: Stitching pressure from crust [MeV fm⁻³] (unused, for compatibility)
+            gamma: Spectral coefficients :math:`[\gamma_0, \gamma_1, \gamma_2, \gamma_3]`
 
         Returns:
-            Tuple of (n, p, e) in nuclear units [fm⁻³, MeV fm⁻³, MeV fm⁻³]
+            Tuple of (n, p, e) in nuclear units [:math:`\mathrm{fm}^{-3}`, :math:`\mathrm{MeV} \, \mathrm{fm}^{-3}`, :math:`\mathrm{MeV} \, \mathrm{fm}^{-3}`]
         """
 
         # This matches LALSuite implementation (lines 270-278 in C code): start from p0 (reference pressure), NOT from stitching point!
@@ -384,8 +383,8 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         log_p_high = logp0 + dlogp * jnp.arange(self.n_points_high)
         p_high = jnp.exp(log_p_high)
 
-        # Compute x = log(p/p0) for each pressure
-        x_high = log_p_high - logp0  # = log(p/p0)
+        # Compute dimensionless log-pressure for each pressure point
+        x_high = log_p_high - logp0
 
         # Compute energy density for each x using spectral decomposition
         # This is the expensive step: nested integration for each point
@@ -399,19 +398,16 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         # Convert pressure to geometric units for enthalpy calculation
         p_high_geom = p_high * utils.MeV_fm_inv3_to_geometric
 
-        # Compute pseudo-enthalpy h for the spectral region
-        # This follows the same approach as in interpolate_eos() (base.py line 56)
+        # Compute pseudo-enthalpy for the spectral region, similar to the approach from interpolate_eos()
         h_high = utils.cumtrapz(p_high_geom / (e_high_geom + p_high_geom), jnp.log(p_high_geom))
 
-        # Compute rest-mass density using thermodynamic relation: ρ = (e+p)*exp(-h)
-        # This matches LALSuite's approach (see LALSUITE_NUMBER_DENSITY.md)
+        # Compute rest-mass density using thermodynamic relation
         rho_high_geom = (e_high_geom + p_high_geom) * jnp.exp(-h_high)
 
         # Convert rest-mass density to nuclear units
         rho_high = rho_high_geom / utils.MeV_fm_inv3_to_geometric
 
-        # Convert to number density (ρ ≈ n * m_baryon)
-        # Use average nucleon mass from utils for consistency
+        # Convert to number density using average nucleon mass
         n_high = rho_high / utils.m
 
         return n_high, p_high, e_high
