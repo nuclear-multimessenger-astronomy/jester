@@ -18,6 +18,8 @@ This file provides guidance to Claude Code when working with the JESTER reposito
 
 **GitHub Issue Comments**: When posting comments on GitHub issues, always identify as "Claude" or "Claude Code" to make it clear the comment is AI-generated. Never post as if you were the human user. This maintains transparency about AI contributions to the project.
 
+**Backwards compatibility**: There has not been a release yet, so don't worry about breaking changes for now. Focus on code quality, testing, and documentation over supporting legacy APIs!
+
 ---
 
 ## Current Status

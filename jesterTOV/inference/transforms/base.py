@@ -115,6 +115,7 @@ class JesterTransformBase(NtoMTransform, ABC):
             x, ndat=self.ndat_TOV, min_nsat=self.min_nsat_TOV
         )
 
+        # TODO: add support for passing fixed parameters, for injection studies
         # Fixed parameters (currently empty, but available for future use)
         self.fixed_params = {}
 
