@@ -10,7 +10,7 @@ validate_only: false
 transform:
   type: spectral
   crust_name: SLy  # Required for spectral (LALSuite compatibility)
-  n_points_high: 500  # Number of high-density points in spectral region
+  n_points_high: 100  # Number of high-density points in spectral region
   ndat_TOV: 100
   nb_masses: 100
   min_nsat_TOV: 0.75
@@ -57,13 +57,11 @@ likelihoods:
 # Aggressive settings for high-quality radio timing inference
 sampler:
   type: "smc-rw"  # SMC with Random Walk kernel
-  n_particles: 5000          # Number of particles for full inference (AGGRESSIVE)
+  n_particles: 1000          # Number of particles for full inference (AGGRESSIVE)
   n_mcmc_steps: 10            # MCMC steps per tempering level (AGGRESSIVE)
   target_ess: 0.9             # Target effective sample size (90%)
   random_walk_sigma: 0.05      # Initial sigma for Gaussian random walk
-  target_acceptance: 0.8
-  adaptation_rate: 0.3        # Adaptation rate for sigma tuning
-  n_eos_samples: 5000         # Number of EOS samples to generate after inference
+  n_eos_samples: 1000         # Number of EOS samples to generate after inference
   output_dir: "./outdir/"
 
 # Postprocessing configuration
