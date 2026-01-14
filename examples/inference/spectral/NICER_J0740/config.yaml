@@ -25,6 +25,12 @@ likelihoods:
   - type: "constraints_eos"
     enabled: true
 
+  # Gamma constraint likelihood - enforces LALSuite Gamma bounds for spectral EOS
+  - type: constraints_gamma
+    enabled: true
+    parameters:
+      penalty_gamma: -1e5
+
   # NICER X-ray timing constraint (PSR J0740+6620)
   - type: "nicer"
     enabled: true
