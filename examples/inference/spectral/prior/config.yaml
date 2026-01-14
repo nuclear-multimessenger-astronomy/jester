@@ -1,10 +1,11 @@
-# Example configuration for spectral decomposition EOS inference with chiEFT likelihood
-# This uses the spectral parametrization from Lindblom (2010) and Lackey & Wade (2018)
+# Example configuration for spectral decomposition EOS - Prior sampling only
+# This samples from the prior without any observational constraints
+# Useful for exploring the parameter space and validating the EOS implementation
 
 seed: 42
 
 # Execution options
-dry_run: false         # Set to false to run full MCMC sampling
+dry_run: false         # Set to false to run full sampling
 validate_only: false
 
 transform:
@@ -20,6 +21,8 @@ prior:
 
 likelihoods:
   # Physical constraint likelihood - enforces EOS validity
+  # NOTE: Even for prior sampling, we include basic EOS constraints
+  # to avoid sampling from regions that produce unphysical EOS
   - type: constraints_eos
     enabled: true
     parameters:
@@ -27,25 +30,18 @@ likelihoods:
       penalty_stability: -1.0e5
       penalty_pressure: -1.0e5
 
-  # NOTE: ChiEFT likelihood disabled for basic testing
-  # Uncomment and update paths to enable chiEFT constraints
-  # - type: chieft
-  #   enabled: true
-  #   parameters:
-  #     nb_n: 100  # Number of density points for integration
-
 # SMC configuration with Random Walk kernel
-# Aggressive settings for high-quality chiEFT inference
+# Lighter settings for prior sampling (no likelihood constraints to satisfy)
 sampler:
   type: "smc-rw"  # SMC with Random Walk kernel
-  n_particles: 2000          # Number of particles for full inference
-  n_mcmc_steps: 10            # MCMC steps per tempering level
+  n_particles: 1000           # Fewer particles needed for prior sampling
+  n_mcmc_steps: 5             # Fewer MCMC steps per level
   target_ess: 0.9             # Target effective sample size (90%)
   random_walk_sigma: 0.1      # Initial sigma for Gaussian random walk
-  target_acceptance: 0.5      # Target acceptance rate (lower than NUTS)
+  target_acceptance: 0.5      # Target acceptance rate
   adaptation_rate: 0.3        # Adaptation rate for sigma tuning
-  n_eos_samples: 5000         # Number of EOS samples to generate after inference
-  log_prob_batch_size: 100         # Number of EOS samples to generate after inference
+  n_eos_samples: 2000         # Number of EOS samples to generate
+  log_prob_batch_size: 100    # Batch size for log probability evaluation
   output_dir: "./outdir/"
 
 # Postprocessing configuration
