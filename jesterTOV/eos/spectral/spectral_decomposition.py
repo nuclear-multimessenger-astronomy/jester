@@ -90,7 +90,7 @@ def gauss_legendre_quad(
     """
     half_width = (b - a) / 2.0
     result = jnp.sum(GL_WEIGHTS_10 * func_values)
-    result = float(result)
+    result = result.astype(float)
     return result * half_width
 
 
@@ -184,7 +184,8 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         Returns:
             :math:`\log \Gamma(x) = \gamma_0 + \gamma_1 x + \gamma_2 x^2 + \gamma_3 x^3` (scalar)
         """
-        return float(gamma[0] + gamma[1]*x + gamma[2]*x**2 + gamma[3]*x**3)
+        _log_adiabatic_index = gamma[0] + gamma[1]*x + gamma[2]*x**2 + gamma[3]*x**3
+        return _log_adiabatic_index.astype(float)
 
     @staticmethod
     # @jit # TODO: investigate if this affects the performance significantly?
@@ -203,7 +204,7 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         """
         log_gamma_val = SpectralDecomposition_EOS_model._log_adiabatic_index(x, gamma)
         gamma_val = jnp.exp(log_gamma_val)
-        return float(gamma_val)
+        return gamma_val.astype(float)
 
     @staticmethod
     def _compute_mu(x: float, gamma: Float[Array, "4"]) -> Float:
@@ -237,7 +238,7 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
 
         # Return μ(x) = exp(-integral)
         mu = jnp.exp(-integral)
-        return float(mu)
+        return mu.astype(float)
 
     @staticmethod
     def _compute_energy_density_geom(x: float, gamma: Float[Array, "4"]) -> Float:
@@ -291,7 +292,7 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
 
         # Return (using Eq. 7 in 2010 paper)
         eps = e0 / mu + (p0 / mu) * integral
-        return float(eps)
+        return eps.astype(float)
 
     def construct_eos(
         self,
