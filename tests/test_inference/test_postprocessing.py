@@ -211,13 +211,13 @@ class TestPlotGeneration:
             "energies": np.random.uniform(1.0, 500.0, (n_samples, n_eos_points)),
             "cs2": np.random.uniform(0.0, 1.0, (n_samples, n_eos_points)),
             "log_prob": np.random.uniform(-50.0, -10.0, n_samples),
-            "nep_params": {
+            # Use "prior_params" as returned by load_eos_data (not "nep_params")
+            "prior_params": {
                 "K_sat": np.random.uniform(200.0, 250.0, n_samples),
                 "L_sym": np.random.uniform(50.0, 100.0, n_samples),
                 "Q_sat": np.random.uniform(-200.0, 200.0, n_samples),
                 "E_sym": np.random.uniform(28.0, 35.0, n_samples),
             },
-            "cse_params": {},
         }
         return data
 
@@ -288,11 +288,11 @@ class TestPlotGeneration:
             "energies": np.random.rand(2, 50),
             "cs2": np.random.rand(2, 50),
             "log_prob": np.array([-10.0, -11.0]),
-            "nep_params": {
+            # Use "prior_params" as returned by load_eos_data
+            "prior_params": {
                 "K_sat": np.array([220.0, 230.0]),
                 "L_sym": np.array([90.0, 95.0]),
             },
-            "cse_params": {},
         }
 
         # Should handle gracefully (may show warnings but shouldn't crash)
@@ -309,23 +309,18 @@ class TestPlotErrorHandling:
         incomplete_data = {
             "log_prob": np.array([-10.0, -11.0]),
             "masses_EOS": np.random.rand(2, 50),
+            "prior_params": {},  # Empty prior_params
         }
 
-        # Should either skip or handle gracefully
-        # (exact behavior depends on implementation)
-        try:
-            make_cornerplot(incomplete_data, outdir=str(temp_dir))
-            plt.close("all")
-        except (KeyError, ValueError):
-            # Acceptable to raise error for incomplete data
-            pass
+        # Should handle gracefully (will log warning and return early)
+        make_cornerplot(incomplete_data, outdir=str(temp_dir))
+        plt.close("all")
 
     def test_mass_radius_plot_missing_eos_data(self, temp_dir):
         """Test M-R plot handles missing EOS data."""
         incomplete_data = {
             "log_prob": np.array([-10.0, -11.0]),
-            "nep_params": {"K_sat": np.array([220.0, 230.0])},
-            "cse_params": {},
+            "prior_params": {"K_sat": np.array([220.0, 230.0])},
         }
 
         # Should raise KeyError for missing required fields
@@ -363,6 +358,8 @@ class TestIntegrationWithInferenceResult:
             "sampler": "flowmc",
             "n_samples": n_samples,
             "sampling_time": 3600.0,
+            # Include parameter_names so load_eos_data can populate prior_params
+            "parameter_names": ["K_sat", "L_sym", "Q_sat", "E_sym"],
         }
 
         result = InferenceResult(

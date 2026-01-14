@@ -286,7 +286,8 @@ class TestConstraintGammaLikelihood:
         params = {"n_gamma_violations": 3.0}  # Multiple violations
 
         result = likelihood.evaluate(params)
-        assert result == -1e10
+        # Penalty is multiplied by number of violations: 3.0 * (-1e10) = -3e10
+        assert result == -3e10
 
     def test_constraint_gamma_likelihood_missing_key(self):
         """Test ConstraintGammaLikelihood with missing n_gamma_violations key."""

@@ -134,78 +134,6 @@ class SpectralTransform(JesterTransformBase):
         """
         return ["gamma_0", "gamma_1", "gamma_2", "gamma_3"]
 
-    def _create_return_dict(
-        self,
-        logpc_EOS: Float[Array, " n"],
-        masses_EOS: Float[Array, " n"],
-        radii_EOS: Float[Array, " n"],
-        Lambdas_EOS: Float[Array, " n"],
-        ns: Float[Array, " n"],
-        ps: Float[Array, " n"],
-        hs: Float[Array, " n"],
-        es: Float[Array, " n"],
-        dloge_dlogps: Float[Array, " n"],
-        cs2: Float[Array, " n"],
-        n_gamma_violations: Float,
-    ) -> dict[str, Float | Float[Array, " n"]]:
-        """
-        Create standardized return dictionary with constraint checking including gamma bounds.
-
-        This overrides the base class method to add gamma violation count specific to
-        spectral decomposition EOS.
-
-        Parameters
-        ----------
-        logpc_EOS : Float[Array, " n"]
-            Log of central pressure
-        masses_EOS : Float[Array, " n"]
-            Neutron star masses
-        radii_EOS : Float[Array, " n"]
-            Neutron star radii
-        Lambdas_EOS : Float[Array, " n"]
-            Tidal deformabilities
-        ns : Float[Array, " n"]
-            Baryon number densities
-        ps : Float[Array, " n"]
-            Pressures
-        hs : Float[Array, " n"]
-            Enthalpies
-        es : Float[Array, " n"]
-            Energy densities
-        dloge_dlogps : Float[Array, " n"]
-            Logarithmic derivative of energy density w.r.t. pressure
-        cs2 : Float[Array, " n"]
-            Sound speeds squared
-        n_gamma_violations : Float
-            Number of Gamma bound violations (scalar)
-
-        Returns
-        -------
-        dict[str, Float | Float[Array, " n"]]
-            Dictionary with EOS and TOV solution data, including:
-            - Original EOS quantities (with NaN cleaned)
-            - Constraint violation counts (scalars for JAX compatibility)
-            - n_gamma_violations (specific to spectral decomposition)
-        """
-        # Call parent method to get standard constraints
-        result = super()._create_return_dict(
-            logpc_EOS,
-            masses_EOS,
-            radii_EOS,
-            Lambdas_EOS,
-            ns,
-            ps,
-            hs,
-            es,
-            dloge_dlogps,
-            cs2,
-        )
-
-        # Add gamma violation count
-        result["n_gamma_violations"] = n_gamma_violations
-
-        return result
-
     def _check_gamma_bounds(self, gamma: Float[Array, "4"]) -> Float:
         """
         Check for gamma parameter violations of LALSuite bounds.
@@ -266,7 +194,7 @@ class SpectralTransform(JesterTransformBase):
             - n_causality_violations : Number of causality violations (scalar)
             - n_stability_violations : Number of stability violations (scalar)
             - n_pressure_violations : Number of pressure violations (scalar)
-            - n_gamma_violations : Number of Gamma bound violations (scalar)
+            - n_gamma_violations : Number of Gamma bound violations (scalar): this is specific to spsectral EOS
 
         Notes
         -----
@@ -291,6 +219,7 @@ class SpectralTransform(JesterTransformBase):
         # Create the EOS (validation happens inside construct_eos)
         ns, ps, hs, es, dloge_dlogps = self.eos.construct_eos(gamma)
 
+        # TODO: double check this math, and perhaps document somewhere better
         # Compute sound speed squared from dloge_dlogp
         # cs² = dp/de = 1 / (de/dp) = 1 / Γ
         # But we have dloge_dlogp = d(log e)/d(log p) = (de/dp) * (p/e)
@@ -314,5 +243,5 @@ class SpectralTransform(JesterTransformBase):
             es,
             dloge_dlogps,
             cs2,
-            n_gamma_violations,
+            extra_constraints={"n_gamma_violations": n_gamma_violations},
         )

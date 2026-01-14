@@ -171,6 +171,7 @@ class JesterTransformBase(NtoMTransform, ABC):
         es: Float[Array, " n"],
         dloge_dlogps: Float[Array, " n"],
         cs2: Float[Array, " n"],
+        extra_constraints: dict[str, Float | Float[Array, " n"]] | None = None,
     ) -> dict[str, Float | Float[Array, " n"]]:
         """Create standardized return dictionary with constraint checking.
 
@@ -200,6 +201,10 @@ class JesterTransformBase(NtoMTransform, ABC):
             Logarithmic derivative of energy density w.r.t. pressure
         cs2 : Float
             Sound speeds squared
+        extra_constraints : dict[str, Float | Float[Array, " n"]] | None, optional
+            Additional constraint violation counts or EOS-specific quantities as a dictionary.
+            Values can be scalars (Float) or arrays (Float[Array, " n"]).
+            Default is None (no extra constraints), which is the case for most subclasses.
 
         Returns
         -------
@@ -207,6 +212,7 @@ class JesterTransformBase(NtoMTransform, ABC):
             Dictionary with EOS and TOV solution data, including:
             - Original EOS quantities (with NaN cleaned)
             - Constraint violation counts (scalars for JAX compatibility)
+            - Any extra constraint violations from subclasses
         """
         # Check all constraints BEFORE cleaning NaN
         # This gives us violation counts as scalars (JAX-compatible)
@@ -219,7 +225,7 @@ class JesterTransformBase(NtoMTransform, ABC):
         Lambdas_EOS_clean = jnp.nan_to_num(Lambdas_EOS, nan=0.0, posinf=0.0, neginf=0.0)
         logpc_EOS_clean = jnp.nan_to_num(logpc_EOS, nan=0.0, posinf=0.0, neginf=0.0)
 
-        return {
+        result = {
             # TOV solution (cleaned)
             "logpc_EOS": logpc_EOS_clean,
             "masses_EOS": masses_EOS_clean,
@@ -238,6 +244,12 @@ class JesterTransformBase(NtoMTransform, ABC):
             "n_stability_violations": constraints["n_stability_violations"],
             "n_pressure_violations": constraints["n_pressure_violations"],
         }
+
+        # Add any extra constraint violations from subclasses
+        if extra_constraints is not None:
+            result.update(extra_constraints)
+
+        return result
 
     def set_keep_names(self, keep_names: list[str] | None) -> None:
         """Set or update the list of parameter names to keep in transform output.
