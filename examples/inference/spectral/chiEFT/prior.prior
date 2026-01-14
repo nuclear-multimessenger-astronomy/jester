@@ -1,4 +1,0 @@
-gamma_0 = UniformPrior(0.2, 2.0, parameter_names=["gamma_0"])
-gamma_1 = UniformPrior(-1.6, 1.7, parameter_names=["gamma_1"])
-gamma_2 = UniformPrior(-0.6, 0.6, parameter_names=["gamma_2"])
-gamma_3 = UniformPrior(-0.02, 0.02, parameter_names=["gamma_3"])
