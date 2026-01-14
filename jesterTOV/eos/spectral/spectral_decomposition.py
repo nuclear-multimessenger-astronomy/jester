@@ -261,20 +261,23 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
 
     def _validate_gamma(self, gamma: Float[Array, "4"]) -> bool:
         """
-        Validate spectral parameters.
-        
-        NOTE: This is the validation that LALSuite also performs, but the current approach here is not JIT-friendly!
-        Only useful in debug scripts that call the JAX code without JIT compilation.
+        Validate spectral parameters by checking adiabatic index bounds.
 
         This implements XLALSimNeutronStarEOS4ParamSDGammaCheck from LALSuite.
         Checks that Γ(x) ∈ [0.6, 4.5] for all x ∈ [0, xmax] as required for
-        TOV solver stability.
+        physical EOS and TOV solver stability.
+
+        NOTE: This validation is not JIT-friendly due to the boolean return.
+        It is called during EOS construction (outside JIT) to catch invalid
+        parameters early. For production inference with JIT-compiled likelihoods,
+        consider implementing as a soft constraint (e.g., log_prior = -∞ for
+        invalid parameters) instead of hard validation.
 
         Args:
             gamma: Spectral coefficients [γ₀, γ₁, γ₂, γ₃]
 
         Returns:
-            True if valid, False otherwise
+            True if Γ(x) ∈ [0.6, 4.5] for all x ∈ [0, xmax], False otherwise
         """
         # Sample Γ(x) at 100 points as in LALSuite
         x_test = jnp.linspace(0.0, self.xmax, 100)
@@ -310,15 +313,16 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         Raises:
             ValueError: If gamma parameters fail validation
         """
-        
-        # # TODO: currently almost never gives True, so remove the check so we can still see Gamma(x), and debug...
-        # Validate parameters
+
+        # # Validate parameters
+        # # NOTE: This validation is not JIT-friendly and may be slow.
+        # # For production inference, consider implementing as a soft constraint in the prior/likelihood.
         # if not self._validate_gamma(gamma):
-        #     return None, None, None, None, None
-            # raise ValueError(
-            #     f"Gamma parameters {gamma} fail validation. "
-            #     f"Adiabatic index must be in [0.6, 4.5] for all pressures."
-            # )
+        #     raise ValueError(
+        #         f"Gamma parameters {gamma} fail validation. "
+        #         f"Adiabatic index Γ(x) must be in [0.6, 4.5] for all x ∈ [0, {self.xmax:.4f}]. "
+        #         f"This indicates the prior is too wide and needs to be constrained."
+        #     )
 
         # Load low-density crust data
         n_crust, p_crust, e_crust = load_crust(self.crust_name)
@@ -389,9 +393,22 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         # Convert to nuclear units
         e_high = e_high_geom / utils.MeV_fm_inv3_to_geometric
 
-        # Compute number density from e ≈ n * m_nucleon
-        # This is an approximation, but matches what LALSuite uses
-        m_nucleon_MeV = 939.0  # MeV
-        n_high = e_high / m_nucleon_MeV
+        # Convert pressure to geometric units for enthalpy calculation
+        p_high_geom = p_high * utils.MeV_fm_inv3_to_geometric
+
+        # Compute pseudo-enthalpy h for the spectral region
+        # This follows the same approach as in interpolate_eos() (base.py line 56)
+        h_high = utils.cumtrapz(p_high_geom / (e_high_geom + p_high_geom), jnp.log(p_high_geom))
+
+        # Compute rest-mass density using thermodynamic relation: ρ = (e+p)*exp(-h)
+        # This matches LALSuite's approach (see LALSUITE_NUMBER_DENSITY.md)
+        rho_high_geom = (e_high_geom + p_high_geom) * jnp.exp(-h_high)
+
+        # Convert rest-mass density to nuclear units
+        rho_high = rho_high_geom / utils.MeV_fm_inv3_to_geometric
+
+        # Convert to number density (ρ ≈ n * m_baryon)
+        # Use average nucleon mass from utils for consistency
+        n_high = rho_high / utils.m
 
         return n_high, p_high, e_high
