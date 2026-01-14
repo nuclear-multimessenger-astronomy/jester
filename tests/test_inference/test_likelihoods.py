@@ -252,7 +252,9 @@ class TestConstraintEOSLikelihood:
 
     def test_check_gamma_bounds_both_bounds_violated(self):
         """Test gamma bounds check with violations at both bounds."""
-        gamma_vals = jnp.array([0.5, 1.0, 2.0, 4.6])  # Two violations (0.5 < 0.6, 4.6 > 4.5)
+        gamma_vals = jnp.array(
+            [0.5, 1.0, 2.0, 4.6]
+        )  # Two violations (0.5 < 0.6, 4.6 > 4.5)
 
         n_violations = check_gamma_bounds(gamma_vals)
         assert n_violations == 2.0

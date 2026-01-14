@@ -8,7 +8,11 @@ from .gw import GWLikelihood, GWLikelihoodResampled
 from .nicer import NICERLikelihood
 from .radio import RadioTimingLikelihood
 from .chieft import ChiEFTLikelihood
-from .constraints import ConstraintEOSLikelihood, ConstraintTOVLikelihood, ConstraintGammaLikelihood
+from .constraints import (
+    ConstraintEOSLikelihood,
+    ConstraintTOVLikelihood,
+    ConstraintGammaLikelihood,
+)
 from jesterTOV.logging_config import get_logger
 
 logger = get_logger("jester")

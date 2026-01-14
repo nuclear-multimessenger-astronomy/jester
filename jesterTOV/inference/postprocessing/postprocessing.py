@@ -158,12 +158,16 @@ def load_eos_data(outdir: str) -> Dict[str, np.ndarray]:
     parameter_names = result.metadata.get("parameter_names", [])
 
     if parameter_names:
-        logger.info(f"Found {len(parameter_names)} parameter names in metadata: {parameter_names}")
+        logger.info(
+            f"Found {len(parameter_names)} parameter names in metadata: {parameter_names}"
+        )
         for key in parameter_names:
             if key in result.posterior:
                 prior_params[key] = result.posterior[key]
     else:
-        logger.warning("No parameter_names found in metadata. Cornerplot may be empty. This may occur if results were saved with an older version of JESTER.")
+        logger.warning(
+            "No parameter_names found in metadata. Cornerplot may be empty. This may occur if results were saved with an older version of JESTER."
+        )
 
     output = {
         "masses": m,

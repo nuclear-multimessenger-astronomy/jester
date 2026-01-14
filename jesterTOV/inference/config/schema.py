@@ -55,7 +55,11 @@ class TransformConfig(BaseModel):
     @classmethod
     def validate_nb_cse(cls, v: int, info: ValidationInfo) -> int:
         """Validate that nb_CSE is only used with metamodel_cse."""
-        if "type" in info.data and info.data["type"] in ["metamodel", "spectral"] and v != 0:
+        if (
+            "type" in info.data
+            and info.data["type"] in ["metamodel", "spectral"]
+            and v != 0
+        ):
             raise ValueError(
                 "nb_CSE must be 0 for type='metamodel' or type='spectral'. "
                 "Use type='metamodel_cse' for CSE extension."

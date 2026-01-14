@@ -111,8 +111,7 @@ class SpectralTransform(JesterTransformBase):
 
         # Create spectral decomposition EOS
         self.eos = SpectralDecomposition_EOS_model(
-            crust_name=crust_name,
-            n_points_high=n_points_high
+            crust_name=crust_name, n_points_high=n_points_high
         )
 
         # Set transform function
@@ -206,12 +205,9 @@ class SpectralTransform(JesterTransformBase):
         params.update(self.fixed_params)
 
         # Extract spectral parameters in correct order
-        gamma = jnp.array([
-            params["gamma_0"],
-            params["gamma_1"],
-            params["gamma_2"],
-            params["gamma_3"]
-        ])
+        gamma = jnp.array(
+            [params["gamma_0"], params["gamma_1"], params["gamma_2"], params["gamma_3"]]
+        )
 
         # Check gamma bounds BEFORE EOS construction (fast check)
         n_gamma_violations = self._check_gamma_bounds(gamma)

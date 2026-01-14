@@ -11,7 +11,7 @@ stitches a low-density SLy crust to the high-density spectral expansion.
 """
 
 import jax.numpy as jnp
-from jax import jit, vmap
+from jax import vmap
 from jaxtyping import Array, Float
 from typing import Tuple
 
@@ -24,31 +24,35 @@ logger = get_logger("jester")
 
 # TODO: this should be moved to the utils file perhaps?
 # Gauss-Legendre 10-point quadrature nodes and weights from lalsuite
-GL_NODES_10 = jnp.array([
-    -0.9739065285171717,
-    -0.8650633666889845,
-    -0.6794095682990244,
-    -0.4333953941292472,
-    -0.1488743389816312,
-     0.1488743389816312,
-     0.4333953941292472,
-     0.6794095682990244,
-     0.8650633666889845,
-     0.9739065285171717
-])
+GL_NODES_10 = jnp.array(
+    [
+        -0.9739065285171717,
+        -0.8650633666889845,
+        -0.6794095682990244,
+        -0.4333953941292472,
+        -0.1488743389816312,
+        0.1488743389816312,
+        0.4333953941292472,
+        0.6794095682990244,
+        0.8650633666889845,
+        0.9739065285171717,
+    ]
+)
 
-GL_WEIGHTS_10 = jnp.array([
-    0.0666713443086881,
-    0.1494513491505806,
-    0.2190863625159820,
-    0.2692667193099963,
-    0.2955242247147529,
-    0.2955242247147529,
-    0.2692667193099963,
-    0.2190863625159820,
-    0.1494513491505806,
-    0.0666713443086881
-])
+GL_WEIGHTS_10 = jnp.array(
+    [
+        0.0666713443086881,
+        0.1494513491505806,
+        0.2190863625159820,
+        0.2692667193099963,
+        0.2955242247147529,
+        0.2955242247147529,
+        0.2692667193099963,
+        0.2190863625159820,
+        0.1494513491505806,
+        0.0666713443086881,
+    ]
+)
 
 
 def get_gauss_legendre_nodes(a: float, b: float) -> Float[Array, "10"]:
@@ -67,11 +71,7 @@ def get_gauss_legendre_nodes(a: float, b: float) -> Float[Array, "10"]:
     return midpoint + half_width * GL_NODES_10
 
 
-def gauss_legendre_quad(
-    func_values: Float[Array, "10"],
-    a: float,
-    b: float
-) -> Float:
+def gauss_legendre_quad(func_values: Float[Array, "10"], a: float, b: float) -> Float:
     r"""
     Compute integral using precomputed function values at Gauss-Legendre nodes.
 
@@ -121,7 +121,7 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         \varepsilon(x) &= \varepsilon_0 \cdot \exp\left[\int_0^x \frac{\mu(x')}{1+\mu(x')} \, dx'\right] \\
         p(x) &= p_0 \cdot \exp(x)
     """
-    
+
     # Reference values in geometric units (from LALSuite): Minimum pressure and energy density of core EOS geom
     e0_geom = 9.54629006e-11  # m^-2
     p0_geom = 4.43784199e-13  # m^-2
@@ -131,7 +131,7 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
 
     def __init__(
         self,
-        crust_name: str = 'SLy',
+        crust_name: str = "SLy",
         n_points_high: int = 500,
     ):
         r"""
@@ -146,14 +146,14 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         super().__init__()
         self.crust_name = crust_name
         self.n_points_high = n_points_high
-        
+
         # Load low-density crust data
         n_crust, p_crust, e_crust = load_crust(self.crust_name)
-        
+
         # TODO: After testing is done, we should use crust EOS code for this
         # For SLy crust from LALSuite, take first 69 points
         # (LALSuite hardcodes this)
-        if self.crust_name == 'SLy':
+        if self.crust_name == "SLy":
             n_crust = n_crust[:69]
             p_crust = p_crust[:69]
             e_crust = e_crust[:69]
@@ -164,12 +164,16 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         self.p_crust = p_crust[nonzero_mask]
         self.e_crust = e_crust[nonzero_mask]
 
-        logger.info(f"Initialized SpectralDecomposition_EOS_model with crust={crust_name}, "
-                   f"n_points={n_points_high}")
-        
+        logger.info(
+            f"Initialized SpectralDecomposition_EOS_model with crust={crust_name}, "
+            f"n_points={n_points_high}"
+        )
+
         # Convert reference pressure to MeV fm⁻³ for internal use
         self.p0_nuclear = self.p0_geom / utils.MeV_fm_inv3_to_geometric
-        self.pmax_nuclear = self.p0_geom * jnp.exp(self.xmax) / utils.MeV_fm_inv3_to_geometric
+        self.pmax_nuclear = (
+            self.p0_geom * jnp.exp(self.xmax) / utils.MeV_fm_inv3_to_geometric
+        )
 
     @staticmethod
     # @jit # TODO: investigate if this affects the performance significantly?
@@ -184,7 +188,9 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         Returns:
             :math:`\log \Gamma(x) = \gamma_0 + \gamma_1 x + \gamma_2 x^2 + \gamma_3 x^3` (scalar)
         """
-        _log_adiabatic_index = gamma[0] + gamma[1]*x + gamma[2]*x**2 + gamma[3]*x**3
+        _log_adiabatic_index = (
+            gamma[0] + gamma[1] * x + gamma[2] * x**2 + gamma[3] * x**3
+        )
         return _log_adiabatic_index.astype(float)
 
     @staticmethod
@@ -229,7 +235,9 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
 
         # Evaluate integrand: 1/Γ(x') at all nodes
         gamma_values = vmap(
-            lambda xprime: SpectralDecomposition_EOS_model._adiabatic_index(xprime, gamma)
+            lambda xprime: SpectralDecomposition_EOS_model._adiabatic_index(
+                xprime, gamma
+            )
         )(nodes)
         integrand_values = 1.0 / gamma_values
 
@@ -283,7 +291,9 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
             lambda xprime: SpectralDecomposition_EOS_model._compute_mu(xprime, gamma)
         )(nodes)
         gamma_values = vmap(
-            lambda xprime: SpectralDecomposition_EOS_model._adiabatic_index(xprime, gamma)
+            lambda xprime: SpectralDecomposition_EOS_model._adiabatic_index(
+                xprime, gamma
+            )
         )(nodes)
         integrand_values = mu_values * jnp.exp(nodes) / gamma_values
 
@@ -294,12 +304,13 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         eps = e0 / mu + (p0 / mu) * integral
         return eps.astype(float)
 
-    def construct_eos(
-        self,
-        gamma: Float[Array, "4"]
-    ) -> Tuple[Float[Array, "n_points"], Float[Array, "n_points"],
-               Float[Array, "n_points"], Float[Array, "n_points"],
-               Float[Array, "n_points"]]:
+    def construct_eos(self, gamma: Float[Array, "4"]) -> Tuple[
+        Float[Array, "n_points"],
+        Float[Array, "n_points"],
+        Float[Array, "n_points"],
+        Float[Array, "n_points"],
+        Float[Array, "n_points"],
+    ]:
         r"""
         Construct full EOS from spectral parameters.
 
@@ -365,9 +376,9 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
 
         # Compute energy density for each x using spectral decomposition
         # This is the expensive step: nested integration for each point
-        e_high_geom = vmap(
-            lambda x: self._compute_energy_density_geom(x, gamma)
-        )(x_high)
+        e_high_geom = vmap(lambda x: self._compute_energy_density_geom(x, gamma))(
+            x_high
+        )
 
         # Convert to nuclear units
         e_high = e_high_geom / utils.MeV_fm_inv3_to_geometric
@@ -376,7 +387,9 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         p_high_geom = p_high * utils.MeV_fm_inv3_to_geometric
 
         # Compute pseudo-enthalpy for the spectral region, similar to the approach from interpolate_eos()
-        h_high = utils.cumtrapz(p_high_geom / (e_high_geom + p_high_geom), jnp.log(p_high_geom))
+        h_high = utils.cumtrapz(
+            p_high_geom / (e_high_geom + p_high_geom), jnp.log(p_high_geom)
+        )
 
         # Compute rest-mass density using thermodynamic relation
         rho_high_geom = (e_high_geom + p_high_geom) * jnp.exp(-h_high)
