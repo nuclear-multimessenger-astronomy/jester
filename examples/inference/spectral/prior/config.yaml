@@ -30,6 +30,12 @@ likelihoods:
       penalty_stability: -1.0e5
       penalty_pressure: -1.0e5
 
+  # Gamma constraint likelihood - enforces LALSuite Gamma bounds for spectral EOS
+  - type: constraints_gamma
+    enabled: true
+    parameters:
+      penalty_gamma: -1e3
+
 # SMC configuration with Random Walk kernel
 # Lighter settings for prior sampling (no likelihood constraints to satisfy)
 sampler:
@@ -37,8 +43,8 @@ sampler:
   n_particles: 1000           # Fewer particles needed for prior sampling
   n_mcmc_steps: 5             # Fewer MCMC steps per level
   target_ess: 0.9             # Target effective sample size (90%)
-  random_walk_sigma: 0.1      # Initial sigma for Gaussian random walk
-  target_acceptance: 0.5      # Target acceptance rate
+  random_walk_sigma: 0.1      # Initial sigma for Gaussian random walk TODO: needs to be gone?
+  target_acceptance: 0.5      # Target acceptance rate TODO: needs to be gone?
   adaptation_rate: 0.3        # Adaptation rate for sigma tuning
   n_eos_samples: 2000         # Number of EOS samples to generate
   log_prob_batch_size: 100    # Batch size for log probability evaluation

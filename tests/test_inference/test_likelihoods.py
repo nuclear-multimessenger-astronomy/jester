@@ -9,11 +9,13 @@ from jesterTOV.inference.likelihoods.combined import ZeroLikelihood, CombinedLik
 from jesterTOV.inference.likelihoods.constraints import (
     ConstraintEOSLikelihood,
     ConstraintTOVLikelihood,
+    ConstraintGammaLikelihood,
     check_tov_validity,
     check_causality_violation,
     check_stability,
     check_pressure_monotonicity,
     check_all_constraints,
+    check_gamma_bounds,
 )
 from jesterTOV.inference.likelihoods.chieft import ChiEFTLikelihood
 from jesterTOV.inference.likelihoods.radio import RadioTimingLikelihood
@@ -227,6 +229,92 @@ class TestConstraintEOSLikelihood:
         result = likelihood.evaluate(params)
         assert result == 0.0
 
+    def test_check_gamma_bounds_valid(self):
+        """Test gamma bounds check with valid Gamma values."""
+        gamma_vals = jnp.array([0.8, 1.2, 2.0, 3.5, 4.0])  # All in [0.6, 4.5]
+
+        n_violations = check_gamma_bounds(gamma_vals)
+        assert n_violations == 0.0
+
+    def test_check_gamma_bounds_below_lower_bound(self):
+        """Test gamma bounds check with Gamma < 0.6 (violates lower bound)."""
+        gamma_vals = jnp.array([0.5, 0.8, 1.2, 2.0])  # One violation (0.5 < 0.6)
+
+        n_violations = check_gamma_bounds(gamma_vals)
+        assert n_violations == 1.0
+
+    def test_check_gamma_bounds_above_upper_bound(self):
+        """Test gamma bounds check with Gamma > 4.5 (violates upper bound)."""
+        gamma_vals = jnp.array([1.0, 2.0, 4.6, 5.0])  # Two violations (4.6, 5.0 > 4.5)
+
+        n_violations = check_gamma_bounds(gamma_vals)
+        assert n_violations == 2.0
+
+    def test_check_gamma_bounds_both_bounds_violated(self):
+        """Test gamma bounds check with violations at both bounds."""
+        gamma_vals = jnp.array([0.5, 1.0, 2.0, 4.6])  # Two violations (0.5 < 0.6, 4.6 > 4.5)
+
+        n_violations = check_gamma_bounds(gamma_vals)
+        assert n_violations == 2.0
+
+    def test_check_gamma_bounds_at_boundaries(self):
+        """Test gamma bounds check with Gamma exactly at boundaries."""
+        gamma_vals = jnp.array([0.6, 1.0, 4.5])  # All valid, including boundaries
+
+        n_violations = check_gamma_bounds(gamma_vals)
+        assert n_violations == 0.0
+
+
+class TestConstraintGammaLikelihood:
+    """Test ConstraintGammaLikelihood (Gamma bound constraints for spectral EOS)."""
+
+    def test_constraint_gamma_likelihood_valid(self):
+        """Test ConstraintGammaLikelihood with valid Gamma bounds."""
+        likelihood = ConstraintGammaLikelihood()
+
+        # Valid Gamma (no violations)
+        params = {"n_gamma_violations": 0.0}
+
+        result = likelihood.evaluate(params)
+        assert result == 0.0
+
+    def test_constraint_gamma_likelihood_with_violations(self):
+        """Test ConstraintGammaLikelihood with Gamma bound violations."""
+        likelihood = ConstraintGammaLikelihood(penalty_gamma=-1e10)
+
+        # Gamma violations
+        params = {"n_gamma_violations": 3.0}  # Multiple violations
+
+        result = likelihood.evaluate(params)
+        assert result == -1e10
+
+    def test_constraint_gamma_likelihood_missing_key(self):
+        """Test ConstraintGammaLikelihood with missing n_gamma_violations key."""
+        likelihood = ConstraintGammaLikelihood()
+
+        # Empty params - should use default (0.0)
+        params = {}
+
+        result = likelihood.evaluate(params)
+        assert result == 0.0
+
+    def test_constraint_gamma_likelihood_with_non_spectral_transform(self):
+        """Test ConstraintGammaLikelihood gracefully handles non-spectral transforms.
+
+        Non-spectral transforms (metamodel, metamodel_cse) won't have n_gamma_violations
+        in their output. The likelihood should return 0.0 in this case.
+        """
+        likelihood = ConstraintGammaLikelihood()
+
+        # Params from non-spectral transform (no n_gamma_violations key)
+        params = {
+            "masses_EOS": jnp.array([1.4, 1.8, 2.0]),
+            "radii_EOS": jnp.array([12.0, 11.5, 11.0]),
+        }
+
+        result = likelihood.evaluate(params)
+        assert result == 0.0
+
 
 class TestConstraintTOVLikelihood:
     """Test ConstraintTOVLikelihood (TOV-level constraints only)."""
@@ -417,6 +505,21 @@ class TestLikelihoodFactory:
 
         assert isinstance(likelihood, ConstraintTOVLikelihood)
         assert likelihood.penalty_tov == -1e10
+
+    def test_create_constraint_gamma_likelihood(self):
+        """Test creating ConstraintGammaLikelihood via factory."""
+        config = schema.LikelihoodConfig(
+            type="constraints_gamma",
+            enabled=True,
+            parameters={
+                "penalty_gamma": -1e10,
+            },
+        )
+
+        likelihood = factory.create_likelihood(config)
+
+        assert isinstance(likelihood, ConstraintGammaLikelihood)
+        assert likelihood.penalty_gamma == -1e10
 
     def test_create_chieft_likelihood(self):
         """Test creating ChiEFTLikelihood via factory."""

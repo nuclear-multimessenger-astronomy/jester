@@ -151,20 +151,18 @@ def load_eos_data(outdir: str) -> Dict[str, np.ndarray]:
 
     log_prob = result.posterior["log_prob"]
 
-    # Load NEP parameters if available (for cornerplot)
-    nep_params = {}
-    nep_keys = ["K_sat", "L_sym", "Q_sat", "Q_sym", "Z_sat", "Z_sym", "E_sym", "K_sym"]
-    for key in nep_keys:
-        if key in result.posterior:
-            nep_params[key] = result.posterior[key]
+    # Load prior parameters directly from saved parameter names (no magic!)
+    # This works for any EOS parametrization (NEP, spectral, CSE, etc.)
+    prior_params = {}
+    parameter_names = result.metadata.get("parameter_names", [])
 
-    # Load CSE parameters if available
-    cse_params = {}
-    if "nbreak" in result.posterior:
-        cse_params["nbreak"] = result.posterior["nbreak"]
-    for key in result.posterior.keys():
-        if key.startswith("cs2_CSE_") or key.startswith("n_CSE_"):
-            cse_params[key] = result.posterior[key]
+    if parameter_names:
+        logger.info(f"Found {len(parameter_names)} parameter names in metadata: {parameter_names}")
+        for key in parameter_names:
+            if key in result.posterior:
+                prior_params[key] = result.posterior[key]
+    else:
+        logger.warning("No parameter_names found in metadata. Cornerplot may be empty. This may occur if results were saved with an older version of JESTER.")
 
     output = {
         "masses": m,
@@ -175,8 +173,7 @@ def load_eos_data(outdir: str) -> Dict[str, np.ndarray]:
         "energies": e,
         "cs2": cs2,
         "log_prob": log_prob,
-        "nep_params": nep_params,
-        "cse_params": cse_params,
+        "prior_params": prior_params,  # General key for all parameters
     }
 
     return output
@@ -253,28 +250,33 @@ def make_cornerplot(data: Dict[str, Any], outdir: str, max_params: int = 10):
     """
     logger.info("Creating cornerplot...")
 
-    # Collect parameters for cornerplot
+    # Collect parameters for cornerplot from prior_params (works for any EOS)
     samples_dict = {}
     labels = []
 
-    # Add NEP parameters
-    nep_params = data.get("nep_params", {})
-    for key in ["K_sat", "L_sym", "Q_sat", "Q_sym", "Z_sat", "Z_sym", "E_sym", "K_sym"]:
-        if key in nep_params:
-            samples_dict[key] = nep_params[key]
-            if TEX_ENABLED:
-                # Format LaTeX labels
-                base = key.split("_")[0]
-                sub = key.split("_")[1] if "_" in key else ""
-                labels.append(f"${base}_{{{sub}}}$")
-            else:
-                labels.append(key)
+    prior_params = data.get("prior_params", {})
+    for key in prior_params.keys():
+        samples_dict[key] = prior_params[key]
 
-    # Add a few CSE parameters if available (limit to avoid overcrowding)
-    cse_params = data.get("cse_params", {})
-    if "nbreak" in cse_params:
-        samples_dict["nbreak"] = cse_params["nbreak"]
-        labels.append(r"$n_{\rm{break}}$" if TEX_ENABLED else "n_break")
+        # Format labels based on parameter name
+        if TEX_ENABLED:
+            # Handle common formatting patterns
+            if "_" in key:
+                # Format: "K_sat" -> "$K_{sat}$", "gamma_0" -> "$\gamma_0$"
+                base = key.split("_")[0]
+                sub = "_".join(key.split("_")[1:])
+
+                # Greek letters
+                if base == "gamma":
+                    labels.append(f"$\\gamma_{{{sub}}}$")
+                elif base == "nbreak":
+                    labels.append(r"$n_{\rm{break}}$")
+                else:
+                    labels.append(f"${base}_{{{sub}}}$")
+            else:
+                labels.append(f"${key}$")
+        else:
+            labels.append(key)
 
     # Limit number of parameters
     if len(samples_dict) > max_params:

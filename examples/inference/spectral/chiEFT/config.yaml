@@ -27,6 +27,12 @@ likelihoods:
       penalty_stability: -1.0e5
       penalty_pressure: -1.0e5
 
+  # Gamma constraint likelihood - enforces LALSuite Gamma bounds for spectral EOS
+  - type: constraints_gamma
+    enabled: true
+    parameters:
+      penalty_gamma: -1.0e10
+
   # NOTE: ChiEFT likelihood disabled for basic testing
   # Uncomment and update paths to enable chiEFT constraints
   # - type: chieft

@@ -20,7 +20,7 @@ from jesterTOV.logging_config import get_logger
 
 logger = get_logger("jester")
 
-
+# TODO: this should be moved to the utils file perhaps?
 # Gauss-Legendre 10-point quadrature nodes and weights from lalsuite
 GL_NODES_10 = jnp.array([
     -0.9739065285171717,
@@ -259,6 +259,7 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         # ε(x) = ε₀/μ(x) + (p₀/μ(x)) · Integral
         return e0 / mu + (p0 / mu) * integral
 
+    # TODO: this must be migrated into something like ConstraintEOSLikelihood
     def _validate_gamma(self, gamma: Float[Array, "4"]) -> bool:
         """
         Validate spectral parameters by checking adiabatic index bounds.
@@ -314,9 +315,8 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
             ValueError: If gamma parameters fail validation
         """
 
-        # # Validate parameters
-        # # NOTE: This validation is not JIT-friendly and may be slow.
-        # # For production inference, consider implementing as a soft constraint in the prior/likelihood.
+        # TODO: this must be migrated into something like ConstraintEOSLikelihood
+        # # Validate the parameters
         # if not self._validate_gamma(gamma):
         #     raise ValueError(
         #         f"Gamma parameters {gamma} fail validation. "
@@ -326,6 +326,9 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
 
         # Load low-density crust data
         n_crust, p_crust, e_crust = load_crust(self.crust_name)
+        
+        # TODO: this should be moved to init
+        # TODO: After testing is done, we should use crust EOS code for this
 
         # For SLy crust from LALSuite, take first 69 points
         # (LALSuite hardcodes this)

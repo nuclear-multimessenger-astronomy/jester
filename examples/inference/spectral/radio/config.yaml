@@ -24,6 +24,12 @@ likelihoods:
   - type: "constraints_eos"
     enabled: true
 
+  # Gamma constraint likelihood - enforces LALSuite Gamma bounds for spectral EOS
+  - type: "constraints_gamma"
+    enabled: true
+    parameters:
+      penalty_gamma: -1.0e10
+
   # Radio timing observations - constrain maximum TOV mass using observed pulsar masses
   - type: "radio"
     enabled: true

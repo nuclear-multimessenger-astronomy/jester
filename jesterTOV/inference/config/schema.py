@@ -173,6 +173,11 @@ class LikelihoodConfig(BaseModel):
         For TOV constraint likelihoods (type: "constraints_tov"):
             penalty_tov : float
                 Log likelihood penalty for TOV integration failure (default: -1e10)
+
+        For Gamma constraint likelihoods (type: "constraints_gamma", spectral EOS only):
+            penalty_gamma : float
+                Log likelihood penalty for Gamma bound violation (default: -1e10)
+                Only applies to spectral decomposition EOS (Γ ∈ [0.6, 4.5])
     """
 
     # TODO: deprecate rex for now: not implemented yet
@@ -186,6 +191,7 @@ class LikelihoodConfig(BaseModel):
         "constraints",
         "constraints_eos",
         "constraints_tov",
+        "constraints_gamma",
         "zero",
     ]
     enabled: bool = True
@@ -360,6 +366,11 @@ class LikelihoodConfig(BaseModel):
         elif likelihood_type == "constraints_tov":
             # Set defaults for optional parameters
             v.setdefault("penalty_tov", -1e10)
+
+        # Validate gamma constraint likelihood parameters
+        elif likelihood_type == "constraints_gamma":
+            # Set defaults for optional parameters
+            v.setdefault("penalty_gamma", -1e10)
 
         return v
 
