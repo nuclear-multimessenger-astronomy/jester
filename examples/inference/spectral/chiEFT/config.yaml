@@ -31,20 +31,21 @@ likelihoods:
   - type: constraints_gamma
     enabled: true
     parameters:
-      penalty_gamma: -1.0e10
+      penalty_gamma: -1e3
 
-  # NOTE: ChiEFT likelihood disabled for basic testing
-  # Uncomment and update paths to enable chiEFT constraints
-  # - type: chieft
-  #   enabled: true
-  #   parameters:
-  #     nb_n: 100  # Number of density points for integration
+  # ChiEFT likelihood - constrains low-density EOS using chiral effective field theory
+  - type: "chieft"
+    enabled: true
+    parameters:
+      low_filename: "../../../../jesterTOV/inference/data/chiEFT/2402.04172/low.dat"
+      high_filename: "../../../../jesterTOV/inference/data/chiEFT/2402.04172/high.dat"
+      nb_n: 100
 
 # SMC configuration with Random Walk kernel
 # Aggressive settings for high-quality chiEFT inference
 sampler:
   type: "smc-rw"  # SMC with Random Walk kernel
-  n_particles: 2000          # Number of particles for full inference
+  n_particles: 1000          # Number of particles for full inference
   n_mcmc_steps: 10            # MCMC steps per tempering level
   target_ess: 0.9             # Target effective sample size (90%)
   random_walk_sigma: 0.1      # Initial sigma for Gaussian random walk
