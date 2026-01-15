@@ -431,9 +431,7 @@ The JESTER inference system uses YAML configuration files validated by Pydantic 
     doc += '   - `type: "spectral"` requires:\n'
     doc += '     - `crust_name: "SLy"` (LALSuite compatibility)\n'
     doc += "     - `nb_CSE: 0`\n"
-    doc += (
-        "     - `constraints_gamma` likelihood should be enabled for Gamma bounds\n\n"
-    )
+    doc += "     - `constraints_gamma` likelihood recommended for Gamma bounds (optional)\n\n"
     doc += "2. **Prior file extension**:\n"
     doc += "   - Must end with `.prior`\n\n"
     doc += "3. **Likelihood requirements**:\n"

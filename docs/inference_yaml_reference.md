@@ -398,7 +398,7 @@ The configuration is validated using Pydantic. Common validation rules:
    - `type: "spectral"` requires:
      - `crust_name: "SLy"` (LALSuite compatibility)
      - `nb_CSE: 0`
-     - `constraints_gamma` likelihood should be enabled for Gamma bounds
+     - `constraints_gamma` likelihood recommended for Gamma bounds (optional)
 
 2. **Prior file extension**:
    - Must end with `.prior`

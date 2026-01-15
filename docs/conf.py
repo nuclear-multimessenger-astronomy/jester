@@ -3,7 +3,7 @@
 import sys
 from pathlib import Path
 
-sys.path.insert(0, Path("..").resolve())
+sys.path.insert(0, str(Path("..").resolve()))
 
 # -- Project information -----------------------------------------------------
 project = "JESTER"
@@ -112,3 +112,16 @@ intersphinx_mapping = {
     "numpy": ("https://numpy.org/doc/stable/", None),
     "jax": ("https://jax.readthedocs.io/en/latest/", None),
 }
+
+# -- Suppress warnings -------------------------------------------------------
+suppress_warnings = [
+    "ref.python",  # Suppress ambiguous python cross-reference warnings
+    "sphinx_autodoc_typehints.forward_reference",  # Suppress forward reference warnings
+    "sphinx_autodoc_typehints.guarded_import",  # Suppress guarded import warnings
+]
+
+# -- Nitpicky mode configuration ---------------------------------------------
+# Ignore ambiguous references to common field names
+nitpick_ignore = [
+    ("py:class", "type"),
+]
