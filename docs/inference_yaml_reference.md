@@ -117,7 +117,11 @@ Defines how EOS parameters are transformed to observables.
 **Validation Rules**:
 - If `type: "metamodel"`, then `nb_CSE` must be 0 (or omitted)
 - If `type: "metamodel_cse"`, then `nb_CSE` must be > 0
-- `crust_name` must be one of: `"DH"`, `"BPS"`, or `"DH_fixed"`
+- If `type: "spectral"`, then:
+  - `crust_name` must be `"SLy"` (LALSuite compatibility requirement)
+  - `nb_CSE` must be 0
+  - `n_points_high` defines high-density spectral region sampling (default: 500)
+- `crust_name` must be one of: `"DH"`, `"BPS"`, `"DH_fixed"`, or `"SLy"`
 
 ### Prior Configuration (`prior:`)
 
@@ -391,6 +395,10 @@ The configuration is validated using Pydantic. Common validation rules:
 1. **Transform type consistency**:
    - `type: "metamodel"` requires `nb_CSE: 0`
    - `type: "metamodel_cse"` requires `nb_CSE > 0`
+   - `type: "spectral"` requires:
+     - `crust_name: "SLy"` (LALSuite compatibility)
+     - `nb_CSE: 0`
+     - `constraints_gamma` likelihood should be enabled for Gamma bounds
 
 2. **Prior file extension**:
    - Must end with `.prior`
@@ -403,7 +411,8 @@ The configuration is validated using Pydantic. Common validation rules:
    - `learning_rate` must be in (0, 1]
 
 5. **Valid crust models**:
-   - `crust_name` must be `"DH"`, `"BPS"`, or `"DH_fixed"`
+   - `crust_name` must be `"DH"`, `"BPS"`, `"DH_fixed"`, or `"SLy"`
+   - Spectral transform specifically requires `"SLy"` for LALSuite compatibility
 
 ## Complete Examples
 
