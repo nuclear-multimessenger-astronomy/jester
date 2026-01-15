@@ -241,7 +241,9 @@ def report_credible_interval(
     return low_err, med, high_err
 
 
-def make_cornerplot(data: Dict[str, Any], outdir: str, max_params: int = 10):
+def make_cornerplot(
+    data: Dict[str, Any], outdir: str, max_params: Optional[int] = None
+):
     """Create cornerplot for EOS parameters.
 
     Parameters
@@ -251,7 +253,7 @@ def make_cornerplot(data: Dict[str, Any], outdir: str, max_params: int = 10):
     outdir : str
         Output directory for saving the plot
     max_params : int, optional
-        Maximum number of parameters to include, by default 10
+        Maximum number of parameters to include. If None, includes all parameters.
     """
     logger.info("Creating cornerplot...")
 
@@ -271,20 +273,24 @@ def make_cornerplot(data: Dict[str, Any], outdir: str, max_params: int = 10):
                 base = key.split("_")[0]
                 sub = "_".join(key.split("_")[1:])
 
+                # Escape underscores in subscript to avoid double subscript errors
+                # e.g., "CSE_0_u" -> "CSE\_0\_u" for LaTeX
+                sub_escaped = sub.replace("_", r"\_")
+
                 # Greek letters
                 if base == "gamma":
-                    labels.append(f"$\\gamma_{{{sub}}}$")
+                    labels.append(f"$\\gamma_{{{sub_escaped}}}$")
                 elif base == "nbreak":
                     labels.append(r"$n_{\rm{break}}$")
                 else:
-                    labels.append(f"${base}_{{{sub}}}$")
+                    labels.append(f"${base}_{{{sub_escaped}}}$")
             else:
                 labels.append(f"${key}$")
         else:
             labels.append(key)
 
-    # Limit number of parameters
-    if len(samples_dict) > max_params:
+    # Limit number of parameters if specified
+    if max_params is not None and len(samples_dict) > max_params:
         logger.info(f"Limiting cornerplot to first {max_params} parameters")
         samples_dict = dict(list(samples_dict.items())[:max_params])
         labels = labels[:max_params]
@@ -292,6 +298,8 @@ def make_cornerplot(data: Dict[str, Any], outdir: str, max_params: int = 10):
     if len(samples_dict) == 0:
         logger.warning("No parameters found for cornerplot")
         return
+
+    logger.info(f"Creating cornerplot with {len(samples_dict)} parameters")
 
     # Convert to array
     samples = np.column_stack([samples_dict[key] for key in samples_dict.keys()])
@@ -312,8 +320,8 @@ def make_cornerplot(data: Dict[str, Any], outdir: str, max_params: int = 10):
 
     # Save figure
     save_name = os.path.join(outdir, "cornerplot.pdf")
-    plt.savefig(save_name, bbox_inches="tight")
-    plt.close()
+    fig.savefig(save_name, bbox_inches="tight")
+    plt.close(fig)
     logger.info(f"Cornerplot saved to {save_name}")
 
 
@@ -992,7 +1000,11 @@ def generate_all_plots(
 
     # Create plots based on flags (pass figures_dir instead of outdir)
     if make_cornerplot_flag:
-        make_cornerplot(data, figures_dir)
+        try:
+            make_cornerplot(data, figures_dir)
+        except Exception as e:
+            logger.error(f"Failed to create cornerplot: {e}")
+            logger.warning("Continuing with other plots...")
 
     if make_massradius_flag:
         make_mass_radius_plot(data, prior_data, figures_dir)

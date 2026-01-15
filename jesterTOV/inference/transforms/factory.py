@@ -11,6 +11,7 @@ def create_transform(
     config: TransformConfig,
     name_mapping: tuple[list[str], list[str]] | None = None,
     keep_names: list[str] | None = None,
+    max_nbreak_nsat: float | None = None,
 ) -> JesterTransformBase:
     """Create transform from configuration.
 
@@ -24,6 +25,11 @@ def create_transform(
     keep_names : list[str], optional
         Parameter names to keep in transformed output.
         By default, all input parameters are kept.
+    max_nbreak_nsat : float, optional
+        Maximum value of nbreak prior in units of saturation density.
+        Used to optimize metamodel_cse transform by setting the upper limit
+        for the meta-model region. Only used for metamodel_cse transform.
+        If None, defaults to nmax_nsat.
 
     Returns
     -------
@@ -47,6 +53,7 @@ def create_transform(
     if config.type not in ("metamodel", "metamodel_cse", "spectral"):
         raise ValueError(f"Unknown transform type: {config.type}")
 
+    # TODO: not all are common anymore, refactor later
     # Common keyword arguments for all transforms
     common_kwargs = {
         "ndat_metamodel": config.ndat_metamodel,
@@ -111,7 +118,10 @@ def create_transform(
         return SpectralTransform(name_mapping=name_mapping, **spectral_kwargs)
     else:  # metamodel_cse
         return MetaModelCSETransform(
-            name_mapping=name_mapping, nb_CSE=config.nb_CSE, **common_kwargs
+            name_mapping=name_mapping,
+            nb_CSE=config.nb_CSE,
+            max_nbreak_nsat=max_nbreak_nsat,
+            **common_kwargs,
         )
 
 

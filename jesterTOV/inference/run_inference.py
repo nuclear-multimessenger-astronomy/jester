@@ -132,7 +132,9 @@ def setup_prior(config: InferenceConfig) -> CombinePrior:
 
 
 def setup_transform(
-    config: InferenceConfig, keep_names: list[str] | None = None
+    config: InferenceConfig,
+    prior: CombinePrior | None = None,
+    keep_names: list[str] | None = None,
 ) -> JesterTransformBase:
     """
     Setup transform from configuration
@@ -141,6 +143,8 @@ def setup_transform(
     ----------
     config : InferenceConfig
         Configuration object
+    prior : CombinePrior, optional
+        Prior object to extract parameter bounds (e.g., max nbreak for metamodel_cse)
     keep_names : list[str], optional
         Parameter names to keep in transformed output
 
@@ -149,7 +153,28 @@ def setup_transform(
     JesterTransformBase
         Transform instance
     """
-    transform = create_transform(config.transform, keep_names=keep_names)
+    # Extract max_nbreak_nsat if using metamodel_cse transform
+    max_nbreak_nsat = None
+    if config.transform.type == "metamodel_cse" and prior is not None:
+        # Import here to avoid circular import
+        from .base.prior import UniformPrior
+
+        # Find nbreak prior and extract its maximum value
+        for param_prior in prior.base_prior:
+            if "nbreak" in param_prior.parameter_names:
+                if isinstance(param_prior, UniformPrior):
+                    # Convert from physical units (fm^-3) to nsat units
+                    nsat = 0.16  # default saturation density
+                    max_nbreak_nsat = param_prior.xmax / nsat
+                    logger.info(
+                        f"Extracted max_nbreak from prior: {param_prior.xmax:.3f} fm^-3 "
+                        f"({max_nbreak_nsat:.3f} n_sat)"
+                    )
+                break
+
+    transform = create_transform(
+        config.transform, keep_names=keep_names, max_nbreak_nsat=max_nbreak_nsat
+    )
 
     return transform
 
@@ -407,7 +432,7 @@ def main(config_path: str) -> None:
     keep_names = determine_keep_names(config, prior)
 
     logger.info("Setting up transform...")
-    transform = setup_transform(config, keep_names=keep_names)
+    transform = setup_transform(config, prior=prior, keep_names=keep_names)
 
     # Log transform details
     logger.info(f"Transform type: {config.transform.type}")

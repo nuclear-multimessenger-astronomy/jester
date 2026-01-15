@@ -49,6 +49,12 @@ class MetaModelCSETransform(JesterTransformBase):
     ndat_CSE : int, optional
         Number of interpolation points used when constructing the EOS in the
         CSE region. Default is 100.
+    max_nbreak_nsat : float | None, optional
+        Maximum value of nbreak prior in units of saturation density.
+        Used to optimize metamodel construction by setting the upper limit
+        for the meta-model region. If None, defaults to nmax_nsat.
+        Should be set to the maximum value from the nbreak prior distribution
+        for optimal performance. Default is None.
     **kwargs
         Additional arguments passed to JesterTransformBase, including:
 
@@ -65,8 +71,12 @@ class MetaModelCSETransform(JesterTransformBase):
         Number of CSE grid points
     ndat_CSE : int
         Number of data points for CSE interpolation
+    max_nbreak_nsat : float | None
+        Maximum value of nbreak prior in units of saturation density
     eos : MetaModel_with_CSE_EOS_model
-        The MetaModel+CSE EOS instance used for constructing p(n) curves
+        The MetaModel+CSE EOS instance used for constructing p(n) curves.
+        The metamodel within this EOS is instantiated once during initialization
+        and reused across all construct_eos calls for efficiency.
 
     Notes
     -----
@@ -115,6 +125,7 @@ class MetaModelCSETransform(JesterTransformBase):
         keep_names: list[str] | None = None,
         nb_CSE: int = 8,
         ndat_CSE: int = 100,
+        max_nbreak_nsat: float | None = None,
         **kwargs,
     ):
         super().__init__(name_mapping, keep_names, **kwargs)
@@ -122,10 +133,14 @@ class MetaModelCSETransform(JesterTransformBase):
         # Save CSE configuration
         self.nb_CSE = nb_CSE
         self.ndat_CSE = ndat_CSE
+        self.max_nbreak_nsat = max_nbreak_nsat
 
         # Create MetaModel+CSE EOS
+        # The metamodel is instantiated once here with max_nbreak_nsat as the upper bound
+        # This avoids re-instantiation on each construct_eos call
         self.eos = MetaModel_with_CSE_EOS_model(
             nmax_nsat=self.nmax_nsat,
+            max_nbreak_nsat=max_nbreak_nsat,
             ndat_metamodel=self.ndat_metamodel,
             ndat_CSE=self.ndat_CSE,
             crust_name=self.crust_name,
