@@ -126,9 +126,10 @@ def generate_field_docs(fields: list[dict[str, Any]], indent: int = 0) -> str:
         default = field["default"]
         desc = field["description"]
 
-        # Field header
+        # Field header - use double backticks for "type" to prevent Sphinx cross-references
         req_str = "**required**" if required else "optional"
-        lines.append(f"{indent_str}- `{name}`: `{ftype}` ({req_str})")
+        name_escaped = f"``{name}``" if name == "type" else f"`{name}`"
+        lines.append(f"{indent_str}- {name_escaped}: `{ftype}` ({req_str})")
 
         # Default value
         if not required and default is not None:

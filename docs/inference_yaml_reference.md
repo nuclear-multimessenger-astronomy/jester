@@ -89,7 +89,7 @@ data_paths: {}
 
 Defines how EOS parameters are transformed to observables.
 
-- `type`: `"metamodel" | "metamodel_cse" | "spectral"` (**required**)
+- ``type``: `"metamodel" | "metamodel_cse" | "spectral"` (**required**)
 
 - `ndat_metamodel`: `int` (optional)
   - Default: `100`
@@ -128,7 +128,7 @@ Specifies prior distributions for parameters.
 
 List of observational constraints. Each likelihood has:
 
-- `type`: `"gw" | "gw_resampled" | "nicer" | "radio" | "chieft" | "rex" | "constraints" | "constraints_eos" | "constraints_tov" | "constraints_gamma" | "zero"` (**required**)
+- ``type``: `"gw" | "gw_resampled" | "nicer" | "radio" | "chieft" | "rex" | "constraints" | "constraints_eos" | "constraints_tov" | "constraints_gamma" | "zero"` (**required**)
 
 - `enabled`: `bool` (optional)
   - Default: `True`
@@ -216,7 +216,7 @@ Normalizing flow-enhanced MCMC with local and global sampling phases.
 - `log_prob_batch_size`: `int` (optional)
   - Default: `1000`
 
-- `type`: `"flowmc"` (optional)
+- ``type``: `"flowmc"` (optional)
   - Default: `"flowmc"`
 
 - `n_chains`: `int` (optional)
@@ -263,7 +263,7 @@ BlackJAX nested sampling with acceptance walk for Bayesian evidence estimation.
 - `log_prob_batch_size`: `int` (optional)
   - Default: `1000`
 
-- `type`: `"blackjax-ns-aw"` (optional)
+- ``type``: `"blackjax-ns-aw"` (optional)
   - Default: `"blackjax-ns-aw"`
 
 - `n_live`: `int` (optional)
@@ -299,7 +299,7 @@ BlackJAX SMC with adaptive tempering and Gaussian Random Walk kernel.
 - `log_prob_batch_size`: `int` (optional)
   - Default: `1000`
 
-- `type`: `"smc-rw"` (optional)
+- ``type``: `"smc-rw"` (optional)
   - Default: `"smc-rw"`
 
 - `n_particles`: `int` (optional)
@@ -329,7 +329,7 @@ BlackJAX SMC with adaptive tempering and NUTS kernel (EXPERIMENTAL).
 - `log_prob_batch_size`: `int` (optional)
   - Default: `1000`
 
-- `type`: `"smc-nuts"` (optional)
+- ``type``: `"smc-nuts"` (optional)
   - Default: `"smc-nuts"`
 
 - `n_particles`: `int` (optional)
