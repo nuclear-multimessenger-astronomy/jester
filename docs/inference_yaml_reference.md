@@ -31,6 +31,7 @@ transform:
   ndat_metamodel: 100
   nmax_nsat: 25.0
   nb_CSE: 8
+  n_points_high: 500
   min_nsat_TOV: 0.75
   ndat_TOV: 100
   nb_masses: 100
@@ -49,7 +50,7 @@ likelihoods:
 
 # Sampler configuration (choose one type)
 sampler:
-  type: "flowmc"  # or "nested_sampling", "smc"
+  type: "flowmc"  # or "blackjax-ns-aw", "smc-rw", "smc-nuts"
   # See sampler-specific fields below
 
 # Data paths (optional overrides)
@@ -88,7 +89,7 @@ data_paths: {}
 
 Defines how EOS parameters are transformed to observables.
 
-- `type`: `"metamodel" | "metamodel_cse"` (**required**)
+- ``type``: `"metamodel" | "metamodel_cse" | "spectral"` (**required**)
 
 - `ndat_metamodel`: `int` (optional)
   - Default: `100`
@@ -99,6 +100,9 @@ Defines how EOS parameters are transformed to observables.
 - `nb_CSE`: `int` (optional)
   - Default: `8`
 
+- `n_points_high`: `int` (optional)
+  - Default: `500`
+
 - `min_nsat_TOV`: `float` (optional)
   - Default: `0.75`
 
@@ -108,12 +112,16 @@ Defines how EOS parameters are transformed to observables.
 - `nb_masses`: `int` (optional)
   - Default: `100`
 
-- `crust_name`: `"DH" | "BPS" | "DH_fixed"` (optional)
+- `crust_name`: `"DH" | "BPS" | "DH_fixed" | "SLy"` (optional)
   - Default: `"DH"`
 **Validation Rules**:
 - If `type: "metamodel"`, then `nb_CSE` must be 0 (or omitted)
 - If `type: "metamodel_cse"`, then `nb_CSE` must be > 0
-- `crust_name` must be one of: `"DH"`, `"BPS"`, or `"DH_fixed"`
+- If `type: "spectral"`, then:
+  - `crust_name` must be `"SLy"` (LALSuite compatibility requirement)
+  - `nb_CSE` must be 0
+  - `n_points_high` defines high-density spectral region sampling (default: 500)
+- `crust_name` must be one of: `"DH"`, `"BPS"`, `"DH_fixed"`, or `"SLy"`
 
 ### Prior Configuration (`prior:`)
 
@@ -124,7 +132,7 @@ Specifies prior distributions for parameters.
 
 List of observational constraints. Each likelihood has:
 
-- `type`: `"gw" | "gw_resampled" | "nicer" | "radio" | "chieft" | "rex" | "constraints" | "constraints_eos" | "constraints_tov" | "zero"` (**required**)
+- ``type``: `"gw" | "gw_resampled" | "nicer" | "radio" | "chieft" | "rex" | "constraints" | "constraints_eos" | "constraints_tov" | "constraints_gamma" | "zero"` (**required**)
 
 - `enabled`: `bool` (optional)
   - Default: `True`
@@ -212,7 +220,7 @@ Normalizing flow-enhanced MCMC with local and global sampling phases.
 - `log_prob_batch_size`: `int` (optional)
   - Default: `1000`
 
-- `type`: `"flowmc"` (optional)
+- ``type``: `"flowmc"` (optional)
   - Default: `"flowmc"`
 
 - `n_chains`: `int` (optional)
@@ -259,7 +267,7 @@ BlackJAX nested sampling with acceptance walk for Bayesian evidence estimation.
 - `log_prob_batch_size`: `int` (optional)
   - Default: `1000`
 
-- `type`: `"blackjax-ns-aw"` (optional)
+- ``type``: `"blackjax-ns-aw"` (optional)
   - Default: `"blackjax-ns-aw"`
 
 - `n_live`: `int` (optional)
@@ -295,7 +303,7 @@ BlackJAX SMC with adaptive tempering and Gaussian Random Walk kernel.
 - `log_prob_batch_size`: `int` (optional)
   - Default: `1000`
 
-- `type`: `"smc-rw"` (optional)
+- ``type``: `"smc-rw"` (optional)
   - Default: `"smc-rw"`
 
 - `n_particles`: `int` (optional)
@@ -325,7 +333,7 @@ BlackJAX SMC with adaptive tempering and NUTS kernel (EXPERIMENTAL).
 - `log_prob_batch_size`: `int` (optional)
   - Default: `1000`
 
-- `type`: `"smc-nuts"` (optional)
+- ``type``: `"smc-nuts"` (optional)
   - Default: `"smc-nuts"`
 
 - `n_particles`: `int` (optional)
@@ -387,6 +395,10 @@ The configuration is validated using Pydantic. Common validation rules:
 1. **Transform type consistency**:
    - `type: "metamodel"` requires `nb_CSE: 0`
    - `type: "metamodel_cse"` requires `nb_CSE > 0`
+   - `type: "spectral"` requires:
+     - `crust_name: "SLy"` (LALSuite compatibility)
+     - `nb_CSE: 0`
+     - `constraints_gamma` likelihood recommended for Gamma bounds (optional)
 
 2. **Prior file extension**:
    - Must end with `.prior`
@@ -399,7 +411,8 @@ The configuration is validated using Pydantic. Common validation rules:
    - `learning_rate` must be in (0, 1]
 
 5. **Valid crust models**:
-   - `crust_name` must be `"DH"`, `"BPS"`, or `"DH_fixed"`
+   - `crust_name` must be `"DH"`, `"BPS"`, `"DH_fixed"`, or `"SLy"`
+   - Spectral transform specifically requires `"SLy"` for LALSuite compatibility
 
 ## Complete Examples
 

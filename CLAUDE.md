@@ -8,9 +8,17 @@ This file provides guidance to Claude Code when working with the JESTER reposito
 
 **Documentation Style**: Write clear, concise documentation in full sentences as if by a human researcher. Avoid LLM-like verbosity.
 
+**Math Formatting in Docstrings**: All mathematical expressions in docstrings must use Sphinx/reStructuredText formatting for proper rendering in documentation:
+- Use `:math:` role for inline math: `:math:`\Gamma(x)`
+- Use `.. math::` directive for display equations
+- Always use raw strings (`r"""`) for docstrings containing LaTeX to avoid Python escape sequence warnings
+- Follow the style in `jesterTOV/eos/base.py` as the reference example
+
 **File Operations**: Use proper tools (Write, Edit, Read) instead of bash heredocs or cat redirection.
 
 **GitHub Issue Comments**: When posting comments on GitHub issues, always identify as "Claude" or "Claude Code" to make it clear the comment is AI-generated. Never post as if you were the human user. This maintains transparency about AI contributions to the project.
+
+**Backwards compatibility**: There has not been a release yet, so don't worry about breaking changes for now. Focus on code quality, testing, and documentation over supporting legacy APIs!
 
 ---
 

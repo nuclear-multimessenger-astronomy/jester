@@ -13,6 +13,9 @@ from jesterTOV.eos.metamodel import (
     MetaModel_with_peakCSE_EOS_model,
 )
 
+# Spectral decomposition parametrization
+from jesterTOV.eos.spectral import SpectralDecomposition_EOS_model
+
 # Neutron star family construction utilities
 from jesterTOV.eos.families import (
     locate_lowest_non_causal_point,
@@ -32,6 +35,8 @@ __all__ = [
     "MetaModel_EOS_model",
     "MetaModel_with_CSE_EOS_model",
     "MetaModel_with_peakCSE_EOS_model",
+    # Spectral
+    "SpectralDecomposition_EOS_model",
     # Families
     "locate_lowest_non_causal_point",
     "construct_family",

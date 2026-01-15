@@ -15,6 +15,7 @@ from jesterTOV.inference.postprocessing.postprocessing import (
     make_cornerplot,
     make_mass_radius_plot,
     make_pressure_density_plot,
+    make_cs2_plot,
 )
 from jesterTOV.inference.result import InferenceResult
 
@@ -211,13 +212,13 @@ class TestPlotGeneration:
             "energies": np.random.uniform(1.0, 500.0, (n_samples, n_eos_points)),
             "cs2": np.random.uniform(0.0, 1.0, (n_samples, n_eos_points)),
             "log_prob": np.random.uniform(-50.0, -10.0, n_samples),
-            "nep_params": {
+            # Use "prior_params" as returned by load_eos_data (not "nep_params")
+            "prior_params": {
                 "K_sat": np.random.uniform(200.0, 250.0, n_samples),
                 "L_sym": np.random.uniform(50.0, 100.0, n_samples),
                 "Q_sat": np.random.uniform(-200.0, 200.0, n_samples),
                 "E_sym": np.random.uniform(28.0, 35.0, n_samples),
             },
-            "cse_params": {},
         }
         return data
 
@@ -276,6 +277,32 @@ class TestPlotGeneration:
 
         plt.close("all")
 
+    def test_make_cs2_plot_basic(self, mock_data, temp_dir):
+        """Test cs2-density plot generation doesn't crash."""
+        make_cs2_plot(data=mock_data, prior_data=None, outdir=str(temp_dir))
+
+        # Check that plot file was created
+        expected_file = temp_dir / "cs2_density_plot.pdf"
+        assert expected_file.exists()
+
+        plt.close("all")
+
+    def test_make_cs2_plot_with_prior(self, mock_data, temp_dir):
+        """Test cs2-density plot with prior samples."""
+        # Create smaller prior data
+        prior_data = {
+            "densities": mock_data["densities"][:10],
+            "cs2": mock_data["cs2"][:10],
+            "log_prob": mock_data["log_prob"][:10],
+        }
+
+        make_cs2_plot(data=mock_data, prior_data=prior_data, outdir=str(temp_dir))
+
+        expected_file = temp_dir / "cs2_density_plot.pdf"
+        assert expected_file.exists()
+
+        plt.close("all")
+
     def test_plots_handle_small_sample_size(self, temp_dir):
         """Test plots work with very small sample sizes."""
         # Minimal data (just 2 samples)
@@ -288,11 +315,11 @@ class TestPlotGeneration:
             "energies": np.random.rand(2, 50),
             "cs2": np.random.rand(2, 50),
             "log_prob": np.array([-10.0, -11.0]),
-            "nep_params": {
+            # Use "prior_params" as returned by load_eos_data
+            "prior_params": {
                 "K_sat": np.array([220.0, 230.0]),
                 "L_sym": np.array([90.0, 95.0]),
             },
-            "cse_params": {},
         }
 
         # Should handle gracefully (may show warnings but shouldn't crash)
@@ -309,23 +336,18 @@ class TestPlotErrorHandling:
         incomplete_data = {
             "log_prob": np.array([-10.0, -11.0]),
             "masses_EOS": np.random.rand(2, 50),
+            "prior_params": {},  # Empty prior_params
         }
 
-        # Should either skip or handle gracefully
-        # (exact behavior depends on implementation)
-        try:
-            make_cornerplot(incomplete_data, outdir=str(temp_dir))
-            plt.close("all")
-        except (KeyError, ValueError):
-            # Acceptable to raise error for incomplete data
-            pass
+        # Should handle gracefully (will log warning and return early)
+        make_cornerplot(incomplete_data, outdir=str(temp_dir))
+        plt.close("all")
 
     def test_mass_radius_plot_missing_eos_data(self, temp_dir):
         """Test M-R plot handles missing EOS data."""
         incomplete_data = {
             "log_prob": np.array([-10.0, -11.0]),
-            "nep_params": {"K_sat": np.array([220.0, 230.0])},
-            "cse_params": {},
+            "prior_params": {"K_sat": np.array([220.0, 230.0])},
         }
 
         # Should raise KeyError for missing required fields
@@ -363,6 +385,8 @@ class TestIntegrationWithInferenceResult:
             "sampler": "flowmc",
             "n_samples": n_samples,
             "sampling_time": 3600.0,
+            # Include parameter_names so load_eos_data can populate prior_params
+            "parameter_names": ["K_sat", "L_sym", "Q_sat", "E_sym"],
         }
 
         result = InferenceResult(
@@ -381,6 +405,7 @@ class TestIntegrationWithInferenceResult:
         make_cornerplot(data, outdir=str(temp_dir), max_params=4)
         make_mass_radius_plot(data, prior_data=None, outdir=str(temp_dir))
         make_pressure_density_plot(data, prior_data=None, outdir=str(temp_dir))
+        make_cs2_plot(data, prior_data=None, outdir=str(temp_dir))
 
         # Verify all plots created (note: some are PDF, some are PDF/PNG)
         assert (temp_dir / "cornerplot.pdf").exists()
@@ -389,5 +414,6 @@ class TestIntegrationWithInferenceResult:
         assert (temp_dir / "pressure_density_plot.pdf").exists() or (
             temp_dir / "pressure_density_plot.png"
         ).exists()
+        assert (temp_dir / "cs2_density_plot.pdf").exists()
 
         plt.close("all")

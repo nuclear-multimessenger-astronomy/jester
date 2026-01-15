@@ -271,6 +271,103 @@ class ConstraintEOSLikelihood(LikelihoodBase):
         return log_likelihood
 
 
+def check_gamma_bounds(gamma_vals: Float[Array, " n"]) -> Float:
+    """
+    Check for violations of LALSuite gamma bounds.
+
+    LALSuite requires Γ(x) ∈ [0.6, 4.5] for all x to ensure physical validity
+    and numerical stability of the spectral decomposition EOS.
+
+    Parameters
+    ----------
+    gamma_vals : Float[Array, " n"]
+        Array of adiabatic index values Γ(x) evaluated at various x points
+
+    Returns
+    -------
+    Float
+        Number of points where Γ(x) violates bounds (0 = valid, >0 = violation)
+        Returns a scalar for JAX compatibility
+    """
+    return jnp.sum((gamma_vals < 0.6) | (gamma_vals > 4.5))
+
+
+class ConstraintGammaLikelihood(LikelihoodBase):
+    """
+    Gamma constraint likelihood for spectral decomposition EOS.
+
+    This likelihood enforces LALSuite's requirement that the adiabatic index
+    Γ(x) ∈ [0.6, 4.5] for all dimensionless log-pressures x ∈ [0, xmax].
+    This constraint is specific to spectral decomposition EOS and ensures
+    physical validity and numerical stability.
+
+    The spectral transform must add gamma violation counts to its output dictionary:
+    - 'n_gamma_violations': Number of points where Γ(x) violates [0.6, 4.5] bounds
+
+    Parameters
+    ----------
+    penalty_gamma : float, optional
+        Log likelihood penalty for gamma bound violation (default: -1e10)
+
+    Examples
+    --------
+    >>> # In config.yaml (spectral EOS examples)
+    >>> likelihoods:
+    >>>   - type: "constraints_gamma"
+    >>>     enabled: true
+    >>>     parameters:
+    >>>       penalty_gamma: -1.0e10
+
+    Notes
+    -----
+    This likelihood is only relevant for spectral decomposition EOS parametrization.
+    For metamodel or metamodel+CSE transforms, this likelihood will return 0.0
+    (no penalty) since n_gamma_violations will not be present in the transform output.
+
+    See Also
+    --------
+    ConstraintEOSLikelihood : General EOS-level constraints (causality, stability, pressure)
+    ConstraintTOVLikelihood : TOV integration validity
+    """
+
+    penalty_gamma: float
+
+    def __init__(
+        self,
+        penalty_gamma: float = -1e10,
+    ) -> None:
+        super().__init__()
+        self.penalty_gamma = float(penalty_gamma)
+
+    def evaluate(self, params: dict[str, Float | Array]) -> Float:
+        """
+        Evaluate gamma constraint log likelihood.
+
+        Returns 0.0 if all gamma constraints satisfied, applies penalty otherwise.
+        Uses jnp.where for JAX compatibility (no Python if-statements).
+
+        Parameters
+        ----------
+        params : dict[str, float]
+            Must contain gamma constraint violation counts from spectral transform:
+            - 'n_gamma_violations' (only present for spectral transform)
+
+        Returns
+        -------
+        Float
+            Gamma penalty (0.0 if valid, large negative if invalid)
+        """
+        # Get violation count from transform output (default to 0 if not present)
+        # This allows the likelihood to work with non-spectral transforms gracefully
+        n_gamma_violations = params.get("n_gamma_violations", 0.0)
+
+        # Apply penalty using jnp.where (JAX-compatible, no branching)
+        # Default penalty value is multiplied with number of violation points: more violations -> larger penalty
+        penalty_gamma = n_gamma_violations * self.penalty_gamma
+
+        return penalty_gamma
+
+
 class ConstraintTOVLikelihood(LikelihoodBase):
     """
     TOV-level constraint likelihood for enforcing valid TOV integration.

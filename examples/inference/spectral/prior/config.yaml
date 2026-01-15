@@ -1,0 +1,58 @@
+# Example configuration for spectral decomposition EOS - Prior sampling only
+# This samples from the prior without any observational constraints
+# Useful for exploring the parameter space and validating the EOS implementation
+
+seed: 42
+
+# Execution options
+dry_run: false         # Set to false to run full sampling
+validate_only: false
+
+transform:
+  type: spectral
+  crust_name: SLy  # Required for spectral (LALSuite compatibility)
+  n_points_high: 500  # Number of high-density points in spectral region
+  ndat_TOV: 100
+  nb_masses: 100
+  min_nsat_TOV: 0.75
+
+prior:
+  specification_file: prior.prior
+
+likelihoods:
+  # Physical constraint likelihood - enforces EOS validity
+  # NOTE: Even for prior sampling, we include basic EOS constraints
+  # to avoid sampling from regions that produce unphysical EOS
+  - type: constraints_eos
+    enabled: true
+    parameters:
+      penalty_causality: -1.0e10
+      penalty_stability: -1.0e5
+      penalty_pressure: -1.0e5
+
+  # Gamma constraint likelihood - enforces LALSuite Gamma bounds for spectral EOS
+  - type: constraints_gamma
+    enabled: true
+    parameters:
+      penalty_gamma: -1e3
+
+# SMC configuration with Random Walk kernel
+# Lighter settings for prior sampling (no likelihood constraints to satisfy)
+sampler:
+  type: "smc-rw"  # SMC with Random Walk kernel
+  n_particles: 1000           # Fewer particles needed for prior sampling
+  n_mcmc_steps: 5             # Fewer MCMC steps per level
+  target_ess: 0.9             # Target effective sample size (90%)
+  random_walk_sigma: 0.1      # Initial sigma for Gaussian random walk TODO: needs to be gone?
+  target_acceptance: 0.5      # Target acceptance rate TODO: needs to be gone?
+  adaptation_rate: 0.3        # Adaptation rate for sigma tuning
+  n_eos_samples: 2000         # Number of EOS samples to generate
+  log_prob_batch_size: 100    # Batch size for log probability evaluation
+  output_dir: "./outdir/"
+
+# Postprocessing configuration
+postprocessing:
+  enabled: true
+  make_cornerplot: true
+  make_massradius: true
+  make_pressuredensity: true

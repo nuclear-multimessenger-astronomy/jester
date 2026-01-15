@@ -154,6 +154,7 @@ class InferenceResult:
             "seed": int(config.seed),
             "creation_timestamp": datetime.now().isoformat(),
             "config_json": config_json,
+            "parameter_names": sampler.parameter_names,  # Save prior parameter names
         }
 
         # Extract sampler-specific metadata and histories
@@ -506,6 +507,11 @@ class InferenceResult:
                 if key == "config_json":
                     # Skip - already stored as dataset above
                     continue
+                elif key == "parameter_names":
+                    # Store parameter names as JSON string (list of strings)
+                    param_names_json = json.dumps(value)
+                    metadata_grp.attrs[key] = param_names_json
+                    continue
                 # HDF5 attributes must be scalars or small arrays
                 if isinstance(value, (int, float, str, bool)):
                     metadata_grp.attrs[key] = value
@@ -596,7 +602,13 @@ class InferenceResult:
             # Load attributes
             if "metadata" in f:
                 for key, value in f["metadata"].attrs.items():
-                    metadata[key] = value
+                    # Deserialize parameter_names from JSON
+                    if key == "parameter_names":
+                        if isinstance(value, bytes):
+                            value = value.decode("utf-8")
+                        metadata[key] = json.loads(value)
+                    else:
+                        metadata[key] = value
 
             # Load histories
             histories: Dict[str, np.ndarray] | None = None

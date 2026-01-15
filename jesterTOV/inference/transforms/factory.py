@@ -4,6 +4,7 @@ from ..config.schema import TransformConfig
 from .base import JesterTransformBase
 from .metamodel import MetaModelTransform
 from .metamodel_cse import MetaModelCSETransform
+from .spectral import SpectralTransform
 
 
 def create_transform(
@@ -43,7 +44,7 @@ def create_transform(
     'MM'
     """
     # Validate transform type early
-    if config.type not in ("metamodel", "metamodel_cse"):
+    if config.type not in ("metamodel", "metamodel_cse", "spectral"):
         raise ValueError(f"Unknown transform type: {config.type}")
 
     # Common keyword arguments for all transforms
@@ -72,6 +73,8 @@ def create_transform(
                 "Q_sym",
                 "Z_sym",
             ]
+        elif config.type == "spectral":
+            input_names = ["gamma_0", "gamma_1", "gamma_2", "gamma_3"]
         else:  # metamodel_cse (already validated above)
             input_names = [
                 "K_sat",
@@ -96,6 +99,16 @@ def create_transform(
     # Create transform based on type (type already validated)
     if config.type == "metamodel":
         return MetaModelTransform(name_mapping=name_mapping, **common_kwargs)
+    elif config.type == "spectral":
+        # Spectral transform has additional parameters
+        spectral_kwargs = {
+            "ndat_TOV": config.ndat_TOV,
+            "nb_masses": config.nb_masses,
+            "crust_name": config.crust_name,
+            "keep_names": keep_names,
+            "n_points_high": config.n_points_high,
+        }
+        return SpectralTransform(name_mapping=name_mapping, **spectral_kwargs)
     else:  # metamodel_cse
         return MetaModelCSETransform(
             name_mapping=name_mapping, nb_CSE=config.nb_CSE, **common_kwargs
@@ -123,7 +136,7 @@ def get_transform_input_names(config: TransformConfig) -> list[str]:
     26  # 8 NEP + 1 nbreak + 8*2 CSE grid + 1 final cs2
     """
     # Validate transform type early
-    if config.type not in ("metamodel", "metamodel_cse"):
+    if config.type not in ("metamodel", "metamodel_cse", "spectral"):
         raise ValueError(f"Unknown transform type: {config.type}")
 
     if config.type == "metamodel":
@@ -137,6 +150,8 @@ def get_transform_input_names(config: TransformConfig) -> list[str]:
             "Q_sym",
             "Z_sym",
         ]
+    elif config.type == "spectral":
+        return ["gamma_0", "gamma_1", "gamma_2", "gamma_3"]
     else:  # metamodel_cse (already validated above)
         names = [
             "K_sat",

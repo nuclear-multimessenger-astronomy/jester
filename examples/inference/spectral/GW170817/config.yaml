@@ -1,0 +1,62 @@
+# GW170817-only inference configuration with pre-sampled masses
+# SMC with Random Walk kernel for constraining EOS using GW data
+# This configuration demonstrates the GWLikelihood class
+# which eliminates the _random_key hack by pre-sampling masses at initialization
+
+seed: 43
+
+# Execution options
+dry_run: false
+validate_only: false
+
+# Transform configuration: spectral EOS parameterization
+transform:
+  type: spectral
+  crust_name: SLy  # Required for spectral (LALSuite compatibility)
+  n_points_high: 100  # Number of high-density points in spectral region
+  ndat_TOV: 100
+  nb_masses: 100
+  min_nsat_TOV: 0.75
+
+# Prior specification file
+prior:
+  specification_file: "prior.prior"
+
+# Likelihood constraints (only GW170817 enabled with pre-sampling)
+likelihoods:
+  - type: "constraints_eos"
+    enabled: true
+  
+  # Gamma constraint likelihood - enforces LALSuite Gamma bounds for spectral EOS
+  - type: constraints_gamma
+    enabled: true
+    parameters:
+      penalty_gamma: -1e5
+  - type: "gw"
+    enabled: true
+    parameters:
+      events:
+        - name: "GW170817"
+          # model_dir is optional - defaults to flow trained on XP-NRTv3 posterior samples
+          # To use a different flow, specify: model_dir: "/path/to/flow/model/"
+      penalty_value: -99999.0
+      N_masses_evaluation: 2000  # Number of points used for evaluating the likelihood
+      N_masses_batch_size: 1000  # Batch size for jax.lax.map for likelihood evaluation
+      seed: 42                   # Fixed seed for the mass pre-sampling described above
+
+# SMC configuration with Random Walk kernel
+sampler:
+  type: "smc-rw"
+  n_particles: 1000         # Number of particles evolved at each inference step
+  n_mcmc_steps: 10          # MCMC steps per tempering level
+  target_ess: 0.9           # Target effective sample size (90%)
+  random_walk_sigma: 0.05   # Gaussian random walk step size scale
+  n_eos_samples: 1000       # Number of EOS samples to generate after inference
+  output_dir: "./outdir/"
+
+# Postprocessing configuration
+postprocessing:
+  enabled: true
+  make_cornerplot: true
+  make_massradius: true
+  make_pressuredensity: true

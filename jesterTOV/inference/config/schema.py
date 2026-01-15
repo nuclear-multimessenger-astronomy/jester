@@ -19,7 +19,7 @@ class TransformConfig(BaseModel):
 
     Attributes
     ----------
-    type : Literal["metamodel", "metamodel_cse"]
+    type : Literal["metamodel", "metamodel_cse", "spectral"]
         Type of transform to use
     ndat_metamodel : int
         Number of data points for MetaModel EOS
@@ -27,24 +27,27 @@ class TransformConfig(BaseModel):
         Maximum density in units of saturation density
     nb_CSE : int
         Number of CSE parameters (only for metamodel_cse)
+    n_points_high : int
+        Number of high-density points for spectral EOS (only for spectral)
     min_nsat_TOV : float
         Minimum density for TOV integration (units of nsat)
     ndat_TOV : int
         Number of data points for TOV integration
     nb_masses : int
         Number of masses to sample
-    crust_name : Literal["DH", "BPS", "DH_fixed"]
+    crust_name : Literal["DH", "BPS", "DH_fixed", "SLy"]
         Name of crust model to use
     """
 
-    type: Literal["metamodel", "metamodel_cse"]
+    type: Literal["metamodel", "metamodel_cse", "spectral"]
     ndat_metamodel: int = 100
     nmax_nsat: float = 25.0
     nb_CSE: int = 8  # Only for metamodel_cse
+    n_points_high: int = 500  # Only for spectral
     min_nsat_TOV: float = 0.75
     ndat_TOV: int = 100
     nb_masses: int = 100
-    crust_name: Literal["DH", "BPS", "DH_fixed"] = (
+    crust_name: Literal["DH", "BPS", "DH_fixed", "SLy"] = (
         "DH"  # TODO: this should be done in the crust source code, not here, and here just fetch from there
     )
 
@@ -52,10 +55,25 @@ class TransformConfig(BaseModel):
     @classmethod
     def validate_nb_cse(cls, v: int, info: ValidationInfo) -> int:
         """Validate that nb_CSE is only used with metamodel_cse."""
-        if "type" in info.data and info.data["type"] == "metamodel" and v != 0:
+        if (
+            "type" in info.data
+            and info.data["type"] in ["metamodel", "spectral"]
+            and v != 0
+        ):
             raise ValueError(
-                "nb_CSE must be 0 for type='metamodel'. "
+                "nb_CSE must be 0 for type='metamodel' or type='spectral'. "
                 "Use type='metamodel_cse' for CSE extension."
+            )
+        return v
+
+    @field_validator("crust_name")
+    @classmethod
+    def validate_crust_name(cls, v: str, info: ValidationInfo) -> str:
+        """Validate crust name is appropriate for the transform type."""
+        if "type" in info.data and info.data["type"] == "spectral" and v != "SLy":
+            raise ValueError(
+                "Spectral transform requires crust_name='SLy' for LALSuite compatibility. "
+                f"Got: {v}"
             )
         return v
 
@@ -159,6 +177,11 @@ class LikelihoodConfig(BaseModel):
         For TOV constraint likelihoods (type: "constraints_tov"):
             penalty_tov : float
                 Log likelihood penalty for TOV integration failure (default: -1e10)
+
+        For Gamma constraint likelihoods (type: "constraints_gamma", spectral EOS only):
+            penalty_gamma : float
+                Log likelihood penalty for Gamma bound violation (default: -1e10)
+                Only applies to spectral decomposition EOS (Γ ∈ [0.6, 4.5])
     """
 
     # TODO: deprecate rex for now: not implemented yet
@@ -172,6 +195,7 @@ class LikelihoodConfig(BaseModel):
         "constraints",
         "constraints_eos",
         "constraints_tov",
+        "constraints_gamma",
         "zero",
     ]
     enabled: bool = True
@@ -346,6 +370,11 @@ class LikelihoodConfig(BaseModel):
         elif likelihood_type == "constraints_tov":
             # Set defaults for optional parameters
             v.setdefault("penalty_tov", -1e10)
+
+        # Validate gamma constraint likelihood parameters
+        elif likelihood_type == "constraints_gamma":
+            # Set defaults for optional parameters
+            v.setdefault("penalty_gamma", -1e10)
 
         return v
 

@@ -126,9 +126,10 @@ def generate_field_docs(fields: list[dict[str, Any]], indent: int = 0) -> str:
         default = field["default"]
         desc = field["description"]
 
-        # Field header
+        # Field header - use double backticks for "type" to prevent Sphinx cross-references
         req_str = "**required**" if required else "optional"
-        lines.append(f"{indent_str}- `{name}`: `{ftype}` ({req_str})")
+        name_escaped = f"``{name}``" if name == "type" else f"`{name}`"
+        lines.append(f"{indent_str}- {name_escaped}: `{ftype}` ({req_str})")
 
         # Default value
         if not required and default is not None:
@@ -281,7 +282,13 @@ The JESTER inference system uses YAML configuration files validated by Pydantic 
     doc += "**Validation Rules**:\n"
     doc += '- If `type: "metamodel"`, then `nb_CSE` must be 0 (or omitted)\n'
     doc += '- If `type: "metamodel_cse"`, then `nb_CSE` must be > 0\n'
-    doc += '- `crust_name` must be one of: `"DH"`, `"BPS"`, or `"DH_fixed"`\n\n'
+    doc += '- If `type: "spectral"`, then:\n'
+    doc += '  - `crust_name` must be `"SLy"` (LALSuite compatibility requirement)\n'
+    doc += "  - `nb_CSE` must be 0\n"
+    doc += "  - `n_points_high` defines high-density spectral region sampling (default: 500)\n"
+    doc += (
+        '- `crust_name` must be one of: `"DH"`, `"BPS"`, `"DH_fixed"`, or `"SLy"`\n\n'
+    )
 
     # Prior fields
     doc += "### Prior Configuration (`prior:`)\n\n"
@@ -420,7 +427,11 @@ The JESTER inference system uses YAML configuration files validated by Pydantic 
     doc += "The configuration is validated using Pydantic. Common validation rules:\n\n"
     doc += "1. **Transform type consistency**:\n"
     doc += '   - `type: "metamodel"` requires `nb_CSE: 0`\n'
-    doc += '   - `type: "metamodel_cse"` requires `nb_CSE > 0`\n\n'
+    doc += '   - `type: "metamodel_cse"` requires `nb_CSE > 0`\n'
+    doc += '   - `type: "spectral"` requires:\n'
+    doc += '     - `crust_name: "SLy"` (LALSuite compatibility)\n'
+    doc += "     - `nb_CSE: 0`\n"
+    doc += "     - `constraints_gamma` likelihood recommended for Gamma bounds (optional)\n\n"
     doc += "2. **Prior file extension**:\n"
     doc += "   - Must end with `.prior`\n\n"
     doc += "3. **Likelihood requirements**:\n"
@@ -429,7 +440,8 @@ The JESTER inference system uses YAML configuration files validated by Pydantic 
     doc += "   - `n_chains`, `n_loop_training`, `n_loop_production` must be > 0\n"
     doc += "   - `learning_rate` must be in (0, 1]\n\n"
     doc += "5. **Valid crust models**:\n"
-    doc += '   - `crust_name` must be `"DH"`, `"BPS"`, or `"DH_fixed"`\n\n'
+    doc += '   - `crust_name` must be `"DH"`, `"BPS"`, `"DH_fixed"`, or `"SLy"`\n'
+    doc += '   - Spectral transform specifically requires `"SLy"` for LALSuite compatibility\n\n'
 
     # Examples
     doc += "## Complete Examples\n\n"

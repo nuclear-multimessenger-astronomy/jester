@@ -27,8 +27,6 @@ likelihoods:
   # Physical constraint likelihood - enforces EOS validity
   - type: "constraints_eos"
     enabled: true
-  - type: "constraints_tov"
-    enabled: true
 
   # Radio timing observations - constrain maximum TOV mass using observed pulsar masses
   - type: "radio"

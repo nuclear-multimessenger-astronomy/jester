@@ -8,7 +8,11 @@ from .gw import GWLikelihood, GWLikelihoodResampled
 from .nicer import NICERLikelihood
 from .radio import RadioTimingLikelihood
 from .chieft import ChiEFTLikelihood
-from .constraints import ConstraintEOSLikelihood, ConstraintTOVLikelihood
+from .constraints import (
+    ConstraintEOSLikelihood,
+    ConstraintTOVLikelihood,
+    ConstraintGammaLikelihood,
+)
 from jesterTOV.logging_config import get_logger
 
 logger = get_logger("jester")
@@ -145,6 +149,11 @@ def create_likelihood(
     elif config.type == "constraints_tov":
         return ConstraintTOVLikelihood(
             penalty_tov=params.get("penalty_tov", -1e10),
+        )
+
+    elif config.type == "constraints_gamma":
+        return ConstraintGammaLikelihood(
+            penalty_gamma=params.get("penalty_gamma", -1e10),
         )
 
     elif config.type == "zero":
