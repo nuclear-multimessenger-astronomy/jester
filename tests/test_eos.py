@@ -6,48 +6,172 @@ import os
 from jesterTOV import eos, utils
 
 
-class TestLoadCrust:
-    """Test crust loading functionality."""
+class TestCrust:
+    """Test Crust class functionality."""
 
-    def test_load_crust_available_names(self):
-        """Test loading crust with available names."""
-        # Test loading DH crust (should be available)
-        n, p, e = eos.load_crust("DH")
+    def test_crust_list_available(self):
+        """Test listing available crusts."""
+        available = eos.Crust.list_available()
+        assert isinstance(available, list)
+        assert "DH" in available
+        assert "BPS" in available
+        # SLy should be available but may be updated by user
+        assert len(available) >= 2
 
-        assert isinstance(n, jnp.ndarray) or hasattr(n, "shape")  # JAX arrays
-        assert isinstance(p, jnp.ndarray) or hasattr(p, "shape")  # JAX arrays
-        assert isinstance(e, jnp.ndarray) or hasattr(e, "shape")  # JAX arrays
-        assert len(n) == len(p) == len(e)
-        assert jnp.all(n > 0)  # Densities should be positive
-        assert jnp.all(p > 0)  # Pressures should be positive
-        assert jnp.all(e > 0)  # Energy densities should be positive
+    def test_crust_validate(self):
+        """Test crust validation."""
+        assert eos.Crust.validate("DH") is True
+        assert eos.Crust.validate("BPS") is True
+        assert eos.Crust.validate("invalid_crust") is False
 
-    def test_load_crust_bps(self):
-        """Test loading BPS crust."""
-        n, p, e = eos.load_crust("BPS")
+    def test_crust_get_crust_dir(self):
+        """Test getting crust directory path."""
+        crust_dir = eos.Crust.get_crust_dir()
+        assert os.path.exists(crust_dir)
+        assert os.path.isdir(crust_dir)
+        assert crust_dir == eos.CRUST_DIR
 
-        assert isinstance(n, jnp.ndarray) or hasattr(n, "shape")  # JAX arrays
-        assert isinstance(p, jnp.ndarray) or hasattr(p, "shape")  # JAX arrays
-        assert isinstance(e, jnp.ndarray) or hasattr(e, "shape")  # JAX arrays
-        assert len(n) > 10  # Should have reasonable number of points
+    def test_crust_initialization(self):
+        """Test basic crust initialization."""
+        crust = eos.Crust("DH")
+        assert len(crust) > 0
+        assert jnp.all(crust.n > 0)
+        assert jnp.all(crust.p > 0)
+        assert jnp.all(crust.e > 0)
 
-    def test_load_crust_invalid_name(self):
-        """Test that invalid crust names raise appropriate errors."""
-        with pytest.raises(ValueError, match="Crust invalid_crust not found"):
-            eos.load_crust("invalid_crust")
+    def test_crust_properties(self):
+        """Test crust property access."""
+        crust = eos.Crust("DH")
 
-    def test_load_crust_with_npz_extension(self):
-        """Test loading crust with .npz extension."""
-        # This should work the same as without extension
-        crust_dir = eos.CRUST_DIR
-        available_files = [f for f in os.listdir(crust_dir) if f.endswith(".npz")]
+        # Test properties return arrays
+        assert isinstance(crust.n, jnp.ndarray) or hasattr(crust.n, "shape")
+        assert isinstance(crust.p, jnp.ndarray) or hasattr(crust.p, "shape")
+        assert isinstance(crust.e, jnp.ndarray) or hasattr(crust.e, "shape")
 
-        if "DH.npz" in available_files:
-            full_path = os.path.join(crust_dir, "DH.npz")
-            n, p, e = eos.load_crust(full_path)
+        # Test all have same length
+        assert len(crust.n) == len(crust.p) == len(crust.e)
 
-            assert isinstance(n, jnp.ndarray) or hasattr(n, "shape")  # JAX arrays
-            assert len(n) > 0
+        # Test physical constraints
+        assert jnp.all(crust.n > 0)  # Densities should be positive
+        assert jnp.all(crust.p > 0)  # Pressures should be positive
+        assert jnp.all(crust.e > 0)  # Energy densities should be positive
+
+        # Test monotonicity
+        assert jnp.all(jnp.diff(crust.n) > 0)  # Density should increase
+
+    def test_crust_density_masking(self):
+        """Test density range masking."""
+        crust_full = eos.Crust("DH")
+        crust_masked = eos.Crust("DH", min_density=0.001, max_density=0.1)
+
+        # Masked crust should have fewer points
+        assert len(crust_masked) < len(crust_full)
+
+        # All densities should be within range
+        assert jnp.all(crust_masked.n >= 0.001)
+        assert jnp.all(crust_masked.n <= 0.1)
+
+        # Test that min/max density properties match
+        assert crust_masked.min_density >= 0.001
+        assert crust_masked.max_density <= 0.1
+
+    def test_crust_zero_pressure_filtering(self):
+        """Test zero pressure filtering."""
+        crust = eos.Crust("DH", filter_zero_pressure=True)
+        assert jnp.all(crust.p > 0)
+
+        # Test that disabling filter might include zero pressure points
+        # (depends on crust data - some crusts may not have zero pressure points)
+        crust_unfiltered = eos.Crust("DH", filter_zero_pressure=False)
+        assert len(crust_unfiltered) >= len(crust)
+
+    def test_crust_mu_lowest(self):
+        """Test chemical potential calculation."""
+        crust = eos.Crust("DH")
+        expected_mu = (crust.e[0] + crust.p[0]) / crust.n[0]
+        assert jnp.isclose(crust.mu_lowest, expected_mu)
+
+        # Should be positive
+        assert crust.mu_lowest > 0
+
+    def test_crust_cs2(self):
+        """Test speed of sound squared."""
+        crust = eos.Crust("DH")
+
+        # Should have same length as other arrays
+        assert len(crust.cs2) == len(crust.n)
+
+        # Should be positive (assuming physical crust)
+        assert jnp.all(crust.cs2 > 0)
+
+        # Should not exceed speed of light
+        assert jnp.all(crust.cs2 <= 1.0)
+
+    def test_crust_cs2_caching(self):
+        """Test that cs2 is cached after first computation."""
+        crust = eos.Crust("DH")
+
+        # First access computes
+        cs2_first = crust.cs2
+
+        # Second access should return cached value
+        cs2_second = crust.cs2
+
+        assert jnp.array_equal(cs2_first, cs2_second)
+
+    def test_crust_get_data(self):
+        """Test get_data() convenience method."""
+        crust = eos.Crust("DH")
+        n, p, e = crust.get_data()
+
+        assert jnp.array_equal(n, crust.n)
+        assert jnp.array_equal(p, crust.p)
+        assert jnp.array_equal(e, crust.e)
+
+    def test_crust_invalid_name(self):
+        """Test invalid crust name raises error."""
+        with pytest.raises(ValueError, match="not found"):
+            eos.Crust("invalid_crust")
+
+    def test_crust_with_npz_path(self):
+        """Test loading with full .npz path."""
+        crust_dir = eos.Crust.get_crust_dir()
+        full_path = os.path.join(crust_dir, "DH.npz")
+        crust = eos.Crust(full_path)
+
+        assert len(crust) > 0
+        assert jnp.all(crust.n > 0)
+
+    def test_crust_repr(self):
+        """Test string representation."""
+        crust = eos.Crust("DH")
+        repr_str = repr(crust)
+
+        assert "Crust" in repr_str
+        assert "DH" in repr_str
+        assert "n_points" in repr_str
+        assert "density_range" in repr_str
+
+    def test_crust_len(self):
+        """Test __len__ method."""
+        crust = eos.Crust("DH")
+        assert len(crust) == len(crust.n)
+        assert isinstance(len(crust), int)
+
+    def test_crust_bps(self):
+        """Test loading BPS crust specifically."""
+        crust = eos.Crust("BPS")
+
+        assert len(crust) > 10
+        assert jnp.all(crust.n > 0)
+        assert jnp.all(crust.p > 0)
+        assert jnp.all(crust.e > 0)
+
+    def test_crust_empty_after_filtering(self):
+        """Test that appropriate error is raised if filtering removes all points."""
+        # Try to create a crust with impossible density range
+        with pytest.raises(ValueError, match="No crust points remain"):
+            eos.Crust("DH", min_density=10.0, max_density=20.0)
 
 
 class TestInterpolateEOSModel:
@@ -307,15 +431,15 @@ class TestMetaModelIntegration:
 @pytest.mark.parametrize("crust_name", ["DH", "BPS"])
 def test_all_available_crusts(crust_name):
     """Test that all available crust files can be loaded."""
-    n, p, e = eos.load_crust(crust_name)
+    crust = eos.Crust(crust_name)
 
-    assert len(n) > 10
-    assert jnp.all(n > 0)
-    assert jnp.all(p > 0)
-    assert jnp.all(e > 0)
+    assert len(crust) > 10
+    assert jnp.all(crust.n > 0)
+    assert jnp.all(crust.p > 0)
+    assert jnp.all(crust.e > 0)
 
     # Check that arrays are sorted by density
-    assert jnp.all(jnp.diff(n) > 0)
+    assert jnp.all(jnp.diff(crust.n) > 0)
 
 
 @pytest.mark.parametrize("nsat", [0.15, 0.16, 0.17])

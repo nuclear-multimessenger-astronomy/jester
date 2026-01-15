@@ -17,7 +17,7 @@ from typing import Tuple
 
 from jesterTOV import utils
 from jesterTOV.eos.base import Interpolate_EOS_model
-from jesterTOV.eos.crust import load_crust
+from jesterTOV.eos.crust import Crust
 from jesterTOV.logging_config import get_logger
 
 logger = get_logger("jester")
@@ -147,22 +147,13 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         self.crust_name = crust_name
         self.n_points_high = n_points_high
 
-        # Load low-density crust data
-        n_crust, p_crust, e_crust = load_crust(self.crust_name)
-
-        # TODO: After testing is done, we should use crust EOS code for this
-        # For SLy crust from LALSuite, take first 69 points
-        # (LALSuite hardcodes this)
-        if self.crust_name == "SLy":
-            n_crust = n_crust[:69]
-            p_crust = p_crust[:69]
-            e_crust = e_crust[:69]
-
-        # Filter out zero pressure points (causes issues with log in enthalpy calculation)
-        nonzero_mask = p_crust > 0
-        self.n_crust = n_crust[nonzero_mask]
-        self.p_crust = p_crust[nonzero_mask]
-        self.e_crust = e_crust[nonzero_mask]
+        # Load and preprocess low-density crust data
+        # TODO: lalsuite loads the SLY crust, but then filters out the first 69 points
+        # Need to verify if this is necessary to add, or if not doing this is acceptable for inference case
+        crust = Crust(self.crust_name, filter_zero_pressure=True)
+        self.n_crust = crust.n
+        self.p_crust = crust.p
+        self.e_crust = crust.e
 
         logger.info(
             f"Initialized SpectralDecomposition_EOS_model with crust={crust_name}, "
@@ -316,7 +307,7 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
 
         This method:
         1. Validates parameters
-        2. Loads low-density crust (69 points)
+        2. Loads low-density crust (preprocessed via Crust class)
         3. Generates high-density spectral region (500 points by default)
         4. Stitches them together
         5. Converts to geometric units and computes auxiliary quantities
