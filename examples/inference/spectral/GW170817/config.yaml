@@ -1,6 +1,6 @@
 # GW170817-only inference configuration with pre-sampled masses
 # SMC with Random Walk kernel for constraining EOS using GW data
-# This configuration demonstrates the new GWLikelihoodPresampled class
+# This configuration demonstrates the GWLikelihood class
 # which eliminates the _random_key hack by pre-sampling masses at initialization
 
 seed: 43
@@ -42,7 +42,7 @@ likelihoods:
       penalty_value: -99999.0
       N_masses_evaluation: 2000  # Number of points used for evaluating the likelihood
       N_masses_batch_size: 1000  # Batch size for jax.lax.map for likelihood evaluation
-      seed: 42                   # Fixed seed for mass the pre-sampling described above
+      seed: 42                   # Fixed seed for the mass pre-sampling described above
 
 # SMC configuration with Random Walk kernel
 sampler:

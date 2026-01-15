@@ -10,16 +10,23 @@ for dir in */; do
     dir=${dir%/}  # Remove trailing slash
 
     # Skip directories in SKIP_DIRS
-    if [[ " ${SKIP_DIRS[@]} " =~ " ${dir} " ]]; then
-        echo "Skipping $dir"
+    skip_dir=false
+    for skip in "${SKIP_DIRS[@]}"; do
+        if [[ "$skip" == "$dir" ]]; then
+            echo "Skipping $dir"
+            skip_dir=true
+            break
+        fi
+    done
+    if [ "$skip_dir" = true ]; then
         continue
     fi
 
     # Submit if submit.sh exists
     if [ -f "$dir/submit.sh" ]; then
         echo "Submitting $dir"
-        cd "$dir"
+        pushd "$dir" >/dev/null || { echo "Failed to enter $dir" >&2; continue; }
         sbatch submit.sh
-        cd ..
+        popd >/dev/null || { echo "Failed to return from $dir" >&2; exit 1; }
     fi
 done

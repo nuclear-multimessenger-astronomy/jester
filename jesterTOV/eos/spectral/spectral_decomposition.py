@@ -24,7 +24,7 @@ logger = get_logger("jester")
 
 # TODO: this should be moved to the utils file perhaps?
 # Gauss-Legendre 10-point quadrature nodes and weights from lalsuite
-GL_NODES_10 = jnp.array(
+GL_NODES_10: Float[Array, "10"] = jnp.array(
     [
         -0.9739065285171717,
         -0.8650633666889845,
@@ -39,7 +39,7 @@ GL_NODES_10 = jnp.array(
     ]
 )
 
-GL_WEIGHTS_10 = jnp.array(
+GL_WEIGHTS_10: Float[Array, "10"] = jnp.array(
     [
         0.0666713443086881,
         0.1494513491505806,

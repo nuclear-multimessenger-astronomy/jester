@@ -1,5 +1,6 @@
-# Example configuration for spectral decomposition EOS inference with chiEFT likelihood
-# This uses the spectral parametrization from Lindblom (2010) and Lackey & Wade (2018)
+# Example configuration for spectral decomposition EOS inference with radio likelihood
+# This uses the spectral parametrization from Lindblom (2010) and Lackey & Wade (2015)
+# The radio likelihood constrains EOS using radio timing observations of pulsars
 
 seed: 42
 

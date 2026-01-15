@@ -50,7 +50,7 @@ likelihoods:
 
 # Sampler configuration (choose one type)
 sampler:
-  type: "flowmc"  # or "nested_sampling", "smc"
+  type: "flowmc"  # or "blackjax-ns-aw", "smc-rw", "smc-nuts"
   # See sampler-specific fields below
 
 # Data paths (optional overrides)
@@ -128,7 +128,7 @@ Specifies prior distributions for parameters.
 
 List of observational constraints. Each likelihood has:
 
-- `type`: `"gw" | "gw_resampled" | "nicer" | "radio" | "chieft" | "rex" | "constraints" | "constraints_eos" | "constraints_tov" | "zero"` (**required**)
+- `type`: `"gw" | "gw_resampled" | "nicer" | "radio" | "chieft" | "rex" | "constraints" | "constraints_eos" | "constraints_tov" | "constraints_gamma" | "zero"` (**required**)
 
 - `enabled`: `bool` (optional)
   - Default: `True`

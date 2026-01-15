@@ -7,10 +7,12 @@ for dir in */; do
     dir=${dir%/}  # Remove trailing slash
 
     # Skip if in skip list
-    if [[ " ${SKIP_DIRS[@]} " =~ " ${dir} " ]]; then
-        echo "Skipping $dir"
-        continue
-    fi
+    for skip in "${SKIP_DIRS[@]}"; do
+        if [[ "$skip" == "$dir" ]]; then
+            echo "Skipping $dir"
+            continue 2
+        fi
+    done
 
     # Submit if submit.sh exists
     if [ -f "$dir/submit.sh" ]; then
