@@ -9,7 +9,7 @@ from jesterTOV import eos, utils
 class TestCrust:
     """Test Crust class functionality."""
 
-    def test_crust_list_available(self):
+    def test_crust_list_available(self) -> None:
         """Test listing available crusts."""
         available = eos.Crust.list_available()
         assert isinstance(available, list)
@@ -18,20 +18,20 @@ class TestCrust:
         # SLy should be available but may be updated by user
         assert len(available) >= 2
 
-    def test_crust_validate(self):
+    def test_crust_validate(self) -> None:
         """Test crust validation."""
         assert eos.Crust.validate("DH") is True
         assert eos.Crust.validate("BPS") is True
         assert eos.Crust.validate("invalid_crust") is False
 
-    def test_crust_get_crust_dir(self):
+    def test_crust_get_crust_dir(self) -> None:
         """Test getting crust directory path."""
         crust_dir = eos.Crust.get_crust_dir()
         assert os.path.exists(crust_dir)
         assert os.path.isdir(crust_dir)
         assert crust_dir == eos.CRUST_DIR
 
-    def test_crust_initialization(self):
+    def test_crust_initialization(self) -> None:
         """Test basic crust initialization."""
         crust = eos.Crust("DH")
         assert len(crust) > 0
@@ -39,7 +39,7 @@ class TestCrust:
         assert jnp.all(crust.p > 0)
         assert jnp.all(crust.e > 0)
 
-    def test_crust_properties(self):
+    def test_crust_properties(self) -> None:
         """Test crust property access."""
         crust = eos.Crust("DH")
 
@@ -59,7 +59,7 @@ class TestCrust:
         # Test monotonicity
         assert jnp.all(jnp.diff(crust.n) > 0)  # Density should increase
 
-    def test_crust_density_masking(self):
+    def test_crust_density_masking(self) -> None:
         """Test density range masking."""
         crust_full = eos.Crust("DH")
         crust_masked = eos.Crust("DH", min_density=0.001, max_density=0.1)
@@ -75,7 +75,7 @@ class TestCrust:
         assert crust_masked.min_density >= 0.001
         assert crust_masked.max_density <= 0.1
 
-    def test_crust_zero_pressure_filtering(self):
+    def test_crust_zero_pressure_filtering(self) -> None:
         """Test zero pressure filtering."""
         crust = eos.Crust("DH", filter_zero_pressure=True)
         assert jnp.all(crust.p > 0)
@@ -85,7 +85,7 @@ class TestCrust:
         crust_unfiltered = eos.Crust("DH", filter_zero_pressure=False)
         assert len(crust_unfiltered) >= len(crust)
 
-    def test_crust_mu_lowest(self):
+    def test_crust_mu_lowest(self) -> None:
         """Test chemical potential calculation."""
         crust = eos.Crust("DH")
         expected_mu = (crust.e[0] + crust.p[0]) / crust.n[0]
@@ -94,7 +94,7 @@ class TestCrust:
         # Should be positive
         assert crust.mu_lowest > 0
 
-    def test_crust_cs2(self):
+    def test_crust_cs2(self) -> None:
         """Test speed of sound squared."""
         crust = eos.Crust("DH")
 
@@ -107,19 +107,7 @@ class TestCrust:
         # Should not exceed speed of light
         assert jnp.all(crust.cs2 <= 1.0)
 
-    def test_crust_cs2_caching(self):
-        """Test that cs2 is cached after first computation."""
-        crust = eos.Crust("DH")
-
-        # First access computes
-        cs2_first = crust.cs2
-
-        # Second access should return cached value
-        cs2_second = crust.cs2
-
-        assert jnp.array_equal(cs2_first, cs2_second)
-
-    def test_crust_get_data(self):
+    def test_crust_get_data(self) -> None:
         """Test get_data() convenience method."""
         crust = eos.Crust("DH")
         n, p, e = crust.get_data()
@@ -128,12 +116,12 @@ class TestCrust:
         assert jnp.array_equal(p, crust.p)
         assert jnp.array_equal(e, crust.e)
 
-    def test_crust_invalid_name(self):
+    def test_crust_invalid_name(self) -> None:
         """Test invalid crust name raises error."""
         with pytest.raises(ValueError, match="not found"):
             eos.Crust("invalid_crust")
 
-    def test_crust_with_npz_path(self):
+    def test_crust_with_npz_path(self) -> None:
         """Test loading with full .npz path."""
         crust_dir = eos.Crust.get_crust_dir()
         full_path = os.path.join(crust_dir, "DH.npz")
@@ -142,7 +130,7 @@ class TestCrust:
         assert len(crust) > 0
         assert jnp.all(crust.n > 0)
 
-    def test_crust_repr(self):
+    def test_crust_repr(self) -> None:
         """Test string representation."""
         crust = eos.Crust("DH")
         repr_str = repr(crust)
@@ -152,13 +140,13 @@ class TestCrust:
         assert "n_points" in repr_str
         assert "density_range" in repr_str
 
-    def test_crust_len(self):
+    def test_crust_len(self) -> None:
         """Test __len__ method."""
         crust = eos.Crust("DH")
         assert len(crust) == len(crust.n)
         assert isinstance(len(crust), int)
 
-    def test_crust_bps(self):
+    def test_crust_bps(self) -> None:
         """Test loading BPS crust specifically."""
         crust = eos.Crust("BPS")
 
@@ -167,7 +155,7 @@ class TestCrust:
         assert jnp.all(crust.p > 0)
         assert jnp.all(crust.e > 0)
 
-    def test_crust_empty_after_filtering(self):
+    def test_crust_empty_after_filtering(self) -> None:
         """Test that appropriate error is raised if filtering removes all points."""
         # Try to create a crust with impossible density range
         with pytest.raises(ValueError, match="No crust points remain"):

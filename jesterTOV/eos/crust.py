@@ -91,13 +91,13 @@ class Crust:
 
     Notes
     -----
-    Available built-in crust models can be found in the jesterTOV/crust/ directory.
+    Available built-in crust models can be found in the crust_files directory
+    (accessible via the CRUST_DIR constant or the get_crust_dir() class method).
     The class automatically handles:
 
     - Zero-pressure point filtering (avoids log(0) in calculations)
     - Density range masking (for crust-core matching)
     - Monotonicity validation
-    - Caching of derived quantities for performance
     """
 
     def __init__(
@@ -106,8 +106,8 @@ class Crust:
         min_density: float | None = None,
         max_density: float | None = None,
         filter_zero_pressure: bool = True,
-    ):
-        """
+    ) -> None:
+        r"""
         Initialize and load crust EOS data with optional preprocessing.
 
         The initialization process:
@@ -147,10 +147,6 @@ class Crust:
         self._n = n_filtered
         self._p = p_filtered
         self._e = e_filtered
-
-        # Cache for derived quantities (computed on first access)
-        self._mu_lowest_cached = None
-        self._cs2_cached = None
 
     @classmethod
     def list_available(cls) -> list[str]:
@@ -451,8 +447,11 @@ class Crust:
                 )
         else:
             # Name includes .npz extension - treat as file path
-            if os.path.exists(name):
-                return name
+            # Expand user/home directory and convert to absolute path
+            expanded_path = os.path.expanduser(name)
+            absolute_path = os.path.abspath(expanded_path)
+            if os.path.exists(absolute_path):
+                return absolute_path
             else:
                 raise ValueError(f"Crust file not found: {name}")
 

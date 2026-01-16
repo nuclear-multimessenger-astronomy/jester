@@ -626,6 +626,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
 
         return cs2
 
+    # TODO: change list to Array type hinting and internally usage
     def compute_proton_fraction(
         self, coefficient_sym: list, n: Array
     ) -> Float[Array, "n_points"]:
