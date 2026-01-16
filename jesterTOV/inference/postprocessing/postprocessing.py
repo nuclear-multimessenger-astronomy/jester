@@ -398,7 +398,7 @@ def make_mass_radius_plot(
             continue
         if any(l[i] < 0):
             continue
-        if any((m[i] > 1.0) * (r[i] > R_MAX)):
+        if any((m[i] > M_MIN) * (r[i] > R_MAX)):
             continue
 
         # This is a valid sample
@@ -536,10 +536,10 @@ def make_pressure_density_plot(
             bad_counter += 1
             continue
 
-        # Exclude samples with R > R_MAX for M > 1 M_sun
+        # Exclude samples with R > R_MAX for M > M_MIN
         # This can sometimes happen due to numerical issues in the TOV solver,
         # but we know physically this should not be possible for realistic neutron stars
-        if any((m[i] > 1.0) * (r[i] > R_MAX)):
+        if any((m[i] > M_MIN) * (r[i] > R_MAX)):
             bad_counter += 1
             continue
 
@@ -654,10 +654,10 @@ def make_cs2_plot(
             bad_counter += 1
             continue
 
-        # Exclude samples with R > R_MAX for M > 1 M_sun
+        # Exclude samples with R > R_MAX for M > M_MIN
         # This can sometimes happen due to numerical issues in the TOV solver,
         # but we know physically this should not be possible for realistic neutron stars
-        if any((m[i] > 1.0) * (r[i] > R_MAX)):
+        if any((m[i] > M_MIN) * (r[i] > R_MAX)):
             bad_counter += 1
             continue
 
