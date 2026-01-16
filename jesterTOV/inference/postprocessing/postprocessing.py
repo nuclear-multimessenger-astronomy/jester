@@ -108,8 +108,8 @@ figsize_horizontal = (8, 6)
 # Default plot bounding boxes
 # These are the default ranges for mass-radius plots
 M_MIN = 0.75  # Minimum mass [M_sun]
-M_MAX = 3.5   # Maximum mass [M_sun]
-R_MIN = 6.0   # Minimum radius [km]
+M_MAX = 3.5  # Maximum mass [M_sun]
+R_MIN = 6.0  # Minimum radius [km]
 R_MAX = 18.0  # Maximum radius [km]
 
 # Prior directory (for loading prior samples)
@@ -410,10 +410,14 @@ def make_mass_radius_plot(
     # Dynamically widen m_max if needed
     if max_mtov > m_max:
         m_max = max_mtov + 0.25
-        logger.info(f"Widening mass axis to {m_max:.2f} M_sun (max MTOV: {max_mtov:.2f})")
+        logger.info(
+            f"Widening mass axis to {m_max:.2f} M_sun (max MTOV: {max_mtov:.2f})"
+        )
 
     bad_counter = nb_samples - len(valid_indices)
-    logger.info(f"Plotting {len(valid_indices)} M-R curves (excluded {bad_counter} invalid samples)...")
+    logger.info(
+        f"Plotting {len(valid_indices)} M-R curves (excluded {bad_counter} invalid samples)..."
+    )
 
     # Second pass: plot only valid samples
     for i in valid_indices:
