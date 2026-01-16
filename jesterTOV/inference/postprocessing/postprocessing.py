@@ -105,6 +105,13 @@ ALPHA = 0.3
 figsize_vertical = (6, 8)
 figsize_horizontal = (8, 6)
 
+# Default plot bounding boxes
+# These are the default ranges for mass-radius plots
+M_MIN = 0.75  # Minimum mass [M_sun]
+M_MAX = 3.5   # Maximum mass [M_sun]
+R_MIN = 6.0   # Minimum radius [km]
+R_MAX = 18.0  # Maximum radius [km]
+
 # Prior directory (for loading prior samples)
 PRIOR_DIR = "./outdir/"
 
@@ -347,8 +354,8 @@ def make_mass_radius_plot(
     logger.info("Creating mass-radius plot...")
 
     plt.figure(figsize=(10, 8))
-    m_min, m_max = 0.75, 3.5
-    r_min, r_max = 6.0, 18.0
+    m_min, m_max = M_MIN, M_MAX
+    r_min, r_max = R_MIN, R_MAX
 
     # Plot prior first (background)
     if prior_data is not None:
@@ -382,22 +389,34 @@ def make_mass_radius_plot(
     cmap = DEFAULT_COLORMAP if use_crest_cmap else plt.get_cmap("viridis")
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
 
-    bad_counter = 0
-    logger.info(f"Plotting {len(prob)} M-R curves...")
+    # First pass: identify valid samples and find maximum MTOV
+    valid_indices = []
+    max_mtov = 0.0
     for i in range(len(prob)):
-        # Skip invalid samples
+        # Skip invalid samples (same checks as plotting loop)
         if any(np.isnan(m[i])) or any(np.isnan(r[i])) or any(np.isnan(l[i])):
-            bad_counter += 1
             continue
-
         if any(l[i] < 0):
-            bad_counter += 1
+            continue
+        if any((m[i] > 1.0) * (r[i] > R_MAX)):
             continue
 
-        if any((m[i] > 1.0) * (r[i] > 20.0)):
-            bad_counter += 1
-            continue
+        # This is a valid sample
+        valid_indices.append(i)
+        mtov = np.max(m[i])
+        if mtov > max_mtov:
+            max_mtov = mtov
 
+    # Dynamically widen m_max if needed
+    if max_mtov > m_max:
+        m_max = max_mtov + 0.25
+        logger.info(f"Widening mass axis to {m_max:.2f} M_sun (max MTOV: {max_mtov:.2f})")
+
+    bad_counter = nb_samples - len(valid_indices)
+    logger.info(f"Plotting {len(valid_indices)} M-R curves (excluded {bad_counter} invalid samples)...")
+
+    # Second pass: plot only valid samples
+    for i in valid_indices:
         # Get color based on probability
         normalized_value = norm(prob[i])
         color = cmap(normalized_value)
@@ -410,8 +429,6 @@ def make_mass_radius_plot(
             rasterized=True,
             zorder=1e10 + normalized_value,
         )
-
-    logger.info(f"Excluded {bad_counter} invalid samples")
 
     # Styling
     xlabel = r"$R$ [km]" if TEX_ENABLED else "R [km]"
@@ -519,7 +536,10 @@ def make_pressure_density_plot(
             bad_counter += 1
             continue
 
-        if any((m[i] > 1.0) * (r[i] > 20.0)):
+        # Exclude samples with R > R_MAX for M > 1 M_sun
+        # This can sometimes happen due to numerical issues in the TOV solver,
+        # but we know physically this should not be possible for realistic neutron stars
+        if any((m[i] > 1.0) * (r[i] > R_MAX)):
             bad_counter += 1
             continue
 
@@ -634,7 +654,10 @@ def make_cs2_plot(
             bad_counter += 1
             continue
 
-        if any((m[i] > 1.0) * (r[i] > 20.0)):
+        # Exclude samples with R > R_MAX for M > 1 M_sun
+        # This can sometimes happen due to numerical issues in the TOV solver,
+        # but we know physically this should not be possible for realistic neutron stars
+        if any((m[i] > 1.0) * (r[i] > R_MAX)):
             bad_counter += 1
             continue
 
