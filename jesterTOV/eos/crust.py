@@ -129,8 +129,8 @@ class Crust:
         filter_zero_pressure : bool, optional
             Remove zero/negative pressure points (default: True)
         """
-        self._name = name
-        self._file_path = self._resolve_file_path(name)
+        self._name: str = name
+        self._file_path: str = self._resolve_file_path(name)
 
         # Load raw data
         crust_data = jnp.load(self._file_path)
@@ -144,9 +144,9 @@ class Crust:
         )
 
         # Store filtered data
-        self._n = n_filtered
-        self._p = p_filtered
-        self._e = e_filtered
+        self._n: Float[Array, "n_points"] = n_filtered
+        self._p: Float[Array, "n_points"] = p_filtered
+        self._e: Float[Array, "n_points"] = e_filtered
 
     @classmethod
     def list_available(cls) -> list[str]:
@@ -508,17 +508,10 @@ class Crust:
         p_filtered = p[mask]
         e_filtered = e[mask]
 
-        # Check if we masked out all points, which might happen if we mess up units:
-        # Specifically, we check if the sum is zero (which means all False)
-        if jnp.sum(mask) == 0:
+        # Check if we masked out all points, which might happen if we mess up units
+        if n_filtered.size == 0:
             raise ValueError(
                 f"No crust points remain after filtering. Please check density units and range of the crust file: {self._file_path}"
-            )
-
-        # Validate filtered data
-        if len(n_filtered) == 0:
-            raise ValueError(
-                "No crust points remain after filtering. Check density range and zero-pressure settings."
             )
 
         # Check monotonicity

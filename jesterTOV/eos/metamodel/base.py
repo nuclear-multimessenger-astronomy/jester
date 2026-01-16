@@ -267,11 +267,11 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             max_density=max_n_crust_nsat * nsat,
             filter_zero_pressure=True,
         )
-        self.ns_crust = crust.n
-        self.ps_crust = crust.p
-        self.es_crust = crust.e
-        self.mu_lowest = crust.mu_lowest
-        self.cs2_crust = crust.cs2
+        self.ns_crust: Float[Array, "n_crust"] = crust.n
+        self.ps_crust: Float[Array, "n_crust"] = crust.p
+        self.es_crust: Float[Array, "n_crust"] = crust.e
+        self.mu_lowest: Float = crust.mu_lowest
+        self.cs2_crust: Float[Array, "n_crust"] = crust.cs2
 
         # Make sure the metamodel starts above the crust
         self.max_n_crust = self.ns_crust[-1]
