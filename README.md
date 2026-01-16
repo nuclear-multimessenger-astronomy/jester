@@ -12,11 +12,12 @@ Currently, `jester` supports the following EOS parametrizations:
 - **Metamodel**: Taylor expansion of the energy density.
 - **Metamodel+CSE**: Metamodel up to breakdown density (varied on-the-fly), and speed-of-sound extrapolation above the breakdown density parametrized by linear interpolation through a grid of speed of sound values.
 - **Metamodel+peakCSE**: Metamodel up to breakdown density (varied on-the-fly), and speed-of-sound extrapolation above the breakdown density parametrized to have a Gaussian peak.
+- **Spectral expansion**: 4-parameter spectral expansion from Lindblom 2010
 
 Moreover, the following samplers are supported:
 - **Sequential Monte Carlo** (Recommended): Implemented with [`blackjax`](https://github.com/blackjax-devs/blackjax)
-- **flowMC** ([GitHub](https://github.com/kazewong/flowMC)): Normalizing flow-enhanced MCMC sampling
 - **Nested sampling**: Implemented in `blackjax` in [this specific fork](https://github.com/handley-lab/blackjax)
+- **flowMC** ([GitHub](https://github.com/kazewong/flowMC)): Normalizing flow-enhanced MCMC sampling
 
 📚 **[Read the full documentation →](https://nuclear-multimessenger-astronomy.github.io/jester/)**
 
