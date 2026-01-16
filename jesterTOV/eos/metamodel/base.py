@@ -6,7 +6,7 @@ from jaxtyping import Array, Float, Int
 
 from jesterTOV import utils
 from jesterTOV.eos.base import Interpolate_EOS_model
-from jesterTOV.eos.crust import load_crust
+from jesterTOV.eos.crust import Crust
 from jesterTOV.logging_config import get_logger
 
 logger = get_logger("jester")
@@ -261,18 +261,17 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         )
 
         # Load and preprocess the crust
-        ns_crust, ps_crust, es_crust = load_crust(crust_name)
-        max_n_crust = max_n_crust_nsat * nsat
-        min_n_crust = min_n_crust_nsat * nsat
-        mask = (ns_crust <= max_n_crust) * (ns_crust >= min_n_crust)
-        self.ns_crust, self.ps_crust, self.es_crust = (
-            ns_crust[mask],
-            ps_crust[mask],
-            es_crust[mask],
+        crust = Crust(
+            crust_name,
+            min_density=min_n_crust_nsat * nsat,
+            max_density=max_n_crust_nsat * nsat,
+            filter_zero_pressure=True,
         )
-
-        self.mu_lowest = (es_crust[0] + ps_crust[0]) / ns_crust[0]
-        self.cs2_crust = jnp.gradient(self.ps_crust, self.es_crust)
+        self.ns_crust: Float[Array, "n_crust"] = crust.n
+        self.ps_crust: Float[Array, "n_crust"] = crust.p
+        self.es_crust: Float[Array, "n_crust"] = crust.e
+        self.mu_lowest: Float = crust.mu_lowest
+        self.cs2_crust: Float[Array, "n_crust"] = crust.cs2
 
         # Make sure the metamodel starts above the crust
         self.max_n_crust = self.ns_crust[-1]
@@ -627,6 +626,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
 
         return cs2
 
+    # TODO: change list to Array type hinting and internally usage
     def compute_proton_fraction(
         self, coefficient_sym: list, n: Array
     ) -> Float[Array, "n_points"]:

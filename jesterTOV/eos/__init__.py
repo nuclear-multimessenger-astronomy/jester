@@ -4,7 +4,7 @@ r"""Equation of state models and utilities for neutron star structure calculatio
 from jesterTOV.eos.base import Interpolate_EOS_model
 
 # Crust models
-from jesterTOV.eos.crust import load_crust, CRUST_DIR
+from jesterTOV.eos.crust import Crust, CRUST_DIR
 
 # Meta-model parametrizations
 from jesterTOV.eos.metamodel import (
@@ -29,7 +29,7 @@ __all__ = [
     # Base
     "Interpolate_EOS_model",
     # Crust
-    "load_crust",
+    "Crust",
     "CRUST_DIR",
     # Meta-model
     "MetaModel_EOS_model",

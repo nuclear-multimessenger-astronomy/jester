@@ -105,6 +105,13 @@ ALPHA = 0.3
 figsize_vertical = (6, 8)
 figsize_horizontal = (8, 6)
 
+# Default plot bounding boxes
+# These are the default ranges for mass-radius plots
+M_MIN = 0.75  # Minimum mass [M_sun]
+M_MAX = 3.5  # Maximum mass [M_sun]
+R_MIN = 6.0  # Minimum radius [km]
+R_MAX = 18.0  # Maximum radius [km]
+
 # Prior directory (for loading prior samples)
 PRIOR_DIR = "./outdir/"
 
@@ -241,7 +248,9 @@ def report_credible_interval(
     return low_err, med, high_err
 
 
-def make_cornerplot(data: Dict[str, Any], outdir: str, max_params: int = 10):
+def make_cornerplot(
+    data: Dict[str, Any], outdir: str, max_params: Optional[int] = None
+):
     """Create cornerplot for EOS parameters.
 
     Parameters
@@ -251,7 +260,7 @@ def make_cornerplot(data: Dict[str, Any], outdir: str, max_params: int = 10):
     outdir : str
         Output directory for saving the plot
     max_params : int, optional
-        Maximum number of parameters to include, by default 10
+        Maximum number of parameters to include. If None, includes all parameters.
     """
     logger.info("Creating cornerplot...")
 
@@ -271,20 +280,24 @@ def make_cornerplot(data: Dict[str, Any], outdir: str, max_params: int = 10):
                 base = key.split("_")[0]
                 sub = "_".join(key.split("_")[1:])
 
+                # Escape underscores in subscript to avoid double subscript errors
+                # e.g., "CSE_0_u" -> "CSE\_0\_u" for LaTeX
+                sub_escaped = sub.replace("_", r"\_")
+
                 # Greek letters
                 if base == "gamma":
-                    labels.append(f"$\\gamma_{{{sub}}}$")
+                    labels.append(f"$\\gamma_{{{sub_escaped}}}$")
                 elif base == "nbreak":
                     labels.append(r"$n_{\rm{break}}$")
                 else:
-                    labels.append(f"${base}_{{{sub}}}$")
+                    labels.append(f"${base}_{{{sub_escaped}}}$")
             else:
                 labels.append(f"${key}$")
         else:
             labels.append(key)
 
-    # Limit number of parameters
-    if len(samples_dict) > max_params:
+    # Limit number of parameters if specified
+    if max_params is not None and len(samples_dict) > max_params:
         logger.info(f"Limiting cornerplot to first {max_params} parameters")
         samples_dict = dict(list(samples_dict.items())[:max_params])
         labels = labels[:max_params]
@@ -292,6 +305,8 @@ def make_cornerplot(data: Dict[str, Any], outdir: str, max_params: int = 10):
     if len(samples_dict) == 0:
         logger.warning("No parameters found for cornerplot")
         return
+
+    logger.info(f"Creating cornerplot with {len(samples_dict)} parameters")
 
     # Convert to array
     samples = np.column_stack([samples_dict[key] for key in samples_dict.keys()])
@@ -312,8 +327,8 @@ def make_cornerplot(data: Dict[str, Any], outdir: str, max_params: int = 10):
 
     # Save figure
     save_name = os.path.join(outdir, "cornerplot.pdf")
-    plt.savefig(save_name, bbox_inches="tight")
-    plt.close()
+    fig.savefig(save_name, bbox_inches="tight")
+    plt.close(fig)
     logger.info(f"Cornerplot saved to {save_name}")
 
 
@@ -339,8 +354,8 @@ def make_mass_radius_plot(
     logger.info("Creating mass-radius plot...")
 
     plt.figure(figsize=(10, 8))
-    m_min, m_max = 0.75, 3.5
-    r_min, r_max = 6.0, 18.0
+    m_min, m_max = M_MIN, M_MAX
+    r_min, r_max = R_MIN, R_MAX
 
     # Plot prior first (background)
     if prior_data is not None:
@@ -374,22 +389,38 @@ def make_mass_radius_plot(
     cmap = DEFAULT_COLORMAP if use_crest_cmap else plt.get_cmap("viridis")
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
 
-    bad_counter = 0
-    logger.info(f"Plotting {len(prob)} M-R curves...")
+    # First pass: identify valid samples and find maximum MTOV
+    valid_indices = []
+    max_mtov = 0.0
     for i in range(len(prob)):
-        # Skip invalid samples
+        # Skip invalid samples (same checks as plotting loop)
         if any(np.isnan(m[i])) or any(np.isnan(r[i])) or any(np.isnan(l[i])):
-            bad_counter += 1
             continue
-
         if any(l[i] < 0):
-            bad_counter += 1
+            continue
+        if any((m[i] > M_MIN) * (r[i] > R_MAX)):
             continue
 
-        if any((m[i] > 1.0) * (r[i] > 20.0)):
-            bad_counter += 1
-            continue
+        # This is a valid sample
+        valid_indices.append(i)
+        mtov = np.max(m[i])
+        if mtov > max_mtov:
+            max_mtov = mtov
 
+    # Dynamically widen m_max if needed
+    if max_mtov > m_max:
+        m_max = max_mtov + 0.25
+        logger.info(
+            f"Widening mass axis to {m_max:.2f} M_sun (max MTOV: {max_mtov:.2f})"
+        )
+
+    bad_counter = nb_samples - len(valid_indices)
+    logger.info(
+        f"Plotting {len(valid_indices)} M-R curves (excluded {bad_counter} invalid samples)..."
+    )
+
+    # Second pass: plot only valid samples
+    for i in valid_indices:
         # Get color based on probability
         normalized_value = norm(prob[i])
         color = cmap(normalized_value)
@@ -402,8 +433,6 @@ def make_mass_radius_plot(
             rasterized=True,
             zorder=1e10 + normalized_value,
         )
-
-    logger.info(f"Excluded {bad_counter} invalid samples")
 
     # Styling
     xlabel = r"$R$ [km]" if TEX_ENABLED else "R [km]"
@@ -511,7 +540,10 @@ def make_pressure_density_plot(
             bad_counter += 1
             continue
 
-        if any((m[i] > 1.0) * (r[i] > 20.0)):
+        # Exclude samples with R > R_MAX for M > M_MIN
+        # This can sometimes happen due to numerical issues in the TOV solver,
+        # but we know physically this should not be possible for realistic neutron stars
+        if any((m[i] > M_MIN) * (r[i] > R_MAX)):
             bad_counter += 1
             continue
 
@@ -626,7 +658,10 @@ def make_cs2_plot(
             bad_counter += 1
             continue
 
-        if any((m[i] > 1.0) * (r[i] > 20.0)):
+        # Exclude samples with R > R_MAX for M > M_MIN
+        # This can sometimes happen due to numerical issues in the TOV solver,
+        # but we know physically this should not be possible for realistic neutron stars
+        if any((m[i] > M_MIN) * (r[i] > R_MAX)):
             bad_counter += 1
             continue
 
@@ -992,7 +1027,11 @@ def generate_all_plots(
 
     # Create plots based on flags (pass figures_dir instead of outdir)
     if make_cornerplot_flag:
-        make_cornerplot(data, figures_dir)
+        try:
+            make_cornerplot(data, figures_dir)
+        except Exception as e:
+            logger.error(f"Failed to create cornerplot: {e}")
+            logger.warning("Continuing with other plots...")
 
     if make_massradius_flag:
         make_mass_radius_plot(data, prior_data, figures_dir)

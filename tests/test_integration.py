@@ -250,7 +250,8 @@ class TestCrustIntegration:
     def test_crust_metamodel_connection(self):
         """Test smooth connection between crust and MetaModel."""
         # Load crust data
-        n_crust, p_crust, e_crust = eos.load_crust("DH")
+        crust = eos.Crust("DH")
+        n_crust, p_crust, e_crust = crust.n, crust.p, crust.e
 
         # Create MetaModel that should connect to crust
         model = eos.MetaModel_EOS_model(

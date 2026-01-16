@@ -66,6 +66,6 @@ sampler:
 # Postprocessing configuration
 postprocessing:
   enabled: true
-  make_cornerplot: true
+  make_cornerplot: false
   make_massradius: true
   make_pressuredensity: true
