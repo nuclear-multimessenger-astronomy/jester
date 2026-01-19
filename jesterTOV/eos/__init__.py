@@ -23,6 +23,8 @@ from jesterTOV.eos.families import (
     construct_family_nonGR,
     construct_family_ST,
     construct_family_ST_sol,
+    construct_family_ST_Greci,
+    construct_family_eibi,
 )
 
 __all__ = [
@@ -43,4 +45,6 @@ __all__ = [
     "construct_family_nonGR",
     "construct_family_ST",
     "construct_family_ST_sol",
+    "construct_family_ST_Greci",
+    "construct_family_eibi",
 ]
