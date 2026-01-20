@@ -664,6 +664,17 @@ class PostprocessingConfig(BaseModel):
         Generate contour plots (default: True)
     prior_dir : str | None
         Directory containing prior samples for comparison (default: None)
+    injection_eos_path : str | None
+        Path to NPZ file containing injection EOS data for plotting (default: None).
+        The NPZ file should contain arrays in geometric units:
+        - masses_EOS: Solar masses (M_sun)
+        - radii_EOS: kilometers (km)
+        - Lambda_EOS: dimensionless tidal deformability
+        - n: geometric units (m^-2)
+        - p: geometric units (m^-2)
+        - e: geometric units (m^-2)
+        - cs2: dimensionless
+        This matches LALSuite EOS format and JESTER HDF5 output. Missing keys handled gracefully.
     """
 
     enabled: bool = True
@@ -673,6 +684,7 @@ class PostprocessingConfig(BaseModel):
     make_histograms: bool = True
     make_contours: bool = True
     prior_dir: str | None = None
+    injection_eos_path: str | None = None
 
 
 class InferenceConfig(BaseModel):

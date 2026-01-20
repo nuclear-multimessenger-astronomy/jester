@@ -584,6 +584,7 @@ def main(config_path: str) -> None:
             make_massradius_flag=config.postprocessing.make_massradius,
             make_pressuredensity_flag=config.postprocessing.make_pressuredensity,
             make_histograms_flag=config.postprocessing.make_histograms,
+            injection_eos_path=config.postprocessing.injection_eos_path,
         )
         logger.info(f"\nPostprocessing complete! Plots saved to {outdir}")
 

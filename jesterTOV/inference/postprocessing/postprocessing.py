@@ -211,6 +211,100 @@ def load_prior_data(prior_dir: str = PRIOR_DIR) -> Optional[Dict[str, np.ndarray
         return None
 
 
+def load_injection_eos(
+    injection_path: Optional[str],
+) -> Optional[Dict[str, np.ndarray]]:
+    """Load injection EOS data from NPZ file.
+
+    Parameters
+    ----------
+    injection_path : str or None
+        Path to NPZ file containing injection EOS data
+
+    Returns
+    -------
+    dict or None
+        Dictionary containing injection EOS data arrays, or None if loading fails.
+        Expected keys: masses_EOS, radii_EOS, Lambda_EOS, n, p, e, cs2
+
+    Notes
+    -----
+    **Units:** The injection file should contain data in **geometric units**:
+    - masses_EOS: Solar masses (M_sun)
+    - radii_EOS: kilometers (km)
+    - Lambda_EOS: dimensionless tidal deformability
+    - n: geometric units (m^-2), will be converted to n_sat
+    - p: geometric units (m^-2), will be converted to MeV fm^-3
+    - e: geometric units (m^-2), will be converted to MeV fm^-3
+    - cs2: dimensionless (speed of sound squared)
+
+    This matches the format used by:
+    - LALSuite EOS tables (extracted with lalsimulation)
+    - JESTER HDF5 output files (results.h5)
+
+    Missing keys are handled gracefully. If the file doesn't exist or
+    can't be loaded, a warning is logged and None is returned. If the file loads
+    but is missing expected keys, those keys are omitted from the output.
+    """
+    if injection_path is None:
+        return None
+
+    try:
+        # Load NPZ file
+        data = np.load(injection_path)
+        logger.info(f"Loaded injection EOS from {injection_path}")
+        logger.info(f"Available keys: {list(data.keys())}")
+
+        # Expected keys that match jester output format
+        expected_keys = ["masses_EOS", "radii_EOS", "Lambda_EOS", "n", "p", "e", "cs2"]
+
+        # Build output dictionary with available keys
+        output = {}
+        missing_keys = []
+
+        for key in expected_keys:
+            if key in data:
+                # Handle both single curves and multiple samples
+                arr = data[key]
+                if arr.ndim == 1:
+                    # Single curve - wrap in extra dimension for consistency
+                    output[key] = arr[np.newaxis, :]
+                else:
+                    output[key] = arr
+            else:
+                missing_keys.append(key)
+
+        # Apply unit conversions for density, pressure, and energy (same as load_eos_data)
+        if "n" in output:
+            output["n"] = output["n"] / utils.fm_inv3_to_geometric / 0.16
+        if "p" in output:
+            output["p"] = output["p"] / utils.MeV_fm_inv3_to_geometric
+        if "e" in output:
+            output["e"] = output["e"] / utils.MeV_fm_inv3_to_geometric
+
+        if missing_keys:
+            logger.warning(
+                f"Injection EOS file missing some keys: {missing_keys}. "
+                f"Available keys: {list(output.keys())}"
+            )
+
+        if not output:
+            logger.error(
+                f"Injection EOS file contains none of the expected keys: {expected_keys}"
+            )
+            return None
+
+        logger.info(f"Loaded injection EOS with keys: {list(output.keys())}")
+        return output
+
+    except FileNotFoundError:
+        logger.warning(f"Injection EOS file not found: {injection_path}")
+        return None
+    except Exception as e:
+        logger.error(f"Failed to load injection EOS from {injection_path}: {e}")
+        return None
+
+
 def report_credible_interval(
     values: np.ndarray, hdi_prob: float = 0.90, verbose: bool = False
 ) -> tuple:
@@ -337,6 +431,7 @@ def make_mass_radius_plot(
     prior_data: Optional[Dict[str, Any]],
     outdir: str,
     use_crest_cmap: bool = True,
+    injection_data: Optional[Dict[str, Any]] = None,
 ):
     """Create mass-radius plot with posterior probability coloring.
 
@@ -350,6 +445,8 @@ def make_mass_radius_plot(
         Output directory
     use_crest_cmap : bool, optional
         Whether to use seaborn crest colormap, by default True
+    injection_data : dict or None, optional
+        Injection EOS data for plotting true values, by default None
     """
     logger.info("Creating mass-radius plot...")
 
@@ -434,6 +531,24 @@ def make_mass_radius_plot(
             zorder=1e10 + normalized_value,
         )
 
+    # Plot injection EOS if provided (on top of everything else)
+    if injection_data is not None:
+        if "masses_EOS" in injection_data and "radii_EOS" in injection_data:
+            m_inj = injection_data["masses_EOS"]
+            r_inj = injection_data["radii_EOS"]
+            logger.info(f"Plotting injection EOS with {len(m_inj)} curves")
+            for i in range(len(m_inj)):
+                plt.plot(
+                    r_inj[i],
+                    m_inj[i],
+                    color="red",
+                    alpha=0.8,
+                    linewidth=2.5,
+                    linestyle="--",
+                    zorder=1e11,  # Plot on top of everything
+                    label="Injection" if i == 0 else "",
+                )
+
     # Styling
     xlabel = r"$R$ [km]" if TEX_ENABLED else "R [km]"
     ylabel = r"$M$ [$M_{\odot}$]" if TEX_ENABLED else "M [M_sun]"
@@ -453,13 +568,19 @@ def make_mass_radius_plot(
     cbar.ax.tick_params(labelsize=0, length=0)
     cbar.ax.xaxis.set_label_position("top")
 
-    # Add legend for prior
-    if prior_data is not None:
+    # Add legend for prior and/or injection
+    if prior_data is not None or injection_data is not None:
         from matplotlib.lines import Line2D
 
-        legend_elements = [
-            Line2D([0], [0], color=COLORS_DICT["prior"], lw=2, alpha=0.7, label="Prior")
-        ]
+        legend_elements = []
+        if prior_data is not None:
+            legend_elements.append(
+                Line2D([0], [0], color=COLORS_DICT["prior"], lw=2, alpha=0.7, label="Prior")
+            )
+        if injection_data is not None and "masses_EOS" in injection_data:
+            legend_elements.append(
+                Line2D([0], [0], color="red", lw=2.5, linestyle="--", alpha=0.8, label="Injection")
+            )
         plt.legend(handles=legend_elements, loc="upper right")
 
     # Save figure
@@ -474,6 +595,7 @@ def make_pressure_density_plot(
     prior_data: Optional[Dict[str, Any]],
     outdir: str,
     use_crest_cmap: bool = True,
+    injection_data: Optional[Dict[str, Any]] = None,
 ):
     """Create equation of state plot (pressure vs density) with EOS color coding.
 
@@ -487,6 +609,8 @@ def make_pressure_density_plot(
         Output directory
     use_crest_cmap : bool, optional
         Whether to use seaborn crest colormap, by default True
+    injection_data : dict or None, optional
+        Injection EOS data for plotting true values, by default None
     """
     logger.info("Creating pressure-density plot...")
 
@@ -563,6 +687,25 @@ def make_pressure_density_plot(
 
     logger.info(f"Excluded {bad_counter} invalid samples")
 
+    # Plot injection EOS if provided (on top of everything else)
+    if injection_data is not None:
+        if "n" in injection_data and "p" in injection_data:
+            n_inj = injection_data["n"]
+            p_inj = injection_data["p"]
+            logger.info(f"Plotting injection EOS with {len(n_inj)} curves")
+            for i in range(len(n_inj)):
+                mask = (n_inj[i] > 0.5) * (n_inj[i] < 6.0)
+                plt.plot(
+                    n_inj[i][mask],
+                    p_inj[i][mask],
+                    color="red",
+                    alpha=0.8,
+                    linewidth=2.5,
+                    linestyle="--",
+                    zorder=1e11,  # Plot on top of everything
+                    label="Injection" if i == 0 else "",
+                )
+
     xlabel = r"$n$ [$n_{\rm{sat}}$]" if TEX_ENABLED else "n [n_sat]"
     ylabel = r"$p$ [MeV fm$^{-3}$]" if TEX_ENABLED else "p [MeV fm^-3]"
     plt.xlabel(xlabel)
@@ -570,13 +713,19 @@ def make_pressure_density_plot(
     plt.yscale("log")
     plt.xlim(0.5, 6.0)
 
-    # Add legend for prior
-    if prior_data is not None:
+    # Add legend for prior and/or injection
+    if prior_data is not None or injection_data is not None:
         from matplotlib.lines import Line2D
 
-        legend_elements = [
-            Line2D([0], [0], color=COLORS_DICT["prior"], lw=2, alpha=0.7, label="Prior")
-        ]
+        legend_elements = []
+        if prior_data is not None:
+            legend_elements.append(
+                Line2D([0], [0], color=COLORS_DICT["prior"], lw=2, alpha=0.7, label="Prior")
+            )
+        if injection_data is not None and "n" in injection_data:
+            legend_elements.append(
+                Line2D([0], [0], color="red", lw=2.5, linestyle="--", alpha=0.8, label="Injection")
+            )
         plt.legend(handles=legend_elements, loc="upper left")
 
     # Save figure
@@ -592,6 +741,7 @@ def make_cs2_plot(
     prior_data: Optional[Dict[str, Any]],
     outdir: str,
     use_crest_cmap: bool = True,
+    injection_data: Optional[Dict[str, Any]] = None,
 ):
     """Create plot of speed of sound squared vs density.
 
@@ -605,6 +755,8 @@ def make_cs2_plot(
         Output directory
     use_crest_cmap : bool, optional
         Whether to use seaborn crest colormap, by default True
+    injection_data : dict or None, optional
+        Injection EOS data for plotting true values, by default None
     """
     logger.info("Creating cs2-density plot...")
 
@@ -681,6 +833,25 @@ def make_cs2_plot(
 
     logger.info(f"Excluded {bad_counter} invalid samples")
 
+    # Plot injection EOS if provided (on top of everything else)
+    if injection_data is not None:
+        if "n" in injection_data and "cs2" in injection_data:
+            n_inj = injection_data["n"]
+            cs2_inj = injection_data["cs2"]
+            logger.info(f"Plotting injection EOS with {len(n_inj)} curves")
+            for i in range(len(n_inj)):
+                mask = (n_inj[i] > 0.5) * (n_inj[i] < 6.0)
+                plt.plot(
+                    n_inj[i][mask],
+                    cs2_inj[i][mask],
+                    color="red",
+                    alpha=0.8,
+                    linewidth=2.5,
+                    linestyle="--",
+                    zorder=1e11,  # Plot on top of everything
+                    label="Injection" if i == 0 else "",
+                )
+
     xlabel = r"$n$ [$n_{\rm{sat}}$]" if TEX_ENABLED else "n [n_sat]"
     ylabel = r"$c_s^2$" if TEX_ENABLED else "cs2"
     plt.xlabel(xlabel)
@@ -688,13 +859,19 @@ def make_cs2_plot(
     plt.xlim(0.5, 6.0)
     plt.ylim(0.0, 1.2)  # Speed of sound squared should be between 0 and 1 (c=1)
 
-    # Add legend for prior
-    if prior_data is not None:
+    # Add legend for prior and/or injection
+    if prior_data is not None or injection_data is not None:
         from matplotlib.lines import Line2D
 
-        legend_elements = [
-            Line2D([0], [0], color=COLORS_DICT["prior"], lw=2, alpha=0.7, label="Prior")
-        ]
+        legend_elements = []
+        if prior_data is not None:
+            legend_elements.append(
+                Line2D([0], [0], color=COLORS_DICT["prior"], lw=2, alpha=0.7, label="Prior")
+            )
+        if injection_data is not None and "cs2" in injection_data:
+            legend_elements.append(
+                Line2D([0], [0], color="red", lw=2.5, linestyle="--", alpha=0.8, label="Injection")
+            )
         plt.legend(handles=legend_elements, loc="upper left")
 
     # Save figure
@@ -983,6 +1160,7 @@ def generate_all_plots(
     make_pressuredensity_flag: bool = True,
     make_histograms_flag: bool = True,
     make_cs2_flag: bool = True,
+    injection_eos_path: Optional[str] = None,
 ):
     """Generate selected plots for the specified output directory.
 
@@ -1002,6 +1180,8 @@ def generate_all_plots(
         Whether to generate parameter histograms, by default True
     make_cs2_flag : bool, optional
         Whether to generate cs2-density plot, by default True
+    injection_eos_path : str, optional
+        Path to NPZ file containing injection EOS data, by default None
     """
     logger.info(f"Generating plots for directory: {outdir}")
 
@@ -1025,6 +1205,13 @@ def generate_all_plots(
         if prior_data is not None:
             logger.info("Prior data loaded successfully!")
 
+    # Load injection EOS data
+    injection_data = None
+    if injection_eos_path is not None:
+        injection_data = load_injection_eos(injection_eos_path)
+        if injection_data is not None:
+            logger.info("Injection EOS data loaded successfully!")
+
     # Create plots based on flags (pass figures_dir instead of outdir)
     if make_cornerplot_flag:
         try:
@@ -1034,16 +1221,16 @@ def generate_all_plots(
             logger.warning("Continuing with other plots...")
 
     if make_massradius_flag:
-        make_mass_radius_plot(data, prior_data, figures_dir)
+        make_mass_radius_plot(data, prior_data, figures_dir, injection_data=injection_data)
 
     if make_pressuredensity_flag:
-        make_pressure_density_plot(data, prior_data, figures_dir)
+        make_pressure_density_plot(data, prior_data, figures_dir, injection_data=injection_data)
 
     if make_histograms_flag:
         make_parameter_histograms(data, prior_data, figures_dir)
 
     if make_cs2_flag:
-        make_cs2_plot(data, prior_data, figures_dir)
+        make_cs2_plot(data, prior_data, figures_dir, injection_data=injection_data)
 
     # TODO: Decide whether to keep mass-radius and pressure-density contour plots
     # These are currently commented out pending decision on their utility
