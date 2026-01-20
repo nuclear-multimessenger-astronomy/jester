@@ -111,6 +111,9 @@ INJECTION_LINESTYLE = "--"
 INJECTION_LINEWIDTH = 2.5
 INJECTION_ALPHA = 0.8
 
+# Credible interval probability (used in histograms and contour plots)
+HDI_PROB = 0.90  # 90% highest density interval
+
 # Default plot bounding boxes
 # These are the default ranges for mass-radius plots
 M_MIN = 0.75  # Minimum mass [M_sun]
@@ -312,7 +315,7 @@ def load_injection_eos(
 
 
 def report_credible_interval(
-    values: np.ndarray, hdi_prob: float = 0.90, verbose: bool = False
+    values: np.ndarray, hdi_prob: float = HDI_PROB, verbose: bool = False
 ) -> tuple:
     """Calculate credible intervals for given values.
 
@@ -743,7 +746,7 @@ def make_pressure_density_plot(
     logger.info(f"Pressure-density plot saved to {save_name}")
 
 
-# TODO: Make hdi_prob a variable at the top of the script, fill histograms between the two edges and not fill outside of it, and put the hdi_prob in the title of the histogram)
+# TODO: Fill histograms between the credible interval edges and not fill outside of it
 def make_cs2_plot(
     data: Dict[str, Any],
     prior_data: Optional[Dict[str, Any]],
@@ -890,7 +893,7 @@ def make_cs2_plot(
     logger.info(f"cs2-density plot saved to {save_name}")
 
 
-# TODO: Make hdi_prob a variable at the top of the script, fill histograms between the two edges and not fill outside of it, and put the hdi_prob in the title of the histogram)
+# TODO: Fill histograms between the credible interval edges and not fill outside of it
 def make_parameter_histograms(
     data: Dict[str, Any],
     prior_data: Optional[Dict[str, Any]],
@@ -967,8 +970,8 @@ def make_parameter_histograms(
     for param_name, param_data in parameters.items():
         plt.figure(figsize=figsize_horizontal)
 
-        # Calculate 90% HDI using arviz
-        hdi = az.hdi(param_data["values"], hdi_prob=0.90)
+        # Calculate HDI using the global HDI_PROB constant
+        hdi = az.hdi(param_data["values"], hdi_prob=HDI_PROB)
         hdi_low, hdi_high = hdi
         median = np.median(param_data["values"])
 
@@ -1017,14 +1020,18 @@ def make_parameter_histograms(
         plt.ylim(bottom=0.0)
         plt.legend()
 
-        # Format title with subscript/superscript notation
+        # Format title using x-axis label + credible interval + credibility percentage
+        # Extract the parameter symbol from xlabel (e.g., "$M_{\rm{TOV}}$" from full label)
+        xlabel = param_data["xlabel"]
+        credibility_pct = int(HDI_PROB * 100)
+
         if TEX_ENABLED:
             plt.title(
-                f"{param_name}: ${median:.2f}_{{-{low_err:.2f}}}^{{+{high_err:.2f}}}$"
+                f"{xlabel}: ${median:.2f}_{{-{low_err:.2f}}}^{{+{high_err:.2f}}}$ ({credibility_pct}\\% credibility)"
             )
         else:
             plt.title(
-                f"{param_name}: {median:.2f}_{{{-low_err:.2f}}}^{{{+high_err:.2f}}}"
+                f"{xlabel}: {median:.2f} -{low_err:.2f} +{high_err:.2f} ({credibility_pct}% credibility)"
             )
 
         save_name = os.path.join(outdir, f"{param_name}_histogram.pdf")
@@ -1073,7 +1080,7 @@ def make_contour_radii_plot(
                 radii_at_mass.append(np.interp(mass_point, mass, radius))
             radii_at_mass = np.array(radii_at_mass)
 
-            low, med, high = report_credible_interval(radii_at_mass, hdi_prob=0.90)
+            low, med, high = report_credible_interval(radii_at_mass, hdi_prob=HDI_PROB)
             radii_low_prior[i] = med - low
             radii_high_prior[i] = med + high
 
@@ -1099,8 +1106,8 @@ def make_contour_radii_plot(
             radii_at_mass.append(np.interp(mass_point, mass, radius))
         radii_at_mass = np.array(radii_at_mass)
 
-        # Construct 95% credible interval
-        low, med, high = report_credible_interval(radii_at_mass, hdi_prob=0.90)
+        # Construct credible interval using global HDI_PROB
+        low, med, high = report_credible_interval(radii_at_mass, hdi_prob=HDI_PROB)
 
         radii_low[i] = med - low
         radii_high[i] = med + high
@@ -1165,8 +1172,8 @@ def make_contour_pressures_plot(
             press_at_dens.append(np.interp(dens, density, pressure))
         press_at_dens = np.array(press_at_dens)
 
-        # Construct 95% credible interval
-        low, med, high = report_credible_interval(press_at_dens, hdi_prob=0.95)
+        # Construct credible interval using global HDI_PROB
+        low, med, high = report_credible_interval(press_at_dens, hdi_prob=HDI_PROB)
 
         press_low[i] = med - low
         press_high[i] = med + high
