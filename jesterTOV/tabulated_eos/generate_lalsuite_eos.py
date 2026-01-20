@@ -205,13 +205,15 @@ def main():
 
     # List of EOSs to generate (common ones used in NS physics)
     eos_names = [
-        "SLY",        # SLY equation of state (widely used)
-        "MPA1",       # MPA1 equation of state
-        "H4",         # H4 equation of state
-        "MS1",        # MS1 equation of state
-        "SLY4",       # SLY4 variant
-        "WFF1",       # WFF1 equation of state
-        "ENG",        # ENG equation of state
+        "SLY",
+        "SLY230A",
+        "MPA1",
+        "H4",
+        "MS1",
+        "SLY4",
+        "WFF1",
+        "ENG",
+        "HQC18",
     ]
 
     # Show all available EOSs
