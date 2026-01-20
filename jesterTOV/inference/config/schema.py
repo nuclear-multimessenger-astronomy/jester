@@ -660,8 +660,8 @@ class PostprocessingConfig(BaseModel):
         Generate pressure-density plot (default: True)
     make_histograms : bool
         Generate parameter histograms (default: True)
-    make_contours : bool
-        Generate contour plots (default: True)
+    make_cs2 : bool
+        Generate cs2-density plot (default: True)
     prior_dir : str | None
         Directory containing prior samples for comparison (default: None)
     injection_eos_path : str | None
@@ -682,7 +682,7 @@ class PostprocessingConfig(BaseModel):
     make_massradius: bool = True
     make_pressuredensity: bool = True
     make_histograms: bool = True
-    make_contours: bool = True
+    make_cs2: bool = True
     prior_dir: str | None = None
     injection_eos_path: str | None = None
 

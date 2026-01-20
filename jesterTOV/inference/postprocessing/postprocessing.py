@@ -105,6 +105,12 @@ ALPHA = 0.3
 figsize_vertical = (6, 8)
 figsize_horizontal = (8, 6)
 
+# Injection EOS plotting style (consistent across all plots)
+INJECTION_COLOR = "black"
+INJECTION_LINESTYLE = "--"
+INJECTION_LINEWIDTH = 2.5
+INJECTION_ALPHA = 0.8
+
 # Default plot bounding boxes
 # These are the default ranges for mass-radius plots
 M_MIN = 0.75  # Minimum mass [M_sun]
@@ -541,10 +547,10 @@ def make_mass_radius_plot(
                 plt.plot(
                     r_inj[i],
                     m_inj[i],
-                    color="red",
-                    alpha=0.8,
-                    linewidth=2.5,
-                    linestyle="--",
+                    color=INJECTION_COLOR,
+                    alpha=INJECTION_ALPHA,
+                    linewidth=INJECTION_LINEWIDTH,
+                    linestyle=INJECTION_LINESTYLE,
                     zorder=1e11,  # Plot on top of everything
                     label="Injection" if i == 0 else "",
                 )
@@ -579,7 +585,8 @@ def make_mass_radius_plot(
             )
         if injection_data is not None and "masses_EOS" in injection_data:
             legend_elements.append(
-                Line2D([0], [0], color="red", lw=2.5, linestyle="--", alpha=0.8, label="Injection")
+                Line2D([0], [0], color=INJECTION_COLOR, lw=INJECTION_LINEWIDTH,
+                       linestyle=INJECTION_LINESTYLE, alpha=INJECTION_ALPHA, label="Injection")
             )
         plt.legend(handles=legend_elements, loc="upper right")
 
@@ -698,10 +705,10 @@ def make_pressure_density_plot(
                 plt.plot(
                     n_inj[i][mask],
                     p_inj[i][mask],
-                    color="red",
-                    alpha=0.8,
-                    linewidth=2.5,
-                    linestyle="--",
+                    color=INJECTION_COLOR,
+                    alpha=INJECTION_ALPHA,
+                    linewidth=INJECTION_LINEWIDTH,
+                    linestyle=INJECTION_LINESTYLE,
                     zorder=1e11,  # Plot on top of everything
                     label="Injection" if i == 0 else "",
                 )
@@ -724,7 +731,8 @@ def make_pressure_density_plot(
             )
         if injection_data is not None and "n" in injection_data:
             legend_elements.append(
-                Line2D([0], [0], color="red", lw=2.5, linestyle="--", alpha=0.8, label="Injection")
+                Line2D([0], [0], color=INJECTION_COLOR, lw=INJECTION_LINEWIDTH,
+                       linestyle=INJECTION_LINESTYLE, alpha=INJECTION_ALPHA, label="Injection")
             )
         plt.legend(handles=legend_elements, loc="upper left")
 
@@ -844,10 +852,10 @@ def make_cs2_plot(
                 plt.plot(
                     n_inj[i][mask],
                     cs2_inj[i][mask],
-                    color="red",
-                    alpha=0.8,
-                    linewidth=2.5,
-                    linestyle="--",
+                    color=INJECTION_COLOR,
+                    alpha=INJECTION_ALPHA,
+                    linewidth=INJECTION_LINEWIDTH,
+                    linestyle=INJECTION_LINESTYLE,
                     zorder=1e11,  # Plot on top of everything
                     label="Injection" if i == 0 else "",
                 )
@@ -870,7 +878,8 @@ def make_cs2_plot(
             )
         if injection_data is not None and "cs2" in injection_data:
             legend_elements.append(
-                Line2D([0], [0], color="red", lw=2.5, linestyle="--", alpha=0.8, label="Injection")
+                Line2D([0], [0], color=INJECTION_COLOR, lw=INJECTION_LINEWIDTH,
+                       linestyle=INJECTION_LINESTYLE, alpha=INJECTION_ALPHA, label="Injection")
             )
         plt.legend(handles=legend_elements, loc="upper left")
 
@@ -883,7 +892,10 @@ def make_cs2_plot(
 
 # TODO: Make hdi_prob a variable at the top of the script, fill histograms between the two edges and not fill outside of it, and put the hdi_prob in the title of the histogram)
 def make_parameter_histograms(
-    data: Dict[str, Any], prior_data: Optional[Dict[str, Any]], outdir: str
+    data: Dict[str, Any],
+    prior_data: Optional[Dict[str, Any]],
+    outdir: str,
+    injection_data: Optional[Dict[str, Any]] = None,
 ):
     """Create histograms for key EOS parameters.
 
@@ -895,6 +907,8 @@ def make_parameter_histograms(
         Prior EOS data for comparison
     outdir : str
         Output directory
+    injection_data : dict or None, optional
+        Injection EOS data for plotting true values, by default None
     """
     logger.info("Creating parameter histograms...")
 
@@ -919,6 +933,19 @@ def make_parameter_histograms(
         prior_params["p3nsat"] = np.array(
             [np.interp(3.0, dens, press) for dens, press in zip(n_prior, p_prior)]
         )
+
+    # Calculate injection parameters if available
+    injection_params = {}
+    if injection_data is not None:
+        if "masses_EOS" in injection_data and "radii_EOS" in injection_data:
+            m_inj, r_inj = injection_data["masses_EOS"], injection_data["radii_EOS"]
+            # Take first curve (or average if multiple curves)
+            injection_params["MTOV"] = np.max(m_inj[0])
+            injection_params["R14"] = np.interp(1.4, m_inj[0], r_inj[0])
+
+        if "n" in injection_data and "p" in injection_data:
+            n_inj, p_inj = injection_data["n"], injection_data["p"]
+            injection_params["p3nsat"] = np.interp(3.0, n_inj[0], p_inj[0])
 
     # Define parameters to plot (without fixed ranges)
     if TEX_ENABLED:
@@ -970,6 +997,19 @@ def make_parameter_histograms(
 
         plt.plot(x, y, color=COLORS_DICT["posterior"], lw=3.0, label="Posterior")
         plt.fill_between(x, y, alpha=0.3, color=COLORS_DICT["posterior"])
+
+        # Plot injection value if available
+        if injection_data is not None and param_name in injection_params:
+            inj_value = injection_params[param_name]
+            plt.axvline(
+                inj_value,
+                color=INJECTION_COLOR,
+                linestyle=INJECTION_LINESTYLE,
+                linewidth=INJECTION_LINEWIDTH,
+                alpha=INJECTION_ALPHA,
+                label="Injection",
+            )
+            logger.info(f"Injection {param_name}: {inj_value:.2f}")
 
         plt.xlabel(param_data["xlabel"])
         plt.ylabel("Density")
@@ -1227,7 +1267,7 @@ def generate_all_plots(
         make_pressure_density_plot(data, prior_data, figures_dir, injection_data=injection_data)
 
     if make_histograms_flag:
-        make_parameter_histograms(data, prior_data, figures_dir)
+        make_parameter_histograms(data, prior_data, figures_dir, injection_data=injection_data)
 
     if make_cs2_flag:
         make_cs2_plot(data, prior_data, figures_dir, injection_data=injection_data)
@@ -1241,14 +1281,72 @@ def generate_all_plots(
     logger.info(f"All plots generated and saved to {figures_dir}")
 
 
+def run_from_config(config_path: str):
+    """Run postprocessing from a YAML config file.
+
+    Parameters
+    ----------
+    config_path : str
+        Path to YAML configuration file
+    """
+    from jesterTOV.inference.config.parser import load_config
+
+    logger.info(f"Loading configuration from {config_path}")
+    config = load_config(config_path)
+
+    # Check if postprocessing is enabled
+    if not config.postprocessing.enabled:
+        logger.warning("Postprocessing is disabled in config. Set postprocessing.enabled: true to run.")
+        return
+
+    # Get output directory from sampler config
+    outdir = config.sampler.output_dir
+
+    logger.info("=" * 60)
+    logger.info("Running postprocessing from config...")
+    logger.info("=" * 60)
+    logger.info(f"Output directory: {outdir}")
+    logger.info(f"Prior directory: {config.postprocessing.prior_dir}")
+    logger.info(f"Injection EOS: {config.postprocessing.injection_eos_path}")
+    logger.info(f"Make cornerplot: {config.postprocessing.make_cornerplot}")
+    logger.info(f"Make mass-radius: {config.postprocessing.make_massradius}")
+    logger.info(f"Make pressure-density: {config.postprocessing.make_pressuredensity}")
+    logger.info(f"Make histograms: {config.postprocessing.make_histograms}")
+    logger.info(f"Make cs2: {config.postprocessing.make_cs2}")
+    logger.info("=" * 60)
+
+    # Run postprocessing with config settings
+    generate_all_plots(
+        outdir=outdir,
+        prior_dir=config.postprocessing.prior_dir,
+        make_cornerplot_flag=config.postprocessing.make_cornerplot,
+        make_massradius_flag=config.postprocessing.make_massradius,
+        make_pressuredensity_flag=config.postprocessing.make_pressuredensity,
+        make_histograms_flag=config.postprocessing.make_histograms,
+        make_cs2_flag=config.postprocessing.make_cs2,
+        injection_eos_path=config.postprocessing.injection_eos_path,
+    )
+
+    logger.info(f"\nPostprocessing complete! Plots saved to {os.path.join(outdir, 'figures')}")
+
+
 def main():
     """Main function to parse arguments and generate plots."""
+    # Check if first argument is a YAML config file
+    import sys
+    if len(sys.argv) == 2 and sys.argv[1].endswith('.yaml'):
+        run_from_config(sys.argv[1])
+        return
+
     parser = argparse.ArgumentParser(
         description="Generate EOS postprocessing plots",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Generate all plots
+  # Run from config file (recommended)
+  run_jester_postprocessing config.yaml
+
+  # Generate all plots using command-line arguments
   run_jester_postprocessing --outdir ./results --make-all
 
   # Generate only cornerplot and mass-radius plot
@@ -1256,6 +1354,9 @@ Examples:
 
   # Generate with prior comparison
   run_jester_postprocessing --outdir ./results --prior-dir ./prior --make-all
+
+  # Generate with injection EOS comparison
+  run_jester_postprocessing --outdir ./results --injection-eos ./injection.npz --make-all
         """,
     )
     parser.add_argument(
@@ -1298,6 +1399,12 @@ Examples:
     )
 
     # Additional options
+    parser.add_argument(
+        "--injection-eos",
+        type=str,
+        default=None,
+        help="Path to NPZ file containing injection EOS data",
+    )
     parser.add_argument(
         "--m-min", type=float, default=0.6, help="Minimum mass for contour plots"
     )
@@ -1345,6 +1452,7 @@ Examples:
         make_pressuredensity_flag=make_all or args.make_pressuredensity,
         make_histograms_flag=make_all or args.make_histograms,
         make_cs2_flag=make_all or args.make_cs2,
+        injection_eos_path=args.injection_eos,
     )
 
 
