@@ -584,12 +584,21 @@ def make_mass_radius_plot(
         legend_elements = []
         if prior_data is not None:
             legend_elements.append(
-                Line2D([0], [0], color=COLORS_DICT["prior"], lw=2, alpha=0.7, label="Prior")
+                Line2D(
+                    [0], [0], color=COLORS_DICT["prior"], lw=2, alpha=0.7, label="Prior"
+                )
             )
         if injection_data is not None and "masses_EOS" in injection_data:
             legend_elements.append(
-                Line2D([0], [0], color=INJECTION_COLOR, lw=INJECTION_LINEWIDTH,
-                       linestyle=INJECTION_LINESTYLE, alpha=INJECTION_ALPHA, label="Injection")
+                Line2D(
+                    [0],
+                    [0],
+                    color=INJECTION_COLOR,
+                    lw=INJECTION_LINEWIDTH,
+                    linestyle=INJECTION_LINESTYLE,
+                    alpha=INJECTION_ALPHA,
+                    label="Injection",
+                )
             )
         plt.legend(handles=legend_elements, loc="upper right")
 
@@ -730,12 +739,21 @@ def make_pressure_density_plot(
         legend_elements = []
         if prior_data is not None:
             legend_elements.append(
-                Line2D([0], [0], color=COLORS_DICT["prior"], lw=2, alpha=0.7, label="Prior")
+                Line2D(
+                    [0], [0], color=COLORS_DICT["prior"], lw=2, alpha=0.7, label="Prior"
+                )
             )
         if injection_data is not None and "n" in injection_data:
             legend_elements.append(
-                Line2D([0], [0], color=INJECTION_COLOR, lw=INJECTION_LINEWIDTH,
-                       linestyle=INJECTION_LINESTYLE, alpha=INJECTION_ALPHA, label="Injection")
+                Line2D(
+                    [0],
+                    [0],
+                    color=INJECTION_COLOR,
+                    lw=INJECTION_LINEWIDTH,
+                    linestyle=INJECTION_LINESTYLE,
+                    alpha=INJECTION_ALPHA,
+                    label="Injection",
+                )
             )
         plt.legend(handles=legend_elements, loc="upper left")
 
@@ -877,12 +895,21 @@ def make_cs2_plot(
         legend_elements = []
         if prior_data is not None:
             legend_elements.append(
-                Line2D([0], [0], color=COLORS_DICT["prior"], lw=2, alpha=0.7, label="Prior")
+                Line2D(
+                    [0], [0], color=COLORS_DICT["prior"], lw=2, alpha=0.7, label="Prior"
+                )
             )
         if injection_data is not None and "cs2" in injection_data:
             legend_elements.append(
-                Line2D([0], [0], color=INJECTION_COLOR, lw=INJECTION_LINEWIDTH,
-                       linestyle=INJECTION_LINESTYLE, alpha=INJECTION_ALPHA, label="Injection")
+                Line2D(
+                    [0],
+                    [0],
+                    color=INJECTION_COLOR,
+                    lw=INJECTION_LINEWIDTH,
+                    linestyle=INJECTION_LINESTYLE,
+                    alpha=INJECTION_ALPHA,
+                    label="Injection",
+                )
             )
         plt.legend(handles=legend_elements, loc="upper left")
 
@@ -1268,13 +1295,19 @@ def generate_all_plots(
             logger.warning("Continuing with other plots...")
 
     if make_massradius_flag:
-        make_mass_radius_plot(data, prior_data, figures_dir, injection_data=injection_data)
+        make_mass_radius_plot(
+            data, prior_data, figures_dir, injection_data=injection_data
+        )
 
     if make_pressuredensity_flag:
-        make_pressure_density_plot(data, prior_data, figures_dir, injection_data=injection_data)
+        make_pressure_density_plot(
+            data, prior_data, figures_dir, injection_data=injection_data
+        )
 
     if make_histograms_flag:
-        make_parameter_histograms(data, prior_data, figures_dir, injection_data=injection_data)
+        make_parameter_histograms(
+            data, prior_data, figures_dir, injection_data=injection_data
+        )
 
     if make_cs2_flag:
         make_cs2_plot(data, prior_data, figures_dir, injection_data=injection_data)
@@ -1303,7 +1336,9 @@ def run_from_config(config_path: str):
 
     # Check if postprocessing is enabled
     if not config.postprocessing.enabled:
-        logger.warning("Postprocessing is disabled in config. Set postprocessing.enabled: true to run.")
+        logger.warning(
+            "Postprocessing is disabled in config. Set postprocessing.enabled: true to run."
+        )
         return
 
     # Get output directory from sampler config
@@ -1334,14 +1369,17 @@ def run_from_config(config_path: str):
         injection_eos_path=config.postprocessing.injection_eos_path,
     )
 
-    logger.info(f"\nPostprocessing complete! Plots saved to {os.path.join(outdir, 'figures')}")
+    logger.info(
+        f"\nPostprocessing complete! Plots saved to {os.path.join(outdir, 'figures')}"
+    )
 
 
 def main():
     """Main function to parse arguments and generate plots."""
     # Check if first argument is a YAML config file
     import sys
-    if len(sys.argv) == 2 and sys.argv[1].endswith('.yaml'):
+
+    if len(sys.argv) == 2 and sys.argv[1].endswith(".yaml"):
         run_from_config(sys.argv[1])
         return
 

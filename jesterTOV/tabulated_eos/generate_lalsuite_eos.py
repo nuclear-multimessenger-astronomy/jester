@@ -19,12 +19,12 @@ Output format:
 """
 
 import numpy as np
-import os
 from pathlib import Path
 from bilby.gw.eos import TabularEOS, EOSFamily
 
 # Physical constants (from bilby)
 from bilby.core import utils
+
 C_SI = utils.speed_of_light  # m/s
 G_SI = utils.gravitational_constant  # m^3 kg^-1 s^-2
 MSUN_SI = utils.solar_mass  # kg
@@ -108,12 +108,12 @@ def generate_eos_file(eos_name: str, output_dir: str = None):
     """
     print(f"\n{'='*70}")
     print(f"Processing EOS: {eos_name}")
-    print('='*70)
+    print("=" * 70)
 
     # Load EOS
     print("Loading EOS from bilby...")
     tabular_eos, eos_family = get_bilby_eos(eos_name)
-    print(f"✓ EOS loaded successfully")
+    print("✓ EOS loaded successfully")
 
     # Extract EOS table data (all in geometric units)
     p_geom = tabular_eos.pressure  # m^-2
@@ -135,7 +135,7 @@ def generate_eos_file(eos_name: str, output_dir: str = None):
     radius_geom = eos_family.radius  # m (geometric)
     lambda_dimensionless = eos_family.tidal_deformability  # dimensionless
 
-    print(f"\nTOV solver results:")
+    print("\nTOV solver results:")
     print(f"  Number of M-R points: {len(mass_geom)}")
 
     # Convert mass and radius to standard units
@@ -144,7 +144,9 @@ def generate_eos_file(eos_name: str, output_dir: str = None):
 
     print(f"  Mass range: {masses_Msun.min():.3f} to {masses_Msun.max():.3f} M_sun")
     print(f"  Radius range: {radii_km.min():.3f} to {radii_km.max():.3f} km")
-    print(f"  Lambda range: {lambda_dimensionless.min():.1f} to {lambda_dimensionless.max():.1f}")
+    print(
+        f"  Lambda range: {lambda_dimensionless.min():.1f} to {lambda_dimensionless.max():.1f}"
+    )
     print(f"  Maximum mass: {eos_family.maximum_mass:.3f} M_sun")
 
     # Save to NPZ file
@@ -188,16 +190,17 @@ def generate_eos_file(eos_name: str, output_dir: str = None):
 def list_available_eos():
     """List all available LAL EOS names."""
     from bilby.gw.eos.eos import valid_eos_names
+
     return sorted(valid_eos_names)
 
 
 def main():
     """Generate NPZ files for a selection of commonly used EOSs."""
 
-    print("="*70)
+    print("=" * 70)
     print("LALSuite EOS to NPZ Converter")
     print("Generates injection-compatible NPZ files for JESTER")
-    print("="*70)
+    print("=" * 70)
 
     # Get output directory
     output_dir = Path(__file__).parent
@@ -234,9 +237,9 @@ def main():
             continue
 
     # Summary
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("SUMMARY")
-    print("="*70)
+    print("=" * 70)
     print(f"Successfully generated: {len(generated_files)} files")
     print(f"Failed: {len(failed_eos)} EOSs")
 
@@ -250,16 +253,18 @@ def main():
         for name in failed_eos:
             print(f"  - {name}")
 
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("To use these files in JESTER, add to your config.yaml:")
-    print("="*70)
-    print("""
+    print("=" * 70)
+    print(
+        """
 postprocessing:
   enabled: true
   make_massradius: true
   make_pressuredensity: true
   injection_eos_path: "jesterTOV/tabulated_eos/SLY.npz"
-    """)
+    """
+    )
 
 
 if __name__ == "__main__":
