@@ -1115,23 +1115,36 @@ def make_parameter_histograms(
     """
     logger.info("Creating parameter histograms...")
 
-    m, r = data["masses"], data["radii"]
+    m, r, l = data["masses"], data["radii"], data["lambdas"]
     n, p = data["densities"], data["pressures"]
 
     # Calculate derived parameters
     MTOV_list = np.array([np.max(mass) for mass in m])
     R14_list = np.array([np.interp(1.4, mass, radius) for mass, radius in zip(m, r)])
+    Lambda14_list = np.array(
+        [np.interp(1.4, mass, lambda_arr) for mass, lambda_arr in zip(m, l)]
+    )
     p3nsat_list = np.array([np.interp(3.0, dens, press) for dens, press in zip(n, p)])
 
     # Calculate prior parameters if available
     prior_params = {}
     if prior_data is not None:
-        m_prior, r_prior = prior_data["masses"], prior_data["radii"]
+        m_prior, r_prior, l_prior = (
+            prior_data["masses"],
+            prior_data["radii"],
+            prior_data["lambdas"],
+        )
         n_prior, p_prior = prior_data["densities"], prior_data["pressures"]
 
         prior_params["MTOV"] = np.array([np.max(mass) for mass in m_prior])
         prior_params["R14"] = np.array(
             [np.interp(1.4, mass, radius) for mass, radius in zip(m_prior, r_prior)]
+        )
+        prior_params["Lambda14"] = np.array(
+            [
+                np.interp(1.4, mass, lambda_arr)
+                for mass, lambda_arr in zip(m_prior, l_prior)
+            ]
         )
         prior_params["p3nsat"] = np.array(
             [np.interp(3.0, dens, press) for dens, press in zip(n_prior, p_prior)]
@@ -1146,6 +1159,10 @@ def make_parameter_histograms(
             injection_params["MTOV"] = np.max(m_inj[0])
             injection_params["R14"] = np.interp(1.4, m_inj[0], r_inj[0])
 
+        if "masses_EOS" in injection_data and "Lambda_EOS" in injection_data:
+            m_inj, l_inj = injection_data["masses_EOS"], injection_data["Lambda_EOS"]
+            injection_params["Lambda14"] = np.interp(1.4, m_inj[0], l_inj[0])
+
         if "n" in injection_data and "p" in injection_data:
             n_inj, p_inj = injection_data["n"], injection_data["p"]
             injection_params["p3nsat"] = np.interp(3.0, n_inj[0], p_inj[0])
@@ -1155,6 +1172,7 @@ def make_parameter_histograms(
         parameters = {
             "MTOV": {"values": MTOV_list, "xlabel": r"$M_{\rm{TOV}}$ [$M_{\odot}$]"},
             "R14": {"values": R14_list, "xlabel": r"$R_{1.4}$ [km]"},
+            "Lambda14": {"values": Lambda14_list, "xlabel": r"$\Lambda_{1.4}$"},
             "p3nsat": {
                 "values": p3nsat_list,
                 "xlabel": r"$p(3n_{\rm{sat}})$ [MeV fm$^{-3}$]",
@@ -1164,6 +1182,7 @@ def make_parameter_histograms(
         parameters = {
             "MTOV": {"values": MTOV_list, "xlabel": "M_TOV [M_sun]"},
             "R14": {"values": R14_list, "xlabel": "R_1.4 [km]"},
+            "Lambda14": {"values": Lambda14_list, "xlabel": "Lambda_1.4"},
             "p3nsat": {"values": p3nsat_list, "xlabel": "p(3n_sat) [MeV fm^-3]"},
         }
 
