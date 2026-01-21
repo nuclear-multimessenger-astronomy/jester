@@ -609,6 +609,179 @@ def make_mass_radius_plot(
     logger.info(f"Mass-radius plot saved to {save_name}")
 
 
+def make_mass_lambda_plot(
+    data: Dict[str, Any],
+    prior_data: Optional[Dict[str, Any]],
+    outdir: str,
+    use_crest_cmap: bool = True,
+    injection_data: Optional[Dict[str, Any]] = None,
+):
+    """Create mass-Lambda plot with posterior probability coloring.
+
+    Parameters
+    ----------
+    data : dict
+        EOS data dictionary
+    prior_data : dict or None
+        Prior EOS data for comparison
+    outdir : str
+        Output directory
+    use_crest_cmap : bool, optional
+        Whether to use seaborn crest colormap, by default True
+    injection_data : dict or None, optional
+        Injection EOS data for plotting true values, by default None
+    """
+    logger.info("Creating mass-Lambda plot...")
+
+    plt.figure(figsize=(10, 8))
+    m_min, m_max = M_MIN, M_MAX
+
+    # Plot prior first (background)
+    if prior_data is not None:
+        m_prior, l_prior = prior_data["masses"], prior_data["lambdas"]
+        for i in range(len(m_prior)):
+            plt.plot(
+                m_prior[i],
+                l_prior[i],
+                color=COLORS_DICT["prior"],
+                alpha=0.1,
+                rasterized=True,
+                zorder=1,
+            )
+
+    # Plot posterior with probability coloring
+    m, r, l = data["masses"], data["radii"], data["lambdas"]
+    log_prob = data["log_prob"]
+    nb_samples = np.shape(m)[0]
+    logger.info(f"Number of samples: {nb_samples}")
+
+    # Verify log_prob matches EOS sample count
+    if len(log_prob) != nb_samples:
+        raise ValueError(
+            f"Mismatch between log_prob ({len(log_prob)}) and EOS samples ({nb_samples}). "
+            "This indicates a bug in the EOS sample generation code."
+        )
+
+    # Normalize probabilities for coloring
+    prob = np.exp(log_prob - np.max(log_prob))  # Normalize to avoid overflow
+    norm = Normalize(vmin=np.min(prob), vmax=np.max(prob))
+    cmap = DEFAULT_COLORMAP if use_crest_cmap else plt.get_cmap("viridis")
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+
+    # First pass: identify valid samples and find maximum MTOV
+    valid_indices = []
+    max_mtov = 0.0
+    for i in range(len(prob)):
+        # Skip invalid samples (same checks as plotting loop)
+        if any(np.isnan(m[i])) or any(np.isnan(r[i])) or any(np.isnan(l[i])):
+            continue
+        if any(l[i] < 0):
+            continue
+        if any((m[i] > M_MIN) * (r[i] > R_MAX)):
+            continue
+
+        # This is a valid sample
+        valid_indices.append(i)
+        mtov = np.max(m[i])
+        if mtov > max_mtov:
+            max_mtov = mtov
+
+    # Dynamically widen m_max if needed
+    if max_mtov > m_max:
+        m_max = max_mtov + 0.25
+        logger.info(
+            f"Widening mass axis to {m_max:.2f} M_sun (max MTOV: {max_mtov:.2f})"
+        )
+
+    bad_counter = nb_samples - len(valid_indices)
+    logger.info(
+        f"Plotting {len(valid_indices)} M-Lambda curves (excluded {bad_counter} invalid samples)..."
+    )
+
+    # Second pass: plot only valid samples
+    for i in valid_indices:
+        # Get color based on probability
+        normalized_value = norm(prob[i])
+        color = cmap(normalized_value)
+
+        plt.plot(
+            m[i],
+            l[i],
+            color=color,
+            alpha=1.0,
+            rasterized=True,
+            zorder=1e10 + normalized_value,
+        )
+
+    # Plot injection EOS if provided (on top of everything else)
+    if injection_data is not None:
+        if "masses_EOS" in injection_data and "Lambda_EOS" in injection_data:
+            m_inj = injection_data["masses_EOS"]
+            l_inj = injection_data["Lambda_EOS"]
+            logger.info(f"Plotting injection EOS with {len(m_inj)} curves")
+            for i in range(len(m_inj)):
+                plt.plot(
+                    m_inj[i],
+                    l_inj[i],
+                    color=INJECTION_COLOR,
+                    alpha=INJECTION_ALPHA,
+                    linewidth=INJECTION_LINEWIDTH,
+                    linestyle=INJECTION_LINESTYLE,
+                    zorder=1e11,  # Plot on top of everything
+                    label="Injection" if i == 0 else "",
+                )
+
+    # Styling
+    xlabel = r"$M$ [$M_{\odot}$]" if TEX_ENABLED else "M [M_sun]"
+    ylabel = r"$\Lambda$" if TEX_ENABLED else "Lambda"
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.xlim(m_min, m_max)
+    plt.yscale("log")
+
+    # Add colorbar
+    fig = plt.gcf()
+    sm.set_array([])
+    cbar_ax = fig.add_axes((0.15, 0.94, 0.7, 0.03))  # tuple for type checker
+    cbar = plt.colorbar(sm, cax=cbar_ax, orientation="horizontal")
+    cbar.set_label("Normalized posterior probability", fontsize=16)
+    cbar.set_ticks([])
+    cbar.ax.xaxis.labelpad = 5
+    cbar.ax.tick_params(labelsize=0, length=0)
+    cbar.ax.xaxis.set_label_position("top")
+
+    # Add legend for prior and/or injection
+    if prior_data is not None or injection_data is not None:
+        from matplotlib.lines import Line2D
+
+        legend_elements = []
+        if prior_data is not None:
+            legend_elements.append(
+                Line2D(
+                    [0], [0], color=COLORS_DICT["prior"], lw=2, alpha=0.7, label="Prior"
+                )
+            )
+        if injection_data is not None and "masses_EOS" in injection_data:
+            legend_elements.append(
+                Line2D(
+                    [0],
+                    [0],
+                    color=INJECTION_COLOR,
+                    lw=INJECTION_LINEWIDTH,
+                    linestyle=INJECTION_LINESTYLE,
+                    alpha=INJECTION_ALPHA,
+                    label="Injection",
+                )
+            )
+        plt.legend(handles=legend_elements, loc="upper right")
+
+    # Save figure
+    save_name = os.path.join(outdir, "mass_lambda_plot.pdf")
+    plt.savefig(save_name, bbox_inches="tight")
+    plt.close()
+    logger.info(f"Mass-Lambda plot saved to {save_name}")
+
+
 def make_pressure_density_plot(
     data: Dict[str, Any],
     prior_data: Optional[Dict[str, Any]],
@@ -1231,6 +1404,7 @@ def generate_all_plots(
     prior_dir: Optional[str] = None,
     make_cornerplot_flag: bool = True,
     make_massradius_flag: bool = True,
+    make_masslambda_flag: bool = True,
     make_pressuredensity_flag: bool = True,
     make_histograms_flag: bool = True,
     make_cs2_flag: bool = True,
@@ -1248,6 +1422,8 @@ def generate_all_plots(
         Whether to generate cornerplot, by default True
     make_massradius_flag : bool, optional
         Whether to generate mass-radius plot, by default True
+    make_masslambda_flag : bool, optional
+        Whether to generate mass-Lambda plot, by default True
     make_pressuredensity_flag : bool, optional
         Whether to generate pressure-density plot, by default True
     make_histograms_flag : bool, optional
@@ -1296,6 +1472,11 @@ def generate_all_plots(
 
     if make_massradius_flag:
         make_mass_radius_plot(
+            data, prior_data, figures_dir, injection_data=injection_data
+        )
+
+    if make_masslambda_flag:
+        make_mass_lambda_plot(
             data, prior_data, figures_dir, injection_data=injection_data
         )
 
@@ -1352,6 +1533,7 @@ def run_from_config(config_path: str):
     logger.info(f"Injection EOS: {config.postprocessing.injection_eos_path}")
     logger.info(f"Make cornerplot: {config.postprocessing.make_cornerplot}")
     logger.info(f"Make mass-radius: {config.postprocessing.make_massradius}")
+    logger.info(f"Make mass-lambda: {config.postprocessing.make_masslambda}")
     logger.info(f"Make pressure-density: {config.postprocessing.make_pressuredensity}")
     logger.info(f"Make histograms: {config.postprocessing.make_histograms}")
     logger.info(f"Make cs2: {config.postprocessing.make_cs2}")
@@ -1363,6 +1545,7 @@ def run_from_config(config_path: str):
         prior_dir=config.postprocessing.prior_dir,
         make_cornerplot_flag=config.postprocessing.make_cornerplot,
         make_massradius_flag=config.postprocessing.make_massradius,
+        make_masslambda_flag=config.postprocessing.make_masslambda,
         make_pressuredensity_flag=config.postprocessing.make_pressuredensity,
         make_histograms_flag=config.postprocessing.make_histograms,
         make_cs2_flag=config.postprocessing.make_cs2,
@@ -1432,6 +1615,9 @@ Examples:
         "--make-massradius", action="store_true", help="Generate mass-radius plot"
     )
     parser.add_argument(
+        "--make-masslambda", action="store_true", help="Generate mass-Lambda plot"
+    )
+    parser.add_argument(
         "--make-pressuredensity",
         action="store_true",
         help="Generate pressure-density plot",
@@ -1482,6 +1668,7 @@ Examples:
         [
             args.make_cornerplot,
             args.make_massradius,
+            args.make_masslambda,
             args.make_pressuredensity,
             args.make_histograms,
             args.make_cs2,
@@ -1494,6 +1681,7 @@ Examples:
         prior_dir=args.prior_dir,
         make_cornerplot_flag=make_all or args.make_cornerplot,
         make_massradius_flag=make_all or args.make_massradius,
+        make_masslambda_flag=make_all or args.make_masslambda,
         make_pressuredensity_flag=make_all or args.make_pressuredensity,
         make_histograms_flag=make_all or args.make_histograms,
         make_cs2_flag=make_all or args.make_cs2,

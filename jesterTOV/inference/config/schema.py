@@ -656,6 +656,8 @@ class PostprocessingConfig(BaseModel):
         Generate cornerplot of EOS parameters (default: True)
     make_massradius : bool
         Generate mass-radius plot (default: True)
+    make_masslambda : bool
+        Generate mass-Lambda plot (default: True)
     make_pressuredensity : bool
         Generate pressure-density plot (default: True)
     make_histograms : bool
@@ -680,6 +682,7 @@ class PostprocessingConfig(BaseModel):
     enabled: bool = True
     make_cornerplot: bool = True
     make_massradius: bool = True
+    make_masslambda: bool = True
     make_pressuredensity: bool = True
     make_histograms: bool = True
     make_cs2: bool = True
