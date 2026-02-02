@@ -265,7 +265,15 @@ def load_injection_eos(
             logger.info(f"Available keys: {list(data.keys())}")
 
             # Expected keys that match jester output format
-            expected_keys = ["masses_EOS", "radii_EOS", "Lambda_EOS", "n", "p", "e", "cs2"]
+            expected_keys = [
+                "masses_EOS",
+                "radii_EOS",
+                "Lambda_EOS",
+                "n",
+                "p",
+                "e",
+                "cs2",
+            ]
 
             # Build output dictionary with available keys
             output = {}
