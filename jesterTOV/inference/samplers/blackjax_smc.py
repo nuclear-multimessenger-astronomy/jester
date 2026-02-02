@@ -291,22 +291,22 @@ class BlackJAXSMCSampler(JesterSampler):
 
         # Progress callback for live updates during sampling
         def progress_callback(
-            step: int, lmbda: float, ess: float, acceptance: float
+            step: int, tempering_param: float, ess: float, acceptance: float
         ) -> None:
             """Print progress update during sampling (called via io_callback)."""
             # Create progress bar
             bar_length = 30
-            filled = int(lmbda * bar_length)
+            filled = int(tempering_param * bar_length)
             bar = "█" * filled + "░" * (bar_length - filled)
 
             # Print update
             logger.info(
-                f"Step {step:4d} | λ={lmbda:.6f} | ESS={ess*100:5.1f}% | "
+                f"Step {step:4d} | λ={tempering_param:.6f} | ESS={ess*100:5.1f}% | "
                 f"Accept={acceptance*100:5.1f}% | {bar}"
             )
 
         # Define loop conditions with proper type hints
-        # Carry is: (StateWithParameterOverride, key, step_count, lmbda_history, ess_history, acceptance_history, log_evidence)
+        # Carry is: (StateWithParameterOverride, key, step_count, tempering_param_history, ess_history, acceptance_history, log_evidence)
         def cond_fn(
             carry: tuple[
                 StateWithParameterOverride,
@@ -321,7 +321,7 @@ class BlackJAXSMCSampler(JesterSampler):
             state, _, _, _, _, _, _ = carry
             # Cast to proper type for type checker (runtime type is correct)
             sampler_state = cast(TemperedSMCState, state.sampler_state)
-            return sampler_state.lmbda < 1
+            return sampler_state.tempering_param < 1
 
         def body_fn(
             carry: tuple[
@@ -339,7 +339,7 @@ class BlackJAXSMCSampler(JesterSampler):
                 state,
                 key,
                 step_count,
-                lmbda_history,
+                tempering_param_history,
                 ess_history,
                 acceptance_history,
                 log_evidence,
@@ -365,7 +365,9 @@ class BlackJAXSMCSampler(JesterSampler):
             acceptance_rate = info.update_info.acceptance_rate.mean()  # type: ignore[attr-defined]
 
             # Update histories
-            lmbda_history = lmbda_history.at[step_count].set(sampler_state.lmbda)
+            tempering_param_history = tempering_param_history.at[step_count].set(
+                sampler_state.tempering_param
+            )
             ess_history = ess_history.at[step_count].set(ess_value)
             acceptance_history = acceptance_history.at[step_count].set(acceptance_rate)
 
@@ -374,7 +376,7 @@ class BlackJAXSMCSampler(JesterSampler):
                 progress_callback,
                 None,  # No return value
                 step_count,
-                sampler_state.lmbda,
+                sampler_state.tempering_param,
                 ess_value,
                 acceptance_rate,
             )
@@ -383,7 +385,7 @@ class BlackJAXSMCSampler(JesterSampler):
                 state,
                 key,
                 step_count + 1,
-                lmbda_history,
+                tempering_param_history,
                 ess_history,
                 acceptance_history,
                 log_evidence,
@@ -402,7 +404,7 @@ class BlackJAXSMCSampler(JesterSampler):
         logger.info("=" * 70)
 
         max_steps = 1000
-        lmbda_history = jnp.zeros(max_steps)
+        tempering_param_history = jnp.zeros(max_steps)
         ess_history = jnp.zeros(max_steps)
         acceptance_history = jnp.zeros(max_steps)
         log_evidence = 0.0  # Initialize log evidence accumulator
@@ -411,7 +413,7 @@ class BlackJAXSMCSampler(JesterSampler):
             state,
             key,
             0,
-            lmbda_history,
+            tempering_param_history,
             ess_history,
             acceptance_history,
             log_evidence,
@@ -424,7 +426,7 @@ class BlackJAXSMCSampler(JesterSampler):
             state,
             key,
             steps,
-            lmbda_history,
+            tempering_param_history,
             ess_history,
             acceptance_history,
             log_evidence,
@@ -472,7 +474,7 @@ class BlackJAXSMCSampler(JesterSampler):
             "logZ_err": float(log_evidence_err),
             "sampling_time_seconds": end_time - start_time,
             "loop_time_seconds": loop_end_time - loop_start_time,
-            "lmbda_history": lmbda_history[:steps].tolist(),
+            "tempering_param_history": tempering_param_history[:steps].tolist(),
             "ess_history": ess_history[:steps].tolist(),
             "acceptance_history": acceptance_history[:steps].tolist(),
         }
@@ -504,7 +506,7 @@ class BlackJAXSMCSampler(JesterSampler):
             return
 
         # Extract histories from metadata
-        lmbda_history = self.metadata["lmbda_history"]
+        tempering_param_history = self.metadata["tempering_param_history"]
         ess_history = self.metadata["ess_history"]
         acceptance_history = self.metadata["acceptance_history"]
         n_steps = self.metadata["annealing_steps"]
@@ -519,7 +521,7 @@ class BlackJAXSMCSampler(JesterSampler):
         )
 
         # Plot 1: Lambda (temperature) progression
-        axes[0].plot(range(n_steps), lmbda_history, "b-o", linewidth=2)
+        axes[0].plot(range(n_steps), tempering_param_history, "b-o", linewidth=2)
         axes[0].set_ylabel(r"Temperature $\lambda$", fontsize=12)
         axes[0].grid(True, alpha=0.3)
         axes[0].set_ylim(-0.05, 1.05)

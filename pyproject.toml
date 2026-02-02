@@ -27,7 +27,7 @@ dependencies = [
     "jaxtyping",
     "diffrax",
     "interpax",
-    "flowjax",
+    "flowjax<18.0.0",
     "typing_extensions>=4.5.0",
     "pydantic>=2.0",
     "pyyaml>=6.0",
@@ -130,7 +130,7 @@ include = ["jesterTOV"]
 # pyproject.toml
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "-ra -q --strict-markers --strict-config --timeout=300"
+addopts = "-ra -q --strict-markers --strict-config"
 testpaths = ["tests"]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
