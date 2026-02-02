@@ -280,7 +280,7 @@ class BlackJAXSMCSampler(JesterSampler):
             mcmc_init_fn=mcmc_init_fn,
             resampling_fn=systematic,
             mcmc_parameter_update_fn=mcmc_parameter_update_fn,
-            initial_parameter_value=extend_params(init_params),
+            initial_parameter_value=extend_params(init_params),  # type: ignore[arg-type]
             target_ess=self.config.target_ess,
             num_mcmc_steps=self.config.n_mcmc_steps,
         )
@@ -321,7 +321,9 @@ class BlackJAXSMCSampler(JesterSampler):
             state, _, _, _, _, _, _ = carry
             # Cast to proper type for type checker (runtime type is correct)
             sampler_state = cast(TemperedSMCState, state.sampler_state)
-            return sampler_state.tempering_param < 1
+            # Type checker sees this as potentially returning Array, but at runtime
+            # tempering_param is a scalar float, so comparison returns bool
+            return sampler_state.tempering_param < 1  # type: ignore[return-value]
 
         def body_fn(
             carry: tuple[
@@ -771,7 +773,7 @@ class BlackJAXSMCRandomWalkSampler(BlackJAXSMCSampler):
             # Scale covariance by fixed sigma^2
             scaled_cov = cov * (config.random_walk_sigma**2)
 
-            return extend_params({"cov": scaled_cov})
+            return extend_params({"cov": scaled_cov})  # type: ignore[arg-type]
 
         # Wrap kernel to match expected signature
         def mcmc_step_fn(rng_key, state, logdensity_fn, **params):
@@ -927,7 +929,7 @@ class BlackJAXSMCNUTSSampler(BlackJAXSMCSampler):
             current_step_size["value"] = adapted_step_size  # type: ignore[assignment]
 
             return extend_params(
-                {
+                {  # type: ignore[arg-type]
                     "step_size": adapted_step_size,
                     "inverse_mass_matrix": adapted_inverse_mass_matrix,
                 }
