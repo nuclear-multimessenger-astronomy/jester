@@ -7,6 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 from jax.scipy.stats import gaussian_kde
 from jaxtyping import Array, Float
+from jax.scipy.special import logsumexp
 
 from jesterTOV.inference.base.likelihood import LikelihoodBase
 from jesterTOV.logging_config import get_logger
@@ -239,8 +240,8 @@ class NICERLikelihood(LikelihoodBase):
         )
 
         # Average over all samples for each group
-        logL_amsterdam = jnp.mean(amsterdam_logprobs)
-        logL_maryland = jnp.mean(maryland_logprobs)
+        logL_amsterdam = logsumexp(amsterdam_logprobs)
+        logL_maryland = logsumexp(maryland_logprobs)
 
         # Average the two groups (equal weights)
         log_likelihood = (logL_amsterdam + logL_maryland) / 2.0
