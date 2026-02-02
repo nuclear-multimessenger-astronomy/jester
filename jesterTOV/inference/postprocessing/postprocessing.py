@@ -223,7 +223,7 @@ def load_prior_data(prior_dir: str = PRIOR_DIR) -> Optional[Dict[str, np.ndarray
 def load_injection_eos(
     injection_path: Optional[str],
 ) -> Optional[Dict[str, np.ndarray]]:
-    """Load injection EOS data from NPZ file.
+    r"""Load injection EOS data from NPZ file.
 
     Parameters
     ----------
@@ -239,12 +239,12 @@ def load_injection_eos(
     Notes
     -----
     **Units:** The injection file should contain data in **geometric units**:
-    - masses_EOS: Solar masses (M_sun)
-    - radii_EOS: kilometers (km)
+    - masses_EOS: Solar masses :math:`M_{\odot}`
+    - radii_EOS: :math:`\mathrm{km}`
     - Lambda_EOS: dimensionless tidal deformability
-    - n: geometric units (m^-2), will be converted to n_sat
-    - p: geometric units (m^-2), will be converted to MeV fm^-3
-    - e: geometric units (m^-2), will be converted to MeV fm^-3
+    - n: geometric units :math:`m^{-2}`, will be converted to n_sat
+    - p: geometric units :math:`m^{-2}`, will be converted to :math:`\mathrm{MeV\ fm^{-3}}`
+    - e: geometric units :math:`m^{-2}`, will be converted to :math:`\mathrm{MeV\ fm^{-3}}`
     - cs2: dimensionless (speed of sound squared)
 
     This matches the format used by:
@@ -260,28 +260,28 @@ def load_injection_eos(
 
     try:
         # Load NPZ file
-        data = np.load(injection_path)
-        logger.info(f"Loaded injection EOS from {injection_path}")
-        logger.info(f"Available keys: {list(data.keys())}")
+        with np.load(injection_path) as data:
+            logger.info(f"Loaded injection EOS from {injection_path}")
+            logger.info(f"Available keys: {list(data.keys())}")
 
-        # Expected keys that match jester output format
-        expected_keys = ["masses_EOS", "radii_EOS", "Lambda_EOS", "n", "p", "e", "cs2"]
+            # Expected keys that match jester output format
+            expected_keys = ["masses_EOS", "radii_EOS", "Lambda_EOS", "n", "p", "e", "cs2"]
 
-        # Build output dictionary with available keys
-        output = {}
-        missing_keys = []
+            # Build output dictionary with available keys
+            output = {}
+            missing_keys = []
 
-        for key in expected_keys:
-            if key in data:
-                # Handle both single curves and multiple samples
-                arr = data[key]
-                if arr.ndim == 1:
-                    # Single curve - wrap in extra dimension for consistency
-                    output[key] = arr[np.newaxis, :]
+            for key in expected_keys:
+                if key in data:
+                    # Handle both single curves and multiple samples
+                    arr = data[key]
+                    if arr.ndim == 1:
+                        # Single curve - wrap in extra dimension for consistency
+                        output[key] = arr[np.newaxis, :]
+                    else:
+                        output[key] = arr
                 else:
-                    output[key] = arr
-            else:
-                missing_keys.append(key)
+                    missing_keys.append(key)
 
         # Apply unit conversions for density, pressure, and energy (same as load_eos_data)
         if "n" in output:
@@ -615,7 +615,7 @@ def make_mass_lambda_plot(
     outdir: str,
     use_crest_cmap: bool = True,
     injection_data: Optional[Dict[str, Any]] = None,
-):
+) -> None:
     """Create mass-Lambda plot with posterior probability coloring.
 
     Parameters
@@ -1521,7 +1521,7 @@ def generate_all_plots(
     logger.info(f"All plots generated and saved to {figures_dir}")
 
 
-def run_from_config(config_path: str):
+def run_from_config(config_path: str) -> None:
     """Run postprocessing from a YAML config file.
 
     Parameters

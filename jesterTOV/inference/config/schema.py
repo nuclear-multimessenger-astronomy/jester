@@ -646,7 +646,7 @@ SamplerConfig = Annotated[
 
 
 class PostprocessingConfig(BaseModel):
-    """Configuration for postprocessing plots.
+    r"""Configuration for postprocessing plots.
 
     Attributes
     ----------
@@ -669,12 +669,12 @@ class PostprocessingConfig(BaseModel):
     injection_eos_path : str | None
         Path to NPZ file containing injection EOS data for plotting (default: None).
         The NPZ file should contain arrays in geometric units:
-        - masses_EOS: Solar masses (M_sun)
-        - radii_EOS: kilometers (km)
+        - masses_EOS: Solar masses :math:`M_{\odot}`
+        - radii_EOS: :math:`\mathrm{km}`
         - Lambda_EOS: dimensionless tidal deformability
-        - n: geometric units (m^-2)
-        - p: geometric units (m^-2)
-        - e: geometric units (m^-2)
+        - n: geometric units :math:`m^{-2}`
+        - p: geometric units :math:`m^{-2}`
+        - e: geometric units :math:`m^{-2}`
         - cs2: dimensionless
         This matches LALSuite EOS format and JESTER HDF5 output. Missing keys handled gracefully.
     """

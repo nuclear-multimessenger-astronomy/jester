@@ -1,4 +1,4 @@
-"""
+r"""
 Using bilby functionalities, generate EOS files from lalsuite
 
 NOTE: This requires bilby and lalsuite dependency, and is not meant to be executed using the base installation. Can install them in the uv venv with:
@@ -9,16 +9,17 @@ uv pip install -e ".[dev]"
 This script generates NPZ files containing EOS data in geometric units, compatible with JESTER's injection_eos_path feature.
 
 Output format:
-- masses_EOS: Solar masses (M_sun) - converted from geometric
-- radii_EOS: kilometers (km) - converted from geometric
+- masses_EOS: Solar masses :math:`M_{\odot}` - converted from geometric
+- radii_EOS: :math:`\mathrm{km}` - converted from geometric
 - Lambda_EOS: dimensionless tidal deformability
-- n: baryon number density in geometric units (m^-2)
-- p: pressure in geometric units (m^-2)
-- e: energy density in geometric units (m^-2)
+- n: baryon number density in geometric units :math:`m^{-3}`
+- p: pressure in geometric units :math:`m^{-2}`
+- e: energy density in geometric units :math:`m^{-2}`
 - cs2: speed of sound squared (dimensionless)
 """
 
 import numpy as np
+from numpy.typing import NDArray
 from pathlib import Path
 from bilby.gw.eos import TabularEOS, EOSFamily  # type: ignore[import-untyped]
 
@@ -67,16 +68,19 @@ def get_bilby_eos(name: str) -> tuple[TabularEOS, EOSFamily]:
         raise ValueError(f"Could not create bilby EOS objects for EOS name {name}: {e}")
 
 
-def compute_density_and_cs2(pressure_geom, energy_density_geom):
-    """
+def compute_density_and_cs2(
+    pressure_geom: NDArray[np.floating],
+    energy_density_geom: NDArray[np.floating],
+) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
+    r"""
     Compute baryon number density and speed of sound squared from p and e.
 
     Args:
-        pressure_geom: Pressure in geometric units (m^-2)
-        energy_density_geom: Energy density in geometric units (m^-2)
+        pressure_geom: Pressure in geometric units :math:`m^{-2}`
+        energy_density_geom: Energy density in geometric units :math:`m^{-2}`
 
     Returns:
-        n_geom: Baryon number density in geometric units (m^-2)
+        n_geom: Baryon number density in geometric units :math:`m^{-3}`
         cs2: Speed of sound squared (dimensionless)
     """
     # Speed of sound squared: cs^2 = dp/de
@@ -98,13 +102,16 @@ def compute_density_and_cs2(pressure_geom, energy_density_geom):
     return n_geom, cs2
 
 
-def generate_eos_file(eos_name: str, output_dir: str | Path | None = None):
+def generate_eos_file(eos_name: str, output_dir: str | Path | None = None) -> Path:
     """
     Generate NPZ file for a single EOS.
 
     Args:
         eos_name: Name of the EOS (e.g., "SLY", "APR4")
         output_dir: Directory to save the file (default: current directory)
+
+    Returns:
+        Path to the generated NPZ file
     """
     print(f"\n{'='*70}")
     print(f"Processing EOS: {eos_name}")
@@ -127,7 +134,7 @@ def generate_eos_file(eos_name: str, output_dir: str | Path | None = None):
     # Compute density and cs2
     print("Computing density and speed of sound...")
     n_geom, cs2 = compute_density_and_cs2(p_geom, e_geom)
-    print(f"  Density range: {n_geom.min():.3e} to {n_geom.max():.3e} m^-2")
+    print(f"  Density range: {n_geom.min():.3e} to {n_geom.max():.3e} m^-3")
     print(f"  cs2 range: {cs2.min():.3f} to {cs2.max():.3f}")
 
     # Extract M-R-Lambda from TOV solver (all in geometric units)
@@ -167,7 +174,7 @@ def generate_eos_file(eos_name: str, output_dir: str | Path | None = None):
         radii_EOS=radii_km,  # km
         Lambda_EOS=lambda_dimensionless,  # dimensionless
         # Thermodynamic quantities in geometric units (as expected by load_injection_eos)
-        n=n_geom,  # m^-2
+        n=n_geom,  # m^-3
         p=p_geom,  # m^-2
         e=e_geom,  # m^-2
         cs2=cs2,  # dimensionless
@@ -188,14 +195,14 @@ def generate_eos_file(eos_name: str, output_dir: str | Path | None = None):
     return filename
 
 
-def list_available_eos():
+def list_available_eos() -> list[str]:
     """List all available LAL EOS names."""
     from bilby.gw.eos.eos import valid_eos_names  # type: ignore[import-untyped]
 
     return sorted(valid_eos_names)
 
 
-def main():
+def main() -> None:
     """Generate NPZ files for a selection of commonly used EOSs."""
 
     print("=" * 70)
