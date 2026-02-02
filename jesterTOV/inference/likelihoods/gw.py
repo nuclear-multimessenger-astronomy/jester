@@ -3,6 +3,7 @@ r"""Gravitational wave event likelihood implementations"""
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
+from jax.scipy.special import logsumexp
 
 from jesterTOV.inference.base.likelihood import LikelihoodBase
 from jesterTOV.inference.flows.flow import Flow
@@ -344,7 +345,7 @@ class GWLikelihood(LikelihoodBase):
             process_sample, self.fixed_mass_samples, batch_size=self.N_masses_batch_size
         )
 
-        # Average over all pre-sampled mass pairs
-        log_likelihood = jnp.mean(all_logprobs)
+        # Take logsumexp over all pre-sampled mass pairs
+        log_likelihood = logsumexp(all_logprobs)
 
         return log_likelihood
