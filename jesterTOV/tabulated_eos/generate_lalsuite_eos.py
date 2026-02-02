@@ -20,10 +20,10 @@ Output format:
 
 import numpy as np
 from pathlib import Path
-from bilby.gw.eos import TabularEOS, EOSFamily
+from bilby.gw.eos import TabularEOS, EOSFamily  # type: ignore[import-untyped]
 
 # Physical constants (from bilby)
-from bilby.core import utils
+from bilby.core import utils  # type: ignore[import-untyped]
 
 C_SI = utils.speed_of_light  # m/s
 G_SI = utils.gravitational_constant  # m^3 kg^-1 s^-2
@@ -98,7 +98,7 @@ def compute_density_and_cs2(pressure_geom, energy_density_geom):
     return n_geom, cs2
 
 
-def generate_eos_file(eos_name: str, output_dir: str = None):
+def generate_eos_file(eos_name: str, output_dir: str | Path | None = None):
     """
     Generate NPZ file for a single EOS.
 
@@ -150,13 +150,14 @@ def generate_eos_file(eos_name: str, output_dir: str = None):
     print(f"  Maximum mass: {eos_family.maximum_mass:.3f} M_sun")
 
     # Save to NPZ file
+    output_dir_path: Path
     if output_dir is None:
-        output_dir = Path(__file__).parent
+        output_dir_path = Path(__file__).parent
     else:
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir_path = Path(output_dir)
+        output_dir_path.mkdir(parents=True, exist_ok=True)
 
-    filename = output_dir / f"{eos_name}.npz"
+    filename = output_dir_path / f"{eos_name}.npz"
 
     # Save in JESTER injection format (geometric units for thermodynamic quantities)
     np.savez(
@@ -189,7 +190,7 @@ def generate_eos_file(eos_name: str, output_dir: str = None):
 
 def list_available_eos():
     """List all available LAL EOS names."""
-    from bilby.gw.eos.eos import valid_eos_names
+    from bilby.gw.eos.eos import valid_eos_names  # type: ignore[import-untyped]
 
     return sorted(valid_eos_names)
 
