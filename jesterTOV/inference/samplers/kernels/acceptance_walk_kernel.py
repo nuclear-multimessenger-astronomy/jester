@@ -15,11 +15,14 @@ from blackjax.base import SamplingAlgorithm
 from blackjax.ns.base import (
     NSState,
     NSInfo,
-    init as base_init,
     init_state_strategy,
     delete_fn as default_delete_fn,
 )
-from blackjax.ns.adaptive import build_kernel as build_adaptive_kernel
+from blackjax.ns.adaptive import (
+    AdaptiveNSState,
+    build_kernel as build_adaptive_kernel,
+    init as adaptive_init,
+)
 from blackjax.types import Array, ArrayTree, ArrayLikeTree
 
 
@@ -241,7 +244,7 @@ def de_rwalk_dynamic_unit_cube(
 
 
 def update_bilby_walks_fn(
-    ns_state: NSState,
+    ns_state: AdaptiveNSState,
     logprior_fn: Callable,
     loglikelihood_fn: Callable,
     n_target: int,
@@ -344,11 +347,16 @@ def bilby_adaptive_de_sampler_unit_cube(
     delete_fn = partial(default_delete_fn, num_delete=num_delete)
 
     def update_fn(
-        ns_state: NSState, ns_info: NSInfo, params: Dict[str, ArrayTree]
+        rng_key, ns_state: NSState, ns_info: NSInfo, params: Dict[str, ArrayTree]
     ) -> DEKernelParams:
-        """Update function compatible with blackjax adaptive kernel interface."""
+        """Update function compatible with blackjax adaptive kernel interface.
+
+        Note: At runtime ns_state is AdaptiveNSState (duck typed as NSState).
+        """
+        # Type cast: blackjax passes AdaptiveNSState through NSState-typed interface
+        adaptive_state: AdaptiveNSState = ns_state  # type: ignore[assignment]
         return update_bilby_walks_fn(
-            ns_state=ns_state,
+            ns_state=adaptive_state,
             logprior_fn=logprior_fn,
             loglikelihood_fn=loglikelihood_fn,
             n_target=n_target,
@@ -372,17 +380,12 @@ def bilby_adaptive_de_sampler_unit_cube(
         update_fn,  # type: ignore[arg-type]
     )
 
-    def init_fn(particles):
+    def init_fn(particles, rng_key=None):
         # Create init_state_fn that captures logprior_fn and loglikelihood_fn
         def _init_state_fn(positions):
             return init_state_strategy(
                 positions, jax.vmap(logprior_fn), jax.vmap(loglikelihood_fn)
             )
-
-        state = base_init(
-            positions=particles,
-            init_state_fn=_init_state_fn,
-        )
 
         # Calculate proper scale from particle dimensionality
         example_particle = jax.tree_util.tree_map(lambda x: x[0], particles)
@@ -390,22 +393,38 @@ def bilby_adaptive_de_sampler_unit_cube(
         n_dim = flat_particle.shape[0]
         scale = 2.38 / jnp.sqrt(2 * n_dim)
 
-        # Create initial DEKernelParams with sentinel value
-        initial_de_params = DEKernelParams(
-            live_points=particles,
-            loglikelihoods=state.particles.loglikelihood,
-            mix=0.5,
-            scale=scale,
-            num_walks=jnp.array(100, dtype=jnp.int32),
-            walks_float=jnp.array(100.0, dtype=jnp.float32),
-            n_accept_total=jnp.array(-1, dtype=jnp.int32),  # Sentinel flag
-            n_likelihood_evals_total=jnp.array(-1, dtype=jnp.int32),  # Sentinel flag
+        # Create function to initialize inner kernel params
+        # This is called by adaptive_init to set up initial inner kernel kwargs
+        # build_adaptive_kernel unpacks these as: partial(inner_kernel, **inner_kernel_params)
+        def _init_inner_kernel_params_fn(key, base_state, info, params):
+            de_params = DEKernelParams(
+                live_points=particles,
+                loglikelihoods=base_state.particles.loglikelihood,
+                mix=0.5,
+                scale=scale,
+                num_walks=jnp.array(100, dtype=jnp.int32),
+                walks_float=jnp.array(100.0, dtype=jnp.float32),
+                n_accept_total=jnp.array(-1, dtype=jnp.int32),  # Sentinel flag
+                n_likelihood_evals_total=jnp.array(-1, dtype=jnp.int32),  # Sentinel flag
+            )
+            # Return dict for unpacking in partial(inner_kernel, **inner_kernel_params)
+            return {
+                "logprior_fn": logprior_fn,
+                "loglikelihood_fn": loglikelihood_fn,
+                "params": de_params,
+            }
+
+        # Use adaptive_init which returns AdaptiveNSState with inner_kernel_params
+        state = adaptive_init(
+            positions=particles,
+            init_state_fn=_init_state_fn,
+            update_inner_kernel_params_fn=_init_inner_kernel_params_fn,
+            rng_key=rng_key,
         )
 
-        # Set our sentinel state manually
-        return state._replace(inner_kernel_params=initial_de_params)
+        return state
 
-    def step_fn(rng_key, state: NSState):
+    def step_fn(rng_key, state: AdaptiveNSState):
         new_state, info = base_kernel_step(rng_key, state)
 
         inner_info = info.inner_kernel_info

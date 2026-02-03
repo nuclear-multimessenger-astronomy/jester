@@ -250,12 +250,13 @@ class BlackJAXNSAWSampler(JesterSampler):
         )
 
         # Initialize sampler state
-        # Note: init_fn only takes particles, pyright incorrectly expects rng_key
-        state = nested_sampler.init(initial_particles)  # type: ignore[call-arg]
+        key, init_key = jax.random.split(key)
+        state = nested_sampler.init(initial_particles, rng_key=init_key)
 
         def terminate(state):
             """Termination condition: stop when remaining evidence is small."""
-            dlogz = jnp.logaddexp(0, state.logZ_live - state.logZ)
+            # AdaptiveNSState stores evidence info in integrator
+            dlogz = jnp.logaddexp(0, state.integrator.logZ_live - state.integrator.logZ)
             return jnp.isfinite(dlogz) and dlogz < self.config.termination_dlogz
 
         # JIT compile step function for performance
@@ -296,8 +297,10 @@ class BlackJAXNSAWSampler(JesterSampler):
             n_iterations += 1
 
             # Compute current evidence and termination criterion
-            current_logZ = float(state.logZ)  # type: ignore[attr-defined]
-            current_dlogZ = float(jnp.logaddexp(0, state.logZ_live - state.logZ))  # type: ignore[attr-defined]
+            current_logZ = float(state.integrator.logZ)
+            current_dlogZ = float(
+                jnp.logaddexp(0, state.integrator.logZ_live - state.integrator.logZ)
+            )
 
             # Print progress update using io_callback
             io_callback(
@@ -309,10 +312,11 @@ class BlackJAXNSAWSampler(JesterSampler):
             )
 
         # Store evidence from state before finalization
-        # (NSState has logZ, but NSInfo from finalise does not)
-        logZ = float(state.logZ)  # type: ignore[attr-defined]
+        # (AdaptiveNSState stores evidence in integrator - type narrowing not supported)
+        integrator = state.integrator  # type: ignore[attr-defined]
+        logZ = float(integrator.logZ)
         # Estimate uncertainty from remaining evidence in live points
-        logZ_err = float(jnp.logaddexp(0, state.logZ_live - state.logZ))  # type: ignore[attr-defined]
+        logZ_err = float(jnp.logaddexp(0, integrator.logZ_live - integrator.logZ))
 
         # Finalize nested sampling results
         logger.info("Finalizing nested sampling results...")

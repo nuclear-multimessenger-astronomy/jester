@@ -138,6 +138,7 @@ markers = [
     "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
     "blackjax: marks tests that require blackjax (SMC, NS-AW samplers)",
+    "e2e: marks end-to-end pipeline tests",
 ]
 
 [tool.coverage.run]
