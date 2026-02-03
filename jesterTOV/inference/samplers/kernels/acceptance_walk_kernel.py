@@ -13,14 +13,22 @@ from jax import flatten_util
 
 from blackjax.base import SamplingAlgorithm
 from blackjax.ns.base import (
-    PartitionedState,
     NSState,
     NSInfo,
     init as base_init,
+    init_state_strategy,
     delete_fn as default_delete_fn,
 )
 from blackjax.ns.adaptive import build_kernel as build_adaptive_kernel
-from blackjax.types import ArrayTree, ArrayLikeTree
+from blackjax.types import Array, ArrayTree, ArrayLikeTree
+
+
+class PartitionedState(NamedTuple):
+    """Simplified state for DE kernel without loglikelihood_birth tracking."""
+
+    position: ArrayLikeTree
+    logprior: Array
+    loglikelihood: Array
 
 
 class DEInfo(NamedTuple):
@@ -306,7 +314,7 @@ def update_bilby_walks_fn(
 
     return DEKernelParams(
         live_points=ns_state.particles,
-        loglikelihoods=ns_state.loglikelihood,
+        loglikelihoods=ns_state.particles.loglikelihood,
         mix=0.5,
         scale=2.38 / jnp.sqrt(2 * n_dim),
         num_walks=jnp.array(num_walks_int, dtype=jnp.int32),
@@ -359,18 +367,21 @@ def bilby_adaptive_de_sampler_unit_cube(
     # BlackJAX API compatibility: DEKernelParams (NamedTuple) works as pytree but type checker
     # expects Dict[str, ArrayTree]. This is safe since NamedTuple is a valid pytree.
     base_kernel_step = build_adaptive_kernel(
-        logprior_fn,
-        loglikelihood_fn,
         delete_fn,
         jax.vmap(kernel_with_stepper, in_axes=(0, 0, None, None, None, None)),
         update_fn,  # type: ignore[arg-type]
     )
 
     def init_fn(particles):
+        # Create init_state_fn that captures logprior_fn and loglikelihood_fn
+        def _init_state_fn(positions):
+            return init_state_strategy(
+                positions, jax.vmap(logprior_fn), jax.vmap(loglikelihood_fn)
+            )
+
         state = base_init(
-            particles=particles,
-            logprior_fn=jax.vmap(logprior_fn),
-            loglikelihood_fn=jax.vmap(loglikelihood_fn),
+            positions=particles,
+            init_state_fn=_init_state_fn,
         )
 
         # Calculate proper scale from particle dimensionality
@@ -382,7 +393,7 @@ def bilby_adaptive_de_sampler_unit_cube(
         # Create initial DEKernelParams with sentinel value
         initial_de_params = DEKernelParams(
             live_points=particles,
-            loglikelihoods=state.loglikelihood,
+            loglikelihoods=state.particles.loglikelihood,
             mix=0.5,
             scale=scale,
             num_walks=jnp.array(100, dtype=jnp.int32),
