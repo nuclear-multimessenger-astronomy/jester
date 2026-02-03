@@ -244,7 +244,7 @@ class NICERLikelihood(LikelihoodBase):
         logL_maryland = logsumexp(maryland_logprobs)
 
         # Average the two groups (equal weights)
-        log_likelihood = (logL_amsterdam + logL_maryland) / 2.0
+        log_likelihood = logsumexp(jnp.array([logL_amsterdam, logL_maryland]))
 
         return log_likelihood
 
