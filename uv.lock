@@ -353,10 +353,12 @@ wheels = [
 
 [[package]]
 name = "blackjax"
-version = "0.1.dev735+g97a6f7f8e"
-source = { git = "https://github.com/handley-lab/blackjax?rev=nested_sampling#97a6f7f8ece17543598ed224e432ae1cd9b5c3fe" }
+version = "0.1.0b1.dev82+g1e6ad99c9"
+source = { git = "https://github.com/handley-lab/blackjax?rev=nested_sampling#1e6ad99c971ba284f45c6af5931ab6f87ae9c896" }
 dependencies = [
     { name = "fastprogress" },
+    { name = "ipython", version = "8.38.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "ipython", version = "9.10.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "jax", version = "0.6.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "jax", version = "0.8.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "jaxlib", version = "0.6.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
