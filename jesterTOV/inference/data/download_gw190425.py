@@ -26,7 +26,7 @@ URL = "https://dcc.ligo.org/public/0165/P2000026/002/posterior_samples.h5"
 DATA_DIR = Path(__file__).parent / "gw190425"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-import requests
+import requests  # type: ignore[import-not-found]
 from tqdm import tqdm
 
 

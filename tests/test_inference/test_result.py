@@ -145,7 +145,7 @@ class TestInferenceResultSaveLoad:
             "logZ_err": 0.5,
         }
         histories = {
-            "lmbda_history": np.linspace(0, 1, 50),
+            "tempering_param_history": np.linspace(0, 1, 50),
             "ess_history": np.ones(50) * 85.0,
             "acceptance_history": np.ones(50) * 0.65,
         }
@@ -183,7 +183,8 @@ class TestInferenceResultSaveLoad:
         # Check histories
         assert loaded.histories is not None
         np.testing.assert_array_equal(
-            loaded.histories["lmbda_history"], histories["lmbda_history"]
+            loaded.histories["tempering_param_history"],
+            histories["tempering_param_history"],
         )
 
     def test_save_load_ns_aw_basic(self, temp_dir):

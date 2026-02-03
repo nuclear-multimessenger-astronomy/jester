@@ -32,7 +32,7 @@ Three sampler backends are now available for Bayesian inference:
 2. **BlackJAX SMC** (Production Ready) - Sequential Monte Carlo with adaptive tempering
    - Gaussian Random Walk kernel with sigma adaptation -- TESTED, THIS IS OUR "DEFAULT" SAMPLER
    - NUTS kernel with Hessian-based mass matrix adaptation -- EXPERIMENTAL, REFRAIN FROM USING NOW
-3. **BlackJAX NS-AW** (Needs Testing) - Nested Sampling with Acceptance Walk, mimics bilby setup
+3. **BlackJAX NS-AW** - Nested Sampling with Acceptance Walk, mimics bilby setup
 
 **Example Configs Available**:
 SMC is production ready and we usually test the following config, which can be executed locally on a laptop without GPU support

@@ -215,7 +215,9 @@ class InferenceResult:
 
             # Extract histories
             histories = {
-                "lmbda_history": np.array(smc_metadata["lmbda_history"]),
+                "tempering_param_history": np.array(
+                    smc_metadata["tempering_param_history"]
+                ),
                 "ess_history": np.array(smc_metadata["ess_history"]),
                 "acceptance_history": np.array(smc_metadata["acceptance_history"]),
             }

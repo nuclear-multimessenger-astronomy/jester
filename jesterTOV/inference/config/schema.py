@@ -646,7 +646,7 @@ SamplerConfig = Annotated[
 
 
 class PostprocessingConfig(BaseModel):
-    """Configuration for postprocessing plots.
+    r"""Configuration for postprocessing plots.
 
     Attributes
     ----------
@@ -656,23 +656,38 @@ class PostprocessingConfig(BaseModel):
         Generate cornerplot of EOS parameters (default: True)
     make_massradius : bool
         Generate mass-radius plot (default: True)
+    make_masslambda : bool
+        Generate mass-Lambda plot (default: True)
     make_pressuredensity : bool
         Generate pressure-density plot (default: True)
     make_histograms : bool
         Generate parameter histograms (default: True)
-    make_contours : bool
-        Generate contour plots (default: True)
+    make_cs2 : bool
+        Generate cs2-density plot (default: True)
     prior_dir : str | None
         Directory containing prior samples for comparison (default: None)
+    injection_eos_path : str | None
+        Path to NPZ file containing injection EOS data for plotting (default: None).
+        The NPZ file should contain arrays in geometric units:
+        - masses_EOS: Solar masses :math:`M_{\odot}`
+        - radii_EOS: :math:`\mathrm{km}`
+        - Lambda_EOS: dimensionless tidal deformability
+        - n: geometric units :math:`m^{-2}`
+        - p: geometric units :math:`m^{-2}`
+        - e: geometric units :math:`m^{-2}`
+        - cs2: dimensionless
+        This matches LALSuite EOS format and JESTER HDF5 output. Missing keys handled gracefully.
     """
 
     enabled: bool = True
     make_cornerplot: bool = True
     make_massradius: bool = True
+    make_masslambda: bool = True
     make_pressuredensity: bool = True
     make_histograms: bool = True
-    make_contours: bool = True
+    make_cs2: bool = True
     prior_dir: str | None = None
+    injection_eos_path: str | None = None
 
 
 class InferenceConfig(BaseModel):
