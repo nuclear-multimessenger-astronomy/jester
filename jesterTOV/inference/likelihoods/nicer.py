@@ -114,7 +114,7 @@ class NICERLikelihood(LikelihoodBase):
 
         # Create uniform mass grid
         self.mass_grid = jnp.linspace(self.mass_min, self.mass_max, N_masses)
-        self.delta_mass = (self.mass_max - self.mass_min) / (N_masses - 1)
+        self.delta_mass = float(self.mass_grid[1] - self.mass_grid[0])
 
         logger.info(
             f"Mass integration grid for {psr_name}: "
@@ -156,14 +156,22 @@ class NICERLikelihood(LikelihoodBase):
         # Interpolate radii at grid points
         radii_grid = jnp.interp(self.mass_grid, masses_EOS, radii_EOS)
 
-        # Evaluate KDEs at (mass_i, radius_i) points
-        # Shape: (2, N_masses) for KDE evaluation
-        mr_grid_amsterdam = jnp.vstack([self.mass_grid, radii_grid])
-        mr_grid_maryland = jnp.vstack([self.mass_grid, radii_grid])
+        # Define function to compute log probability for single (M, R) point
+        def compute_logpdf_amsterdam(mass: Float, radius: Float) -> Float:
+            """Evaluate Amsterdam KDE at single (mass, radius) point."""
+            mr_point = jnp.array([[mass], [radius]])  # Shape: (2, 1)
+            return self.amsterdam_posterior.logpdf(mr_point)
 
-        # Evaluate log probabilities
-        logpdf_amsterdam = self.amsterdam_posterior.logpdf(mr_grid_amsterdam)
-        logpdf_maryland = self.maryland_posterior.logpdf(mr_grid_maryland)
+        def compute_logpdf_maryland(mass: Float, radius: Float) -> Float:
+            """Evaluate Maryland KDE at single (mass, radius) point."""
+            mr_point = jnp.array([[mass], [radius]])  # Shape: (2, 1)
+            return self.maryland_posterior.logpdf(mr_point)
+
+        # Use vmap to vectorize over all grid points (memory efficient)
+        logpdf_amsterdam = jax.vmap(compute_logpdf_amsterdam)(
+            self.mass_grid, radii_grid
+        )
+        logpdf_maryland = jax.vmap(compute_logpdf_maryland)(self.mass_grid, radii_grid)
 
         # Integrate using logsumexp (each group separately)
         # Add log(ΔM) normalization term
