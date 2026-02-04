@@ -26,7 +26,7 @@ from .conftest import validate_sampler_output, NEP_PARAMS
 class TestFlowMCE2E:
     """End-to-end tests for FlowMC sampler."""
 
-    def test_flowmc_prior_only_full_pipeline(self, flowmc_prior_config, e2e_temp_dir):
+    def test_flowmc_prior_only_full_pipeline(self, flowmc_prior_config):
         """Test full FlowMC pipeline with prior-only likelihood.
 
         This exercises:
@@ -65,7 +65,7 @@ class TestFlowMCE2E:
             output.metadata == {}
         ), f"FlowMC should have empty metadata, got {output.metadata}"
 
-    def test_flowmc_chieft_full_pipeline(self, flowmc_chieft_config, e2e_temp_dir):
+    def test_flowmc_chieft_full_pipeline(self, flowmc_chieft_config):
         """Test full FlowMC pipeline with chiEFT likelihood.
 
         This exercises the realistic use case with:
@@ -101,9 +101,7 @@ class TestFlowMCE2E:
         for param, arr in output.samples.items():
             assert jnp.isfinite(arr).all(), f"Parameter {param} has non-finite values"
 
-    def test_flowmc_training_vs_production_samples(
-        self, flowmc_prior_config, e2e_temp_dir
-    ):
+    def test_flowmc_training_vs_production_samples(self, flowmc_prior_config):
         """Test FlowMC provides separate training and production samples."""
         config = InferenceConfig(**flowmc_prior_config)
 
@@ -144,7 +142,7 @@ class TestFlowMCE2E:
         assert n_prod > 0
         assert n_train > 0
 
-    def test_flowmc_produces_valid_posterior(self, flowmc_prior_config, e2e_temp_dir):
+    def test_flowmc_produces_valid_posterior(self, flowmc_prior_config):
         """Test that FlowMC produces samples in prior bounds."""
         config = InferenceConfig(**flowmc_prior_config)
 

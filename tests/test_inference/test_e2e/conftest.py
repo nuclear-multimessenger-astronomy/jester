@@ -1,16 +1,18 @@
 """End-to-end test fixtures for inference pipeline.
 
 These fixtures provide lightweight configurations for testing the complete
-sampling pipeline. Target runtime: <2 min per test.
+sampling pipeline. Target runtime is less than 2 minutes per test.
 """
 
 import pytest
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import jax
 import jax.numpy as jnp
+
+from jesterTOV.inference.samplers import SamplerOutput
 
 # Enable 64-bit precision for all E2E tests
 jax.config.update("jax_enable_x64", True)
@@ -67,14 +69,14 @@ NEP_PARAMS = ["K_sat", "Q_sat", "Z_sat", "E_sym", "L_sym", "K_sym", "Q_sym", "Z_
 
 
 @pytest.fixture
-def e2e_temp_dir():
+def e2e_temp_dir() -> Iterator[Path]:
     """Create a temporary directory for E2E test files."""
     with tempfile.TemporaryDirectory() as tmpdir:
         yield Path(tmpdir)
 
 
 @pytest.fixture
-def minimal_prior_file(e2e_temp_dir):
+def minimal_prior_file(e2e_temp_dir: Path) -> Path:
     """Create a minimal prior file for testing (NEP params only, no CSE)."""
     prior_content = """K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
 Q_sat = UniformPrior(-500.0, 1100.0, parameter_names=["Q_sat"])
@@ -91,7 +93,7 @@ Z_sym = UniformPrior(-2000.0, 1500.0, parameter_names=["Z_sym"])
 
 
 @pytest.fixture
-def chieft_prior_file(e2e_temp_dir):
+def chieft_prior_file(e2e_temp_dir: Path) -> Path:
     """Create a prior file with nbreak for chiEFT tests (requires CSE)."""
     prior_content = """K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
 Q_sat = UniformPrior(-500.0, 1100.0, parameter_names=["Q_sat"])
@@ -185,42 +187,42 @@ def build_chieft_config(
 
 
 @pytest.fixture
-def flowmc_prior_config(minimal_prior_file, e2e_temp_dir):
+def flowmc_prior_config(minimal_prior_file: Path, e2e_temp_dir: Path) -> dict[str, Any]:
     """FlowMC config with prior-only likelihood."""
     sampler_config = {"type": "flowmc", **FLOWMC_LIGHTWEIGHT}
     return build_prior_only_config(sampler_config, minimal_prior_file, e2e_temp_dir)
 
 
 @pytest.fixture
-def flowmc_chieft_config(chieft_prior_file, e2e_temp_dir):
+def flowmc_chieft_config(chieft_prior_file: Path, e2e_temp_dir: Path) -> dict[str, Any]:
     """FlowMC config with chiEFT likelihood."""
     sampler_config = {"type": "flowmc", **FLOWMC_LIGHTWEIGHT}
     return build_chieft_config(sampler_config, chieft_prior_file, e2e_temp_dir)
 
 
 @pytest.fixture
-def smc_rw_prior_config(minimal_prior_file, e2e_temp_dir):
+def smc_rw_prior_config(minimal_prior_file: Path, e2e_temp_dir: Path) -> dict[str, Any]:
     """SMC-RW config with prior-only likelihood."""
     sampler_config = {"type": "smc-rw", **SMC_RW_LIGHTWEIGHT}
     return build_prior_only_config(sampler_config, minimal_prior_file, e2e_temp_dir)
 
 
 @pytest.fixture
-def smc_rw_chieft_config(chieft_prior_file, e2e_temp_dir):
+def smc_rw_chieft_config(chieft_prior_file: Path, e2e_temp_dir: Path) -> dict[str, Any]:
     """SMC-RW config with chiEFT likelihood."""
     sampler_config = {"type": "smc-rw", **SMC_RW_LIGHTWEIGHT}
     return build_chieft_config(sampler_config, chieft_prior_file, e2e_temp_dir)
 
 
 @pytest.fixture
-def blackjax_ns_aw_prior_config(minimal_prior_file, e2e_temp_dir):
+def blackjax_ns_aw_prior_config(minimal_prior_file: Path, e2e_temp_dir: Path) -> dict[str, Any]:
     """BlackJAX NS-AW config with prior-only likelihood."""
     sampler_config = {"type": "blackjax-ns-aw", **BLACKJAX_NS_AW_LIGHTWEIGHT}
     return build_prior_only_config(sampler_config, minimal_prior_file, e2e_temp_dir)
 
 
 @pytest.fixture
-def blackjax_ns_aw_chieft_config(chieft_prior_file, e2e_temp_dir):
+def blackjax_ns_aw_chieft_config(chieft_prior_file: Path, e2e_temp_dir: Path) -> dict[str, Any]:
     """BlackJAX NS-AW config with chiEFT likelihood."""
     sampler_config = {"type": "blackjax-ns-aw", **BLACKJAX_NS_AW_LIGHTWEIGHT}
     return build_chieft_config(sampler_config, chieft_prior_file, e2e_temp_dir)
@@ -232,7 +234,7 @@ def blackjax_ns_aw_chieft_config(chieft_prior_file, e2e_temp_dir):
 
 
 def validate_sampler_output(
-    output: Any, expected_params: list[str], min_samples: int = 10
+    output: SamplerOutput, expected_params: list[str], min_samples: int = 10
 ) -> None:
     """Validate SamplerOutput structure and content.
 
@@ -250,7 +252,6 @@ def validate_sampler_output(
     AssertionError
         If validation fails
     """
-    from jesterTOV.inference.samplers import SamplerOutput
 
     # Check type
     assert isinstance(

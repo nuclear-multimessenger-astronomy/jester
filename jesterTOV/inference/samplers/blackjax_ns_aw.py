@@ -455,7 +455,7 @@ class BlackJAXNSAWSampler(JesterSampler):
                     "ignore", "out of .* samples have logL <= logL_birth"
                 )
                 ns_samples = NestedSamples(
-                    self.final_state.particles,
+                    self.final_state.particles.position,
                     logL=self.final_state.particles.loglikelihood,
                     logL_birth=logL_birth,
                     logzero=jnp.nan,
@@ -636,7 +636,9 @@ class BlackJAXNSAWSampler(JesterSampler):
             return len(self._filtered_samples_cache[first_param])
 
         # Fallback: return all particles (unfiltered)
-        return len(self.final_state.particles)
+        # Get length from parameter array in position dict
+        n_samples = len(next(iter(self.final_state.particles.position.values())))
+        return n_samples
 
     def get_sampler_output(self) -> SamplerOutput:
         """

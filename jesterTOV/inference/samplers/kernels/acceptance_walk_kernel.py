@@ -4,7 +4,7 @@ Copied and modified from:
 https://github.com/mrosep/blackjax_ns_gw/blob/main/src/custom_kernels/acceptance_walk.py
 """
 
-from typing import Callable, NamedTuple, Dict
+from typing import Any, Callable, NamedTuple, Dict
 from functools import partial
 
 import jax
@@ -59,7 +59,7 @@ class DEKernelParams(NamedTuple):
 
     live_points: ArrayLikeTree | ArrayTree  # Can be pytree of arrays
     loglikelihoods: jax.Array  # Log-likelihoods of all live points
-    mix: float
+    mix: jax.Array  # Mix probability for small vs large steps
     scale: float | jax.Array  # Can be array for JAX operations
     num_walks: jax.Array
     walks_float: jax.Array
@@ -257,7 +257,7 @@ def update_bilby_walks_fn(
     n_target: int,
     max_mcmc: int,
     n_delete: int,
-) -> Dict[str, ArrayTree]:
+) -> Dict[str, Any]:
     """Bilby batch-level adaptation for unit cube sampling.
 
     Returns a dict with keys 'logprior_fn', 'loglikelihood_fn', 'params'
@@ -334,7 +334,7 @@ def update_bilby_walks_fn(
     new_de_params = DEKernelParams(
         live_points=ns_state.particles.position,  # Just the position dict, not full state
         loglikelihoods=ns_state.particles.loglikelihood,
-        mix=0.5,
+        mix=jnp.array(0.5, dtype=jnp.float32),
         scale=2.38 / jnp.sqrt(2 * n_dim),
         num_walks=jnp.array(num_walks_int, dtype=jnp.int32),
         walks_float=jnp.array(new_walks_float, dtype=jnp.float32),
@@ -367,8 +367,8 @@ def bilby_adaptive_de_sampler_unit_cube(
     delete_fn = partial(default_delete_fn, num_delete=num_delete)
 
     def update_fn(
-        rng_key, ns_state: NSState, ns_info: NSInfo, params: Dict[str, ArrayTree]
-    ) -> Dict[str, ArrayTree]:
+        rng_key, ns_state: NSState, ns_info: NSInfo, params: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Update function compatible with blackjax adaptive kernel interface.
 
         Note: At runtime ns_state is AdaptiveNSState (duck typed as NSState).
@@ -454,7 +454,7 @@ def bilby_adaptive_de_sampler_unit_cube(
             de_params = DEKernelParams(
                 live_points=particles,
                 loglikelihoods=base_state.particles.loglikelihood,
-                mix=0.5,
+                mix=jnp.array(0.5, dtype=jnp.float32),
                 scale=scale,
                 num_walks=jnp.array(100, dtype=jnp.int32),
                 walks_float=jnp.array(100.0, dtype=jnp.float32),

@@ -132,8 +132,15 @@ class TestBlackJAXNSAWE2E:
 
         # logZ should be computed and finite
         assert hasattr(sampler, "metadata"), "Sampler missing metadata"
-        # Note: logZ might be in final_state.integrator instead of metadata
-        # depending on implementation
+
+        # Check for logZ in metadata first, then fall back to final_state.integrator
+        logZ = sampler.metadata.get("logZ")
+        if logZ is None and hasattr(sampler, "final_state") and sampler.final_state is not None:
+            if hasattr(sampler.final_state, "integrator"):
+                logZ = float(sampler.final_state.integrator.logZ)
+
+        assert logZ is not None, "logZ not found in sampler.metadata or sampler.final_state.integrator"
+        assert jnp.isfinite(logZ), f"logZ is not finite: {logZ}"
 
     def test_blackjax_ns_aw_produces_valid_posterior(
         self, blackjax_ns_aw_prior_config, e2e_temp_dir
