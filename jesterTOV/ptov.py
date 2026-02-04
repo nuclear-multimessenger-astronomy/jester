@@ -79,12 +79,12 @@ def tov_ode(h, y, eos):
     ps = eos["p"]
     hs = eos["h"]
     es = eos["e"]
-    dloge_dlogps = eos["dloge_dlogp"]
+    cs2s = eos["cs2"]
     # actual equations
     r, m, H, b = y
     e = utils.interp_in_logspace(h, hs, es)
     p = utils.interp_in_logspace(h, hs, ps)
-    dedp = e / p * jnp.interp(h, hs, dloge_dlogps)
+    dedp = 1.0 / utils.interp_in_logspace(h, hs, cs2s)
 
     # evalute the sigma and dsigmadp
     sigma = sigma_func(
@@ -222,11 +222,11 @@ def tov_solver(eos, pc):
     ps = eos["p"]
     hs = eos["h"]
     es = eos["e"]
-    dloge_dlogps = eos["dloge_dlogp"]
+    cs2s = eos["cs2"]
     # Central values and initial conditions
     hc = utils.interp_in_logspace(pc, ps, hs)
     ec = utils.interp_in_logspace(hc, hs, es)
-    dedp_c = ec / pc * jnp.interp(hc, hs, dloge_dlogps)
+    dedp_c = 1.0 / utils.interp_in_logspace(hc, hs, cs2s)
     dhdp_c = 1.0 / (ec + pc)
     dedh_c = dedp_c / dhdp_c
 
