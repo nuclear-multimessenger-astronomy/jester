@@ -68,8 +68,7 @@ def construct_family(eos: tuple, ndat: Int = 50, min_nsat: Float = 2) -> tuple[
     """
     # Unpack EOS
     ns, ps, hs, es, dloge_dlogps, cs2 = eos
-    eos_dict = dict(p=ps, h=hs, e=es, dloge_dlogp=dloge_dlogps)
-
+    eos_dict = dict(p=ps, h=hs, e=es, dloge_dlogp=dloge_dlogps, cs2=cs2)
     # calculate the pc_min
     pc_min = utils.interp_in_logspace(
         min_nsat * 0.16 * utils.fm_inv3_to_geometric, ns, ps
