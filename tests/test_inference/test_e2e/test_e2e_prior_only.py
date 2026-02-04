@@ -158,7 +158,9 @@ class TestSamplerFactorySmoke:
             seed=config.seed,
         )
 
-        from jesterTOV.inference.samplers.blackjax_smc import BlackJAXSMCRandomWalkSampler
+        from jesterTOV.inference.samplers.blackjax_smc import (
+            BlackJAXSMCRandomWalkSampler,
+        )
 
         assert isinstance(sampler, BlackJAXSMCRandomWalkSampler)
 

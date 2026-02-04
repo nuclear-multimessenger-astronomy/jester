@@ -61,7 +61,9 @@ class TestFlowMCE2E:
         validate_sampler_output(output, expected_params=NEP_PARAMS, min_samples=10)
 
         # FlowMC-specific: metadata should be empty dict (no weights/ess)
-        assert output.metadata == {}, f"FlowMC should have empty metadata, got {output.metadata}"
+        assert (
+            output.metadata == {}
+        ), f"FlowMC should have empty metadata, got {output.metadata}"
 
     def test_flowmc_chieft_full_pipeline(self, flowmc_chieft_config, e2e_temp_dir):
         """Test full FlowMC pipeline with chiEFT likelihood.
@@ -99,7 +101,9 @@ class TestFlowMCE2E:
         for param, arr in output.samples.items():
             assert jnp.isfinite(arr).all(), f"Parameter {param} has non-finite values"
 
-    def test_flowmc_training_vs_production_samples(self, flowmc_prior_config, e2e_temp_dir):
+    def test_flowmc_training_vs_production_samples(
+        self, flowmc_prior_config, e2e_temp_dir
+    ):
         """Test FlowMC provides separate training and production samples."""
         config = InferenceConfig(**flowmc_prior_config)
 

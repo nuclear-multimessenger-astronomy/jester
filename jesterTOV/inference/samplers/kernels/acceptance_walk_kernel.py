@@ -325,7 +325,9 @@ def update_bilby_walks_fn(
     num_walks_int = jnp.minimum(jnp.ceil(new_walks_float).astype(jnp.int32), max_mcmc)
 
     # Calculate ndim from position dict (not full state)
-    example_particle = jax.tree_util.tree_map(lambda x: x[0], ns_state.particles.position)
+    example_particle = jax.tree_util.tree_map(
+        lambda x: x[0], ns_state.particles.position
+    )
     flat_particle, _ = flatten_util.ravel_pytree(example_particle)
     n_dim = flat_particle.shape[0]
 
@@ -457,7 +459,9 @@ def bilby_adaptive_de_sampler_unit_cube(
                 num_walks=jnp.array(100, dtype=jnp.int32),
                 walks_float=jnp.array(100.0, dtype=jnp.float32),
                 n_accept_total=jnp.array(-1, dtype=jnp.int32),  # Sentinel flag
-                n_likelihood_evals_total=jnp.array(-1, dtype=jnp.int32),  # Sentinel flag
+                n_likelihood_evals_total=jnp.array(
+                    -1, dtype=jnp.int32
+                ),  # Sentinel flag
             )
             # Return dict with only array-like data (no callables!)
             return {"params": de_params}

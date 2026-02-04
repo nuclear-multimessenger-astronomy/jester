@@ -253,7 +253,9 @@ def validate_sampler_output(
     from jesterTOV.inference.samplers import SamplerOutput
 
     # Check type
-    assert isinstance(output, SamplerOutput), f"Expected SamplerOutput, got {type(output)}"
+    assert isinstance(
+        output, SamplerOutput
+    ), f"Expected SamplerOutput, got {type(output)}"
 
     # Check samples dict has expected parameters
     for param in expected_params:

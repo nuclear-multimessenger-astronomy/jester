@@ -177,7 +177,9 @@ class TestBlackJAXNSAWE2E:
         prior = setup_prior(config)
 
         # The factory should auto-create BoundToBound transforms
-        from jesterTOV.inference.samplers.transform_factory import create_sample_transforms
+        from jesterTOV.inference.samplers.transform_factory import (
+            create_sample_transforms,
+        )
 
         transforms = create_sample_transforms(config.sampler, prior)
 
