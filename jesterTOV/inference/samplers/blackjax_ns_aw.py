@@ -15,6 +15,8 @@ import jax.random
 from jax.experimental import io_callback
 from jaxtyping import Array, PRNGKeyArray
 
+from blackjax.ns.base import StateWithLogLikelihood
+
 from ..base import LikelihoodBase, Prior, BijectiveTransform, NtoMTransform
 from ..config.schema import BlackJAXNSAWConfig
 from .jester_sampler import JesterSampler, SamplerOutput
@@ -250,12 +252,13 @@ class BlackJAXNSAWSampler(JesterSampler):
         )
 
         # Initialize sampler state
-        # Note: init_fn only takes particles, pyright incorrectly expects rng_key
-        state = nested_sampler.init(initial_particles)  # type: ignore[call-arg]
+        key, init_key = jax.random.split(key)
+        state = nested_sampler.init(initial_particles, rng_key=init_key)
 
         def terminate(state):
             """Termination condition: stop when remaining evidence is small."""
-            dlogz = jnp.logaddexp(0, state.logZ_live - state.logZ)
+            # AdaptiveNSState stores evidence info in integrator
+            dlogz = jnp.logaddexp(0, state.integrator.logZ_live - state.integrator.logZ)
             return jnp.isfinite(dlogz) and dlogz < self.config.termination_dlogz
 
         # JIT compile step function for performance
@@ -296,8 +299,10 @@ class BlackJAXNSAWSampler(JesterSampler):
             n_iterations += 1
 
             # Compute current evidence and termination criterion
-            current_logZ = float(state.logZ)  # type: ignore[attr-defined]
-            current_dlogZ = float(jnp.logaddexp(0, state.logZ_live - state.logZ))  # type: ignore[attr-defined]
+            current_logZ = float(state.integrator.logZ)
+            current_dlogZ = float(
+                jnp.logaddexp(0, state.integrator.logZ_live - state.integrator.logZ)
+            )
 
             # Print progress update using io_callback
             io_callback(
@@ -309,25 +314,33 @@ class BlackJAXNSAWSampler(JesterSampler):
             )
 
         # Store evidence from state before finalization
-        # (NSState has logZ, but NSInfo from finalise does not)
-        logZ = float(state.logZ)  # type: ignore[attr-defined]
+        # (AdaptiveNSState stores evidence in integrator - type narrowing not supported)
+        integrator = state.integrator  # type: ignore[attr-defined]
+        logZ = float(integrator.logZ)
         # Estimate uncertainty from remaining evidence in live points
-        logZ_err = float(jnp.logaddexp(0, state.logZ_live - state.logZ))  # type: ignore[attr-defined]
+        logZ_err = float(jnp.logaddexp(0, integrator.logZ_live - integrator.logZ))
 
         # Finalize nested sampling results
         logger.info("Finalizing nested sampling results...")
         final_info = self._finalise(state, dead)  # type: ignore[arg-type]
 
         # Transform particles back to prior space
+        # Note: final_info.particles is StateWithLogLikelihood, we need just the position dict
         logger.info("Transforming samples back to prior space...")
-        physical_particles = final_info.particles
+        physical_particles = final_info.particles.position
         for transform in reversed(self.sample_transforms):
             # Type note: vmap preserves PyTree structure; physical_particles remains ArrayTree
             physical_particles = jax.vmap(transform.backward)(physical_particles)  # type: ignore[arg-type]
 
         # Store final info with physical parameters
-        # Note: final_info is NSInfo (not NSState), so we store it with replaced particles
-        self.final_state = final_info._replace(particles=physical_particles)
+        # Create new StateWithLogLikelihood with transformed positions
+        transformed_particles = StateWithLogLikelihood(
+            position=physical_particles,
+            logdensity=final_info.particles.logdensity,
+            loglikelihood=final_info.particles.loglikelihood,
+            loglikelihood_birth=final_info.particles.loglikelihood_birth,
+        )
+        self.final_state = final_info._replace(particles=transformed_particles)
 
         # Store metadata
         end_time = time.time()
@@ -350,7 +363,7 @@ class BlackJAXNSAWSampler(JesterSampler):
             "sampling_time_minutes": sampling_time / 60,
             "n_iterations": n_iterations,
             "n_samples": n_samples,
-            "n_likelihood_evaluations": int(jnp.sum(final_info.inner_kernel_info.n_likelihood_evals)),  # type: ignore[attr-defined]
+            "n_likelihood_evaluations": int(jnp.sum(final_info.update_info.n_likelihood_evals)),  # type: ignore[attr-defined]
             "logZ": logZ,
             "logZ_err": logZ_err,
         }
@@ -367,7 +380,7 @@ class BlackJAXNSAWSampler(JesterSampler):
         logger.info(
             f"Sampling time: {(sampling_time)//60:.0f} minutes {(sampling_time)%60:.1f} seconds"
         )
-        logger.info(f"Likelihood evaluations: {int(jnp.sum(final_info.inner_kernel_info.n_likelihood_evals))}")  # type: ignore[attr-defined]
+        logger.info(f"Likelihood evaluations: {int(jnp.sum(final_info.update_info.n_likelihood_evals))}")  # type: ignore[attr-defined]
         logger.info("=" * 70)
 
     def print_summary(self, transform: bool = True) -> None:
@@ -426,7 +439,7 @@ class BlackJAXNSAWSampler(JesterSampler):
             raise RuntimeError("No samples available - run sample() first")
 
         # Handle birth likelihoods (replace NaN with -inf)
-        logL_birth = self.final_state.loglikelihood_birth.copy()
+        logL_birth = self.final_state.particles.loglikelihood_birth.copy()
         logL_birth = jnp.where(jnp.isnan(logL_birth), -jnp.inf, logL_birth)
 
         # Compute importance weights using anesthetic (if available)
@@ -442,8 +455,8 @@ class BlackJAXNSAWSampler(JesterSampler):
                     "ignore", "out of .* samples have logL <= logL_birth"
                 )
                 ns_samples = NestedSamples(
-                    self.final_state.particles,
-                    logL=self.final_state.loglikelihood,
+                    self.final_state.particles.position,
+                    logL=self.final_state.particles.loglikelihood,
                     logL_birth=logL_birth,
                     logzero=jnp.nan,
                     dtype=jnp.float64,
@@ -544,8 +557,8 @@ class BlackJAXNSAWSampler(JesterSampler):
                 "anesthetic not available - using all samples without resampling"
             )
             # Use all samples without filtering or resampling
-            samples = dict(self.final_state.particles)
-            samples["logL"] = self.final_state.loglikelihood
+            samples = dict(self.final_state.particles.position)
+            samples["logL"] = self.final_state.particles.loglikelihood
             samples["logL_birth"] = logL_birth
             self._filtered_samples_cache = samples
             logger.warning(
@@ -557,8 +570,8 @@ class BlackJAXNSAWSampler(JesterSampler):
                 f"anesthetic weight computation failed: {e} - using all samples without resampling"
             )
             # Use all samples without filtering or resampling
-            samples = dict(self.final_state.particles)
-            samples["logL"] = self.final_state.loglikelihood
+            samples = dict(self.final_state.particles.position)
+            samples["logL"] = self.final_state.particles.loglikelihood
             samples["logL_birth"] = logL_birth
             self._filtered_samples_cache = samples
             logger.warning(
@@ -596,7 +609,7 @@ class BlackJAXNSAWSampler(JesterSampler):
         logger.warning(
             "get_log_prob() called before get_samples() - returning unfiltered logL"
         )
-        return self.final_state.loglikelihood
+        return self.final_state.particles.loglikelihood
 
     def get_n_samples(self) -> int:
         """Get number of posterior samples from nested sampling.
@@ -623,7 +636,9 @@ class BlackJAXNSAWSampler(JesterSampler):
             return len(self._filtered_samples_cache[first_param])
 
         # Fallback: return all particles (unfiltered)
-        return len(self.final_state.particles)
+        # Get length from parameter array in position dict
+        n_samples = len(next(iter(self.final_state.particles.position.values())))
+        return n_samples
 
     def get_sampler_output(self) -> SamplerOutput:
         """

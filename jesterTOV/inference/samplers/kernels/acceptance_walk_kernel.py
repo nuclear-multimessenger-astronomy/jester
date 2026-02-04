@@ -4,7 +4,7 @@ Copied and modified from:
 https://github.com/mrosep/blackjax_ns_gw/blob/main/src/custom_kernels/acceptance_walk.py
 """
 
-from typing import Callable, NamedTuple, Dict
+from typing import Any, Callable, NamedTuple, Dict
 from functools import partial
 
 import jax
@@ -15,11 +15,15 @@ from blackjax.base import SamplingAlgorithm
 from blackjax.ns.base import (
     NSState,
     NSInfo,
-    init as base_init,
+    StateWithLogLikelihood,
     init_state_strategy,
     delete_fn as default_delete_fn,
 )
-from blackjax.ns.adaptive import build_kernel as build_adaptive_kernel
+from blackjax.ns.adaptive import (
+    AdaptiveNSState,
+    build_kernel as build_adaptive_kernel,
+    init as adaptive_init,
+)
 from blackjax.types import Array, ArrayTree, ArrayLikeTree
 
 
@@ -55,7 +59,7 @@ class DEKernelParams(NamedTuple):
 
     live_points: ArrayLikeTree | ArrayTree  # Can be pytree of arrays
     loglikelihoods: jax.Array  # Log-likelihoods of all live points
-    mix: float
+    mix: jax.Array  # Mix probability for small vs large steps
     scale: float | jax.Array  # Can be array for JAX operations
     num_walks: jax.Array
     walks_float: jax.Array
@@ -67,7 +71,7 @@ class DEKernelParams(NamedTuple):
 
 def de_rwalk_one_step_unit_cube(
     rng_key: jax.Array,
-    state: PartitionedState,
+    state: StateWithLogLikelihood,
     logprior_fn: Callable,
     loglikelihood_fn: Callable,
     loglikelihood_0: float,
@@ -113,7 +117,7 @@ def de_rwalk_one_step_unit_cube(
         return jnp.logical_and(jnp.logical_not(is_valid), count < max_proposals)
 
     # Run while loop
-    init = (False, rng_key, state.position, state.logprior, jnp.array(0))
+    init = (False, rng_key, state.position, state.logdensity, jnp.array(0))
     is_valid, _, pos_prop, logp_prop, n_proposals = jax.lax.while_loop(
         cond_fun, body_fun, init
     )
@@ -134,12 +138,18 @@ def de_rwalk_one_step_unit_cube(
     final_pos = jax.tree_util.tree_map(
         lambda p, c: jnp.where(is_accepted, p, c), pos_prop, state.position
     )
-    final_logp = jnp.where(is_accepted, logp_prop, state.logprior)
+    final_logp = jnp.where(is_accepted, logp_prop, state.logdensity)
     final_logl = jnp.where(is_accepted, logl_prop, state.loglikelihood)
 
     # Ensure final_logl is an Array (pyright inference issue workaround)
     final_logl_array = jnp.asarray(final_logl)
-    new_state = PartitionedState(final_pos, final_logp, final_logl_array)
+    # Create state with same structure as input (StateWithLogLikelihood)
+    new_state = StateWithLogLikelihood(
+        position=final_pos,
+        logdensity=final_logp,
+        loglikelihood=final_logl_array,
+        loglikelihood_birth=state.loglikelihood_birth,  # Keep birth threshold
+    )
     # Ensure is_valid is a JAX array before calling astype
     likelihood_evals = jnp.asarray(is_valid, dtype=jnp.bool_).astype(jnp.int32)
     info = DEInfo(
@@ -151,7 +161,7 @@ def de_rwalk_one_step_unit_cube(
 
 def de_rwalk_dynamic_unit_cube(
     rng_key: jax.Array,
-    state: PartitionedState,
+    state: StateWithLogLikelihood,
     logprior_fn: Callable,
     loglikelihood_fn: Callable,
     loglikelihood_0: float,
@@ -241,16 +251,22 @@ def de_rwalk_dynamic_unit_cube(
 
 
 def update_bilby_walks_fn(
-    ns_state: NSState,
+    ns_state: AdaptiveNSState,
     logprior_fn: Callable,
     loglikelihood_fn: Callable,
     n_target: int,
     max_mcmc: int,
     n_delete: int,
-) -> DEKernelParams:
-    """Bilby batch-level adaptation for unit cube sampling."""
-    # Type annotation to help pyright understand the type
-    prev_params: DEKernelParams = ns_state.inner_kernel_params  # type: ignore[assignment]
+) -> Dict[str, Any]:
+    """Bilby batch-level adaptation for unit cube sampling.
+
+    Returns a dict with keys 'logprior_fn', 'loglikelihood_fn', 'params'
+    for compatibility with blackjax build_adaptive_kernel which unpacks
+    inner_kernel_params as **kwargs.
+    """
+    # inner_kernel_params is a dict with 'params' key containing DEKernelParams
+    inner_params_dict: Dict[str, ArrayTree] = ns_state.inner_kernel_params  # type: ignore[assignment]
+    prev_params: DEKernelParams = inner_params_dict["params"]  # type: ignore[assignment]
 
     # Check sentinel value instead of None (JAX-compatible)
     is_uninitialized = prev_params.n_accept_total < 0
@@ -308,20 +324,27 @@ def update_bilby_walks_fn(
 
     num_walks_int = jnp.minimum(jnp.ceil(new_walks_float).astype(jnp.int32), max_mcmc)
 
-    example_particle = jax.tree_util.tree_map(lambda x: x[0], ns_state.particles)
+    # Calculate ndim from position dict (not full state)
+    example_particle = jax.tree_util.tree_map(
+        lambda x: x[0], ns_state.particles.position
+    )
     flat_particle, _ = flatten_util.ravel_pytree(example_particle)
     n_dim = flat_particle.shape[0]
 
-    return DEKernelParams(
-        live_points=ns_state.particles,
+    new_de_params = DEKernelParams(
+        live_points=ns_state.particles.position,  # Just the position dict, not full state
         loglikelihoods=ns_state.particles.loglikelihood,
-        mix=0.5,
+        mix=jnp.array(0.5, dtype=jnp.float32),
         scale=2.38 / jnp.sqrt(2 * n_dim),
         num_walks=jnp.array(num_walks_int, dtype=jnp.int32),
         walks_float=jnp.array(new_walks_float, dtype=jnp.float32),
         n_accept_total=jnp.array(0, dtype=jnp.int32),
         n_likelihood_evals_total=jnp.array(0, dtype=jnp.int32),
     )
+
+    # Return dict with only array-like data (no callables!)
+    # logprior_fn and loglikelihood_fn are baked into the kernel via partial
+    return {"params": new_de_params}
 
 
 def bilby_adaptive_de_sampler_unit_cube(
@@ -344,11 +367,17 @@ def bilby_adaptive_de_sampler_unit_cube(
     delete_fn = partial(default_delete_fn, num_delete=num_delete)
 
     def update_fn(
-        ns_state: NSState, ns_info: NSInfo, params: Dict[str, ArrayTree]
-    ) -> DEKernelParams:
-        """Update function compatible with blackjax adaptive kernel interface."""
+        rng_key, ns_state: NSState, ns_info: NSInfo, params: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Update function compatible with blackjax adaptive kernel interface.
+
+        Note: At runtime ns_state is AdaptiveNSState (duck typed as NSState).
+        Returns dict with keys 'logprior_fn', 'loglikelihood_fn', 'params'.
+        """
+        # Type cast: blackjax passes AdaptiveNSState through NSState-typed interface
+        adaptive_state: AdaptiveNSState = ns_state  # type: ignore[assignment]
         return update_bilby_walks_fn(
-            ns_state=ns_state,
+            ns_state=adaptive_state,
             logprior_fn=logprior_fn,
             loglikelihood_fn=loglikelihood_fn,
             n_target=n_target,
@@ -356,33 +385,59 @@ def bilby_adaptive_de_sampler_unit_cube(
             n_delete=num_delete,
         )
 
+    # Bake logprior_fn and loglikelihood_fn into the kernel via partial
+    # These are callables that cannot be stored in JAX-traced pytrees
     kernel_with_stepper = partial(
         de_rwalk_dynamic_unit_cube,
+        logprior_fn=logprior_fn,
+        loglikelihood_fn=loglikelihood_fn,
         stepper_fn=stepper_fn,
         num_survivors=num_survivors,
         max_proposals=max_proposals,
         max_mcmc=max_mcmc,
     )
 
-    # BlackJAX API compatibility: DEKernelParams (NamedTuple) works as pytree but type checker
-    # expects Dict[str, ArrayTree]. This is safe since NamedTuple is a valid pytree.
+    # Wrapper to match blackjax API: inner_kernel(rng_keys, states, loglikelihood_0, **kwargs)
+    # blackjax does partial(inner_kernel, **inner_kernel_params) then calls with 3 positional args
+    # Since vmap applies to ALL args (including kwargs!), we need to capture params in closure
+    # after partial, so it's not subject to vmap
+    def make_vmapped_kernel(params):
+        """Create a vmapped kernel with params captured in closure."""
+
+        def inner_kernel_closure(rng_key, state, loglikelihood_0):
+            # Pass all remaining args by keyword to avoid positional conflicts
+            # partial() already bound: logprior_fn, loglikelihood_fn, stepper_fn,
+            # num_survivors, max_proposals, max_mcmc
+            return kernel_with_stepper(
+                rng_key=rng_key,
+                state=state,
+                loglikelihood_0=loglikelihood_0,
+                params=params,
+            )
+
+        return jax.vmap(inner_kernel_closure, in_axes=(0, 0, None))
+
+    # The inner_kernel passed to build_adaptive_kernel should accept params as kwarg
+    # blackjax will do: partial(inner_kernel, params=de_params)
+    # Then call: partial_kernel(rng_keys, states, loglikelihood_0)
+    # But we need to avoid vmapping params, so we use a different approach:
+    # Return a function that extracts params from kwargs and creates the vmapped kernel on-the-fly
+    def inner_kernel_wrapper(rng_keys, states, loglikelihood_0, *, params):
+        vmapped_kernel = make_vmapped_kernel(params)
+        return vmapped_kernel(rng_keys, states, loglikelihood_0)
+
     base_kernel_step = build_adaptive_kernel(
         delete_fn,
-        jax.vmap(kernel_with_stepper, in_axes=(0, 0, None, None, None, None)),
+        inner_kernel_wrapper,
         update_fn,  # type: ignore[arg-type]
     )
 
-    def init_fn(particles):
+    def init_fn(particles, rng_key=None):
         # Create init_state_fn that captures logprior_fn and loglikelihood_fn
         def _init_state_fn(positions):
             return init_state_strategy(
                 positions, jax.vmap(logprior_fn), jax.vmap(loglikelihood_fn)
             )
-
-        state = base_init(
-            positions=particles,
-            init_state_fn=_init_state_fn,
-        )
 
         # Calculate proper scale from particle dimensionality
         example_particle = jax.tree_util.tree_map(lambda x: x[0], particles)
@@ -390,34 +445,59 @@ def bilby_adaptive_de_sampler_unit_cube(
         n_dim = flat_particle.shape[0]
         scale = 2.38 / jnp.sqrt(2 * n_dim)
 
-        # Create initial DEKernelParams with sentinel value
-        initial_de_params = DEKernelParams(
-            live_points=particles,
-            loglikelihoods=state.particles.loglikelihood,
-            mix=0.5,
-            scale=scale,
-            num_walks=jnp.array(100, dtype=jnp.int32),
-            walks_float=jnp.array(100.0, dtype=jnp.float32),
-            n_accept_total=jnp.array(-1, dtype=jnp.int32),  # Sentinel flag
-            n_likelihood_evals_total=jnp.array(-1, dtype=jnp.int32),  # Sentinel flag
+        # Create function to initialize inner kernel params
+        # This is called by adaptive_init to set up initial inner kernel kwargs
+        # build_adaptive_kernel unpacks these as: partial(inner_kernel, **inner_kernel_params)
+        # Note: logprior_fn and loglikelihood_fn are baked into kernel_with_stepper
+        # via partial, since callables can't be stored in JAX-traced pytrees
+        def _init_inner_kernel_params_fn(key, base_state, info, params):
+            de_params = DEKernelParams(
+                live_points=particles,
+                loglikelihoods=base_state.particles.loglikelihood,
+                mix=jnp.array(0.5, dtype=jnp.float32),
+                scale=scale,
+                num_walks=jnp.array(100, dtype=jnp.int32),
+                walks_float=jnp.array(100.0, dtype=jnp.float32),
+                n_accept_total=jnp.array(-1, dtype=jnp.int32),  # Sentinel flag
+                n_likelihood_evals_total=jnp.array(
+                    -1, dtype=jnp.int32
+                ),  # Sentinel flag
+            )
+            # Return dict with only array-like data (no callables!)
+            return {"params": de_params}
+
+        # Use adaptive_init which returns AdaptiveNSState with inner_kernel_params
+        state = adaptive_init(
+            positions=particles,
+            init_state_fn=_init_state_fn,
+            update_inner_kernel_params_fn=_init_inner_kernel_params_fn,
+            rng_key=rng_key,
         )
 
-        # Set our sentinel state manually
-        return state._replace(inner_kernel_params=initial_de_params)
+        return state
 
-    def step_fn(rng_key, state: NSState):
+    def step_fn(rng_key, state: AdaptiveNSState):
         new_state, info = base_kernel_step(rng_key, state)
 
-        inner_info = info.inner_kernel_info
+        # NSInfo has update_info (not inner_kernel_info) - this contains DEWalkInfo
+        inner_info = info.update_info
         batch_n_accept = jnp.sum(inner_info.n_accept)
         batch_n_likelihood_evals = jnp.sum(inner_info.n_likelihood_evals)
 
-        updated_params = new_state.inner_kernel_params._replace(
+        # inner_kernel_params is a dict with only 'params' key containing DEKernelParams
+        # (callables are baked into the kernel via partial, not stored in state)
+        inner_params_dict: Dict[str, ArrayTree] = new_state.inner_kernel_params  # type: ignore[assignment]
+        de_params: DEKernelParams = inner_params_dict["params"]  # type: ignore[assignment]
+
+        updated_de_params = de_params._replace(
             n_accept_total=batch_n_accept,
             n_likelihood_evals_total=batch_n_likelihood_evals,
         )
 
-        final_state = new_state._replace(inner_kernel_params=updated_params)
+        # Create updated dict with the new DEKernelParams
+        updated_inner_params = {"params": updated_de_params}
+
+        final_state = new_state._replace(inner_kernel_params=updated_inner_params)
         return final_state, info
 
     # BlackJAX API compatibility: Our functions work correctly but type signatures
