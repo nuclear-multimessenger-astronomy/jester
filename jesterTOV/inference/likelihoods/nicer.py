@@ -17,9 +17,172 @@ logger = get_logger("jester")
 
 class NICERLikelihood(LikelihoodBase):
     """
-    NICER likelihood using mass sampling and EOS interpolation
+    NICER likelihood using mass integration along EOS curve
 
-    TODO: Generalize to e.g. only one group, weights between different hotspot models,...
+    This likelihood loads posterior samples from Amsterdam and Maryland groups,
+    constructs KDEs, and evaluates the likelihood by:
+    1. Creating a uniform grid of mass points in [M_min, M_max]
+    2. For each mass point, interpolating radius from the EOS
+    3. Evaluating the KDE at (mass, radius) for each grid point
+    4. Integrating over the mass grid using logsumexp
+
+    The bounds [M_min, M_max] are determined from percentiles of the NICER
+    posterior samples to ensure the integration covers the relevant mass range.
+
+    Parameters
+    ----------
+    psr_name : str
+        Pulsar name (e.g., "J0030", "J0740")
+    amsterdam_samples_file : str
+        Path to npz file with Amsterdam group posterior samples
+        Expected to contain 'mass' (Msun) and 'radius' (km) arrays
+    maryland_samples_file : str
+        Path to npz file with Maryland group posterior samples
+        Expected to contain 'mass' (Msun) and 'radius' (km) arrays
+    N_masses : int, optional
+        Number of mass grid points for integration (default: 1000)
+    mass_percentile_range : tuple[float, float], optional
+        Percentile range [lower, upper] for mass grid bounds (default: (0.1, 99.9))
+
+    Attributes
+    ----------
+    psr_name : str
+        Pulsar name
+    N_masses : int
+        Number of mass grid points
+    mass_percentile_range : tuple[float, float]
+        Percentile range for mass bounds
+    mass_min : float
+        Minimum mass for integration grid (computed from percentiles)
+    mass_max : float
+        Maximum mass for integration grid (computed from percentiles)
+    delta_mass : float
+        Mass grid spacing
+    mass_grid : Float[Array, " N_masses"]
+        Uniform mass grid for integration
+    amsterdam_posterior : gaussian_kde
+        KDE of Amsterdam (mass, radius) posterior
+    maryland_posterior : gaussian_kde
+        KDE of Maryland (mass, radius) posterior
+    """
+
+    psr_name: str
+    N_masses: int
+    mass_percentile_range: tuple[float, float]
+    mass_min: float
+    mass_max: float
+    delta_mass: float
+    mass_grid: Float[Array, " N_masses"]
+    amsterdam_posterior: gaussian_kde
+    maryland_posterior: gaussian_kde
+
+    def __init__(
+        self,
+        psr_name: str,
+        amsterdam_samples_file: str,
+        maryland_samples_file: str,
+        N_masses: int = 1000,
+        mass_percentile_range: tuple[float, float] = (0.1, 99.9),
+    ) -> None:
+        super().__init__()
+        self.psr_name = psr_name
+        self.N_masses = N_masses
+        self.mass_percentile_range = mass_percentile_range
+
+        # Load samples from npz files
+        logger.info(
+            f"Loading Amsterdam samples for {psr_name} from {amsterdam_samples_file}"
+        )
+        amsterdam_data = np.load(amsterdam_samples_file, allow_pickle=True)
+
+        logger.info(
+            f"Loading Maryland samples for {psr_name} from {maryland_samples_file}"
+        )
+        maryland_data = np.load(maryland_samples_file, allow_pickle=True)
+
+        # Extract mass and radius samples
+        # File format: mass (Msun), radius (km)
+        amsterdam_mass = amsterdam_data["mass"]
+        amsterdam_radius = amsterdam_data["radius"]
+        maryland_mass = maryland_data["mass"]
+        maryland_radius = maryland_data["radius"]
+
+        # Combine masses to compute percentile-based bounds
+        all_masses = np.concatenate([amsterdam_mass, maryland_mass])
+        self.mass_min = float(np.percentile(all_masses, mass_percentile_range[0]))
+        self.mass_max = float(np.percentile(all_masses, mass_percentile_range[1]))
+
+        # Create uniform mass grid
+        self.mass_grid = jnp.linspace(self.mass_min, self.mass_max, N_masses)
+        self.delta_mass = (self.mass_max - self.mass_min) / (N_masses - 1)
+
+        logger.info(
+            f"Mass integration grid for {psr_name}: "
+            f"[{self.mass_min:.3f}, {self.mass_max:.3f}] Msun with {N_masses} points "
+            f"(ΔM = {self.delta_mass:.6f} Msun)"
+        )
+
+        # Stack into [mass, radius] arrays for KDE
+        # Convert to JAX arrays for JAX KDE
+        amsterdam_mr = jnp.vstack([amsterdam_mass, amsterdam_radius])
+        maryland_mr = jnp.vstack([maryland_mass, maryland_radius])
+
+        # Construct KDEs using JAX implementation
+        logger.info(f"Constructing JAX KDEs for {psr_name}")
+        self.amsterdam_posterior = gaussian_kde(amsterdam_mr)
+        self.maryland_posterior = gaussian_kde(maryland_mr)
+        logger.info(f"Loaded JAX KDEs for {psr_name}")
+
+    def evaluate(self, params: dict[str, Float | Array]) -> Float:
+        """
+        Evaluate log likelihood by integrating along EOS curve
+
+        Parameters
+        ----------
+        params : dict[str, Float | Array]
+            Must contain:
+            - 'masses_EOS': Array of neutron star masses from EOS
+            - 'radii_EOS': Array of neutron star radii from EOS
+
+        Returns
+        -------
+        Float
+            Log likelihood value for this NICER observation
+        """
+        # Extract parameters
+        masses_EOS: Float[Array, " n_points"] = params["masses_EOS"]
+        radii_EOS: Float[Array, " n_points"] = params["radii_EOS"]
+
+        # Interpolate radii at grid points
+        radii_grid = jnp.interp(self.mass_grid, masses_EOS, radii_EOS)
+
+        # Evaluate KDEs at (mass_i, radius_i) points
+        # Shape: (2, N_masses) for KDE evaluation
+        mr_grid_amsterdam = jnp.vstack([self.mass_grid, radii_grid])
+        mr_grid_maryland = jnp.vstack([self.mass_grid, radii_grid])
+
+        # Evaluate log probabilities
+        logpdf_amsterdam = self.amsterdam_posterior.logpdf(mr_grid_amsterdam)
+        logpdf_maryland = self.maryland_posterior.logpdf(mr_grid_maryland)
+
+        # Integrate using logsumexp (each group separately)
+        # Add log(ΔM) normalization term
+        log_delta_mass = jnp.log(self.delta_mass)
+        logL_amsterdam = logsumexp(logpdf_amsterdam) + log_delta_mass
+        logL_maryland = logsumexp(logpdf_maryland) + log_delta_mass
+
+        # Combine the two groups (equal weights)
+        log_likelihood = logsumexp(jnp.array([logL_amsterdam, logL_maryland]))
+
+        return log_likelihood
+
+
+class NICERMassSampledLikelihood(LikelihoodBase):
+    """
+    NICER likelihood using mass sampling and EOS interpolation (legacy implementation)
+
+    NOTE: This is the legacy implementation that randomly samples masses from the
+    NICER posterior. For new analyses, use NICERLikelihood (mass integration) instead.
 
     This likelihood loads posterior samples from Amsterdam and Maryland groups,
     constructs KDEs, and evaluates the likelihood by:

@@ -35,8 +35,8 @@ likelihoods:
         - name: "J0030"
           amsterdam_samples_file: "../../../../jesterTOV/inference/data/NICER/J00300451_amsterdam_ST_PST_NICER_only_Riley2019.npz"
           maryland_samples_file: "../../../../jesterTOV/inference/data/NICER/J00300451_maryland_2spot_NICER_only_RM.npz"
-      N_masses_evaluation: 20    # Number of mass samples per likelihood evaluation (updated to match GW approach)
-      N_masses_batch_size: 10    # Batch size for processing mass samples
+      N_masses_evaluation: 1000    # Number of mass grid points for integration
+      mass_percentile_range: [0.1, 99.9]  # Percentile range for mass grid bounds
 
 # MCMC sampler configuration
 sampler:

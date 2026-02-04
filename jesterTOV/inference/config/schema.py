@@ -138,9 +138,9 @@ class LikelihoodConfig(BaseModel):
             pulsars : list[dict]
                 List of pulsars with 'name', 'amsterdam_samples_file', and 'maryland_samples_file' keys
             N_masses_evaluation : int
-                Number of mass grid points for marginalization (default: 100)
-            N_masses_batch_size : int
-                Batch size for processing mass grid points (default: 20)
+                Number of mass grid points for integration (default: 1000)
+            mass_percentile_range : tuple[float, float]
+                Percentile range [lower, upper] for mass grid bounds (default: (0.1, 99.9))
 
         For radio timing likelihoods:
             pulsars : list[dict]
@@ -302,8 +302,8 @@ class LikelihoodConfig(BaseModel):
                     )
 
             # Set defaults for optional parameters
-            v.setdefault("N_masses_evaluation", 100)
-            v.setdefault("N_masses_batch_size", 20)
+            v.setdefault("N_masses_evaluation", 1000)
+            v.setdefault("mass_percentile_range", (0.1, 99.9))
 
         # Validate radio timing likelihood parameters
         elif likelihood_type == "radio":

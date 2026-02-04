@@ -35,8 +35,8 @@ likelihoods:
         - name: "J0740"
           amsterdam_samples_file: "../../../../jesterTOV/inference/data/NICER/J07406620_amsterdam_gamma_NICERXMM_equal_weights_recent.npz"
           maryland_samples_file: "../../../../jesterTOV/inference/data/NICER/J07406620_maryland_unknown_NICERXMM_RM.npz"
-      N_masses_evaluation: 20
-      N_masses_batch_size: 10
+      N_masses_evaluation: 1000
+      mass_percentile_range: [0.1, 99.9]
 
 # BlackJAX Nested Sampling with Acceptance Walk configuration
 sampler:

@@ -857,3 +857,212 @@ class TestLikelihoodIntegration:
         result = combined.evaluate(params)
         # Should sum both penalties
         assert result == -2e10
+
+
+class TestNICERLikelihood:
+    """Test NICERLikelihood (mass integration) functionality."""
+
+    def test_nicer_likelihood_initialization(self):
+        """Test NICERLikelihood initializes correctly with integration approach."""
+        from pathlib import Path
+        from jesterTOV.inference.likelihoods.nicer import NICERLikelihood
+
+        # Use real NICER data files
+        data_dir = (
+            Path(__file__).parent.parent.parent
+            / "jesterTOV"
+            / "inference"
+            / "data"
+            / "NICER"
+        )
+        amsterdam_file = (
+            data_dir / "J00300451_amsterdam_ST_PST_NICER_only_Riley2019.npz"
+        )
+        maryland_file = data_dir / "J00300451_maryland_2spot_NICER_only_RM.npz"
+
+        # Verify files exist
+        assert amsterdam_file.exists(), f"Amsterdam file not found: {amsterdam_file}"
+        assert maryland_file.exists(), f"Maryland file not found: {maryland_file}"
+
+        # Create likelihood with integration approach
+        likelihood = NICERLikelihood(
+            psr_name="J0030",
+            amsterdam_samples_file=str(amsterdam_file),
+            maryland_samples_file=str(maryland_file),
+            N_masses=100,  # Small for fast testing
+            mass_percentile_range=(0.1, 99.9),
+        )
+
+        # Check basic properties
+        assert likelihood.psr_name == "J0030"
+        assert likelihood.N_masses == 100
+        assert likelihood.mass_percentile_range == (0.1, 99.9)
+        assert likelihood.mass_min > 0.0
+        assert likelihood.mass_max > likelihood.mass_min
+        assert likelihood.delta_mass > 0.0
+        assert len(likelihood.mass_grid) == 100
+
+    def test_nicer_likelihood_evaluate(self):
+        """Test NICERLikelihood evaluation with integration."""
+        from pathlib import Path
+        from jesterTOV.inference.likelihoods.nicer import NICERLikelihood
+
+        # Use real NICER data files
+        data_dir = (
+            Path(__file__).parent.parent.parent
+            / "jesterTOV"
+            / "inference"
+            / "data"
+            / "NICER"
+        )
+        amsterdam_file = (
+            data_dir / "J00300451_amsterdam_ST_PST_NICER_only_Riley2019.npz"
+        )
+        maryland_file = data_dir / "J00300451_maryland_2spot_NICER_only_RM.npz"
+
+        # Create likelihood
+        likelihood = NICERLikelihood(
+            psr_name="J0030",
+            amsterdam_samples_file=str(amsterdam_file),
+            maryland_samples_file=str(maryland_file),
+            N_masses=50,  # Small for fast testing
+            mass_percentile_range=(1.0, 99.0),
+        )
+
+        # Mock EOS output
+        # Realistic NS mass-radius curve
+        masses_eos = jnp.linspace(1.0, 2.5, 100)
+        radii_eos = 12.0 - 0.5 * (masses_eos - 1.4)  # Decreasing radius with mass
+
+        params = {
+            "masses_EOS": masses_eos,
+            "radii_EOS": radii_eos,
+        }
+
+        result = likelihood.evaluate(params)
+
+        # Should return finite log likelihood
+        assert jnp.isfinite(result)
+        # Should be a reasonable likelihood (not extremely negative)
+        assert result > -1e10, f"Likelihood too negative: {result}"
+
+    def test_nicer_likelihood_different_percentile_ranges(self):
+        """Test NICERLikelihood with different percentile ranges."""
+        from pathlib import Path
+        from jesterTOV.inference.likelihoods.nicer import NICERLikelihood
+
+        data_dir = (
+            Path(__file__).parent.parent.parent
+            / "jesterTOV"
+            / "inference"
+            / "data"
+            / "NICER"
+        )
+        amsterdam_file = (
+            data_dir / "J00300451_amsterdam_ST_PST_NICER_only_Riley2019.npz"
+        )
+        maryland_file = data_dir / "J00300451_maryland_2spot_NICER_only_RM.npz"
+
+        # Create likelihoods with different percentile ranges
+        likelihood_narrow = NICERLikelihood(
+            psr_name="J0030",
+            amsterdam_samples_file=str(amsterdam_file),
+            maryland_samples_file=str(maryland_file),
+            N_masses=50,
+            mass_percentile_range=(10.0, 90.0),  # Narrower range
+        )
+
+        likelihood_wide = NICERLikelihood(
+            psr_name="J0030",
+            amsterdam_samples_file=str(amsterdam_file),
+            maryland_samples_file=str(maryland_file),
+            N_masses=50,
+            mass_percentile_range=(0.1, 99.9),  # Wider range
+        )
+
+        # Wider range should have larger mass bounds
+        assert likelihood_wide.mass_max > likelihood_narrow.mass_max
+        assert likelihood_wide.mass_min < likelihood_narrow.mass_min
+
+
+class TestNICERMassSampledLikelihood:
+    """Test NICERMassSampledLikelihood (legacy mass sampling) functionality."""
+
+    def test_nicer_mass_sampled_likelihood_initialization(self):
+        """Test NICERMassSampledLikelihood initializes correctly with mass sampling."""
+        from pathlib import Path
+        from jesterTOV.inference.likelihoods.nicer import NICERMassSampledLikelihood
+
+        # Use real NICER data files
+        data_dir = (
+            Path(__file__).parent.parent.parent
+            / "jesterTOV"
+            / "inference"
+            / "data"
+            / "NICER"
+        )
+        amsterdam_file = (
+            data_dir / "J00300451_amsterdam_ST_PST_NICER_only_Riley2019.npz"
+        )
+        maryland_file = data_dir / "J00300451_maryland_2spot_NICER_only_RM.npz"
+
+        # Create likelihood with mass sampling approach
+        likelihood = NICERMassSampledLikelihood(
+            psr_name="J0030",
+            amsterdam_samples_file=str(amsterdam_file),
+            maryland_samples_file=str(maryland_file),
+            penalty_value=-99999.0,
+            N_masses_evaluation=10,
+            N_masses_batch_size=5,
+        )
+
+        # Check basic properties
+        assert likelihood.psr_name == "J0030"
+        assert likelihood.penalty_value == -99999.0
+        assert likelihood.N_masses_evaluation == 10
+        assert likelihood.N_masses_batch_size == 5
+
+    def test_nicer_mass_sampled_likelihood_evaluate(self):
+        """Test NICERMassSampledLikelihood evaluation with mass sampling."""
+        from pathlib import Path
+        from jesterTOV.inference.likelihoods.nicer import NICERMassSampledLikelihood
+
+        # Use real NICER data files
+        data_dir = (
+            Path(__file__).parent.parent.parent
+            / "jesterTOV"
+            / "inference"
+            / "data"
+            / "NICER"
+        )
+        amsterdam_file = (
+            data_dir / "J00300451_amsterdam_ST_PST_NICER_only_Riley2019.npz"
+        )
+        maryland_file = data_dir / "J00300451_maryland_2spot_NICER_only_RM.npz"
+
+        # Create likelihood
+        likelihood = NICERMassSampledLikelihood(
+            psr_name="J0030",
+            amsterdam_samples_file=str(amsterdam_file),
+            maryland_samples_file=str(maryland_file),
+            penalty_value=-99999.0,
+            N_masses_evaluation=10,
+            N_masses_batch_size=5,
+        )
+
+        # Mock EOS output
+        masses_eos = jnp.linspace(1.0, 2.5, 100)
+        radii_eos = 12.0 - 0.5 * (masses_eos - 1.4)
+
+        params = {
+            "_random_key": jnp.array(42),  # Random seed
+            "masses_EOS": masses_eos,
+            "radii_EOS": radii_eos,
+        }
+
+        result = likelihood.evaluate(params)
+
+        # Should return finite log likelihood
+        assert jnp.isfinite(result)
+        # Should be a reasonable likelihood (not the penalty value)
+        assert result > -1e10, f"Likelihood too negative: {result}"
