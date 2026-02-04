@@ -193,12 +193,14 @@ def tov_solver(eos, pc):
     Parameters
     ----------
     eos : dict
-        Extended EOS interpolation data containing:
+        Extended EOS interpolation data containing arrays (accessed as ``eos["p"]``,
+        ``eos["h"]``, ``eos["e"]``, ``eos["cs2"]``, ``eos["dloge_dlogp"]``):
 
-        - **p**: Pressure array [geometric units]
-        - **h**: Enthalpy array [geometric units]
-        - **e**: Energy density array [geometric units]
-        - **dloge_dlogp**: Logarithmic derivative array
+        - **p**: Pressure :math:`p` [geometric units]
+        - **h**: Specific enthalpy :math:`h` [geometric units]
+        - **e**: Energy density :math:`\varepsilon` [geometric units]
+        - **cs2**: Sound speed squared :math:`c_s^2 = dp/d\varepsilon` [dimensionless]
+        - **dloge_dlogp**: Logarithmic derivative :math:`d\ln\varepsilon/d\ln p` [dimensionless]
         - **alpha, beta, gamma**: Post-Newtonian parameters
         - **lambda_BL, lambda_DY, lambda_HB**: Theory modification parameters
     pc : float
