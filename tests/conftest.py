@@ -30,8 +30,10 @@ def sample_eos_dict():
     h = utils.cumtrapz(p_geo / (e_geo + p_geo), jnp.log(p_geo))
     dloge_dlogp = jnp.diff(jnp.log(e)) / jnp.diff(jnp.log(p))
     dloge_dlogp = jnp.concatenate([jnp.array([dloge_dlogp[0]]), dloge_dlogp])
-
-    return {"p": p_geo, "h": h, "e": e_geo, "dloge_dlogp": dloge_dlogp}
+    dedp = e_geo / p_geo * dloge_dlogp
+    cs2 = 1.0 / dedp
+    eos_dict = {"p": p_geo, "h": h, "e": e_geo, "dloge_dlogp": dloge_dlogp, "cs2": cs2}
+    return eos_dict
 
 
 @pytest.fixture
