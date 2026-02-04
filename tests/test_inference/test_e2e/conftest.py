@@ -215,14 +215,18 @@ def smc_rw_chieft_config(chieft_prior_file: Path, e2e_temp_dir: Path) -> dict[st
 
 
 @pytest.fixture
-def blackjax_ns_aw_prior_config(minimal_prior_file: Path, e2e_temp_dir: Path) -> dict[str, Any]:
+def blackjax_ns_aw_prior_config(
+    minimal_prior_file: Path, e2e_temp_dir: Path
+) -> dict[str, Any]:
     """BlackJAX NS-AW config with prior-only likelihood."""
     sampler_config = {"type": "blackjax-ns-aw", **BLACKJAX_NS_AW_LIGHTWEIGHT}
     return build_prior_only_config(sampler_config, minimal_prior_file, e2e_temp_dir)
 
 
 @pytest.fixture
-def blackjax_ns_aw_chieft_config(chieft_prior_file: Path, e2e_temp_dir: Path) -> dict[str, Any]:
+def blackjax_ns_aw_chieft_config(
+    chieft_prior_file: Path, e2e_temp_dir: Path
+) -> dict[str, Any]:
     """BlackJAX NS-AW config with chiEFT likelihood."""
     sampler_config = {"type": "blackjax-ns-aw", **BLACKJAX_NS_AW_LIGHTWEIGHT}
     return build_chieft_config(sampler_config, chieft_prior_file, e2e_temp_dir)
