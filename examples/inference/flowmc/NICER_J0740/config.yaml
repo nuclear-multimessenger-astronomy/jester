@@ -35,8 +35,9 @@ likelihoods:
         - name: "J0740"
           amsterdam_samples_file: "../../../../jesterTOV/inference/data/NICER/J07406620_amsterdam_gamma_NICERXMM_equal_weights_recent.npz"
           maryland_samples_file: "../../../../jesterTOV/inference/data/NICER/J07406620_maryland_unknown_NICERXMM_RM.npz"
-      N_masses_evaluation: 20    # Number of mass samples per likelihood evaluation (updated to match GW approach)
-      N_masses_batch_size: 10    # Batch size for processing mass samples
+      # N_masses_evaluation: 2000  # Default: pre-sampled masses for deterministic evaluation
+      # N_masses_batch_size: 1000  # Default batch size
+      # seed: 42                   # Default random seed for pre-sampling
 
 # MCMC sampler configuration
 sampler:

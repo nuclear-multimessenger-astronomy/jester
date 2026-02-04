@@ -134,13 +134,27 @@ class LikelihoodConfig(BaseModel):
             N_masses_batch_size : int
                 Batch size for mass sampling (default: 10)
 
-        For NICER likelihoods:
+        For NICER likelihoods (type: "nicer", presampled version - default):
             pulsars : list[dict]
                 List of pulsars with 'name', 'amsterdam_samples_file', and 'maryland_samples_file' keys
+            penalty_value : float
+                Penalty for masses exceeding Mtov (default: -99999.0)
             N_masses_evaluation : int
-                Number of mass grid points for marginalization (default: 100)
+                Number of mass samples to pre-sample (default: 2000)
             N_masses_batch_size : int
-                Batch size for processing mass grid points (default: 20)
+                Batch size for jax.lax.map processing (default: 1000)
+            seed : int
+                Random seed for mass pre-sampling (default: 42)
+
+        For NICER resampled likelihoods (type: "nicer_resampled", legacy on-the-fly resampling):
+            pulsars : list[dict]
+                List of pulsars with 'name', 'amsterdam_samples_file', and 'maryland_samples_file' keys
+            penalty_value : float
+                Penalty for masses exceeding Mtov (default: -99999.0)
+            N_masses_evaluation : int
+                Number of mass samples per evaluation (default: 20)
+            N_masses_batch_size : int
+                Batch size for mass sampling (default: 10)
 
         For radio timing likelihoods:
             pulsars : list[dict]
@@ -189,6 +203,7 @@ class LikelihoodConfig(BaseModel):
         "gw",
         "gw_resampled",
         "nicer",
+        "nicer_resampled",
         "radio",
         "chieft",
         "rex",
@@ -271,7 +286,7 @@ class LikelihoodConfig(BaseModel):
             v.setdefault("N_masses_evaluation", 20)
             v.setdefault("N_masses_batch_size", 10)
 
-        # Validate NICER likelihood parameters
+        # Validate NICER likelihood parameters (presampled is now default)
         elif likelihood_type == "nicer":
             if "pulsars" not in v:
                 raise ValueError(
@@ -301,9 +316,48 @@ class LikelihoodConfig(BaseModel):
                         f"Pulsar {i} missing required 'maryland_samples_file' field"
                     )
 
-            # Set defaults for optional parameters
-            v.setdefault("N_masses_evaluation", 100)
-            v.setdefault("N_masses_batch_size", 20)
+            # Set defaults for optional parameters (presampled version)
+            v.setdefault("penalty_value", -99999.0)
+            v.setdefault("N_masses_evaluation", 2000)  # Default for presampled
+            v.setdefault("N_masses_batch_size", 1000)
+            v.setdefault("seed", 42)
+
+        # Validate NICER resampled likelihood parameters (legacy behavior)
+        elif likelihood_type == "nicer_resampled":
+            if "pulsars" not in v:
+                raise ValueError(
+                    "NICER resampled likelihood requires 'pulsars' parameter "
+                    "(list of dicts with 'name', 'amsterdam_samples_file', and 'maryland_samples_file')"
+                )
+
+            pulsars = v["pulsars"]
+            if not isinstance(pulsars, list) or len(pulsars) == 0:
+                raise ValueError(
+                    "NICER resampled likelihood 'pulsars' must be a non-empty list"
+                )
+
+            # Validate each pulsar
+            for i, pulsar in enumerate(pulsars):
+                if not isinstance(pulsar, dict):
+                    raise ValueError(
+                        f"Pulsar {i} must be a dict with 'name', 'amsterdam_samples_file', "
+                        f"and 'maryland_samples_file' keys"
+                    )
+                if "name" not in pulsar:
+                    raise ValueError(f"Pulsar {i} missing required 'name' field")
+                if "amsterdam_samples_file" not in pulsar:
+                    raise ValueError(
+                        f"Pulsar {i} missing required 'amsterdam_samples_file' field"
+                    )
+                if "maryland_samples_file" not in pulsar:
+                    raise ValueError(
+                        f"Pulsar {i} missing required 'maryland_samples_file' field"
+                    )
+
+            # Set defaults for optional parameters (resampled version)
+            v.setdefault("penalty_value", -99999.0)
+            v.setdefault("N_masses_evaluation", 20)
+            v.setdefault("N_masses_batch_size", 10)
 
         # Validate radio timing likelihood parameters
         elif likelihood_type == "radio":

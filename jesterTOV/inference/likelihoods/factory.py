@@ -5,7 +5,7 @@ from pathlib import Path
 from ..config.schema import LikelihoodConfig
 from .combined import CombinedLikelihood, ZeroLikelihood
 from .gw import GWLikelihood, GWLikelihoodResampled
-from .nicer import NICERLikelihood
+from .nicer import NICERLikelihood, NICERLikelihoodResampled
 from .radio import RadioTimingLikelihood
 from .chieft import ChiEFTLikelihood
 from .constraints import (
@@ -240,19 +240,43 @@ def create_combined_likelihood(
                 )
                 likelihoods.append(gw_likelihood)
 
-        # Special handling for NICER likelihoods: create one likelihood per pulsar
+        # Special handling for NICER likelihoods (presampled is now default): create one likelihood per pulsar
         elif config.type == "nicer":
             params = config.parameters
             pulsars = params["pulsars"]  # Required, validated by schema
-            N_masses_evaluation = params.get("N_masses_evaluation", 100)
-            N_masses_batch_size = params.get("N_masses_batch_size", 20)
+            penalty_value = params.get("penalty_value", -99999.0)
+            N_masses_evaluation = params.get("N_masses_evaluation", 2000)
+            N_masses_batch_size = params.get("N_masses_batch_size", 1000)
+            seed = params.get("seed", 42)
 
-            # Create one NICERLikelihood per pulsar
+            # Create one NICERLikelihood (presampled) per pulsar
             for pulsar in pulsars:
                 nicer_likelihood = NICERLikelihood(
                     psr_name=pulsar["name"],
                     amsterdam_samples_file=pulsar["amsterdam_samples_file"],
                     maryland_samples_file=pulsar["maryland_samples_file"],
+                    penalty_value=penalty_value,
+                    N_masses_evaluation=N_masses_evaluation,
+                    N_masses_batch_size=N_masses_batch_size,
+                    seed=seed,
+                )
+                likelihoods.append(nicer_likelihood)
+
+        # Special handling for NICER likelihoods with resampling: create one likelihood per pulsar
+        elif config.type == "nicer_resampled":
+            params = config.parameters
+            pulsars = params["pulsars"]  # Required, validated by schema
+            penalty_value = params.get("penalty_value", -99999.0)
+            N_masses_evaluation = params.get("N_masses_evaluation", 20)
+            N_masses_batch_size = params.get("N_masses_batch_size", 10)
+
+            # Create one NICERLikelihoodResampled per pulsar
+            for pulsar in pulsars:
+                nicer_likelihood = NICERLikelihoodResampled(
+                    psr_name=pulsar["name"],
+                    amsterdam_samples_file=pulsar["amsterdam_samples_file"],
+                    maryland_samples_file=pulsar["maryland_samples_file"],
+                    penalty_value=penalty_value,
                     N_masses_evaluation=N_masses_evaluation,
                     N_masses_batch_size=N_masses_batch_size,
                 )
