@@ -154,10 +154,8 @@ class TestTOVIntegration:
         hs = utils.cumtrapz(ps / (es + ps), jnp.log(ps))
         dloge_dlogps = jnp.diff(jnp.log(es)) / jnp.diff(jnp.log(ps))
         dloge_dlogps = jnp.concatenate([jnp.array([dloge_dlogps[0]]), dloge_dlogps])
-        dedps = es / ps * dloge_dlogps
-        cs2s = 1.0 / dedps
 
-        eos_dict = {"p": ps, "h": hs, "e": es, "dloge_dlogp": dloge_dlogps, "cs2": cs2s}
+        eos_dict = {"p": ps, "h": hs, "e": es, "dloge_dlogp": dloge_dlogps}
 
         # Test multiple central pressures
         pressure_indices = [20, 30, 40, 50, 60]
@@ -216,11 +214,9 @@ class TestTOVIntegration:
         hs = utils.cumtrapz(ps / (es + ps), jnp.log(ps))
         dloge_dlogps = jnp.diff(jnp.log(es)) / jnp.diff(jnp.log(ps))
         dloge_dlogps = jnp.concatenate([jnp.array([dloge_dlogps[0]]), dloge_dlogps])
-        dedps = es / ps * dloge_dlogps
-        cs2s = 1.0 / dedps
 
         # Standard EOS dict
-        eos_dict = {"p": ps, "h": hs, "e": es, "dloge_dlogp": dloge_dlogps, "cs2": cs2s}
+        eos_dict = {"p": ps, "h": hs, "e": es, "dloge_dlogp": dloge_dlogps}
 
         # Post-TOV EOS dict (GR limit)
         ptov_eos_dict = eos_dict.copy()

@@ -51,12 +51,12 @@ def tov_ode(h, y, eos):
     ps = eos["p"]
     hs = eos["h"]
     es = eos["e"]
-    cs2s = eos["cs2"]
+    dloge_dlogps = eos["dloge_dlogp"]
     # Extract current state variables
     r, m, H, b = y
     e = utils.interp_in_logspace(h, hs, es)
     p = utils.interp_in_logspace(h, hs, ps)
-    dedp = 1.0 / utils.interp_in_logspace(h, hs, cs2s)
+    dedp = e / p * jnp.interp(h, hs, dloge_dlogps)
 
     # Metric coefficient A = 1/(1-2m/r)
     A = 1.0 / (1.0 - 2.0 * m / r)
@@ -182,11 +182,11 @@ def tov_solver(eos, pc):
     ps = eos["p"]
     hs = eos["h"]
     es = eos["e"]
-    cs2s = eos["cs2"]
+    dloge_dlogps = eos["dloge_dlogp"]
     # Central values and initial conditions
     hc = utils.interp_in_logspace(pc, ps, hs)
     ec = utils.interp_in_logspace(hc, hs, es)
-    dedp_c = 1.0 / utils.interp_in_logspace(hc, hs, cs2s)
+    dedp_c = ec / pc * jnp.interp(hc, hs, dloge_dlogps)
     dhdp_c = 1.0 / (ec + pc)
     dedh_c = dedp_c / dhdp_c
 
