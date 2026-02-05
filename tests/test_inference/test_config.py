@@ -144,7 +144,6 @@ class TestLikelihoodConfig:
                 "pulsars": [
                     {"name": "J0348+0432", "mass_mean": 2.01, "mass_std": 0.04}
                 ],
-                "nb_masses": 100,
             },
         )
         assert config.type == "radio"
