@@ -131,10 +131,10 @@ class RadioTimingLikelihood(LikelihoodBase):
 
         This method computes the marginal likelihood by:
         1. Extracting the maximum TOV mass from the EOS
-        2. Creating a mass grid from m_min to M_TOV
-        3. Evaluating the Gaussian likelihood at each grid point
-        4. Numerically integrating using logsumexp for stability
-        5. Applying the 1/M_TOV normalization factor
+        2. Computing standardized z-scores for the integration bounds
+        3. Evaluating the Gaussian CDF at the upper and lower bounds
+        4. Computing the CDF difference in log-space for numerical stability
+        5. Applying the 1/(M_TOV - m_min) normalization factor
 
         Parameters
         ----------
@@ -149,15 +149,11 @@ class RadioTimingLikelihood(LikelihoodBase):
         -------
         Float
             Natural logarithm of the marginalized likelihood. Returns a large
-            negative penalty (-1e10) for invalid EOSs (M_TOV ≤ m_min), which
+            negative penalty (-jnp.inf) for invalid EOSs (M_TOV ≤ m_min), which
             indicates TOV integration failure or unphysical EOS.
 
         Notes
         -----
-        The numerical integration uses nb_masses grid points and evaluates
-        the Gaussian likelihood in log-space for numerical stability. The
-        logsumexp operation prevents underflow when summing small probabilities.
-
         Any NaN or infinity values in the result are replaced with -jnp.inf to
         ensure stable MCMC sampling.
         """
@@ -176,12 +172,14 @@ class RadioTimingLikelihood(LikelihoodBase):
         z_lower = (self.m_min - self.mean) / self.std
 
         # Compute log(Φ(z_upper) - Φ(z_lower)) using numerically stable log-space arithmetic
-        # log(a - b) = log(a) + log(1 - b/a) = a + log(1 - exp(b - a))
+        # log(a - b) = log(a) + log(1 - b/a)
+        #            = log(a) + log1p(-b/a)
+        #            = log(a) + log1p(-exp(log(b) - log(a)))
         logcdf_upper = norm.logcdf(z_upper)
         logcdf_lower = norm.logcdf(z_lower)
         log_cdf_diff = logcdf_upper + jnp.log1p(-jnp.exp(logcdf_lower - logcdf_upper))
 
-        # Apply 1/(M_max - m_min) normalization factor (uniform prior on true mass in [m_min, M_TOV])
+        # Apply 1/(M_max - m_min) (uniform prior in [m_min, M_TOV])
         # Use jnp.where to avoid computing log(mtov - m_min) when mtov is invalid
         log_likelihood = jnp.where(
             invalid_mtov,
