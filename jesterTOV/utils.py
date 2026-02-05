@@ -396,3 +396,34 @@ def calculate_rest_mass_density(e: Float[Array, "n"], p: Float[Array, "n"]):
     )
 
     return solution.ys
+
+
+def locate_lowest_non_causal_point(cs2: Float[Array, "n"]) -> int:
+    r"""
+    Find the first point where the equation of state becomes non-causal.
+
+    The speed of sound squared :math:`c_s^2 = dp/d\varepsilon` must satisfy
+    :math:`c_s^2 \leq 1` (in units where :math:`c = 1`) for causality.
+    This function locates the first density where this condition is violated.
+
+    Parameters
+    ----------
+    cs2 : Float[Array, "n"]
+        Speed of sound squared values
+
+    Returns
+    -------
+    int
+        Index of first non-causal point, or -1 if EOS is everywhere causal
+
+    Notes
+    -----
+    This function is used to determine the maximum valid central pressure
+    for TOV equation integration.
+    """
+    mask = cs2 >= 1.0
+    any_ones = jnp.any(mask)
+    indices = jnp.arange(len(cs2))
+    masked_indices = jnp.where(mask, indices, len(cs2))
+    first_index = jnp.min(masked_indices)
+    return jnp.where(any_ones, first_index, -1)
