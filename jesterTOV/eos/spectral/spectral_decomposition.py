@@ -335,9 +335,8 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         gamma_min = jnp.min(gamma_samples)
         gamma_violation = jnp.maximum(0.0, 0.1 - gamma_min)
 
-        extra_constraints = None
-        if gamma_violation > 0:
-            extra_constraints = {"gamma_bound_violation": float(gamma_violation)}
+        # Always construct extra_constraints to avoid Python branching on JAX traced values
+        extra_constraints = {"gamma_bound_violation": float(gamma_violation)}
 
         # Generate high-density spectral region
         n_high, p_high, e_high = self._generate_spectral_region(gamma)
@@ -350,9 +349,9 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         # Convert to geometric units and compute auxiliary quantities
         ns, ps, hs, es, dloge_dlogps = self.interpolate_eos(n_full, p_full, e_full)
 
+        # TODO: double check if this is stable
         # Compute cs2 from dloge_dlogps
-        # cs2 = dp/de = (p/e) * (de/dp)^-1 = (p/e) / (dloge_dlogps * e/p) = 1 / dloge_dlogps
-        cs2 = 1.0 / dloge_dlogps
+        cs2 = ps / (es * dloge_dlogps)
 
         return EOSData(
             ns=ns,

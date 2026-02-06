@@ -14,7 +14,7 @@ def sample_eos_data_post(sample_eos_dict):
     hs = sample_eos_dict["h"]
     es = sample_eos_dict["e"]
     dloge_dlogps = sample_eos_dict["dloge_dlogp"]
-    cs2 = sample_eos_dict["cs2"]
+    cs2 = ps / (es * dloge_dlogps)
 
     return EOSData(
         ns=jnp.zeros_like(ps),  # Not used in TOV

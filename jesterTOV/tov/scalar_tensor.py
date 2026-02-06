@@ -232,26 +232,18 @@ class ScalarTensorTOVSolver(TOVSolverBase):
                     throw=False,
                 )
 
-                # Handle solver failure
-                if sol_iter.ys is None or sol_iter.result != 0:
-                    # Return state with large values to exit loop
-                    return (
-                        max_iterations,
-                        nu0_local,
-                        phi0_local,
-                        jnp.nan,
-                        jnp.nan,
-                        1e10,
-                        1e10,
-                    )
+                # Check for solver failure (JAX-compatible)
+                # Diffrax with throw=False always populates ys, so we only check result
+                iter_failed = sol_iter.result != 0
 
-                R = sol_iter.ys[0][-1]
-                M_s = sol_iter.ys[1][-1]
-                nu_s = sol_iter.ys[2][-1]
-                psi_s = sol_iter.ys[3][-1]
-                phi_s = sol_iter.ys[4][-1]
+                # Extract values (will be unused if failed, but must be computed for JAX tracing)
+                R = sol_iter.ys[0][-1]  # type: ignore[index]
+                M_s = sol_iter.ys[1][-1]  # type: ignore[index]
+                nu_s = sol_iter.ys[2][-1]  # type: ignore[index]
+                psi_s = sol_iter.ys[3][-1]  # type: ignore[index]
+                phi_s = sol_iter.ys[4][-1]  # type: ignore[index]
 
-                # Exterior
+                # Exterior (always run to maintain JAX tracing, will be masked if interior failed)
                 y_surf = (M_s, nu_s, phi_s, psi_s)
                 r_max = 4 * 128 * 4.0 * jnp.power(3.0 / (4.0 * jnp.pi * ec), 1.0 / 3.0)
                 sol_ext = diffeqsolve(
@@ -266,18 +258,32 @@ class ScalarTensorTOVSolver(TOVSolverBase):
                     throw=False,
                 )
 
-                # Handle solver failure
-                if sol_ext.ys is None or sol_ext.result != 0:
-                    return (max_iterations, nu0_local, phi0_local, R, M_s, 1e10, 1e10)
+                # Check for exterior solver failure (JAX-compatible)
+                # Diffrax with throw=False always populates ys, so we only check result
+                ext_failed = sol_ext.result != 0
 
-                M_inf = sol_ext.ys[0][-1]
-                nu_inf = sol_ext.ys[1][-1]
-                phi_inf = sol_ext.ys[2][-1]
+                # Extract values (will be unused if failed, but must be computed for JAX tracing)
+                M_inf = sol_ext.ys[0][-1]  # type: ignore[index]
+                nu_inf = sol_ext.ys[1][-1]  # type: ignore[index]
+                phi_inf = sol_ext.ys[2][-1]  # type: ignore[index]
 
-                nu0_local = nu0_local - damping * nu_inf
-                phi0_local = phi0_local - damping * phi_inf
+                # Update parameters (masked by jnp.where below)
+                nu0_updated = nu0_local - damping * nu_inf
+                phi0_updated = phi0_local - damping * phi_inf
 
-                return (i + 1, nu0_local, phi0_local, R, M_inf, nu_inf, phi_inf)
+                # Combine both failure conditions
+                any_failed = jnp.logical_or(iter_failed, ext_failed)
+
+                # Use jnp.where to select between failure and success values
+                return (
+                    jnp.where(any_failed, max_iterations, i + 1),
+                    jnp.where(any_failed, nu0_local, nu0_updated),
+                    jnp.where(any_failed, phi0_local, phi0_updated),
+                    jnp.where(iter_failed, jnp.nan, R),
+                    jnp.where(iter_failed, jnp.nan, jnp.where(ext_failed, M_s, M_inf)),
+                    jnp.where(any_failed, 1e10, nu_inf),
+                    jnp.where(any_failed, 1e10, phi_inf),
+                )
 
             final_state = lax.while_loop(cond_fun, body_fun, init_state)
             (
@@ -306,21 +312,23 @@ class ScalarTensorTOVSolver(TOVSolverBase):
                 throw=False,
             )
 
-            if sol_iter.ys is None or sol_iter.result != 0:
-                return jnp.nan, jnp.nan
+            # Check for interior solver failure (JAX-compatible)
+            iter_failed_final = sol_iter.result != 0
 
-            R = sol_iter.ys[0][-1]
-            M_s = sol_iter.ys[1][-1]
-            nu_s = sol_iter.ys[2][-1]
-            psi_s = sol_iter.ys[3][-1]
-            phi_s = sol_iter.ys[4][-1]
+            # Extract values (must compute for JAX tracing)
+            R = sol_iter.ys[0][-1]  # type: ignore[index]
+            M_s = sol_iter.ys[1][-1]  # type: ignore[index]
+            nu_s = sol_iter.ys[2][-1]  # type: ignore[index]
+            psi_s = sol_iter.ys[3][-1]  # type: ignore[index]
+            phi_s = sol_iter.ys[4][-1]  # type: ignore[index]
 
+            # Exterior (always run for JAX tracing)
             y_surf = (M_s, nu_s, phi_s, psi_s)
             r_max = 4 * 128 * 4.0 * jnp.power(3.0 / (4.0 * jnp.pi * ec), 1.0 / 3.0)
             sol_ext_final = diffeqsolve(
                 ODETerm(_SText_ode),
                 Dopri5(scan_kind="bounded"),
-                t0=R_final,
+                t0=R,
                 t1=r_max,
                 dt0=1e-9,
                 y0=y_surf,
@@ -329,12 +337,21 @@ class ScalarTensorTOVSolver(TOVSolverBase):
                 throw=False,
             )
 
-            if sol_ext_final.ys is None or sol_ext_final.result != 0:
-                return R_final, jnp.nan
+            # Check for exterior solver failure (JAX-compatible)
+            ext_failed_final = sol_ext_final.result != 0
 
-            M_inf_final = sol_ext_final.ys[0][-1]
+            # Extract final mass
+            M_inf_final = sol_ext_final.ys[0][-1]  # type: ignore[index]
 
-            return R_final, M_inf_final
+            # Use jnp.where to handle failures (scalars, but Pyright infers conservatively)
+            R_out = jnp.where(iter_failed_final, jnp.nan, R)  # type: ignore[arg-type]
+            M_out = jnp.where(
+                iter_failed_final,
+                jnp.nan,
+                jnp.where(ext_failed_final, jnp.nan, M_inf_final),  # type: ignore[arg-type]
+            )  # type: ignore[arg-type]
+
+            return R_out, M_out  # type: ignore[return-value]
 
         R, M_inf = run_iteration(nu0, phi0)
 
@@ -342,7 +359,7 @@ class ScalarTensorTOVSolver(TOVSolverBase):
         # Return k2 = 0 temporarily
         k2 = 0.0
 
-        return TOVSolution(M=M_inf, R=R, k2=k2)
+        return TOVSolution(M=M_inf, R=R, k2=k2)  # type: ignore[arg-type]
 
     def get_required_parameters(self) -> list[str]:
         """

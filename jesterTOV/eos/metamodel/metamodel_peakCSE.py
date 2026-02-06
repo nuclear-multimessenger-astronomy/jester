@@ -1,7 +1,7 @@
 r"""Meta-model EOS with Gaussian peak Constant Speed-of-sound Extensions (peakCSE)."""
 
 import jax.numpy as jnp
-from jaxtyping import Float, Int
+from jaxtyping import Array, Float, Int
 
 from jesterTOV import utils
 from jesterTOV.eos.base import Interpolate_EOS_model

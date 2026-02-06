@@ -60,7 +60,17 @@ BLACKJAX_NS_AW_LIGHTWEIGHT = {
 }
 
 # NEP parameter names (without CSE)
-NEP_PARAMS = ["K_sat", "Q_sat", "Z_sat", "E_sym", "L_sym", "K_sym", "Q_sym", "Z_sym"]
+NEP_PARAMS = [
+    "E_sat",
+    "K_sat",
+    "Q_sat",
+    "Z_sat",
+    "E_sym",
+    "L_sym",
+    "K_sym",
+    "Q_sym",
+    "Z_sym",
+]
 
 
 # ============================================================================
@@ -78,7 +88,8 @@ def e2e_temp_dir() -> Iterator[Path]:
 @pytest.fixture
 def minimal_prior_file(e2e_temp_dir: Path) -> Path:
     """Create a minimal prior file for testing (NEP params only, no CSE)."""
-    prior_content = """K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
+    prior_content = """E_sat = UniformPrior(-16.1, -15.9, parameter_names=["E_sat"])
+K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
 Q_sat = UniformPrior(-500.0, 1100.0, parameter_names=["Q_sat"])
 Z_sat = UniformPrior(-2500.0, 1500.0, parameter_names=["Z_sat"])
 E_sym = UniformPrior(28.0, 45.0, parameter_names=["E_sym"])
@@ -95,7 +106,8 @@ Z_sym = UniformPrior(-2000.0, 1500.0, parameter_names=["Z_sym"])
 @pytest.fixture
 def chieft_prior_file(e2e_temp_dir: Path) -> Path:
     """Create a prior file with nbreak for chiEFT tests (requires CSE)."""
-    prior_content = """K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
+    prior_content = """E_sat = UniformPrior(-16.1, -15.9, parameter_names=["E_sat"])
+K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
 Q_sat = UniformPrior(-500.0, 1100.0, parameter_names=["Q_sat"])
 Z_sat = UniformPrior(-2500.0, 1500.0, parameter_names=["Z_sat"])
 E_sym = UniformPrior(28.0, 45.0, parameter_names=["E_sym"])

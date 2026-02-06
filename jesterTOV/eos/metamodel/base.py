@@ -313,16 +313,16 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         # Use the old parameter name internally for compatibility
         NEP_dict = params
 
-        E_sat = NEP_dict.get("E_sat")
-        K_sat = NEP_dict.get("K_sat")
-        Q_sat = NEP_dict.get("Q_sat")
-        Z_sat = NEP_dict.get("Z_sat")
+        E_sat = NEP_dict["E_sat"]
+        K_sat = NEP_dict["K_sat"]
+        Q_sat = NEP_dict["Q_sat"]
+        Z_sat = NEP_dict["Z_sat"]
 
-        E_sym = NEP_dict.get("E_sym")
-        L_sym = NEP_dict.get("L_sym")
-        K_sym = NEP_dict.get("K_sym")
-        Q_sym = NEP_dict.get("Q_sym")
-        Z_sym = NEP_dict.get("Z_sym")
+        E_sym = NEP_dict["E_sym"]
+        L_sym = NEP_dict["L_sym"]
+        K_sym = NEP_dict["K_sym"]
+        Q_sym = NEP_dict["Q_sym"]
+        Z_sym = NEP_dict["Z_sym"]
 
         # Add the first derivative coefficient in Esat to make it work with jax.numpy.polyval
         coefficient_sat = jnp.array([E_sat, 0.0, K_sat, Q_sat, Z_sat])

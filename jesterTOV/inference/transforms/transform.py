@@ -197,7 +197,7 @@ class JesterTransform(NtoMTransform):
         if eos_type == "metamodel":
             return MetaModel_EOS_model(
                 nsat=0.16,
-                nmin_MM_nsat=getattr(config, "min_nsat_TOV", 0.75),
+                nmin_MM_nsat=getattr(config, "nmin_MM_nsat", 0.75),
                 nmax_nsat=getattr(config, "nmax_nsat", 25.0),
                 ndat=getattr(config, "ndat_metamodel", 100),
                 crust_name=getattr(config, "crust_name", "DH"),
@@ -206,7 +206,7 @@ class JesterTransform(NtoMTransform):
         elif eos_type == "metamodel_cse":
             return MetaModel_with_CSE_EOS_model(
                 nsat=0.16,
-                nmin_MM_nsat=getattr(config, "min_nsat_TOV", 0.75),
+                nmin_MM_nsat=getattr(config, "nmin_MM_nsat", 0.75),
                 nmax_nsat=getattr(config, "nmax_nsat", 25.0),
                 max_nbreak_nsat=max_nbreak_nsat,
                 ndat_metamodel=getattr(config, "ndat_metamodel", 100),
