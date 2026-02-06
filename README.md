@@ -79,6 +79,8 @@ xdg-open docs/_build/html/index.html  # Linux
 Running tests:
 ```bash
 uv run pytest tests/
+
+uv run pytest tests/ -v -m "not slow" # avoid slower tests
 ```
 
 Code quality checks:
