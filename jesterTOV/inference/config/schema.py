@@ -29,14 +29,18 @@ class TransformConfig(BaseModel):
         Number of CSE parameters (only for metamodel_cse)
     n_points_high : int
         Number of high-density points for spectral EOS (only for spectral)
+    nmin_MM_nsat : float
+        Starting density for metamodel grid as fraction of nsat (default: 0.75)
     min_nsat_TOV : float
-        Minimum density for TOV integration (units of nsat)
+        Minimum central density for TOV integration (units of nsat)
     ndat_TOV : int
         Number of data points for TOV integration
     nb_masses : int
         Number of masses to sample
     crust_name : Literal["DH", "BPS", "DH_fixed", "SLy"]
         Name of crust model to use
+    tov_solver : Literal["gr", "post", "scalar_tensor"]
+        TOV solver type to use (default: "gr")
     """
 
     type: Literal["metamodel", "metamodel_cse", "spectral"]
@@ -44,12 +48,14 @@ class TransformConfig(BaseModel):
     nmax_nsat: float = 25.0
     nb_CSE: int = 8  # Only for metamodel_cse
     n_points_high: int = 500  # Only for spectral
-    min_nsat_TOV: float = 0.75
+    nmin_MM_nsat: float = 0.75  # Starting density for metamodel grid
+    min_nsat_TOV: float = 0.75  # Minimum density for TOV integration
     ndat_TOV: int = 100
     nb_masses: int = 100
     crust_name: Literal["DH", "BPS", "DH_fixed", "SLy"] = (
         "DH"  # TODO: this should be done in the crust source code, not here, and here just fetch from there
     )
+    tov_solver: Literal["gr", "post", "scalar_tensor"] = "gr"
 
     @field_validator("nb_CSE")
     @classmethod

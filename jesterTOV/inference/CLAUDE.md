@@ -16,7 +16,10 @@ The `jesterTOV/inference/` module provides Bayesian inference for constraining n
 **Transforms**: Convert parameter spaces
 - Sample transforms: Applied during sampling with Jacobian (bijective)
 - Likelihood transforms: Applied before likelihood evaluation (N-to-M)
-- JESTER uses likelihood transforms: NEP → M-R-Λ via TOV solver
+- JESTER uses single unified `JesterTransform` class: NEP → M-R-Λ via EOS + TOV
+  - EOS classes know their required parameters
+  - TOV solvers know their required parameters
+  - Transform coordinates the full pipeline and validates parameters
 
 **Priors**: Bilby-style Python syntax in `.prior` files
 ```python
@@ -61,10 +64,9 @@ jesterTOV/inference/
 │   └── generate_yaml_reference.py  # Auto-generate docs
 ├── priors/              # Prior specification system
 │   └── parser.py        # Parse .prior files (bilby-style Python format)
-├── transforms/          # EOS parameter transforms
-│   ├── base.py          # JesterTransformBase ABC
-│   ├── metamodel.py     # MetaModel transform (NEP → M-R-Λ)
-│   └── metamodel_cse.py # MetaModel + CSE extension
+├── transforms/          # Unified transform system
+│   ├── transform.py     # JesterTransform - single class for all EOS+TOV combinations
+│   └── __init__.py      # Exports JesterTransform
 ├── likelihoods/         # Observational constraints
 │   ├── gw.py            # Gravitational wave events
 │   ├── nicer.py         # X-ray timing observations
@@ -94,20 +96,93 @@ config.yaml → Pydantic validation
   ↓
 Parse .prior file → CombinePrior object
   ↓
-Create transform (factory) → JesterTransformBase
+Create transform → JesterTransform.from_config()
+  ├─ Instantiate EOS (MetaModel/MetaModelCSE/Spectral)
+  └─ Instantiate TOV solver (GR/Post/ScalarTensor)
+  ↓
+Validate parameters → Check prior contains all required EOS+TOV params
   ↓
 Load data (NICER/GW posteriors, construct KDEs)
   ↓
 Create likelihoods (factory) → CombinedLikelihood
   ↓
-Setup flowMC sampler → JesterSampler wrapper
+Setup sampler → JesterSampler wrapper (FlowMC/SMC/NS-AW)
   ↓
-MCMC sampling (training + production)
+MCMC/SMC/NS sampling (training + production)
   ↓
 Save results → outdir/results_production.npz
   ↓
 Generate EOS samples → outdir/eos_samples.npz
 ```
+
+### EOS/TOV Architecture
+
+**Key Design Principle**: Modular separation of concerns
+
+1. **EOS Classes** (`jesterTOV/eos/`):
+   - `MetaModel_EOS_model` - Nuclear empirical parameters (9 NEPs)
+   - `MetaModel_with_CSE_EOS_model` - MetaModel + crust-core transition
+   - `SpectralDecomposition_EOS_model` - Spectral representation
+   - Each implements:
+     - `construct_eos(params) -> EOSData` - Build EOS from parameters
+     - `get_required_parameters() -> list[str]` - List parameter names
+
+2. **TOV Solvers** (`jesterTOV/tov/`):
+   - `GRTOVSolver` - General relativity
+   - `PostTOVSolver` - Post-Newtonian corrections
+   - `ScalarTensorTOVSolver` - Scalar-tensor gravity
+   - Each implements:
+     - `construct_family(eos_data, ...) -> FamilyData` - Solve TOV for M-R-Λ family
+     - `get_required_parameters() -> list[str]` - List additional parameters (e.g., coupling constants)
+
+3. **JAX Dataclasses** (`jesterTOV/tov/data_classes.py`):
+   - `EOSData` - EOS quantities (ns, ps, hs, es, cs2, etc.) - NamedTuple for JAX pytrees
+   - `TOVSolution` - Single star solution (M, R, k2)
+   - `FamilyData` - M-R-Λ family curves (masses, radii, lambdas)
+
+4. **JesterTransform** (`jesterTOV/inference/transforms/transform.py`):
+   - Single unified class for all EOS+TOV combinations
+   - Created via `JesterTransform.from_config(config)`
+   - Coordinates: params → EOS.construct_eos() → TOV.construct_family() → observables
+   - Validates: all required params are in prior (raises error if missing)
+   - Logs warning: if prior contains unused parameters
+
+**JAX Compatibility Requirements**:
+- No Python `if` statements on traced values (use `jnp.where()`)
+- No `float()` casts on traced arrays
+- Dataclasses must be JAX pytrees (use NamedTuple, not @dataclass)
+
+### Parameter Validation
+
+**Automatic validation at transform setup** (in `run_inference.py`):
+
+After creating `JesterTransform`, the code validates that all required parameters are present in the prior:
+
+```python
+transform = JesterTransform.from_config(config.transform, ...)
+required_params = set(transform.get_parameter_names())
+prior_params = set(prior.parameter_names)
+
+# Check for missing parameters
+missing_params = required_params - prior_params
+if missing_params:
+    raise ValueError(
+        f"Transform with EOS = {eos_name} and TOV = {tov_name} is missing "
+        f"params = {sorted(missing_params)} from the prior file"
+    )
+
+# Warn about unused parameters
+unused_params = prior_params - required_params
+if unused_params:
+    logger.warning(f"Prior contains unused parameters: {sorted(unused_params)}")
+```
+
+**Benefits**:
+- Catch configuration errors before sampling starts (fail-fast)
+- Clear error messages identifying which parameters are missing
+- Helpful for debugging when switching between EOS types
+
+**Tests**: See `tests/test_inference/test_transform_validation.py` for unit tests
 
 ## Configuration System
 
@@ -133,17 +208,26 @@ uv run python -m jesterTOV.inference.config.generate_yaml_reference
 Priors are specified in `.prior` files using bilby-style Python syntax:
 
 ```python
-# Nuclear Empirical Parameters
+# Nuclear Empirical Parameters (required for MetaModel/MetaModelCSE)
+E_sat = UniformPrior(-16.1, -15.9, parameter_names=["E_sat"])
 K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
+Q_sat = UniformPrior(-500.0, 1100.0, parameter_names=["Q_sat"])
+Z_sat = UniformPrior(-2500.0, 1500.0, parameter_names=["Z_sat"])
+E_sym = UniformPrior(28.0, 45.0, parameter_names=["E_sym"])
 L_sym = UniformPrior(10.0, 200.0, parameter_names=["L_sym"])
+K_sym = UniformPrior(-400.0, 200.0, parameter_names=["K_sym"])
+Q_sym = UniformPrior(-1000.0, 1500.0, parameter_names=["Q_sym"])
+Z_sym = UniformPrior(-2000.0, 1500.0, parameter_names=["Z_sym"])
 
-# CSE breaking density (for metamodel+CSE transform)
+# CSE breaking density (for metamodel_cse transform only)
 nbreak = UniformPrior(0.16, 0.32, parameter_names=["nbreak"])
 ```
 
-The parser automatically:
-- Includes NEP parameters (`_sat` and `_sym` suffixes)
-- Adds CSE grid parameters programmatically if `nb_CSE > 0` for metamodel+CSE EOS parametrization
+**Important notes**:
+- All 9 NEP parameters must be present for MetaModel/MetaModelCSE EOS types
+- E_sat is now a free parameter (no longer fixed to -16.0 by default)
+- CSE grid parameters (p_0, ..., p_N) are added programmatically if `nb_CSE > 0`
+- Parameter validation will raise an error if any required parameter is missing from prior
 
 ## Key Design Principles
 
@@ -154,11 +238,16 @@ Transforms convert between parameter spaces. Two types:
 1. **Sample Transforms** (BijectiveTransform):
    - Applied during sampling with Jacobian corrections
    - Must be invertible (1-to-1 mapping)
+   - Examples: LogitTransform for bounded parameters
 
 2. **Likelihood Transforms** (NtoMTransform):
    - Applied before likelihood evaluation
    - Can be N-to-M mapping (e.g., NEP → M-R-Λ curves)
    - No Jacobian corrections
+   - **JesterTransform is the single unified likelihood transform**:
+     - Handles all EOS types (metamodel, metamodel_cse, spectral)
+     - Handles all TOV solver types (gr, post, scalar_tensor)
+     - Use `JesterTransform.from_config(config)` to instantiate
 
 ### Sampler Architecture
 
@@ -174,13 +263,25 @@ Transforms convert between parameter spaces. Two types:
 4. Add type to `config/schema.py` LikelihoodConfig
 5. Regenerate YAML docs: `uv run python -m jesterTOV.inference.config.generate_yaml_reference`
 
-### Adding a New Transform
+### Adding a New EOS or TOV Solver
 
-1. Create new file in `transforms/` inheriting from `JesterTransformBase`
-2. Implement `forward(params)` method
-3. Add transform type to `transforms/factory.py`
-4. Add type to `config/schema.py` TransformConfig
-5. Regenerate YAML docs
+**To add a new EOS**:
+1. Create new class in `jesterTOV/eos/` inheriting from `Interpolate_EOS_model`
+2. Implement `construct_eos(params) -> EOSData` method
+3. Implement `get_required_parameters() -> list[str]` method
+4. Add EOS type to `JesterTransform._create_eos()` in `transforms/transform.py`
+5. Add type to `config/schema.py` TransformConfig
+6. Regenerate YAML docs: `uv run python -m jesterTOV.inference.config.generate_yaml_reference`
+
+**To add a new TOV solver**:
+1. Create new class in `jesterTOV/tov/` inheriting from `TOVSolverBase`
+2. Implement `construct_family(eos_data, ...) -> FamilyData` method
+3. Implement `get_required_parameters() -> list[str]` method
+4. Add solver type to `JesterTransform._create_tov_solver()` in `transforms/transform.py`
+5. Add type to `config/schema.py` TransformConfig (tov_solver field)
+6. Regenerate YAML docs
+
+**No need to create new transform classes** - `JesterTransform` handles all combinations automatically!
 
 ### Testing Configuration Changes
 
@@ -205,6 +306,24 @@ For debugging NaN issues, uncomment:
 ```python
 jax.config.update("jax_debug_nans", True)
 ```
+
+### Type Safety with JAX
+
+**Common type ignore patterns** (required due to JAX tracing limitations):
+
+```python
+# vmap batches scalar NamedTuple fields → arrays
+masses: Float[Array, "n"] = solutions.M  # type: ignore[assignment]
+
+# Diffrax with throw=False guarantees ys populated
+R = sol.ys[0][-1]  # type: ignore[index]
+
+# MetaModel guarantees mu populated (but type system sees Optional)
+mu: Float[Array, "n"] = eos_data.mu  # type: ignore[assignment]
+# TODO: Consider restructuring Interpolate_EOS_model to make mu non-optional
+```
+
+**Anti-pattern:** NEVER use runtime assertions in JAX-traced code (fails during tracing). Use type ignore with explanatory comments instead.
 
 ## File Naming Conventions
 
