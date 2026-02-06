@@ -3,7 +3,7 @@ jesterTOV.ptov module
 
 The post-TOV (pTOV) module extends the standard TOV equations to include tidal deformability calculations.
 
-.. automodule:: jesterTOV.ptov
+.. automodule:: jesterTOV.tov.post
    :members:
    :undoc-members:
    :show-inheritance:

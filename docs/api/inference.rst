@@ -27,25 +27,11 @@ Priors
 Transforms
 ----------
 
-.. automodule:: jesterTOV.inference.transforms.base
+.. automodule:: jesterTOV.inference.transforms.transform
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: jesterTOV.inference.transforms.metamodel
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-.. automodule:: jesterTOV.inference.transforms.metamodel_cse
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-.. automodule:: jesterTOV.inference.transforms.factory
-   :members:
-   :undoc-members:
-   :show-inheritance:
 
 Likelihoods
 -----------
