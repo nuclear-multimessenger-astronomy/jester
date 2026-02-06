@@ -149,15 +149,37 @@ uv run pre-commit run --all-files
 
 ### Testing
 ```bash
-# Run all tests
-uv run pytest tests/
+# Run all tests (excluding slow tests - default for CI)
+uv run pytest tests/ -m "not slow"
 
 # Run specific test file
 uv run pytest tests/test_inference/test_config.py
 
 # Run with verbose output
 uv run pytest -v tests/
+
+# Run E2E tests only
+uv run pytest tests/test_inference/test_e2e/ -v
+
+# Run all tests including slow (nightly builds)
+uv run pytest tests/
 ```
+
+**Test Markers**:
+- `@pytest.mark.slow` - Slow tests, skipped in regular CI (run in nightly)
+- `@pytest.mark.integration` - Integration tests
+- `@pytest.mark.e2e` - End-to-end pipeline tests
+- `@pytest.mark.blackjax` - Tests requiring BlackJAX samplers
+
+**End-to-End Tests** (`tests/test_inference/test_e2e/`):
+- Tests the full inference pipeline: config → sampler.sample() → SamplerOutput
+- Uses lightweight hyperparameters for fast execution (<2 min per test)
+- Covers all samplers: SMC-RW, FlowMC, BlackJAX NS-AW
+- Catches integration bugs that unit tests miss
+
+**CI/CD Configuration**:
+- **Regular CI** (`.github/workflows/ci.yml`): Runs on every PR, skips `@slow` tests
+- **Nightly CI** (`.github/workflows/nightly.yml`): Runs daily at 2 AM UTC, includes all E2E tests
 
 **CI/CD Test Dependencies**:
 - LaTeX packages (texlive-latex-base, texlive-latex-extra, dvipng, cm-super) for matplotlib plotting tests
