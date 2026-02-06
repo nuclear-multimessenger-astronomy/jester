@@ -732,6 +732,8 @@ class InferenceConfig(BaseModel):
         Setup everything but don't run sampler (default: False)
     validate_only : bool
         Only validate configuration, don't run inference (default: False)
+    debug_nans : bool
+        Enable JAX NaN debugging for catching numerical issues (default: False)
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -745,6 +747,10 @@ class InferenceConfig(BaseModel):
     data_paths: Dict[str, str] = Field(default_factory=dict)
     dry_run: bool = False
     validate_only: bool = False
+    debug_nans: bool = Field(
+        default=False,
+        description="Enable JAX NaN debugging for catching numerical issues during inference",
+    )
 
     @field_validator("likelihoods")
     @classmethod
