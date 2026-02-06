@@ -91,14 +91,14 @@ class TOVSolverBase(ABC):
         solutions = jax.vmap(solve_single_pc)(pcs)
 
         # Extract batched results (vmap converts scalar fields to arrays)
-        masses = solutions.M  # Array of masses
-        radii = solutions.R  # Array of radii
-        k2s = solutions.k2  # Array of Love numbers
+        masses: Float[Array, "ndat"] = solutions.M  # type: ignore[assignment]
+        radii: Float[Array, "ndat"] = solutions.R  # type: ignore[assignment]
+        k2s: Float[Array, "ndat"] = solutions.k2  # type: ignore[assignment]
 
         # Convert to physical units and compute tidal deformability
         return self._create_family_data(pcs, masses, radii, k2s, ndat)
 
-    def _get_pc_min(self, eos_data: EOSData, min_nsat: float) -> float:
+    def _get_pc_min(self, eos_data: EOSData, min_nsat: float) -> Float[Array, ""]:
         """
         Calculate minimum central pressure from minimum density.
 
@@ -107,13 +107,13 @@ class TOVSolverBase(ABC):
             min_nsat: Minimum density in units of saturation density
 
         Returns:
-            float: Minimum central pressure [geometric units]
+            Scalar Array: Minimum central pressure [geometric units]
         """
         min_n_geometric = min_nsat * 0.16 * utils.fm_inv3_to_geometric
         pc_min = utils.interp_in_logspace(min_n_geometric, eos_data.ns, eos_data.ps)
         return pc_min
 
-    def _get_pc_max(self, eos_data: EOSData) -> float:
+    def _get_pc_max(self, eos_data: EOSData) -> Float[Array, ""]:
         """
         Calculate maximum causal central pressure.
 
@@ -124,7 +124,7 @@ class TOVSolverBase(ABC):
             eos_data: EOS quantities
 
         Returns:
-            float: Maximum central pressure [geometric units]
+            Scalar Array: Maximum central pressure [geometric units]
         """
         # Find first non-causal point
         mask = eos_data.cs2 >= 1.0

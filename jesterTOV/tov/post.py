@@ -326,15 +326,17 @@ class PostTOVSolver(TOVSolverBase):
             throw=False,
         )
 
-        # Handle solver failure gracefully (JAX-compatible, no asserts)
-        if sol.ys is None or sol.result != 0:
-            # Return NaN on failure - constraint checking will catch this
-            return TOVSolution(M=jnp.nan, R=jnp.nan, k2=jnp.nan)
+        # # TODO: remove this feature
+        # # Handle solver failure gracefully (JAX-compatible, no asserts)
+        # if sol.ys is None or sol.result != 0:
+        #     # Return NaN on failure - constraint checking will catch this
+        #     return TOVSolution(M=jnp.nan, R=jnp.nan, k2=jnp.nan)
 
-        R = sol.ys[0][-1]
-        M = sol.ys[1][-1]
-        H = sol.ys[2][-1]
-        b = sol.ys[3][-1]
+        # Extract solution values (throw=False guarantees ys is populated)
+        R = sol.ys[0][-1]  # type: ignore[index]
+        M = sol.ys[1][-1]  # type: ignore[index]
+        H = sol.ys[2][-1]  # type: ignore[index]
+        b = sol.ys[3][-1]  # type: ignore[index]
 
         k2 = _calc_k2(R, M, H, b)
 

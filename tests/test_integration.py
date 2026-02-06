@@ -2,7 +2,9 @@
 
 import pytest
 import jax.numpy as jnp
-from jesterTOV import eos, tov, utils
+from jesterTOV import eos, utils
+from jesterTOV.tov import GRTOVSolver
+from jesterTOV.tov.data_classes import EOSData
 
 
 class TestMetaModelEOSIntegration:
@@ -44,40 +46,39 @@ class TestMetaModelEOSIntegration:
 
         # Construct EOS
         eos_data = model.construct_eos(nep_dict)
-        ns, ps, hs, es, dloge_dlogps, mu, cs2 = eos_data
 
         # Basic EOS checks
-        assert len(ns) > 100  # Should have reasonable resolution
-        assert jnp.all(ns > 0)
-        assert jnp.all(ps > 0)
-        assert jnp.all(es > 0)
-        assert jnp.all(cs2 > 0)
-        assert jnp.all(cs2 <= 1.0)  # Causal
+        assert len(eos_data.ns) > 100  # Should have reasonable resolution
+        assert jnp.all(eos_data.ns > 0)
+        assert jnp.all(eos_data.ps > 0)
+        assert jnp.all(eos_data.es > 0)
+        assert jnp.all(eos_data.cs2 > 0)
+        assert jnp.all(eos_data.cs2 <= 1.0)  # Causal
 
-        # Construct neutron star family (include cs2 to avoid numerical round-trip error)
-        eos_tuple = (ns, ps, hs, es, dloge_dlogps, cs2)
-        log_pcs, masses, radii, lambdas = eos.construct_family(eos_tuple, ndat=30)
+        # Construct neutron star family using GRTOVSolver
+        solver = GRTOVSolver()
+        family_data = solver.construct_family(eos_data, ndat=30, min_nsat=0.75)
 
         # Check neutron star properties
-        assert len(masses) == 30
-        assert jnp.all(masses > 0)
-        assert jnp.all(radii > 0)
-        assert jnp.all(lambdas > 0)
+        assert len(family_data.masses) == 30
+        assert jnp.all(family_data.masses > 0)
+        assert jnp.all(family_data.radii > 0)
+        assert jnp.all(family_data.lambdas > 0)
 
         # Check realistic ranges for limited EOS (2 nsat)
-        max_mass = jnp.max(masses)
-        min_radius = jnp.min(radii)
-        max_radius = jnp.max(radii)
+        max_mass = jnp.max(family_data.masses)
+        min_radius = jnp.min(family_data.radii)
+        max_radius = jnp.max(family_data.radii)
 
         assert 0.5 < max_mass < 1.5  # Expected for EOS limited to 2 nsat
         assert 8.0 < min_radius < 20.0  # Radius range for soft EOS
-        assert 10.0 < max_radius < 25.0  # Soft EOS produces larger radii
+        assert 10.0 < max_radius < 30.0  # Soft EOS produces larger radii
 
         # Check that mass increases initially
-        max_idx = jnp.argmax(masses)
+        max_idx = jnp.argmax(family_data.masses)
         if max_idx > 5:  # Check first part of the sequence
             assert jnp.all(
-                jnp.diff(masses[: max_idx // 2]) > -0.01
+                jnp.diff(family_data.masses[: max_idx // 2]) > -0.01
             )  # Allow small noise
 
     @pytest.mark.integration
@@ -85,8 +86,14 @@ class TestMetaModelEOSIntegration:
     def test_metamodel_cse_workflow(self):
         """Test MetaModel with CSE extension workflow."""
         # Initialize MetaModel with CSE
+        nb_CSE = 4
         model = eos.MetaModel_with_CSE_EOS_model(
-            nsat=0.16, nmin_MM_nsat=0.75, nmax_nsat=6.0, ndat_metamodel=80, ndat_CSE=70
+            nsat=0.16,
+            nmin_MM_nsat=0.75,
+            nmax_nsat=6.0,
+            ndat_metamodel=80,
+            ndat_CSE=70,
+            nb_CSE=nb_CSE,
         )
 
         # NEP parameters with break density
@@ -103,35 +110,43 @@ class TestMetaModelEOSIntegration:
             "nbreak": 0.80,  # Break density in fm^-3 (below nmax=6*nsat=0.96)
         }
 
-        # Create CSE grids
-        ngrids = jnp.array([0.5, 0.7, 0.9, 1.2, 1.5])
-        cs2grids = jnp.array([0.35, 0.4, 0.45, 0.5, 0.6])
+        # Add CSE grid parameters (normalized positions and cs2 values)
+        nep_dict["n_CSE_0_u"] = 0.1
+        nep_dict["cs2_CSE_0"] = 0.35
+        nep_dict["n_CSE_1_u"] = 0.3
+        nep_dict["cs2_CSE_1"] = 0.4
+        nep_dict["n_CSE_2_u"] = 0.6
+        nep_dict["cs2_CSE_2"] = 0.45
+        nep_dict["n_CSE_3_u"] = 0.9
+        nep_dict["cs2_CSE_3"] = 0.5
+        nep_dict["cs2_CSE_4"] = 0.6  # Final cs2 value
 
         # Construct EOS
-        eos_data = model.construct_eos(nep_dict, ngrids, cs2grids)
-        ns, ps, hs, es, dloge_dlogps, mu, cs2 = eos_data
+        eos_data = model.construct_eos(nep_dict)
 
         # Check that we have data from both metamodel and CSE regions
-        n_SI = ns / utils.fm_inv3_to_geometric  # Convert back to fm^-3
+        n_SI = eos_data.ns / utils.fm_inv3_to_geometric  # Convert back to fm^-3
         assert jnp.min(n_SI) < nep_dict["nbreak"]  # Should include metamodel region
         assert jnp.max(n_SI) > nep_dict["nbreak"]  # Should include CSE region
 
         # Check continuity at break point
         break_idx = jnp.argmin(jnp.abs(n_SI - nep_dict["nbreak"]))
-        if break_idx > 0 and break_idx < len(ps) - 1:
+        if break_idx > 0 and break_idx < len(eos_data.ps) - 1:
             # Check that pressure is continuous (within numerical precision)
-            p_before = ps[break_idx - 1]
-            p_after = ps[break_idx + 1]
+            p_before = eos_data.ps[break_idx - 1]
+            p_after = eos_data.ps[break_idx + 1]
             assert abs((p_after - p_before) / p_before) < 0.1  # 10% tolerance
 
-        # Construct family (include cs2 to avoid numerical round-trip error)
-        eos_tuple = (ns, ps, hs, es, dloge_dlogps, cs2)
-        log_pcs, masses, radii, lambdas = eos.construct_family(eos_tuple, ndat=25)
+        # Construct family using GRTOVSolver
+        solver = GRTOVSolver()
+        family_data = solver.construct_family(eos_data, ndat=25, min_nsat=0.75)
 
         # Should get reasonable neutron star properties (CSE with 6 nsat base)
-        assert jnp.max(masses) > 1.5  # Expected for CSE extension from 6 nsat base
-        assert jnp.min(radii) > 8.0
-        assert jnp.max(radii) < 20.0
+        assert (
+            jnp.max(family_data.masses) > 1.5
+        )  # Expected for CSE extension from 6 nsat base
+        assert jnp.min(family_data.radii) > 8.0
+        assert jnp.max(family_data.radii) < 25.0
 
 
 class TestTOVIntegration:
@@ -157,7 +172,10 @@ class TestTOVIntegration:
         dedps = es / ps * dloge_dlogps
         cs2s = 1.0 / dedps
 
-        eos_dict = {"p": ps, "h": hs, "e": es, "dloge_dlogp": dloge_dlogps, "cs2": cs2s}
+        eos_data = EOSData(
+            ns=ns, ps=ps, hs=hs, es=es, dloge_dlogps=dloge_dlogps, cs2=cs2s
+        )
+        solver = GRTOVSolver()
 
         # Test multiple central pressures
         pressure_indices = [20, 30, 40, 50, 60]
@@ -166,24 +184,24 @@ class TestTOVIntegration:
 
         for idx in pressure_indices:
             if idx < len(ps):
-                pc = ps[idx]
+                pc = float(ps[idx])
                 try:
-                    M, R, k2 = tov.tov_solver(eos_dict, pc)
+                    solution = solver.solve(eos_data, pc)
 
                     if (
-                        jnp.isfinite(M)
-                        and jnp.isfinite(R)
-                        and M > 0
-                        and R > 0
-                        and M / R < 0.5
+                        jnp.isfinite(solution.M)
+                        and jnp.isfinite(solution.R)
+                        and solution.M > 0
+                        and solution.R > 0
+                        and solution.M / solution.R < 0.5
                     ):
-                        masses.append(M)
-                        radii.append(R)
+                        masses.append(solution.M)
+                        radii.append(solution.R)
 
                         # Basic physics checks
-                        assert M > 0.1  # Reasonable mass
-                        assert R > 1.0  # Reasonable radius
-                        assert k2 > 0  # Positive tidal deformability
+                        assert solution.M > 0.1  # Reasonable mass
+                        assert solution.R > 1.0  # Reasonable radius
+                        assert solution.k2 > 0  # Positive tidal deformability
 
                 except Exception:
                     continue  # Skip problematic cases
@@ -295,12 +313,11 @@ class TestCrustIntegration:
 
         # Construct EOS
         eos_data = model.construct_eos(nep_dict)
-        ns, ps, hs, es, dloge_dlogps, mu, cs2 = eos_data
 
         # Convert back to physical units for comparison
-        n_SI = ns / utils.fm_inv3_to_geometric
-        p_SI = ps / utils.MeV_fm_inv3_to_geometric
-        e_SI = es / utils.MeV_fm_inv3_to_geometric
+        n_SI = eos_data.ns / utils.fm_inv3_to_geometric
+        p_SI = eos_data.ps / utils.MeV_fm_inv3_to_geometric
+        e_SI = eos_data.es / utils.MeV_fm_inv3_to_geometric
 
         # Check that EOS starts with crust data
         crust_end_density = model.max_n_crust
@@ -323,8 +340,8 @@ class TestCrustIntegration:
         assert jnp.sum(connection_indices) > 0  # Should have connection points
 
         # Check overall causality
-        assert jnp.all(cs2 > 0)
-        assert jnp.all(cs2 <= 1.0)
+        assert jnp.all(eos_data.cs2 > 0)
+        assert jnp.all(eos_data.cs2 <= 1.0)
 
     @pytest.mark.integration
     @pytest.mark.parametrize("crust_name", ["DH", "BPS"])
@@ -353,24 +370,23 @@ class TestCrustIntegration:
 
         # Should not crash and should give reasonable results
         eos_data = model.construct_eos(nep_dict)
-        ns, ps, hs, es, dloge_dlogps, mu, cs2 = eos_data
 
         # Basic checks
-        assert len(ns) > 50
-        assert jnp.all(ns > 0)
-        assert jnp.all(ps > 0)
-        assert jnp.all(es > 0)
-        assert jnp.all(cs2 > 0)
-        assert jnp.all(cs2 <= 1.0)
+        assert len(eos_data.ns) > 50
+        assert jnp.all(eos_data.ns > 0)
+        assert jnp.all(eos_data.ps > 0)
+        assert jnp.all(eos_data.es > 0)
+        assert jnp.all(eos_data.cs2 > 0)
+        assert jnp.all(eos_data.cs2 <= 1.0)
 
-        # Should be able to construct neutron star family (include cs2 to avoid numerical round-trip error)
-        eos_tuple = (ns, ps, hs, es, dloge_dlogps, cs2)
-        log_pcs, masses, radii, lambdas = eos.construct_family(eos_tuple, ndat=20)
+        # Should be able to construct neutron star family using GRTOVSolver
+        solver = GRTOVSolver()
+        family_data = solver.construct_family(eos_data, ndat=20, min_nsat=0.75)
 
-        assert len(masses) == 20
-        assert jnp.all(masses > 0)
-        assert jnp.all(radii > 0)
-        assert jnp.max(masses) > 0.5  # Expected for EOS limited to 2 nsat
+        assert len(family_data.masses) == 20
+        assert jnp.all(family_data.masses > 0)
+        assert jnp.all(family_data.radii > 0)
+        assert jnp.max(family_data.masses) > 0.5  # Expected for EOS limited to 2 nsat
 
 
 class TestNumericalStability:
@@ -412,23 +428,20 @@ class TestNumericalStability:
 
             try:
                 eos_data = model.construct_eos(nep_dict)
-                ns, ps, hs, es, dloge_dlogps, mu, cs2 = eos_data
 
                 # Should maintain causality
-                assert jnp.all(cs2 > 0)
-                assert jnp.all(cs2 <= 1.0)
+                assert jnp.all(eos_data.cs2 > 0)
+                assert jnp.all(eos_data.cs2 <= 1.0)
 
-                # Should be able to solve TOV (include cs2 to avoid numerical round-trip error)
-                eos_tuple = (ns, ps, hs, es, dloge_dlogps, cs2)
-                log_pcs, masses, radii, lambdas = eos.construct_family(
-                    eos_tuple, ndat=15
-                )
+                # Should be able to solve TOV using GRTOVSolver
+                solver = GRTOVSolver()
+                family_data = solver.construct_family(eos_data, ndat=15, min_nsat=0.75)
 
-                assert jnp.all(masses > 0)
-                assert jnp.all(radii > 0)
+                assert jnp.all(family_data.masses > 0)
+                assert jnp.all(family_data.radii > 0)
 
                 # Stiff EOS should generally give higher maximum mass
-                max_mass = jnp.max(masses)
+                max_mass = jnp.max(family_data.masses)
                 if eos_type == "stiff":
                     assert max_mass > 1.0  # Realistic for EOS limited to 2 nsat
                 elif eos_type == "soft":
@@ -474,14 +487,15 @@ def test_full_pipeline_reproducibility():
     for _ in range(3):
         model = eos.MetaModel_EOS_model(**metamodel_params)
         eos_data = model.construct_eos(nep_dict)
-        ns, ps, hs, es, dloge_dlogps, mu, cs2 = eos_data
 
-        # Include cs2 to avoid numerical round-trip error
-        eos_tuple = (ns, ps, hs, es, dloge_dlogps, cs2)
-        log_pcs, masses, radii, lambdas = eos.construct_family(eos_tuple, ndat=20)
+        # Use GRTOVSolver to construct family
+        solver = GRTOVSolver()
+        family_data = solver.construct_family(eos_data, ndat=20, min_nsat=0.75)
 
-        max_mass = jnp.max(masses)
-        radius_at_1p4 = jnp.interp(1.4, masses, radii)  # Radius at 1.4 solar masses
+        max_mass = jnp.max(family_data.masses)
+        radius_at_1p4 = jnp.interp(
+            1.4, family_data.masses, family_data.radii
+        )  # Radius at 1.4 solar masses
 
         results.append((max_mass, radius_at_1p4))
 

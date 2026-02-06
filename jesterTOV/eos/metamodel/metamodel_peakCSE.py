@@ -80,7 +80,7 @@ class MetaModel_with_peakCSE_EOS_model(Interpolate_EOS_model):
         self.ndat_metamodel = ndat_metamodel
         self.metamodel_kwargs = metamodel_kwargs
 
-    def construct_eos(self, NEP_dict: dict, peakCSE_dict: dict):
+    def construct_eos(self, params: dict):
         r"""
         Construct the complete EOS using meta-model + peakCSE extensions.
 
@@ -89,28 +89,16 @@ class MetaModel_with_peakCSE_EOS_model(Interpolate_EOS_model):
         and approach the pQCD conformal limit at high densities.
 
         Args:
-            NEP_dict (dict): Nuclear empirical parameters for meta-model construction.
-                Must include 'nbreak' key specifying the transition density between
-                meta-model and peakCSE regions. See MetaModel_EOS_model.construct_eos
-                for complete NEP parameter descriptions.
-            peakCSE_dict (dict): peakCSE model parameters defining the high-density behavior:
-
-                - **gaussian_peak** (float): Amplitude :math:`A` of the Gaussian peak
-                - **gaussian_mu** (float): Peak location :math:`\mu` [:math:`\mathrm{fm}^{-3}`]
-                - **gaussian_sigma** (float): Peak width :math:`\sigma` [:math:`\mathrm{fm}^{-3}`]
-                - **logit_growth_rate** (float): Growth rate :math:`k` for pQCD approach
-                - **logit_midpoint** (float): Midpoint density :math:`n_{\mathrm{mid}}` for logistic transition
+            params (dict): Combined parameters including:
+                - Nuclear empirical parameters (NEP) for meta-model construction
+                - 'nbreak' key specifying the transition density between
+                  meta-model and peakCSE regions
+                - peakCSE model parameters defining high-density behavior:
+                  * gaussian_peak, gaussian_mu, gaussian_sigma
+                  * logit_growth_rate, logit_midpoint
 
         Returns:
-            tuple: Complete EOS data containing:
-
-                - **ns**: Number densities [geometric units]
-                - **ps**: Pressures [geometric units]
-                - **hs**: Specific enthalpies [geometric units]
-                - **es**: Energy densities [geometric units]
-                - **dloge_dlogps**: Logarithmic derivative :math:`\frac{d\ln\varepsilon}{d\ln p}`
-                - **mu**: Chemical potential [geometric units]
-                - **cs2**: Speed of sound squared including peakCSE structure
+            EOSData: Complete EOS data containing ns, ps, hs, es, dloge_dlogps, cs2, mu
 
         Note:
             The peakCSE speed of sound follows:
@@ -124,40 +112,37 @@ class MetaModel_with_peakCSE_EOS_model(Interpolate_EOS_model):
         metamodel = MetaModel_EOS_model(
             nsat=self.nsat,
             nmin_MM_nsat=self.nmin_MM_nsat,
-            nmax_nsat=NEP_dict["nbreak"] / self.nsat,
+            nmax_nsat=params["nbreak"] / self.nsat,
             ndat=self.ndat_metamodel,
             **self.metamodel_kwargs,
         )
 
         # Construct the metamodel part:
-        mm_output = metamodel.construct_eos(NEP_dict)
-        n_metamodel, p_metamodel, _, e_metamodel, _, mu_metamodel, cs2_metamodel = (
-            mm_output
-        )
+        mm_output = metamodel.construct_eos(params)
+        # MetaModel guarantees mu is populated
+        mu_metamodel: Float[Array, "n_points"] = mm_output.mu  # type: ignore[assignment]
 
         # Convert units back for CSE initialization
-        n_metamodel = n_metamodel / utils.fm_inv3_to_geometric
-        p_metamodel = p_metamodel / utils.MeV_fm_inv3_to_geometric
-        e_metamodel = e_metamodel / utils.MeV_fm_inv3_to_geometric
+        n_metamodel = mm_output.ns / utils.fm_inv3_to_geometric
+        p_metamodel = mm_output.ps / utils.MeV_fm_inv3_to_geometric
+        e_metamodel = mm_output.es / utils.MeV_fm_inv3_to_geometric
+        cs2_metamodel = mm_output.cs2
 
         # Get values at break density
-        p_break = jnp.interp(NEP_dict["nbreak"], n_metamodel, p_metamodel)
-        e_break = jnp.interp(NEP_dict["nbreak"], n_metamodel, e_metamodel)
-        mu_break = jnp.interp(NEP_dict["nbreak"], n_metamodel, mu_metamodel)
-        cs2_break = jnp.interp(NEP_dict["nbreak"], n_metamodel, cs2_metamodel)
+        p_break = jnp.interp(params["nbreak"], n_metamodel, p_metamodel)
+        e_break = jnp.interp(params["nbreak"], n_metamodel, e_metamodel)
+        mu_break = jnp.interp(params["nbreak"], n_metamodel, mu_metamodel)
+        cs2_break = jnp.interp(params["nbreak"], n_metamodel, cs2_metamodel)
 
         # Define the speed-of-sound of the extension portion
         # the model is taken from arXiv:1812.08188
         # but instead of energy density, I am using density as the input
-        offset = self.offset_calc(NEP_dict["nbreak"], cs2_break, peakCSE_dict)
+        offset = self.offset_calc(params["nbreak"], cs2_break, params)
         cs2_extension_function = lambda x: (
-            peakCSE_dict["gaussian_peak"]
+            params["gaussian_peak"]
             * jnp.exp(
                 -0.5
-                * (
-                    (x - peakCSE_dict["gaussian_mu"]) ** 2
-                    / peakCSE_dict["gaussian_sigma"] ** 2
-                )
+                * ((x - params["gaussian_mu"]) ** 2 / params["gaussian_sigma"] ** 2)
             )
             + offset
             + (
@@ -165,15 +150,14 @@ class MetaModel_with_peakCSE_EOS_model(Interpolate_EOS_model):
                 / (
                     1.0
                     + jnp.exp(
-                        -peakCSE_dict["logit_growth_rate"]
-                        * (x - peakCSE_dict["logit_midpoint"])
+                        -params["logit_growth_rate"] * (x - params["logit_midpoint"])
                     )
                 )
             )
         )
         # Compute n, p, e for peakCSE (number densities in unit of fm^-3)
         n_CSE = jnp.logspace(
-            jnp.log10(NEP_dict["nbreak"]), jnp.log10(self.nmax), num=self.ndat_CSE
+            jnp.log10(params["nbreak"]), jnp.log10(self.nmax), num=self.ndat_CSE
         )
         cs2_CSE = cs2_extension_function(n_CSE)
 
@@ -193,17 +177,24 @@ class MetaModel_with_peakCSE_EOS_model(Interpolate_EOS_model):
 
         ns, ps, hs, es, dloge_dlogps = self.interpolate_eos(n, p, e)
 
-        return ns, ps, hs, es, dloge_dlogps, mu, cs2
+        from jesterTOV.tov.data_classes import EOSData
 
-    def offset_calc(self, nbreak, cs2_break, peakCSE_dict):
-        gaussian_part = peakCSE_dict["gaussian_peak"] * jnp.exp(
-            -0.5
-            * (nbreak - peakCSE_dict["gaussian_mu"]) ** 2
-            / peakCSE_dict["gaussian_sigma"] ** 2
+        return EOSData(
+            ns=ns,
+            ps=ps,
+            hs=hs,
+            es=es,
+            dloge_dlogps=dloge_dlogps,
+            cs2=cs2,
+            mu=mu,
+        )
+
+    def offset_calc(self, nbreak, cs2_break, params):
+        gaussian_part = params["gaussian_peak"] * jnp.exp(
+            -0.5 * (nbreak - params["gaussian_mu"]) ** 2 / params["gaussian_sigma"] ** 2
         )
         exp_part = jnp.exp(
-            -peakCSE_dict["logit_growth_rate"]
-            * (nbreak - peakCSE_dict["logit_midpoint"])
+            -params["logit_growth_rate"] * (nbreak - params["logit_midpoint"])
         )
         offset = ((1.0 + exp_part) * (cs2_break - gaussian_part) - 1.0 / 3.0) / exp_part
         return offset

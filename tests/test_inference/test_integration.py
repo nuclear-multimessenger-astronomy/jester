@@ -446,6 +446,7 @@ class TestEOSSampleGeneration:
         # Create a mock result with 100 posterior samples
         n_full_samples = 100
         posterior = {
+            "E_sat": np.random.uniform(-15.9, -16.1, n_full_samples),
             "K_sat": np.random.uniform(150, 300, n_full_samples),
             "L_sym": np.random.uniform(10, 200, n_full_samples),
             "Q_sat": np.random.uniform(100, 300, n_full_samples),
@@ -544,6 +545,7 @@ class TestEOSSampleGeneration:
         # Create a mock SMC result with weights and ess
         n_full_samples = 100
         posterior = {
+            "E_sat": np.random.uniform(-15.9, -16.1, n_full_samples),
             "K_sat": np.random.uniform(150, 300, n_full_samples),
             "L_sym": np.random.uniform(10, 200, n_full_samples),
             "Q_sat": np.random.uniform(100, 300, n_full_samples),

@@ -227,11 +227,11 @@ class GRTOVSolver(TOVSolverBase):
         )
 
         # Extract solution values
-        # Note: diffrax always returns arrays, even on failure
-        R = sol.ys[0][-1]
-        M = sol.ys[1][-1]
-        H = sol.ys[2][-1]
-        b = sol.ys[3][-1]
+        # Note: diffrax always returns arrays with throw=False
+        R = sol.ys[0][-1]  # type: ignore[index]
+        M = sol.ys[1][-1]  # type: ignore[index]
+        H = sol.ys[2][-1]  # type: ignore[index]
+        b = sol.ys[3][-1]  # type: ignore[index]
 
         k2 = _calc_k2(R, M, H, b)
 

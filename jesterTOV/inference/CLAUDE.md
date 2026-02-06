@@ -307,6 +307,24 @@ For debugging NaN issues, uncomment:
 jax.config.update("jax_debug_nans", True)
 ```
 
+### Type Safety with JAX
+
+**Common type ignore patterns** (required due to JAX tracing limitations):
+
+```python
+# vmap batches scalar NamedTuple fields → arrays
+masses: Float[Array, "n"] = solutions.M  # type: ignore[assignment]
+
+# Diffrax with throw=False guarantees ys populated
+R = sol.ys[0][-1]  # type: ignore[index]
+
+# MetaModel guarantees mu populated (but type system sees Optional)
+mu: Float[Array, "n"] = eos_data.mu  # type: ignore[assignment]
+# TODO: Consider restructuring Interpolate_EOS_model to make mu non-optional
+```
+
+**Anti-pattern:** NEVER use runtime assertions in JAX-traced code (fails during tracing). Use type ignore with explanatory comments instead.
+
 ## File Naming Conventions
 
 - Configuration: `config.yaml`

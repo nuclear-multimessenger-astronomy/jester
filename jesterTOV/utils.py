@@ -12,7 +12,7 @@ systems commonly used in neutron star physics.
 from jax import vmap
 import jax.numpy as jnp
 from functools import partial
-from jaxtyping import Array, Float
+from jaxtyping import Array, Float, Int
 from interpax._spline import interp1d as interpax_interp1d
 
 from diffrax import diffeqsolve, ODETerm, Tsit5, SaveAt, PIDController
@@ -398,7 +398,7 @@ def calculate_rest_mass_density(e: Float[Array, "n"], p: Float[Array, "n"]):
     return solution.ys
 
 
-def locate_lowest_non_causal_point(cs2: Float[Array, "n"]) -> int:
+def locate_lowest_non_causal_point(cs2: Float[Array, "n"]) -> Int[Array, ""]:
     r"""
     Find the first point where the equation of state becomes non-causal.
 
@@ -413,8 +413,8 @@ def locate_lowest_non_causal_point(cs2: Float[Array, "n"]) -> int:
 
     Returns
     -------
-    int
-        Index of first non-causal point, or -1 if EOS is everywhere causal
+    Int[Array, ""]
+        Scalar array: Index of first non-causal point, or -1 if EOS is everywhere causal
 
     Notes
     -----

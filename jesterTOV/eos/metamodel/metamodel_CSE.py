@@ -169,7 +169,8 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
         n_metamodel_full = mm_output.ns / utils.fm_inv3_to_geometric
         p_metamodel_full = mm_output.ps / utils.MeV_fm_inv3_to_geometric
         e_metamodel_full = mm_output.es / utils.MeV_fm_inv3_to_geometric
-        mu_metamodel_full = mm_output.mu
+        # MetaModel guarantees mu is populated
+        mu_metamodel_full: Float[Array, "n_points"] = mm_output.mu  # type: ignore[assignment]
         cs2_metamodel_full = mm_output.cs2
 
         # Re-interpolate to a fixed-size array up to nbreak

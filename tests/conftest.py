@@ -3,6 +3,7 @@
 import pytest
 import jax.numpy as jnp
 from jesterTOV import utils
+from jesterTOV.tov.data_classes import EOSData
 
 
 @pytest.fixture
@@ -34,6 +35,29 @@ def sample_eos_dict():
     cs2 = 1.0 / dedp
     eos_dict = {"p": p_geo, "h": h, "e": e_geo, "dloge_dlogp": dloge_dlogp, "cs2": cs2}
     return eos_dict
+
+
+@pytest.fixture
+def sample_eos_data():
+    """Sample EOSData for TOV solver tests (uses same data as sample_eos_dict)."""
+    # Create realistic polytropic EOS
+    n = jnp.linspace(0.1, 2.0, 50)  # fm^-3, density range
+    p = 15.0 * (n / 0.16) ** 2.2  # MeV/fm^3
+    e = n * 939.0 + p  # MeV/fm^3
+
+    # Convert to geometric units
+    ns = n * utils.fm_inv3_to_geometric
+    ps = p * utils.MeV_fm_inv3_to_geometric
+    es = e * utils.MeV_fm_inv3_to_geometric
+
+    # Calculate auxiliary quantities
+    hs = utils.cumtrapz(ps / (es + ps), jnp.log(ps))
+    dloge_dlogps = jnp.diff(jnp.log(e)) / jnp.diff(jnp.log(p))
+    dloge_dlogps = jnp.concatenate([jnp.array([dloge_dlogps[0]]), dloge_dlogps])
+    dedps = es / ps * dloge_dlogps
+    cs2 = 1.0 / dedps
+
+    return EOSData(ns=ns, ps=ps, hs=hs, es=es, dloge_dlogps=dloge_dlogps, cs2=cs2)
 
 
 @pytest.fixture
