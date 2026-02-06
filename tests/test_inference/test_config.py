@@ -341,6 +341,73 @@ seed: 42
             parser.load_config(incomplete_config)
 
 
+class TestExtraFieldValidation:
+    """Test that config models reject extra/unknown fields."""
+
+    def test_transform_config_rejects_extra_fields(self):
+        """Test that TransformConfig rejects unknown fields."""
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            schema.TransformConfig(
+                type="metamodel",
+                nb_CSE=0,
+                wrong_entry=500,  # Should be rejected
+            )
+
+    def test_prior_config_rejects_extra_fields(self):
+        """Test that PriorConfig rejects unknown fields."""
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            schema.PriorConfig(
+                specification_file="test.prior",
+                invalid_param="value",  # Should be rejected
+            )
+
+    def test_likelihood_config_rejects_extra_fields(self):
+        """Test that LikelihoodConfig rejects unknown fields."""
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            schema.LikelihoodConfig(
+                type="zero",
+                enabled=True,
+                parameters={},
+                extra_field="should_fail",  # Should be rejected
+            )
+
+    def test_sampler_config_rejects_extra_fields(self):
+        """Test that FlowMCSamplerConfig rejects unknown fields."""
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            schema.FlowMCSamplerConfig(
+                type="flowmc",
+                n_chains=4,
+                n_loop_training=2,
+                n_loop_production=2,
+                invalid_option=True,  # Should be rejected
+            )
+
+    def test_postprocessing_config_rejects_extra_fields(self):
+        """Test that PostprocessingConfig rejects unknown fields."""
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            schema.PostprocessingConfig(
+                enabled=True,
+                make_cornerplot=True,
+                unknown_plot_type=True,  # Should be rejected
+            )
+
+    def test_inference_config_rejects_extra_fields(self, sample_config_dict):
+        """Test that InferenceConfig rejects unknown fields."""
+        config_dict = sample_config_dict.copy()
+        config_dict["random_invalid_field"] = "should_fail"
+
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            schema.InferenceConfig(**config_dict)
+
+    def test_nested_extra_fields_rejected(self, sample_config_dict):
+        """Test that extra fields in nested config sections are rejected."""
+        config_dict = sample_config_dict.copy()
+        config_dict["transform"]["wrong_entry"] = 500  # Should be rejected
+
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            schema.InferenceConfig(**config_dict)
+
+
 class TestConfigIntegration:
     """Integration tests for configuration system."""
 
