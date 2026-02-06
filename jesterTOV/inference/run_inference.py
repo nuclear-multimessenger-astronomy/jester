@@ -25,8 +25,7 @@ from .config.schema import InferenceConfig
 from .priors.parser import parse_prior_file
 from .base.prior import CombinePrior
 from .base.likelihood import LikelihoodBase
-from .transforms.factory import create_transform
-from .transforms.base import JesterTransformBase
+from .transforms import JesterTransform
 from .likelihoods.factory import create_combined_likelihood
 from .samplers.factory import create_sampler
 from .samplers.jester_sampler import JesterSampler
@@ -135,7 +134,7 @@ def setup_transform(
     config: InferenceConfig,
     prior: CombinePrior | None = None,
     keep_names: list[str] | None = None,
-) -> JesterTransformBase:
+) -> JesterTransform:
     """
     Setup transform from configuration
 
@@ -150,7 +149,7 @@ def setup_transform(
 
     Returns
     -------
-    JesterTransformBase
+    JesterTransform
         Transform instance
     """
     # Extract max_nbreak_nsat if using metamodel_cse transform
@@ -172,15 +171,39 @@ def setup_transform(
                     )
                 break
 
-    transform = create_transform(
+    transform = JesterTransform.from_config(
         config.transform, keep_names=keep_names, max_nbreak_nsat=max_nbreak_nsat
     )
+
+    # Validate that all required parameters are in the prior
+    if prior is not None:
+        required_params = set(transform.get_parameter_names())
+        prior_params = set(prior.parameter_names)
+        missing_params = required_params - prior_params
+
+        if missing_params:
+            eos_name = transform.get_eos_type()
+            tov_name = repr(transform.tov_solver)
+            raise ValueError(
+                f"Transform with EOS = {eos_name} and TOV = {tov_name} is missing "
+                f"params = {sorted(missing_params)} from the prior file"
+            )
+
+        # Log warning for unused parameters (not an error, just informational)
+        unused_params = prior_params - required_params
+        if unused_params:
+            logger.warning(
+                f"Prior contains unused parameters: {sorted(unused_params)}. "
+                f"These will be preserved but not used by the transform."
+            )
 
     return transform
 
 
+# TODO: remove transform second argument, as it is unused
+# TODO: this is a bit redundant and we can just use the factory directly
 def setup_likelihood(
-    config: InferenceConfig, transform: JesterTransformBase
+    config: InferenceConfig, transform: JesterTransform
 ) -> LikelihoodBase:
     """
     Setup combined likelihood from configuration
@@ -189,7 +212,7 @@ def setup_likelihood(
     ----------
     config : InferenceConfig
         Configuration object
-    transform : JesterTransformBase
+    transform : JesterTransform
         Transform instance
 
     Returns
@@ -257,7 +280,7 @@ def run_sampling(
 def generate_eos_samples(
     config: InferenceConfig,
     result: InferenceResult,
-    transform_eos: JesterTransformBase,
+    transform_eos: JesterTransform,
     outdir: str | Path,
     n_eos_samples: int = 10_000,
 ) -> None:
@@ -274,7 +297,7 @@ def generate_eos_samples(
         Configuration object
     result : InferenceResult
         Result object with posterior samples
-    transform_eos : JesterTransformBase
+    transform_eos : JesterTransform
         Transform for generating full EOS quantities
     outdir : str or Path
         Output directory

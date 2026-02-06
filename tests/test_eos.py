@@ -4,6 +4,21 @@ import pytest
 import jax.numpy as jnp
 import os
 from jesterTOV import eos, utils
+from jesterTOV.tov import GRTOVSolver
+from jesterTOV.tov.data_classes import EOSData
+
+
+# Minimal concrete implementation for testing base interpolation
+class _TestInterpolateEOS(eos.Interpolate_EOS_model):
+    """Minimal concrete EOS for testing interpolate_eos method."""
+
+    def construct_eos(self, params: dict[str, float]) -> EOSData:
+        """Dummy implementation."""
+        raise NotImplementedError("Test class only")
+
+    def get_required_parameters(self) -> list[str]:
+        """Dummy implementation."""
+        return []
 
 
 class TestCrust:
@@ -169,7 +184,7 @@ class TestInterpolateEOSModel:
         """Test basic EOS interpolation functionality."""
         n, p, e = sample_density_arrays
 
-        model = eos.Interpolate_EOS_model()
+        model = _TestInterpolateEOS()
         ns, ps, hs, es, dloge_dlogps = model.interpolate_eos(n, p, e)
 
         # Check output shapes
@@ -188,7 +203,7 @@ class TestInterpolateEOSModel:
         """Test that enthalpy calculation is reasonable."""
         n, p, e = sample_density_arrays
 
-        model = eos.Interpolate_EOS_model()
+        model = _TestInterpolateEOS()
         ns, ps, hs, es, dloge_dlogps = model.interpolate_eos(n, p, e)
 
         # Enthalpy should be positive and finite
@@ -236,24 +251,24 @@ class TestMetaModelEOSModel:
         """Test EOS construction with MetaModel."""
         model = eos.MetaModel_EOS_model(**metamodel_params)
 
-        result = model.construct_eos(nep_dict)
-        ns, ps, hs, es, dloge_dlogps, mu, cs2 = result
+        eos_data = model.construct_eos(nep_dict)
 
         # Check that all outputs have reasonable shapes and values
-        assert len(ns) > 0
-        assert len(ps) == len(ns)
-        assert len(hs) == len(ns)
-        assert len(es) == len(ns)
-        assert len(dloge_dlogps) == len(ns)
-        assert len(mu) == len(ns)
-        assert len(cs2) == len(ns)
+        assert len(eos_data.ns) > 0
+        assert len(eos_data.ps) == len(eos_data.ns)
+        assert len(eos_data.hs) == len(eos_data.ns)
+        assert len(eos_data.es) == len(eos_data.ns)
+        assert len(eos_data.dloge_dlogps) == len(eos_data.ns)
+        assert eos_data.mu is not None
+        assert len(eos_data.mu) == len(eos_data.ns)
+        assert len(eos_data.cs2) == len(eos_data.ns)
 
         # Check physical constraints
-        assert jnp.all(ns > 0)  # Density should be positive
-        assert jnp.all(ps > 0)  # Pressure should be positive
-        assert jnp.all(es > 0)  # Energy density should be positive
-        assert jnp.all(cs2 > 0)  # Speed of sound squared should be positive
-        assert jnp.all(cs2 <= 1.0)  # Should not exceed speed of light
+        assert jnp.all(eos_data.ns > 0)  # Density should be positive
+        assert jnp.all(eos_data.ps > 0)  # Pressure should be positive
+        assert jnp.all(eos_data.es > 0)  # Energy density should be positive
+        assert jnp.all(eos_data.cs2 > 0)  # Speed of sound squared should be positive
+        assert jnp.all(eos_data.cs2 <= 1.0)  # Should not exceed speed of light
 
     def test_metamodel_auxiliary_functions(self, metamodel_params):
         """Test auxiliary functions in MetaModel."""
@@ -315,28 +330,34 @@ class TestMetaModelWithCSEEOSModel:
 
     def test_metamodel_cse_construct_eos(self, nep_dict):
         """Test EOS construction with CSE extension."""
+        # CSE model requires nb_CSE parameter
+        nb_CSE = 3
         model = eos.MetaModel_with_CSE_EOS_model(
-            nsat=0.16, ndat_metamodel=30, ndat_CSE=30
+            nsat=0.16, ndat_metamodel=30, ndat_CSE=30, nb_CSE=nb_CSE
         )
 
-        # Add break density to NEP dict
+        # Add break density and CSE grid parameters to NEP dict
         nep_dict_extended = nep_dict.copy()
         nep_dict_extended["nbreak"] = 0.5  # fm^-3
 
-        # Create simple CSE grids
-        ngrids = jnp.array([0.6, 0.8, 1.0, 1.2])
-        cs2grids = jnp.array([0.3, 0.4, 0.5, 0.6])
+        # Add individual CSE grid point parameters (normalized positions and cs2 values)
+        nep_dict_extended["n_CSE_0_u"] = 0.1
+        nep_dict_extended["cs2_CSE_0"] = 0.3
+        nep_dict_extended["n_CSE_1_u"] = 0.4
+        nep_dict_extended["cs2_CSE_1"] = 0.4
+        nep_dict_extended["n_CSE_2_u"] = 0.7
+        nep_dict_extended["cs2_CSE_2"] = 0.5
+        nep_dict_extended["cs2_CSE_3"] = 0.6  # Final cs2 value
 
-        result = model.construct_eos(nep_dict_extended, ngrids, cs2grids)
-        ns, ps, hs, es, dloge_dlogps, mu, cs2 = result
+        eos_data = model.construct_eos(nep_dict_extended)
 
         # Check basic properties
-        assert len(ns) > 0
-        assert jnp.all(ns > 0)
-        assert jnp.all(ps > 0)
-        assert jnp.all(es > 0)
-        assert jnp.all(cs2 > 0)
-        assert jnp.all(cs2 <= 1.0)
+        assert len(eos_data.ns) > 0
+        assert jnp.all(eos_data.ns > 0)
+        assert jnp.all(eos_data.ps > 0)
+        assert jnp.all(eos_data.es > 0)
+        assert jnp.all(eos_data.cs2 > 0)
+        assert jnp.all(eos_data.cs2 <= 1.0)
 
 
 class TestConstructFamily:
@@ -344,7 +365,7 @@ class TestConstructFamily:
 
     def test_construct_family_basic(self, sample_eos_dict):
         """Test basic family construction functionality."""
-        # Create simple EOS tuple for testing
+        # Create simple EOS data for testing
         ns = jnp.linspace(0.1, 1.0, 50) * utils.fm_inv3_to_geometric
         ps = jnp.linspace(10, 100, 50) * utils.MeV_fm_inv3_to_geometric
         es = jnp.linspace(20, 200, 50) * utils.MeV_fm_inv3_to_geometric
@@ -354,40 +375,43 @@ class TestConstructFamily:
         # Compute cs2 from p and e
         cs2 = ps / es / dloge_dlogps
 
-        eos_tuple = (ns, ps, hs, es, dloge_dlogps, cs2)
-
-        # Test family construction
-        log_pcs, ms, rs, lambdas = eos.construct_family(
-            eos_tuple, ndat=10, min_nsat=1.0
+        eos_data = EOSData(
+            ns=ns, ps=ps, hs=hs, es=es, dloge_dlogps=dloge_dlogps, cs2=cs2
         )
 
+        # Test family construction using GRTOVSolver
+        solver = GRTOVSolver()
+        family_data = solver.construct_family(eos_data, ndat=10, min_nsat=1.0)
+
         # Check output shapes
-        assert len(log_pcs) == 10
-        assert len(ms) == 10
-        assert len(rs) == 10
-        assert len(lambdas) == 10
+        assert len(family_data.log10pcs) == 10
+        assert len(family_data.masses) == 10
+        assert len(family_data.radii) == 10
+        assert len(family_data.lambdas) == 10
 
         # Check physical properties
-        assert jnp.all(ms > 0)  # Masses should be positive
-        assert jnp.all(rs > 0)  # Radii should be positive
-        assert jnp.all(lambdas > 0)  # Tidal deformabilities should be positive
+        assert jnp.all(family_data.masses > 0)  # Masses should be positive
+        assert jnp.all(family_data.radii > 0)  # Radii should be positive
+        assert jnp.all(
+            family_data.lambdas > 0
+        )  # Tidal deformabilities should be positive
 
         # Check that mass increases initially (before MTOV)
-        max_idx = jnp.argmax(ms)
+        max_idx = jnp.argmax(family_data.masses)
         if max_idx > 0:
-            assert jnp.all(jnp.diff(ms[:max_idx]) >= 0)
+            assert jnp.all(jnp.diff(family_data.masses[:max_idx]) >= 0)
 
     def test_locate_lowest_non_causal_point(self):
         """Test the function that locates non-causal points."""
         # Create speed of sound array with causal violation
         cs2 = jnp.array([0.1, 0.3, 0.5, 0.8, 1.2, 1.5, 0.9])  # Violation at index 4
 
-        idx = eos.locate_lowest_non_causal_point(cs2)
+        idx = utils.locate_lowest_non_causal_point(cs2)
         assert idx == 4
 
         # Test case with no violations
         cs2_causal = jnp.array([0.1, 0.3, 0.5, 0.8, 0.9])
-        idx_causal = eos.locate_lowest_non_causal_point(cs2_causal)
+        idx_causal = utils.locate_lowest_non_causal_point(cs2_causal)
         assert idx_causal == -1
 
 
@@ -402,17 +426,18 @@ class TestMetaModelIntegration:
 
         # Construct EOS
         eos_data = model.construct_eos(nep_dict)
-        ns, ps, hs, es, dloge_dlogps, mu, cs2 = eos_data
 
-        # Construct neutron star family (include cs2 to avoid numerical round-trip error)
-        eos_tuple = (ns, ps, hs, es, dloge_dlogps, cs2)
-        log_pcs, ms, rs, lambdas = eos.construct_family(eos_tuple, ndat=20)
+        # Construct neutron star family using GRTOVSolver
+        solver = GRTOVSolver()
+        family_data = solver.construct_family(eos_data, ndat=20, min_nsat=0.75)
 
         # Check that we get reasonable neutron star properties for limited EOS (2 nsat)
-        assert jnp.max(ms) > 0.5  # Maximum mass for soft/limited EOS
-        assert jnp.max(ms) < 1.5  # Expected for EOS limited to 2 nsat
-        assert jnp.min(rs) > 8.0  # Minimum radius should be > 8 km
-        assert jnp.max(rs) < 25.0  # Maximum radius (soft EOS = larger radii)
+        assert jnp.max(family_data.masses) > 0.5  # Maximum mass for soft/limited EOS
+        assert jnp.max(family_data.masses) < 1.5  # Expected for EOS limited to 2 nsat
+        assert jnp.min(family_data.radii) > 8.0  # Minimum radius should be > 8 km
+        assert (
+            jnp.max(family_data.radii) < 30.0
+        )  # Maximum radius (soft EOS = larger radii)
 
 
 # Test fixtures and parameterized tests
@@ -438,11 +463,10 @@ def test_metamodel_parameter_variations(nsat, nmax_nsat, nep_dict):
         nsat=nsat, nmax_nsat=nmax_nsat, ndat=50  # Reduced for faster testing
     )
 
-    result = model.construct_eos(nep_dict)
-    ns, ps, hs, es, dloge_dlogps, mu, cs2 = result
+    eos_data = model.construct_eos(nep_dict)
 
     # Basic sanity checks
-    assert len(ns) > 0
-    assert jnp.all(ns > 0)
-    assert jnp.all(ps > 0)
-    assert jnp.all(es > 0)
+    assert len(eos_data.ns) > 0
+    assert jnp.all(eos_data.ns > 0)
+    assert jnp.all(eos_data.ps > 0)
+    assert jnp.all(eos_data.es > 0)

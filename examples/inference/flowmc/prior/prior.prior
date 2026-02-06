@@ -1,3 +1,4 @@
+E_sat = UniformPrior(-16.1, -15.9, parameter_names=["E_sat"])
 K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
 Q_sat = UniformPrior(-500.0, 1100.0, parameter_names=["Q_sat"])
 Z_sat = UniformPrior(-2500.0, 1500.0, parameter_names=["Z_sat"])

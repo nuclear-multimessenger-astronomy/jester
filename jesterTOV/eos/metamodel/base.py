@@ -7,6 +7,7 @@ from jaxtyping import Array, Float, Int
 from jesterTOV import utils
 from jesterTOV.eos.base import Interpolate_EOS_model
 from jesterTOV.eos.crust import Crust
+from jesterTOV.tov.data_classes import EOSData
 from jesterTOV.logging_config import get_logger
 
 logger = get_logger("jester")
@@ -289,7 +290,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         )
 
     # TODO: improve type hinting here
-    def construct_eos(self, NEP_dict: dict) -> tuple:
+    def construct_eos(self, params: dict[str, float]) -> EOSData:
         r"""
         Construct the complete equation of state from nuclear empirical parameters.
 
@@ -297,7 +298,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         meta-model core, ensuring thermodynamic consistency and causality.
 
         Args:
-            NEP_dict (dict): Nuclear empirical parameters including:
+            params: Nuclear empirical parameters including:
 
                 - **E_sat**: Saturation energy per nucleon [:math:`\mathrm{MeV}`] (default: -16.0)
                 - **K_sat**: Incompressibility at saturation [:math:`\mathrm{MeV}`]
@@ -307,29 +308,21 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
                 - **K_sym, Q_sym, Z_sym**: Higher-order symmetry parameters [:math:`\mathrm{MeV}`]
 
         Returns:
-            tuple: Complete EOS data containing:
-
-                - **ns**: Number densities [geometric units]
-                - **ps**: Pressures [geometric units]
-                - **hs**: Specific enthalpies [geometric units]
-                - **es**: Energy densities [geometric units]
-                - **dloge_dlogps**: Logarithmic derivative :math:`\frac{d\ln\varepsilon}{d\ln p}`
-                - **mu**: Chemical potential [geometric units]
-                - **cs2**: Speed of sound squared :math:`c_s^2 = \frac{dp}{d\varepsilon}`
+            EOSData: Complete EOS with all required arrays
         """
+        # Use the old parameter name internally for compatibility
+        NEP_dict = params
 
-        E_sat = NEP_dict.get(
-            "E_sat", -16.0
-        )  # NOTE: this is a commong default value, therefore not zero!
-        K_sat = NEP_dict.get("K_sat", 0.0)
-        Q_sat = NEP_dict.get("Q_sat", 0.0)
-        Z_sat = NEP_dict.get("Z_sat", 0.0)
+        E_sat = NEP_dict["E_sat"]
+        K_sat = NEP_dict["K_sat"]
+        Q_sat = NEP_dict["Q_sat"]
+        Z_sat = NEP_dict["Z_sat"]
 
-        E_sym = NEP_dict.get("E_sym", 0.0)
-        L_sym = NEP_dict.get("L_sym", 0.0)
-        K_sym = NEP_dict.get("K_sym", 0.0)
-        Q_sym = NEP_dict.get("Q_sym", 0.0)
-        Z_sym = NEP_dict.get("Z_sym", 0.0)
+        E_sym = NEP_dict["E_sym"]
+        L_sym = NEP_dict["L_sym"]
+        K_sym = NEP_dict["K_sym"]
+        Q_sym = NEP_dict["Q_sym"]
+        Z_sym = NEP_dict["Z_sym"]
 
         # Add the first derivative coefficient in Esat to make it work with jax.numpy.polyval
         coefficient_sat = jnp.array([E_sat, 0.0, K_sat, Q_sat, Z_sat])
@@ -417,7 +410,35 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
 
         ns, ps, hs, es, dloge_dlogps = self.interpolate_eos(n, p, e)
 
-        return ns, ps, hs, es, dloge_dlogps, mu, cs2
+        return EOSData(
+            ns=ns,
+            ps=ps,
+            hs=hs,
+            es=es,
+            dloge_dlogps=dloge_dlogps,
+            cs2=cs2,
+            mu=mu,
+            extra_constraints=None,
+        )
+
+    def get_required_parameters(self) -> list[str]:
+        """
+        Return list of nuclear empirical parameters required by MetaModel.
+
+        Returns:
+            list[str]: ["E_sat", "K_sat", "Q_sat", "Z_sat", "E_sym", "L_sym", "K_sym", "Q_sym", "Z_sym"]
+        """
+        return [
+            "E_sat",
+            "K_sat",
+            "Q_sat",
+            "Z_sat",
+            "E_sym",
+            "L_sym",
+            "K_sym",
+            "Q_sym",
+            "Z_sym",
+        ]
 
     #################
     ### AUXILIARY ###

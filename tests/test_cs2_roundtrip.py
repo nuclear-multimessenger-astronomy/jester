@@ -24,6 +24,8 @@ import jax.numpy as jnp
 
 import jesterTOV.eos as eos
 from jesterTOV import utils
+from jesterTOV.tov import GRTOVSolver
+from jesterTOV.tov.data_classes import EOSData
 
 
 class TestCS2Roundtrip:
@@ -50,14 +52,17 @@ class TestCS2Roundtrip:
         cs2_recomputed = ps / es / dloge_dlogps  # Would have numerical errors
 
         # Pass correct cs2 to construct_family
-        eos_tuple = (ns, ps, hs, es, dloge_dlogps, cs2_correct)
-        log_pcs, ms, rs, lambdas = eos.construct_family(eos_tuple, ndat=10)
+        eos_data = EOSData(
+            ns=ns, ps=ps, hs=hs, es=es, dloge_dlogps=dloge_dlogps, cs2=cs2_correct
+        )
+        solver = GRTOVSolver()
+        family_data = solver.construct_family(eos_data, ndat=10, min_nsat=0.75)
 
         # If construct_family recomputed cs2, it would use cs2_recomputed which
         # might hit causality limit. With cs2_correct, it should work fine.
-        assert len(ms) == 10
-        assert jnp.all(ms > 0)
-        assert jnp.all(rs > 0)
+        assert len(family_data.masses) == 10
+        assert jnp.all(family_data.masses > 0)
+        assert jnp.all(family_data.radii > 0)
 
     def test_metamodel_cs2_has_low_error(self):
         """
@@ -78,11 +83,12 @@ class TestCS2Roundtrip:
         }
 
         nep_dict = {
+            "E_sat": -16.0,  # Free parameter in refactored code
             "P_sat": 0.5,
             "K_sat": 250.0,
             "Q_sat": -300.0,
             "Z_sat": 0.0,
-            "S_sym": 32.0,
+            "E_sym": 32.0,
             "L_sym": 60.0,
             "K_sym": -50.0,
             "Q_sym": 0.0,
@@ -90,7 +96,15 @@ class TestCS2Roundtrip:
         }
 
         model = eos.MetaModel_EOS_model(**metamodel_params)
-        ns, ps, hs, es, dloge_dlogps, mu, cs2_analytical = model.construct_eos(nep_dict)
+        eos_data = model.construct_eos(nep_dict)
+        ns, ps, hs, es, dloge_dlogps, cs2_analytical = (
+            eos_data.ns,
+            eos_data.ps,
+            eos_data.hs,
+            eos_data.es,
+            eos_data.dloge_dlogps,
+            eos_data.cs2,
+        )
 
         # Recompute cs2 the "buggy" way
         cs2_recomputed = ps / es / dloge_dlogps
@@ -128,11 +142,12 @@ class TestCS2Roundtrip:
 
         # Test parameters that could trigger numerical issues at boundaries
         nep_dict = {
+            "E_sat": -16.0,  # Free parameter in refactored code
             "P_sat": 0.5,
             "K_sat": 220.0,
             "Q_sat": -200.0,
             "Z_sat": 0.0,
-            "S_sym": 30.0,
+            "E_sym": 30.0,
             "L_sym": 45.0,
             "K_sym": -100.0,
             "Q_sym": 0.0,
@@ -140,14 +155,14 @@ class TestCS2Roundtrip:
         }
 
         model = eos.MetaModel_EOS_model(**metamodel_params)
-        ns, ps, hs, es, dloge_dlogps, mu, cs2 = model.construct_eos(nep_dict)
+        eos_data = model.construct_eos(nep_dict)
 
         # Construct family (including cs2 to avoid bug)
-        eos_tuple = (ns, ps, hs, es, dloge_dlogps, cs2)
-        log_pcs, masses, radii, lambdas = eos.construct_family(eos_tuple, ndat=50)
+        solver = GRTOVSolver()
+        family_data = solver.construct_family(eos_data, ndat=50, min_nsat=0.75)
 
         # Calculate MTOV
-        mtov = jnp.max(masses)
+        mtov = jnp.max(family_data.masses)
 
         # MTOV should be in reasonable range (1.0-2.5 M_sun)
         # Before the fix, buggy samples had MTOV ~ 0.2-0.5 M_sun
@@ -174,11 +189,12 @@ class TestCS2Roundtrip:
 
         # Use moderate NEP parameters that produce a causal EOS
         nep_dict = {
+            "E_sat": -16.0,  # Free parameter in refactored code
             "P_sat": 0.5,
             "K_sat": 250.0,
             "Q_sat": -200.0,
             "Z_sat": 0.0,
-            "S_sym": 30.0,
+            "E_sym": 30.0,
             "L_sym": 60.0,
             "K_sym": -50.0,
             "Q_sym": 0.0,
@@ -186,7 +202,15 @@ class TestCS2Roundtrip:
         }
 
         model = eos.MetaModel_EOS_model(**metamodel_params)
-        ns, ps, hs, es, dloge_dlogps, mu, cs2_analytical = model.construct_eos(nep_dict)
+        eos_data = model.construct_eos(nep_dict)
+        ns, ps, hs, es, dloge_dlogps, cs2_analytical = (
+            eos_data.ns,
+            eos_data.ps,
+            eos_data.hs,
+            eos_data.es,
+            eos_data.dloge_dlogps,
+            eos_data.cs2,
+        )
 
         # Recompute cs2 (the buggy way)
         cs2_recomputed = ps / es / dloge_dlogps
@@ -201,12 +225,10 @@ class TestCS2Roundtrip:
         # With the fix, construct_family uses cs2_analytical, avoiding these errors
 
         # Test that using stored cs2 gives correct results
-        eos_tuple_correct = (ns, ps, hs, es, dloge_dlogps, cs2_analytical)
-        log_pcs_correct, masses_correct, radii_correct, lambdas_correct = (
-            eos.construct_family(eos_tuple_correct, ndat=30)
-        )
+        solver = GRTOVSolver()
+        family_data = solver.construct_family(eos_data, ndat=30, min_nsat=0.75)
 
         # Should get reasonable neutron stars when using analytical cs2
-        mtov = jnp.max(masses_correct)
+        mtov = jnp.max(family_data.masses)
         assert mtov > 0.8, f"MTOV too low with analytical cs2: {mtov:.3f} M_sun"
         assert mtov < 3.0, f"MTOV too high with analytical cs2: {mtov:.3f} M_sun"

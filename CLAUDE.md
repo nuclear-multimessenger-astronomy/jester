@@ -42,21 +42,57 @@ examples/inference/smc_random_walk/chiEFT/config.yaml
 
 ---
 
+## API Migration (January 2025 Refactoring)
+
+**construct_family moved from EOS to TOV solver:**
+```python
+# OLD: eos_tuple = eos.construct_family(...)
+# NEW:
+from jesterTOV.tov import GRTOVSolver
+eos_data = model.construct_eos(params)  # Returns EOSData NamedTuple
+solver = GRTOVSolver()
+family_data = solver.construct_family(eos_data, ndat=100, min_nsat=0.75)
+# Access: family_data.masses, family_data.radii, family_data.lambdas
+```
+
+**E_sat is now required** (was fixed at -16.0): Add `E_sat = UniformPrior(-16.1, -15.9)` to priors
+
+**EOSData is NamedTuple** (8 fields): Access by name `eos_data.ns`, NOT by unpacking
+
+**Type ignore patterns for JAX:**
+- vmap results: `masses: Float[Array, "n"] = solutions.M  # type: ignore[assignment]`
+- Diffrax with throw=False: `R = sol.ys[0][-1]  # type: ignore[index]`
+- Optional mu field: `mu: Float[Array, "n"] = eos_data.mu  # type: ignore[assignment]`
+  - Note: This pattern suggests `Interpolate_EOS_model` base class may need restructuring to make `mu` non-optional
+
+---
+
 ## Project Overview
 
 **JESTER** (**J**ax-based **E**o**S** and **T**ov solv**ER**) is a scientific computing library for neutron star physics using JAX for hardware acceleration and automatic differentiation.
 
 ### Core Modules
-- `jesterTOV/eos/` - Equation of state models
-- `jesterTOV/tov.py` - TOV equation solver
+- `jesterTOV/eos/` - Equation of state models (MetaModel, MetaModelCSE, Spectral)
+  - Each EOS class implements `construct_eos()` and `get_required_parameters()`
+  - Returns JAX-compatible `EOSData` dataclass (NamedTuple)
+- `jesterTOV/tov/` - TOV equation solvers
+  - `base.py` - TOVSolverBase abstract class
+  - `gr.py` - General relativity TOV solver (GRTOVSolver)
+  - `data_classes.py` - JAX pytree dataclasses (EOSData, TOVSolution, FamilyData)
 - `jesterTOV/inference/` - Bayesian inference system
+  - Single unified `JesterTransform` class coordinates EOS + TOV
+  - Parameter validation before sampling
 - `jesterTOV/utils.py` - Physical constants and unit conversions
 
 ### Key Design Principles
 - **JAX-first**: Hardware acceleration with automatic differentiation
+  - Avoid Python `if` statements on traced values (use `jnp.where()`)
+  - Avoid `float()` casts on traced arrays
+  - Use NamedTuple for JAX pytree compatibility
 - **Geometric units**: All physics calculations use geometric units
 - **Type safety**: Comprehensive type hints with `jaxtyping` for arrays
 - **64-bit precision**: Enabled by default for numerical accuracy
+- **Modular architecture**: EOS, TOV, and Transform are cleanly separated with well-defined interfaces
 
 ---
 

@@ -3,7 +3,7 @@ jesterTOV.tov module
 
 The TOV (Tolman-Oppenheimer-Volkoff) module solves the stellar structure equations for neutron stars.
 
-.. automodule:: jesterTOV.tov
+.. automodule:: jesterTOV.tov.gr
    :members:
    :undoc-members:
    :show-inheritance:

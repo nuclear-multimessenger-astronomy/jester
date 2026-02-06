@@ -19,6 +19,7 @@ from jesterTOV import utils
 from jesterTOV.eos.base import Interpolate_EOS_model
 from jesterTOV.eos.crust import Crust
 from jesterTOV.logging_config import get_logger
+from jesterTOV.tov.data_classes import EOSData
 
 logger = get_logger("jester")
 
@@ -295,32 +296,47 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         eps = e0 / mu + (p0 / mu) * integral
         return eps.astype(float)
 
-    def construct_eos(self, gamma: Float[Array, "4"]) -> Tuple[
-        Float[Array, "n_points"],
-        Float[Array, "n_points"],
-        Float[Array, "n_points"],
-        Float[Array, "n_points"],
-        Float[Array, "n_points"],
-    ]:
+    def construct_eos(self, params: dict[str, float]) -> EOSData:
         r"""
         Construct full EOS from spectral parameters.
 
         This method:
-        1. Validates parameters
+        1. Validates parameters and checks gamma bounds
         2. Loads low-density crust (preprocessed via Crust class)
         3. Generates high-density spectral region (500 points by default)
         4. Stitches them together
         5. Converts to geometric units and computes auxiliary quantities
 
         Args:
-            gamma: Spectral coefficients :math:`[\gamma_0, \gamma_1, \gamma_2, \gamma_3]`
+            params (dict[str, float]): Dictionary containing:
+                - gamma_0, gamma_1, gamma_2, gamma_3: Spectral coefficients
 
         Returns:
-            Tuple of (ns, ps, hs, es, dloge_dlogps) in geometric units
-
-        Raises:
-            ValueError: If gamma parameters fail validation
+            EOSData: Complete EOS with all required arrays in geometric units.
+                    If gamma bounds are violated, extra_constraints contains
+                    the violation penalty.
         """
+        # Extract gamma parameters
+        gamma = jnp.array(
+            [
+                params["gamma_0"],
+                params["gamma_1"],
+                params["gamma_2"],
+                params["gamma_3"],
+            ]
+        )
+
+        # Check for gamma bound violations (Γ must be positive)
+        # Sample the adiabatic index across the valid x range
+        x_samples = jnp.linspace(0.0, self.xmax, 100)
+        gamma_samples = vmap(lambda x: self._adiabatic_index(x, gamma))(x_samples)
+
+        # Count violations (Γ < 0.1 is considered unphysical)
+        gamma_min = jnp.min(gamma_samples)
+        gamma_violation = jnp.maximum(0.0, 0.1 - gamma_min)
+
+        # Always construct extra_constraints to avoid Python branching on JAX traced values
+        extra_constraints = {"gamma_bound_violation": float(gamma_violation)}
 
         # Generate high-density spectral region
         n_high, p_high, e_high = self._generate_spectral_region(gamma)
@@ -333,7 +349,29 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         # Convert to geometric units and compute auxiliary quantities
         ns, ps, hs, es, dloge_dlogps = self.interpolate_eos(n_full, p_full, e_full)
 
-        return ns, ps, hs, es, dloge_dlogps
+        # TODO: double check if this is stable
+        # Compute cs2 from dloge_dlogps
+        cs2 = ps / (es * dloge_dlogps)
+
+        return EOSData(
+            ns=ns,
+            ps=ps,
+            hs=hs,
+            es=es,
+            dloge_dlogps=dloge_dlogps,
+            cs2=cs2,
+            mu=None,
+            extra_constraints=extra_constraints,
+        )
+
+    def get_required_parameters(self) -> list[str]:
+        """
+        Return list of spectral parameters required for this EOS.
+
+        Returns:
+            list[str]: ["gamma_0", "gamma_1", "gamma_2", "gamma_3"]
+        """
+        return ["gamma_0", "gamma_1", "gamma_2", "gamma_3"]
 
     def _generate_spectral_region(
         self,
