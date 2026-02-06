@@ -101,12 +101,12 @@ def _tov_ode(h, y, eos):
     ps = eos["p"]
     hs = eos["h"]
     es = eos["e"]
-    cs2s = eos["cs2"]
+    dloge_dlogps = eos["dloge_dlogp"]
     # actual equations
     r, m, H, b = y
     e = utils.interp_in_logspace(h, hs, es)
     p = utils.interp_in_logspace(h, hs, ps)
-    dedp = 1.0 / utils.interp_in_logspace(h, hs, cs2s)
+    dedp = e / p * jnp.interp(h, hs, dloge_dlogps)
 
     # evalute the sigma and dsigmadp
     sigma = _sigma_func(
@@ -278,7 +278,6 @@ class PostTOVSolver(TOVSolverBase):
             "p": eos_data.ps,
             "h": eos_data.hs,
             "e": eos_data.es,
-            "cs2": eos_data.cs2,
             "dloge_dlogp": eos_data.dloge_dlogps,
             # Add modification parameters
             "lambda_BL": lambda_BL,
@@ -293,12 +292,12 @@ class PostTOVSolver(TOVSolverBase):
         ps = eos_data.ps
         hs = eos_data.hs
         es = eos_data.es
-        cs2s = eos_data.cs2
+        dloge_dlogps = eos_data.dloge_dlogps
 
         # Central values and initial conditions
         hc = utils.interp_in_logspace(pc, ps, hs)
         ec = utils.interp_in_logspace(hc, hs, es)
-        dedp_c = 1.0 / utils.interp_in_logspace(hc, hs, cs2s)
+        dedp_c = ec / pc * jnp.interp(hc, hs, dloge_dlogps)
         dhdp_c = 1.0 / (ec + pc)
         dedh_c = dedp_c / dhdp_c
 

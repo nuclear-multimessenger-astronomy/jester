@@ -10,7 +10,6 @@ from jesterTOV.tov.data_classes import EOSData
 def sample_eos_data_post(sample_eos_dict):
     """Create EOSData from sample EOS dict for post-TOV testing."""
     # Extract arrays from dict
-    ns = sample_eos_dict["n"]
     ps = sample_eos_dict["p"]
     hs = sample_eos_dict["h"]
     es = sample_eos_dict["e"]
@@ -18,13 +17,13 @@ def sample_eos_data_post(sample_eos_dict):
     cs2 = sample_eos_dict["cs2"]
 
     return EOSData(
-        ns=ns,
+        ns=jnp.zeros_like(ps),  # Not used in TOV
         ps=ps,
         hs=hs,
         es=es,
         dloge_dlogps=dloge_dlogps,
         cs2=cs2,
-        mu=jnp.zeros_like(ns),  # Not used in TOV
+        mu=jnp.zeros_like(ps),  # Not used in TOV
         extra_constraints=None,
     )
 
