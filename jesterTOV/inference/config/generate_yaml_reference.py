@@ -338,6 +338,7 @@ The JESTER inference system uses YAML configuration files validated by Pydantic 
     doc += '    psr_name: "J0740+6620"  # Pulsar name (for labeling)\n'
     doc += "    mass_mean: 2.08         # Mean mass (solar masses)\n"
     doc += "    mass_std: 0.07          # Mass uncertainty (1-sigma)\n"
+    doc += "    penalty_value: -1e5     # Penalty for invalid TOV solutions (default: -1e5)\n"
     doc += "    nb_masses: 100          # Mass grid size for marginalization\n"
     doc += "```\n\n"
 
@@ -489,6 +490,7 @@ The JESTER inference system uses YAML configuration files validated by Pydantic 
     doc += "    parameters:\n"
     doc += "      mass_mean: 2.08\n"
     doc += "      mass_std: 0.07\n"
+    doc += "      penalty_value: -1e5  # Optional, default: -1e5\n"
     doc += "  \n"
     doc += '  - type: "chieft"\n'
     doc += "    enabled: true\n\n"

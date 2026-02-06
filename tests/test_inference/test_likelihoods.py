@@ -422,13 +422,11 @@ class TestRadioTimingLikelihood:
             psr_name="J0348+0432",
             mean=2.01,  # Solar masses
             std=0.04,  # Uncertainty
-            nb_masses=100,
         )
 
         assert likelihood.psr_name == "J0348+0432"
         assert likelihood.mean == 2.01
         assert likelihood.std == 0.04
-        assert likelihood.nb_masses == 100
 
     def test_radio_timing_likelihood_evaluate(self):
         """Test RadioTimingLikelihood evaluation.
@@ -442,7 +440,6 @@ class TestRadioTimingLikelihood:
             psr_name="J0348+0432",
             mean=2.01,
             std=0.04,
-            nb_masses=100,
         )
 
         # Mock transform output with masses_EOS
@@ -675,7 +672,6 @@ class TestCombinedLikelihoodFactory:
                             "mass_std": 0.04,
                         },
                     ],
-                    "nb_masses": 100,
                 },
             ),
         ]

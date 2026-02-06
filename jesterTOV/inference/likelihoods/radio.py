@@ -25,7 +25,7 @@ PSR J0740+6620," ApJL 915, L12 (2021).
 """
 
 import jax.numpy as jnp
-from jax.scipy.special import logsumexp
+from jax.scipy.stats import norm
 from jaxtyping import Array, Float
 
 from jesterTOV.inference.base import LikelihoodBase
@@ -42,17 +42,16 @@ class RadioTimingLikelihood(LikelihoodBase):
 
     The marginalization assumes:
     - The measured mass follows a Gaussian distribution: :math:`M_{\text{obs}} \sim \mathcal{N}(M_{\text{true}}, \sigma)`
-    - The true mass has a uniform prior: :math:`P(M_{\text{true}} | M_{\text{TOV}}) = 1/M_{\text{TOV}}` for :math:`M_{\text{true}} \in [0, M_{\text{TOV}}]`
+    - The true mass has a uniform prior: :math:`P(M_{\text{true}} | M_{\text{TOV}}) = 1/(M_{\text{TOV}} - m_{\text{min}})` for :math:`M_{\text{true}} \in [m_{\text{min}}, M_{\text{TOV}}]`
 
-    This gives the marginal likelihood: # TODO: check equations here
+    This gives the marginal likelihood.
 
     .. math::
         \mathcal{L}(M_{\text{TOV}} | M_{\text{obs}}, \sigma) =
-        \frac{1}{M_{\text{TOV}}} \int_{m_{\text{min}}}^{M_{\text{TOV}}}
+        \frac{1}{M_{\text{TOV}} - m_{\text{min}}} \int_{m_{\text{min}}}^{M_{\text{TOV}}}
         \frac{1}{\sqrt{2\pi\sigma^2}} \exp\left[-\frac{(m - M_{\text{obs}})^2}{2\sigma^2}\right] dm
 
-    where the integration is performed numerically using a discrete grid and
-    logsumexp for numerical stability.
+    where the integration is evaluated analytically via the Gaussian CDF.
 
     Parameters
     ----------
@@ -65,14 +64,13 @@ class RadioTimingLikelihood(LikelihoodBase):
     std : float
         Measurement uncertainty (:math:`1\sigma`) in solar masses. This combines statistical
         and systematic uncertainties from the timing analysis.
-    nb_masses : int, optional
-        Number of grid points for numerical integration of the marginalization
-        integral. More points provide better accuracy but increase computation time.
-        Default is 500, which provides good accuracy for typical uncertainties.
     m_min : float, optional
-        Minimum mass for the integration grid in solar masses. This should be
+        Minimum mass for the integration lower bound in solar masses. This should be
         well below any physical neutron star mass to avoid truncation effects.
         Default is 0.1 :math:`M_{\odot}`.
+    penalty_value : float, optional
+        Log-likelihood penalty for invalid TOV solutions (M_TOV ≤ m_min).
+        Default is -1e5.
 
     Attributes
     ----------
@@ -82,15 +80,15 @@ class RadioTimingLikelihood(LikelihoodBase):
         Observed mass mean in solar masses
     std : float
         Observed mass uncertainty in solar masses
-    nb_masses : int
-        Number of mass grid points for integration
     m_min : float
         Minimum mass for integration (solar masses)
+    penalty_value : float
+        Log-likelihood penalty for invalid TOV solutions
 
     Notes
     -----
     Invalid TOV solutions (M_TOV ≤ m_min) receive a large negative log-likelihood
-    penalty (-1e10) to effectively exclude them from the posterior.
+    penalty to effectively exclude them from the posterior.
 
     The implementation uses log-space arithmetic throughout to avoid numerical
     underflow when combining with other log-likelihoods.
@@ -117,33 +115,33 @@ class RadioTimingLikelihood(LikelihoodBase):
     psr_name: str
     mean: float
     std: float
-    nb_masses: int
     m_min: float
+    penalty_value: float
 
     def __init__(
         self,
         psr_name: str,
         mean: float,
         std: float,
-        nb_masses: int = 500,
         m_min: float = 0.1,  # TODO: determine if needs tuning later on
+        penalty_value: float = -1e5,
     ) -> None:
         super().__init__()
         self.psr_name = psr_name
         self.mean = mean
         self.std = std
-        self.nb_masses = nb_masses
         self.m_min = m_min  # Minimum mass for integration (solar masses)
+        self.penalty_value = penalty_value
 
     def evaluate(self, params: dict[str, Float | Array]) -> Float:
         """Evaluate the marginalized log-likelihood for the pulsar mass measurement.
 
         This method computes the marginal likelihood by:
         1. Extracting the maximum TOV mass from the EOS
-        2. Creating a mass grid from m_min to M_TOV
-        3. Evaluating the Gaussian likelihood at each grid point
-        4. Numerically integrating using logsumexp for stability
-        5. Applying the 1/M_TOV normalization factor
+        2. Computing standardized z-scores for the integration bounds
+        3. Evaluating the Gaussian CDF at the upper and lower bounds
+        4. Computing the CDF difference in log-space for numerical stability
+        5. Applying the 1/(M_TOV - m_min) normalization factor
 
         Parameters
         ----------
@@ -158,17 +156,13 @@ class RadioTimingLikelihood(LikelihoodBase):
         -------
         Float
             Natural logarithm of the marginalized likelihood. Returns a large
-            negative penalty (-1e10) for invalid EOSs (M_TOV ≤ m_min), which
+            negative penalty for invalid EOSs (M_TOV ≤ m_min), which
             indicates TOV integration failure or unphysical EOS.
 
         Notes
         -----
-        The numerical integration uses nb_masses grid points and evaluates
-        the Gaussian likelihood in log-space for numerical stability. The
-        logsumexp operation prevents underflow when summing small probabilities.
-
-        Any NaN or infinity values in the result are replaced with -1e10 to
-        ensure stable MCMC sampling.
+        Any NaN or infinity values in the result should not be replaced with -jnp.inf as
+        this will cause some samplers to have numerical problems.
         """
         # Extract maximum TOV mass from the EOS
         masses_EOS: Float[Array, " n_points"] = params["masses_EOS"]
@@ -178,34 +172,35 @@ class RadioTimingLikelihood(LikelihoodBase):
         # Invalid cases: mtov <= m_min (unphysical masses from TOV failures)
         invalid_mtov = mtov <= self.m_min
 
-        # Create mass grid for integration from m_min to M_max
-        # Per Eq. (X): P(θ_EOS | d_radio) ∝ (1/M_TOV) ∫₀^M_TOV P(M | d_radio) dM
-        # Note: Start at m_min (default 0.1 solar masses) instead of 0 to avoid numerical issues
-        m = jnp.linspace(self.m_min, mtov, self.nb_masses)
+        # Analytical integration: ∫_{m_min}^{M_TOV} N(m | mean, std) dm
+        #                       = Φ((M_TOV - mean)/std) - Φ((m_min - mean)/std)
+        # Standardized values (z-scores)
+        z_upper = (mtov - self.mean) / self.std
+        z_lower = (self.m_min - self.mean) / self.std
 
-        # Gaussian log likelihood with proper normalization constant
-        # P(M | d_radio) = N(M | mean, std)
-        gauss_norm = -0.5 * jnp.log(2 * jnp.pi * self.std**2)
-        log_likelihood_array = gauss_norm + (-0.5 * ((m - self.mean) / self.std) ** 2)
+        # Compute log(Φ(z_upper) - Φ(z_lower)) using numerically stable log-space arithmetic
+        # log(a - b) = log(a) + log(1 - b/a)
+        #            = log(a) + log1p(-b/a)
+        #            = log(a) + log1p(-exp(log(b) - log(a)))
+        logcdf_upper = norm.logcdf(z_upper)
+        logcdf_lower = norm.logcdf(z_lower)
+        log_cdf_diff = logcdf_upper + jnp.log1p(-jnp.exp(logcdf_lower - logcdf_upper))
 
-        # Numerical integration using logsumexp (for stability)
-        # integral ≈ dx * sum(exp(log_likelihood_array))
-        # log(integral) = log(dx) + logsumexp(log_likelihood_array)
-        dx = (mtov - self.m_min) / self.nb_masses
-        log_integral = logsumexp(log_likelihood_array) + jnp.log(dx)
-
-        # Apply 1/M_max normalization factor (uniform prior on true mass in [0, M_TOV])
-        # Use jnp.where to avoid computing log(mtov) when mtov is invalid
+        # Apply 1/(M_max - m_min) (uniform prior in [m_min, M_TOV])
+        # Use jnp.where to avoid computing log(mtov - m_min) when mtov is invalid
         log_likelihood = jnp.where(
             invalid_mtov,
-            -1e10,  # Large negative penalty for invalid masses
-            log_integral - jnp.log(mtov),  # Normal calculation for valid masses
+            self.penalty_value,  # Penalty for invalid masses
+            log_cdf_diff - jnp.log(mtov - self.m_min),
         )
 
-        # Safety net: replace any remaining NaN/inf with large negative value
+        # Safety net: replace any remaining NaN/inf with penalty value
         # This catches edge cases not covered by the mtov check
         log_likelihood = jnp.nan_to_num(
-            log_likelihood, nan=-1e10, posinf=-1e10, neginf=-1e10
+            log_likelihood,
+            nan=self.penalty_value,
+            posinf=self.penalty_value,
+            neginf=self.penalty_value,
         )
 
         return log_likelihood

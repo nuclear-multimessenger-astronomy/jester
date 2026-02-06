@@ -338,7 +338,6 @@ class TestRadioTimingIntegration:
             psr_name="J0348+0432",
             mean=2.01,
             std=0.04,
-            nb_masses=100,
         )
 
         # Mock stiff EOS with Mmax > 2.01
@@ -369,7 +368,6 @@ class TestRadioTimingIntegration:
             psr_name="J0348+0432",
             mean=2.01,
             std=0.04,
-            nb_masses=100,
         )
 
         # Mock soft EOS with Mmax < 2.01 but > m_min (0.1)
