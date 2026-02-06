@@ -182,6 +182,7 @@ List of observational constraints. Each likelihood has:
     psr_name: "J0740+6620"  # Pulsar name (for labeling)
     mass_mean: 2.08         # Mean mass (solar masses)
     mass_std: 0.07          # Mass uncertainty (1-sigma)
+    penalty_value: -1e5     # Penalty for invalid TOV solutions (default: -1e5)
     nb_masses: 100          # Mass grid size for marginalization
 ```
 
@@ -476,6 +477,7 @@ likelihoods:
     parameters:
       mass_mean: 2.08
       mass_std: 0.07
+      penalty_value: -1e5  # Optional, default: -1e5
   
   - type: "chieft"
     enabled: true

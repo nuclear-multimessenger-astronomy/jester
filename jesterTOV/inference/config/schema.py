@@ -151,6 +151,8 @@ class LikelihoodConfig(BaseModel):
         For radio timing likelihoods:
             pulsars : list[dict]
                 List of pulsars with 'name', 'mass_mean', and 'mass_std' keys
+            penalty_value : float
+                Penalty for invalid TOV solutions (M_TOV ≤ m_min) (default: -1e5)
             nb_masses : int
                 Number of mass points for numerical integration (default: 100)
 
@@ -355,6 +357,7 @@ class LikelihoodConfig(BaseModel):
                     )
 
             # Set defaults for optional parameters
+            v.setdefault("penalty_value", -1e5)
             v.setdefault("nb_masses", 100)
 
         # Validate constraint likelihood parameters (deprecated - use constraints_eos + constraints_tov)

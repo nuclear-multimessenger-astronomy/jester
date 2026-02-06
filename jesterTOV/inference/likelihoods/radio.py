@@ -68,6 +68,9 @@ class RadioTimingLikelihood(LikelihoodBase):
         Minimum mass for the integration lower bound in solar masses. This should be
         well below any physical neutron star mass to avoid truncation effects.
         Default is 0.1 :math:`M_{\odot}`.
+    penalty_value : float, optional
+        Log-likelihood penalty for invalid TOV solutions (M_TOV ≤ m_min).
+        Default is -1e5.
 
     Attributes
     ----------
@@ -79,6 +82,8 @@ class RadioTimingLikelihood(LikelihoodBase):
         Observed mass uncertainty in solar masses
     m_min : float
         Minimum mass for integration (solar masses)
+    penalty_value : float
+        Log-likelihood penalty for invalid TOV solutions
 
     Notes
     -----
@@ -111,6 +116,7 @@ class RadioTimingLikelihood(LikelihoodBase):
     mean: float
     std: float
     m_min: float
+    penalty_value: float
 
     def __init__(
         self,
@@ -118,12 +124,14 @@ class RadioTimingLikelihood(LikelihoodBase):
         mean: float,
         std: float,
         m_min: float = 0.1,  # TODO: determine if needs tuning later on
+        penalty_value: float = -1e5,
     ) -> None:
         super().__init__()
         self.psr_name = psr_name
         self.mean = mean
         self.std = std
         self.m_min = m_min  # Minimum mass for integration (solar masses)
+        self.penalty_value = penalty_value
 
     def evaluate(self, params: dict[str, Float | Array]) -> Float:
         """Evaluate the marginalized log-likelihood for the pulsar mass measurement.
@@ -182,14 +190,17 @@ class RadioTimingLikelihood(LikelihoodBase):
         # Use jnp.where to avoid computing log(mtov - m_min) when mtov is invalid
         log_likelihood = jnp.where(
             invalid_mtov,
-            -1e5,  # Large negative penalty for invalid masses
+            self.penalty_value,  # Penalty for invalid masses
             log_cdf_diff - jnp.log(mtov - self.m_min),
         )
 
-        # Safety net: replace any remaining NaN/inf with large negative value
+        # Safety net: replace any remaining NaN/inf with penalty value
         # This catches edge cases not covered by the mtov check
         log_likelihood = jnp.nan_to_num(
-            log_likelihood, nan=-1e5, posinf=-1e5, neginf=-1e5
+            log_likelihood,
+            nan=self.penalty_value,
+            posinf=self.penalty_value,
+            neginf=self.penalty_value,
         )
 
         return log_likelihood
