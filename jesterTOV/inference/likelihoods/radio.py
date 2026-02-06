@@ -42,17 +42,16 @@ class RadioTimingLikelihood(LikelihoodBase):
 
     The marginalization assumes:
     - The measured mass follows a Gaussian distribution: :math:`M_{\text{obs}} \sim \mathcal{N}(M_{\text{true}}, \sigma)`
-    - The true mass has a uniform prior: :math:`P(M_{\text{true}} | M_{\text{TOV}}) = 1/M_{\text{TOV}}` for :math:`M_{\text{true}} \in [0, M_{\text{TOV}}]`
+    - The true mass has a uniform prior: :math:`P(M_{\text{true}} | M_{\text{TOV}}) = 1/(M_{\text{TOV}} - m_{\text{min}})` for :math:`M_{\text{true}} \in [m_{\text{min}}, M_{\text{TOV}}]`
 
-    This gives the marginal likelihood: # TODO: check equations here
+    This gives the marginal likelihood.
 
     .. math::
         \mathcal{L}(M_{\text{TOV}} | M_{\text{obs}}, \sigma) =
-        \frac{1}{M_{\text{TOV}}} \int_{m_{\text{min}}}^{M_{\text{TOV}}}
+        \frac{1}{M_{\text{TOV}} - m_{\text{min}}} \int_{m_{\text{min}}}^{M_{\text{TOV}}}
         \frac{1}{\sqrt{2\pi\sigma^2}} \exp\left[-\frac{(m - M_{\text{obs}})^2}{2\sigma^2}\right] dm
 
-    where the integration is performed numerically using a discrete grid and
-    logsumexp for numerical stability.
+    where the integration is evaluated analytically via the Gaussian CDF.
 
     Parameters
     ----------
@@ -66,7 +65,7 @@ class RadioTimingLikelihood(LikelihoodBase):
         Measurement uncertainty (:math:`1\sigma`) in solar masses. This combines statistical
         and systematic uncertainties from the timing analysis.
     m_min : float, optional
-        Minimum mass for the integration grid in solar masses. This should be
+        Minimum mass for the integration lower bound in solar masses. This should be
         well below any physical neutron star mass to avoid truncation effects.
         Default is 0.1 :math:`M_{\odot}`.
 
@@ -84,7 +83,7 @@ class RadioTimingLikelihood(LikelihoodBase):
     Notes
     -----
     Invalid TOV solutions (M_TOV ≤ m_min) receive a large negative log-likelihood
-    penalty (-1e10) to effectively exclude them from the posterior.
+    penalty (:math:`-\infty`) to effectively exclude them from the posterior.
 
     The implementation uses log-space arithmetic throughout to avoid numerical
     underflow when combining with other log-likelihoods.
