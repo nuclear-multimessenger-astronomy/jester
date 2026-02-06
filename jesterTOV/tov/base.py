@@ -110,9 +110,7 @@ class TOVSolverBase(ABC):
             float: Minimum central pressure [geometric units]
         """
         min_n_geometric = min_nsat * 0.16 * utils.fm_inv3_to_geometric
-        pc_min = float(
-            utils.interp_in_logspace(min_n_geometric, eos_data.ns, eos_data.ps)
-        )
+        pc_min = utils.interp_in_logspace(min_n_geometric, eos_data.ns, eos_data.ps)
         return pc_min
 
     def _get_pc_max(self, eos_data: EOSData) -> float:
@@ -137,7 +135,7 @@ class TOVSolverBase(ABC):
 
         # Use first non-causal point or last point if all causal
         idx = jnp.where(any_noncausal, first_noncausal_idx, len(eos_data.ps) - 1)
-        pc_max = float(eos_data.ps[idx])
+        pc_max = eos_data.ps[idx]
         return pc_max
 
     def _create_family_data(

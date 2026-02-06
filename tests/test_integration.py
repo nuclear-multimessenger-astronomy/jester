@@ -2,7 +2,7 @@
 
 import pytest
 import jax.numpy as jnp
-from jesterTOV import eos, tov, ptov, utils
+from jesterTOV import eos, tov, utils
 
 
 class TestMetaModelEOSIntegration:
@@ -202,8 +202,11 @@ class TestTOVIntegration:
             assert jnp.all(jnp.diff(masses[: max_mass_idx + 1]) >= -0.01)
 
     @pytest.mark.integration
-    def test_tov_ptov_comparison(self):
-        """Test comparison between TOV and post-TOV solvers."""
+    def test_tov_post_comparison(self):
+        """Test comparison between GR TOV and post-TOV solvers."""
+        from jesterTOV.tov import GRTOVSolver, PostTOVSolver
+        from jesterTOV.tov.data_classes import EOSData
+
         # Create simple EOS
         n = jnp.linspace(0.1, 1.0, 80)
         p = 15.0 * n**1.6
@@ -219,32 +222,43 @@ class TestTOVIntegration:
         dedps = es / ps * dloge_dlogps
         cs2s = 1.0 / dedps
 
-        # Standard EOS dict
-        eos_dict = {"p": ps, "h": hs, "e": es, "dloge_dlogp": dloge_dlogps, "cs2": cs2s}
-
-        # Post-TOV EOS dict (GR limit)
-        ptov_eos_dict = eos_dict.copy()
-        ptov_eos_dict.update(
-            {
-                "lambda_BL": 0.0,
-                "lambda_DY": 0.0,
-                "lambda_HB": 1.0,
-                "gamma": 0.0,
-                "alpha": 10.0,
-                "beta": 0.3,
-            }
+        # Create EOSData
+        eos_data = EOSData(
+            ns=ns,
+            ps=ps,
+            hs=hs,
+            es=es,
+            dloge_dlogps=dloge_dlogps,
+            cs2=cs2s,
+            mu=jnp.zeros_like(ns),  # Chemical potential (not used)
+            extra_constraints=None,
         )
 
         # Compare results at same central pressure
         pc = ps[35]
 
-        M_tov, R_tov, k2_tov = tov.tov_solver(eos_dict, pc)
-        M_ptov, R_ptov, k2_ptov = ptov.tov_solver(ptov_eos_dict, pc)
+        # GR TOV solver
+        gr_solver = GRTOVSolver()
+        tov_solution = gr_solver.solve(eos_data, pc)
+        M_tov, R_tov, k2_tov = tov_solution.M, tov_solution.R, tov_solution.k2
+
+        # Post-TOV solver in GR limit (all MG parameters = 0)
+        post_solver = PostTOVSolver()
+        post_params = {
+            "lambda_BL": 0.0,
+            "lambda_DY": 0.0,
+            "lambda_HB": 1.0,
+            "gamma": 0.0,
+            "alpha": 10.0,
+            "beta": 0.3,
+        }
+        post_solution = post_solver.solve(eos_data, pc, **post_params)
+        M_post, R_post, k2_post = post_solution.M, post_solution.R, post_solution.k2
 
         # Should be very similar in GR limit
-        assert abs(M_tov - M_ptov) / M_tov < 0.01
-        assert abs(R_tov - R_ptov) / R_tov < 0.01
-        assert abs(k2_tov - k2_ptov) / k2_tov < 0.05
+        assert abs(M_tov - M_post) / M_tov < 0.01
+        assert abs(R_tov - R_post) / R_tov < 0.01
+        assert abs(k2_tov - k2_post) / k2_tov < 0.05
 
 
 class TestCrustIntegration:

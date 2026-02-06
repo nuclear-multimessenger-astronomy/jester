@@ -227,17 +227,22 @@ class GRTOVSolver(TOVSolverBase):
             throw=False,
         )
 
-        # Handle solver failure gracefully (JAX-compatible, no asserts)
-        if sol.ys is None or sol.result != 0:
-            # Return NaN on failure - constraint checking will catch this
-            return TOVSolution(M=jnp.nan, R=jnp.nan, k2=jnp.nan)
-
+        # Extract solution values
+        # Note: diffrax always returns arrays, even on failure
         R = sol.ys[0][-1]
         M = sol.ys[1][-1]
         H = sol.ys[2][-1]
         b = sol.ys[3][-1]
 
         k2 = _calc_k2(R, M, H, b)
+
+        # # FIXME: might remove this
+        # # Use jnp.where for JAX-compatible conditional
+        # # If solver failed (result != 0), return NaN
+        # success = sol.result == 0
+        # M_out = jnp.where(success, M, jnp.nan)
+        # R_out = jnp.where(success, R, jnp.nan)
+        # k2_out = jnp.where(success, k2, jnp.nan)
 
         return TOVSolution(M=M, R=R, k2=k2)
 

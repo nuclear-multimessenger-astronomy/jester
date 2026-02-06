@@ -294,7 +294,7 @@ class InferenceResult:
 
         Parameters
         ----------
-        transform : JesterTransformBase
+        transform : JesterTransform
             Transform to apply (should be TOV solver transform)
         n_eos_samples : int, optional
             Number of EOS samples to generate. If None or greater than available samples,

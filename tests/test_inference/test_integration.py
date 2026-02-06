@@ -7,7 +7,7 @@ import jax.numpy as jnp
 from jesterTOV.inference.config import parser as config_parser
 from jesterTOV.inference.config import schema
 from jesterTOV.inference.priors import parser as prior_parser
-from jesterTOV.inference.transforms import factory as transform_factory
+from jesterTOV.inference.transforms import JesterTransform
 from jesterTOV.inference.likelihoods import factory as likelihood_factory
 
 
@@ -52,34 +52,13 @@ class TestConfigToComponents:
         """Test creating transform from configuration."""
         config = schema.InferenceConfig(**sample_config_dict)
 
-        # Get prior for name mapping
-        nb_CSE = config.transform.nb_CSE
-        param_names = [
-            "K_sat",
-            "Q_sat",
-            "Z_sat",
-            "E_sym",
-            "L_sym",
-            "K_sym",
-            "Q_sym",
-            "Z_sym",
-        ]
-        output_names = ["masses_EOS", "radii_EOS", "Lambdas_EOS"]
-        name_mapping = (param_names, output_names)
-
-        # Create transform config with name_mapping
-        transform_config_dict = {
-            **config.transform.model_dump(),
-            "name_mapping": name_mapping,
-        }
-
-        # Create transform (should work with TransformConfig)
-        transform = transform_factory.create_transform(
-            schema.TransformConfig(**transform_config_dict)
-        )
+        # Create transform using from_config (no need for manual name_mapping)
+        transform = JesterTransform.from_config(config.transform)
 
         # Transform should have correct type
-        assert transform.get_eos_type() == "MM"  # MetaModel for nb_CSE=0
+        assert (
+            "MetaModel_EOS_model" in transform.get_eos_type()
+        )  # MetaModel for nb_CSE=0
 
     def test_config_to_likelihood_integration(self, sample_config_dict):
         """Test creating likelihood from configuration."""
@@ -462,7 +441,7 @@ class TestEOSSampleGeneration:
         import numpy as np
         from jesterTOV.inference.result import InferenceResult
         from jesterTOV.inference.config.schema import InferenceConfig
-        from jesterTOV.inference.transforms import factory as transform_factory
+        from jesterTOV.inference.transforms import JesterTransform
 
         # Create a mock result with 100 posterior samples
         n_full_samples = 100
@@ -513,8 +492,8 @@ class TestEOSSampleGeneration:
         }
         config = InferenceConfig(**config_dict)
 
-        # Create transform (factory auto-generates name_mapping for metamodel)
-        transform = transform_factory.create_transform(config.transform)
+        # Create transform using from_config
+        transform = JesterTransform.from_config(config.transform)
 
         # Store original log_prob length
         original_log_prob_len = len(result.posterior["log_prob"])
@@ -560,7 +539,7 @@ class TestEOSSampleGeneration:
         import numpy as np
         from jesterTOV.inference.result import InferenceResult
         from jesterTOV.inference.config.schema import InferenceConfig
-        from jesterTOV.inference.transforms import factory as transform_factory
+        from jesterTOV.inference.transforms import JesterTransform
 
         # Create a mock SMC result with weights and ess
         n_full_samples = 100
@@ -607,8 +586,8 @@ class TestEOSSampleGeneration:
         }
         config = InferenceConfig(**config_dict)
 
-        # Create transform (factory auto-generates name_mapping for metamodel)
-        transform = transform_factory.create_transform(config.transform)
+        # Create transform using from_config
+        transform = JesterTransform.from_config(config.transform)
 
         # Generate 40 EOS samples from 100 posterior samples using new method
         n_eos_samples = 40
