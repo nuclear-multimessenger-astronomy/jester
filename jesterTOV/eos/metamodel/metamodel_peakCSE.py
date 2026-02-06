@@ -90,19 +90,21 @@ class MetaModel_with_peakCSE_EOS_model(Interpolate_EOS_model):
 
         Args:
             params (dict): Combined parameters including:
+
                 - Nuclear empirical parameters (NEP) for meta-model construction
                 - 'nbreak' key specifying the transition density between
                   meta-model and peakCSE regions
-                - peakCSE model parameters defining high-density behavior:
-                  * gaussian_peak, gaussian_mu, gaussian_sigma
-                  * logit_growth_rate, logit_midpoint
+                - peakCSE model parameters defining high-density behavior
+                  (gaussian_peak, gaussian_mu, gaussian_sigma, logit_growth_rate, logit_midpoint)
 
         Returns:
             EOSData: Complete EOS data containing ns, ps, hs, es, dloge_dlogps, cs2, mu
 
         Note:
             The peakCSE speed of sound follows:
-            :math:`c^2_s &= c^2_{s,{\rm break}} + \frac{\frac{1}{3} - c^2_{s,{\rm break}}}{1 + e^{-l_{\rm sig}(n - n_{\rm sig})}} + c^2_{s,{\rm peak}}e^{-\frac{1}{2}\left(\frac{n - n_{\rm peak}}{\sigma_{\rm peak}}\right)^2}`
+
+            .. math::
+                c^2_s = c^2_{s,{\rm break}} + \frac{\frac{1}{3} - c^2_{s,{\rm break}}}{1 + e^{-l_{\rm sig}(n - n_{\rm sig})}} + c^2_{s,{\rm peak}}e^{-\frac{1}{2}\left(\frac{n - n_{\rm peak}}{\sigma_{\rm peak}}\right)^2}
 
             This ensures smooth transitions, realistic phase transition modeling,
             and asymptotic consistency with the pQCD conformal limit :math:`c_s^2 = 1/3`.
