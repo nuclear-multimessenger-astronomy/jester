@@ -13,15 +13,22 @@ from pydantic import BaseModel, field_validator
 
 
 class FlowTrainingConfig(BaseModel):
-    """Configuration for training normalizing flows on GW posterior samples.
+    """Configuration for training normalizing flows on posterior samples.
 
     Attributes
     ----------
     posterior_file : str
-        Path to .npz file with GW posterior samples (must contain:
-        mass_1_source, mass_2_source, lambda_1, lambda_2)
+        Path to .npz file with posterior samples
     output_dir : str
         Directory to save model weights, kwargs, and plots
+    parameter_names : List[str] | None
+        List of parameter names to extract from posterior file.
+        If None, defaults to GW parameters: mass_1_source, mass_2_source, lambda_1, lambda_2
+        Cannot be an empty list.
+        Examples:
+            - GW: ["mass_1_source", "mass_2_source", "lambda_1", "lambda_2"]
+            - NICER: ["mass", "radius"]
+            - EOS: ["log_p1", "gamma1", "gamma2", "gamma3"]
     num_epochs : int
         Number of training epochs (default: 600)
     learning_rate : float
@@ -66,6 +73,7 @@ class FlowTrainingConfig(BaseModel):
 
     posterior_file: str
     output_dir: str
+    parameter_names: List[str] | None = None
     num_epochs: int = 600
     learning_rate: float = 1e-3
     max_patience: int = 50
@@ -123,6 +131,17 @@ class FlowTrainingConfig(BaseModel):
         """Validate that validation proportion is in (0, 1)."""
         if v <= 0 or v >= 1:
             raise ValueError(f"val_prop must be in (0, 1), got: {v}")
+        return v
+
+    @field_validator("parameter_names")
+    @classmethod
+    def validate_parameter_names(cls, v: List[str] | None) -> List[str] | None:
+        """Validate that parameter_names is not an empty list."""
+        if v is not None and len(v) == 0:
+            raise ValueError(
+                "parameter_names cannot be an empty list. "
+                "Either provide parameter names or set to None to use defaults."
+            )
         return v
 
     @classmethod

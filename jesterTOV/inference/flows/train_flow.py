@@ -1,84 +1,11 @@
-"""Training script for normalizing flows on gravitational wave posterior samples.
+"""
+Train a normalizing flow on arbitrary posterior samples.
 
-Trains normalizing flow models to approximate GW posteriors in (m1, m2, λ1, λ2) space.
-The trained flows serve as efficient proposal distributions for EOS inference.
+This module supports training flows on any set of parameters specified by the user,
+rather than being hardcoded for GW inference parameters.
 
-Training Pipeline
------------------
-1. Load configuration from YAML file
-2. Load posterior samples from npz file
-3. Apply optional standardization
-4. Create flow architecture (autoregressive, coupling)
-5. Fit flow using maximum likelihood with early stopping
-6. Save trained weights, config, and metadata
-7. Generate validation plots
-
-Supported Architectures
------------------------
-- coupling_flow: Balanced speed and expressiveness
-- block_neural_autoregressive_flow: Good expressiveness
-- masked_autoregressive_flow: Flexible but slower
-
-Configuration-Driven Usage
----------------------------
-Create a YAML config file (e.g., config.yaml):
-
-    posterior_file: data/gw170817_posterior.npz
-    output_dir: models/gw170817/
-    flow_type: masked_autoregressive_flow
-    num_epochs: 1000
-    learning_rate: 1.0e-3
-    standardize: true
-    plot_corner: true
-    plot_losses: true
-
-Then run:
-
-    uv run python -m jesterTOV.inference.flows.train_flow config.yaml
-
-Or use the bash scripts for batch training:
-
-    bash train_all_flows.sh
-
-Programmatic Usage
-------------------
-For custom training workflows, use the provided functions:
-
->>> from jesterTOV.inference.flows.train_flow import train_flow_from_config
->>> from jesterTOV.inference.flows.config import FlowTrainingConfig
->>> config = FlowTrainingConfig.from_yaml("config.yaml")
->>> train_flow_from_config(config)
-
-Or use the lower-level functions directly:
-
->>> from jesterTOV.inference.flows.flow import create_flow
->>> from jesterTOV.inference.flows.train_flow import load_gw_posterior, train_flow, save_model
->>> data, metadata = load_gw_posterior("gw170817.npz", max_samples=50000)
->>> flow = create_flow(jax.random.key(0), flow_type="masked_autoregressive_flow")
->>> trained_flow, losses = train_flow(flow, data, jax.random.key(1))
->>> save_model(trained_flow, "models/gw170817/", flow_kwargs, metadata)
-
-Output Files
-------------
-The training script saves:
-- flow_weights.eqx: Trained model parameters (Equinox serialization)
-- flow_kwargs.json: Architecture configuration for reproducibility
-- metadata.json: Training metadata (epochs, losses, data bounds, etc.)
-- figures/losses.png: Training and validation loss curves
-- figures/corner.png: Corner plot comparing data and flow samples
-- figures/transformed_training_data.png: Visualization of transformed data
-  (if physics constraints are enabled)
-
-See Also
---------
-jesterTOV.inference.flows.flow.Flow : High-level interface for loading trained flows
-jesterTOV.inference.flows.config.FlowTrainingConfig : Configuration schema
-
-Notes
------
-Training requires:
-- JAX with GPU support recommended for large datasets
-- flowjax for flow architectures
+Dependencies:
+- JAX and flowjax for normalizing flows
 - equinox for model serialization
 - PyYAML for configuration loading
 - Optional: matplotlib and corner for plotting
@@ -88,7 +15,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, Tuple, Mapping
+from typing import Any, Dict, Tuple, Mapping, List, Optional
 
 import equinox as eqx
 import jax
@@ -103,53 +30,65 @@ from .flow import create_flow
 # # # Enable 64-bit precision for numerical accuracy
 # jax.config.update("jax_enable_x64", True)
 
-# TODO: this is for now: we assume the NF is only for vanilla GW inference which has these 4 keys, later on, we could generalize this...
-# Required keys in the posterior file
-REQUIRED_KEYS = ["mass_1_source", "mass_2_source", "lambda_1", "lambda_2"]
 
-
-def load_gw_posterior(
-    filepath: str, max_samples: int = 20_000
+def load_posterior(
+    filepath: str,
+    parameter_names: List[str] = None,
+    max_samples: int = 20_000,
 ) -> Tuple[np.ndarray, Dict[str, Any]]:
     """
-    Load GW posterior samples from npz file.
+    Load posterior samples from npz file.
 
     Args:
         filepath: Path to .npz file
+        parameter_names: List of parameter names to extract from the file.
+                        If None, defaults to GW parameters.
+                        If empty list, raises ValueError.
         max_samples: Maximum number of samples to use (downsampling if needed)
 
     Returns:
-        data: Array of shape (n_samples, 4) with columns [m1, m2, lambda1, lambda2]
+        data: Array of shape (n_samples, n_params) with columns corresponding to parameter_names
         metadata: Dictionary with loading information
 
     Raises:
         FileNotFoundError: If file doesn't exist
-        KeyError: If required keys are missing
+        KeyError: If required parameter names are missing
+        ValueError: If parameter_names is an empty list
     """
     if not os.path.exists(filepath):
         raise FileNotFoundError(f"Posterior file not found: {filepath}")
+
+    # Set default parameter names if None
+    if parameter_names is None:
+        parameter_names = ["mass_1_source", "mass_2_source", "lambda_1", "lambda_2"]
+        print("Warning: No parameter_names provided, using default GW parameters")
+
+    # Check for empty list
+    if len(parameter_names) == 0:
+        raise ValueError(
+            "parameter_names cannot be empty. Please provide at least one parameter name."
+        )
 
     # Load data
     posterior = np.load(filepath)
 
     # Validate required keys
-    missing_keys = [key for key in REQUIRED_KEYS if key not in posterior]
+    missing_keys = [key for key in parameter_names if key not in posterior]
     if missing_keys:
         available_keys = list(posterior.keys())
         raise KeyError(
-            f"Missing required keys: {missing_keys}\n"
-            f"Available keys: {available_keys}\n"
-            f"Required keys: {REQUIRED_KEYS}"
+            f"Missing required parameters: {missing_keys}\n"
+            f"Available parameters: {available_keys}\n"
+            f"Requested parameters: {parameter_names}"
         )
 
-    # Extract samples
-    m1 = posterior["mass_1_source"].flatten()
-    m2 = posterior["mass_2_source"].flatten()
-    lambda1 = posterior["lambda_1"].flatten()
-    lambda2 = posterior["lambda_2"].flatten()
+    # Extract samples for each parameter
+    param_arrays = []
+    for param_name in parameter_names:
+        param_arrays.append(posterior[param_name].flatten())
 
     # Combine into array
-    data = np.column_stack([m1, m2, lambda1, lambda2])
+    data = np.column_stack(param_arrays)
     n_samples_total = data.shape[0]
 
     # Downsample if needed
@@ -167,6 +106,8 @@ def load_gw_posterior(
         "n_samples_total": n_samples_total,
         "n_samples_used": data.shape[0],
         "filepath": filepath,
+        "parameter_names": parameter_names,
+        "n_parameters": len(parameter_names),
     }
 
     return data, metadata
@@ -322,8 +263,21 @@ def plot_losses(losses: Mapping[str, np.ndarray | list], output_path: str) -> No
     print(f"Saved loss plot to {output_path}")
 
 
-def plot_corner(data: np.ndarray, flow_samples: np.ndarray, output_path: str) -> None:
-    """Create corner plot comparing data and flow samples."""
+def plot_corner(
+    data: np.ndarray,
+    flow_samples: np.ndarray,
+    output_path: str,
+    parameter_names: Optional[List[str]] = None,
+) -> None:
+    """
+    Create corner plot comparing data and flow samples.
+
+    Args:
+        data: Original data array
+        flow_samples: Samples from trained flow
+        output_path: Path to save the plot
+        parameter_names: List of parameter names for axis labels (optional)
+    """
     try:
         import corner
         import matplotlib.pyplot as plt
@@ -331,12 +285,11 @@ def plot_corner(data: np.ndarray, flow_samples: np.ndarray, output_path: str) ->
         print("Warning: corner package not available, skipping corner plot")
         return
 
-    labels = [
-        r"$m_1$ [$M_\odot$]",
-        r"$m_2$ [$M_\odot$]",
-        r"$\Lambda_1$",
-        r"$\Lambda_2$",
-    ]
+    # Use parameter names if provided, otherwise use generic labels
+    if parameter_names is None:
+        labels = [f"Param {i+1}" for i in range(data.shape[1])]
+    else:
+        labels = parameter_names
 
     hist_kwargs = {"color": "blue", "density": True}
 
@@ -384,19 +337,43 @@ def plot_corner(data: np.ndarray, flow_samples: np.ndarray, output_path: str) ->
     print(f"Saved corner plot to {output_path}")
 
 
-def train_flow_from_config(config: FlowTrainingConfig) -> None:
+def train_flow_from_config(
+    config: FlowTrainingConfig, parameter_names: Optional[List[str]] = None
+) -> None:
     """
     Train a normalizing flow using a configuration object.
 
     Args:
         config: FlowTrainingConfig with all training parameters
+        parameter_names: List of parameter names to extract from posterior file.
+                        If None, will try to get from config or use default GW parameters.
     """
+    # Determine which parameters to use
+    if parameter_names is None:
+        # Try to get from config if available
+        if hasattr(config, "parameter_names") and config.parameter_names is not None:
+            parameter_names = config.parameter_names
+        else:
+            # Fall back to default GW parameters for backward compatibility
+            print(
+                "Warning: No parameter_names provided, using default GW parameters: "
+                "mass_1_source, mass_2_source, lambda_1, lambda_2"
+            )
+            parameter_names = [
+                "mass_1_source",
+                "mass_2_source",
+                "lambda_1",
+                "lambda_2",
+            ]
+
     # Print configuration
     print("=" * 60)
-    print("GW Normalizing Flow Training")
+    print("Normalizing Flow Training")
     print("=" * 60)
     print(f"Posterior file: {config.posterior_file}")
     print(f"Output directory: {config.output_dir}")
+    print(f"Parameters: {parameter_names}")
+    print(f"Number of parameters: {len(parameter_names)}")
     print(f"Max samples: {config.max_samples}")
     print(f"Flow type: {config.flow_type}")
     print(f"NN depth: {config.nn_depth}")
@@ -421,10 +398,12 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
 
     # Load data
     print("\n[1/5] Loading posterior samples...")
-    data, load_metadata = load_gw_posterior(config.posterior_file, config.max_samples)
+    data, load_metadata = load_posterior(
+        config.posterior_file, parameter_names, config.max_samples
+    )
     print(f"Data shape: {data.shape}")
     print("Original data ranges:")
-    for i, name in enumerate(["m1", "m2", "lambda1", "lambda2"]):
+    for i, name in enumerate(parameter_names):
         print(f"  {name}: [{data[:, i].min():.3f}, {data[:, i].max():.3f}]")
 
     # Keep copy of original data for corner plot
@@ -436,7 +415,7 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
         print("\nStandardizing data to [0, 1] domain...")
         data, data_bounds = standardize_data(data)
         print("Standardized data ranges:")
-        for i, name in enumerate(["m1", "m2", "lambda1", "lambda2"]):
+        for i, name in enumerate(parameter_names):
             print(f"  {name}: [{data[:, i].min():.3f}, {data[:, i].max():.3f}]")
         print("Data bounds saved for inverse transformation")
 
@@ -488,6 +467,7 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
         "transformer_type": config.transformer,
         "transformer_knots": config.transformer_knots,
         "transformer_interval": config.transformer_interval,
+        "parameter_names": parameter_names,
     }
 
     # Add data bounds if standardization was used
@@ -503,6 +483,7 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
         "max_patience": config.max_patience,
         "val_prop": config.val_prop,
         "standardize": config.standardize,
+        "parameter_names": parameter_names,
     }
 
     # Add data bounds to metadata if standardization was used
@@ -536,7 +517,7 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
 
             corner_path = os.path.join(figures_dir, "corner.png")
             # Use original_data for corner plot comparison
-            plot_corner(original_data, flow_samples_np, corner_path)
+            plot_corner(original_data, flow_samples_np, corner_path, parameter_names)
         except Exception as e:
             print(
                 f"Warning: Corner plot generation failed, skipping. Error: {type(e).__name__}"
@@ -559,16 +540,31 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
 def main():
     """Main entry point for training script."""
     if len(sys.argv) < 2:
-        print("Usage: python -m jesterTOV.inference.flows.train_flow <config.yaml>")
+        print(
+            "Usage: python -m jesterTOV.inference.flows.train_flow <config.yaml> [param1 param2 ...]"
+        )
+        print("\nExamples:")
+        print("  # Use parameters from config file:")
+        print("  python -m jesterTOV.inference.flows.train_flow config.yaml")
+        print("\n  # Override with command-line parameters:")
+        print(
+            "  python -m jesterTOV.inference.flows.train_flow config.yaml mass_1_source mass_2_source lambda_1 lambda_2"
+        )
         sys.exit(1)
 
     config_path = Path(sys.argv[1])
+
+    # Check if parameter names were provided as command-line arguments
+    parameter_names = None
+    if len(sys.argv) > 2:
+        parameter_names = sys.argv[2:]
+        print(f"Using parameter names from command line: {parameter_names}")
 
     # Load config from YAML
     config = FlowTrainingConfig.from_yaml(config_path)
 
     # Train flow
-    train_flow_from_config(config)
+    train_flow_from_config(config, parameter_names=parameter_names)
 
 
 if __name__ == "__main__":
