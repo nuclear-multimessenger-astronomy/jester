@@ -243,8 +243,7 @@ class JesterTransform(NtoMTransform):
         ValueError
             If TOV solver type is not recognized
         """
-        # Check if config specifies TOV solver type (future feature)
-        tov_type = getattr(config, "tov_solver", "gr")
+        tov_type = config.tov_solver
 
         if tov_type == "gr":
             return GRTOVSolver()

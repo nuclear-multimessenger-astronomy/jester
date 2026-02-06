@@ -39,6 +39,8 @@ class TransformConfig(BaseModel):
         Number of masses to sample
     crust_name : Literal["DH", "BPS", "DH_fixed", "SLy"]
         Name of crust model to use
+    tov_solver : Literal["gr", "post", "scalar_tensor"]
+        TOV solver type to use (default: "gr")
     """
 
     type: Literal["metamodel", "metamodel_cse", "spectral"]
@@ -53,6 +55,7 @@ class TransformConfig(BaseModel):
     crust_name: Literal["DH", "BPS", "DH_fixed", "SLy"] = (
         "DH"  # TODO: this should be done in the crust source code, not here, and here just fetch from there
     )
+    tov_solver: Literal["gr", "post", "scalar_tensor"] = "gr"
 
     @field_validator("nb_CSE")
     @classmethod

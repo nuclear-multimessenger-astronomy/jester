@@ -210,7 +210,7 @@ class TestPostTOVPhysicalConsistency:
                     ):
                         masses.append(solution.M)
                         radii.append(solution.R)
-                except:
+                except Exception:
                     continue
 
         # Should have multiple solutions
