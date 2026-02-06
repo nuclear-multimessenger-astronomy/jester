@@ -41,9 +41,6 @@ likelihoods:
           mass_mean: 2.08
           mass_std: 0.14
 
-      # Number of mass points for numerical integration
-      nb_masses: 100
-
 # SMC configuration with Random Walk kernel
 sampler:
   type: "smc-rw"
