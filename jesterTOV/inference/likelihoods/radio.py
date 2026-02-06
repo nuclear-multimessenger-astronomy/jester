@@ -83,7 +83,7 @@ class RadioTimingLikelihood(LikelihoodBase):
     Notes
     -----
     Invalid TOV solutions (M_TOV ≤ m_min) receive a large negative log-likelihood
-    penalty (:math:`-\infty`) to effectively exclude them from the posterior.
+    penalty to effectively exclude them from the posterior.
 
     The implementation uses log-space arithmetic throughout to avoid numerical
     underflow when combining with other log-likelihoods.
@@ -148,13 +148,13 @@ class RadioTimingLikelihood(LikelihoodBase):
         -------
         Float
             Natural logarithm of the marginalized likelihood. Returns a large
-            negative penalty (-jnp.inf) for invalid EOSs (M_TOV ≤ m_min), which
+            negative penalty for invalid EOSs (M_TOV ≤ m_min), which
             indicates TOV integration failure or unphysical EOS.
 
         Notes
         -----
-        Any NaN or infinity values in the result are replaced with -jnp.inf to
-        ensure stable MCMC sampling.
+        Any NaN or infinity values in the result should not be replaced with -jnp.inf as
+        this will cause some samplers to have numerical problems.
         """
         # Extract maximum TOV mass from the EOS
         masses_EOS: Float[Array, " n_points"] = params["masses_EOS"]
@@ -182,14 +182,14 @@ class RadioTimingLikelihood(LikelihoodBase):
         # Use jnp.where to avoid computing log(mtov - m_min) when mtov is invalid
         log_likelihood = jnp.where(
             invalid_mtov,
-            -jnp.inf,  # Large negative penalty for invalid masses
+            -1e5,  # Large negative penalty for invalid masses
             log_cdf_diff - jnp.log(mtov - self.m_min),
         )
 
         # Safety net: replace any remaining NaN/inf with large negative value
         # This catches edge cases not covered by the mtov check
         log_likelihood = jnp.nan_to_num(
-            log_likelihood, nan=-jnp.inf, posinf=-jnp.inf, neginf=-jnp.inf
+            log_likelihood, nan=-1e5, posinf=-1e5, neginf=-1e5
         )
 
         return log_likelihood
