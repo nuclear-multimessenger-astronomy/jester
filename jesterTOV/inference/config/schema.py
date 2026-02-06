@@ -9,7 +9,7 @@ TODO: make this automatic in CI/CD, so this note can be removed and user is not 
 This ensures the user documentation stays in sync with the actual validation rules.
 """
 
-from pydantic import BaseModel, Field, field_validator, ValidationInfo
+from pydantic import BaseModel, Field, field_validator, ValidationInfo, ConfigDict
 from typing import Literal, Dict, Any, Union, Annotated
 from pydantic import Discriminator
 
@@ -42,6 +42,8 @@ class TransformConfig(BaseModel):
     tov_solver : Literal["gr", "post", "scalar_tensor"]
         TOV solver type to use (default: "gr")
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     type: Literal["metamodel", "metamodel_cse", "spectral"]
     ndat_metamodel: int = 100
@@ -92,6 +94,8 @@ class PriorConfig(BaseModel):
     specification_file : str
         Path to .prior file specifying prior distributions
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     specification_file: str
 
@@ -191,6 +195,8 @@ class LikelihoodConfig(BaseModel):
                 Log likelihood penalty for Gamma bound violation (default: -1e10)
                 Only applies to spectral decomposition EOS (Γ ∈ [0.6, 4.5])
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     # TODO: deprecate rex for now: not implemented yet
     type: Literal[
@@ -404,6 +410,8 @@ class BaseSamplerConfig(BaseModel):
     log_prob_batch_size : int
         Batch size for computing log probabilities and generating EOS samples (default: 1000)
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     output_dir: str = "./outdir/"
     n_eos_samples: int = 10_000
@@ -688,6 +696,8 @@ class PostprocessingConfig(BaseModel):
         This matches LALSuite EOS format and JESTER HDF5 output. Missing keys handled gracefully.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     enabled: bool = True
     make_cornerplot: bool = True
     make_massradius: bool = True
@@ -723,6 +733,8 @@ class InferenceConfig(BaseModel):
     validate_only : bool
         Only validate configuration, don't run inference (default: False)
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     seed: int = 43
     transform: TransformConfig

@@ -480,10 +480,8 @@ class TestEOSSampleGeneration:
                 "n_loop_production": 2,
                 "n_local_steps": 50,
                 "n_global_steps": 50,
+                "n_epochs": 30,
                 "learning_rate": 0.01,
-                "momentum": 0.9,
-                "batch_size": 10000,
-                "use_global": True,
                 "output_dir": str(temp_dir),
                 "n_eos_samples": 50,  # Request only 50 EOS samples
                 "log_prob_batch_size": 10,
