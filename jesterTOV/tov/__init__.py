@@ -12,7 +12,7 @@ All solvers work with modular EOS representations via EOSData.
 from jesterTOV.tov.data_classes import EOSData, TOVSolution, FamilyData
 from jesterTOV.tov.base import TOVSolverBase
 from jesterTOV.tov.gr import GRTOVSolver
-from jesterTOV.tov.post import PostTOVSolver
+from jesterTOV.tov.anisotropy import PostTOVSolver
 from jesterTOV.tov.scalar_tensor import ScalarTensorTOVSolver
 
 __all__ = [

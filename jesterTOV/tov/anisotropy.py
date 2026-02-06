@@ -30,9 +30,9 @@ def _sigma_func(p, e, m, r, lambda_BL, lambda_DY, lambda_HB, gamma, alpha, beta)
 
     The sigma function includes:
 
-    - **Brans-Dicke-like**: :math:`\sigma_{\mathrm{BL}} = -\frac{\lambda_{\mathrm{BL}} r^2}{3}(\varepsilon + 3p)(\varepsilon + p)A`
-    - **Dynamical Chern-Simons**: :math:`\sigma_{\mathrm{DY}} = \lambda_{\mathrm{DY}} \frac{2m}{r} p`
-    - **Horava-like**: :math:`\sigma_{\mathrm{HB}} = -(\frac{1}{\lambda_{\mathrm{HB}}} - 1) \frac{r}{2} \frac{dp}{dr}`
+    - **Bowers-and-Liang**: :math:`\sigma_{\mathrm{BL}} = -\frac{\lambda_{\mathrm{BL}}\epsilon^2 r^2}{3}\left(1 + \frac{3p}{\epsilon}\right)\frac{\left(1 + \frac{p}{\epsilon}\right)}{\left(1 - \frac{2M}{r}\right)}`
+    - **Horvat et al.**: :math:`\sigma_{\mathrm{DY}} = \lambda_{\mathrm{DY}} \frac{2m}{r} p`
+    - **Cosenza et al.**: :math:`\sigma_{\mathrm{HB}} = -(\frac{1}{\lambda_{\mathrm{HB}}} - 1) \frac{r}{2} \frac{dp}{dr}`
     - **Post-Newtonian**: :math:`\sigma_{\mathrm{PN}} = \gamma \frac{2m}{r} p \tanh(\alpha(\frac{m}{r} - \beta))`
 
     Parameters
@@ -232,9 +232,9 @@ class PostTOVSolver(TOVSolverBase):
         \\frac{dp}{dr} = -\\frac{[\\varepsilon(r) + p(r)][m(r) + 4\\pi r^3 p(r)]}{r[r - 2m(r)]} - \\frac{2\\sigma(r)}{r}
 
     The sigma function includes:
-        - Brans-Dicke-like corrections (lambda_BL)
-        - Dynamical Chern-Simons corrections (lambda_DY)
-        - Horava-like corrections (lambda_HB)
+        - Bowers-and-Liang corrections (lambda_BL)
+        - Horvat et al. corrections (lambda_DY)
+        - Cosenza et al. corrections (lambda_HB)
         - Post-Newtonian corrections (gamma, alpha, beta)
     """
 
@@ -250,9 +250,9 @@ class PostTOVSolver(TOVSolverBase):
             eos_data: EOS quantities in geometric units
             pc: Central pressure [geometric units]
             **kwargs: Must contain theory modification parameters:
-                - lambda_BL: Bowers-Liang coupling parameter
-                - lambda_DY: Doneva-Yazadjiev coupling parameter
-                - lambda_HB: Herrera-Barreto coupling parameter
+                - lambda_BL: Bowers-and-Liang coupling parameter
+                - lambda_DY: Horvat et al. coupling parameter
+                - lambda_HB: Cosenza et al. coupling parameter
                 - gamma: Post-Newtonian amplitude parameter
                 - alpha: Post-Newtonian steepness parameter
                 - beta: Post-Newtonian transition point parameter
