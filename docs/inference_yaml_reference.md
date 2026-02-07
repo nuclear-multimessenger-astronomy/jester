@@ -92,6 +92,7 @@ data_paths: {}
 - `debug_nans`: `bool` (optional)
   - Default: `False`
   - Enable JAX NaN debugging for catching numerical issues during inference
+
 ### Transform Configuration (`transform:`)
 
 Defines how EOS parameters are transformed to observables.
@@ -141,6 +142,7 @@ Defines how EOS parameters are transformed to observables.
 Specifies prior distributions for parameters.
 
 - `specification_file`: `str` (**required**)
+
 ### Likelihood Configuration (`likelihoods:`)
 
 List of observational constraints. Each likelihood has:
@@ -152,6 +154,7 @@ List of observational constraints. Each likelihood has:
 
 - `parameters`: `dict[str, Any]` (optional)
   - Default: `{}`
+
 **Likelihood-Specific Parameters** (`parameters:`):
 
 #### Gravitational Wave (`type: "gw"`)
