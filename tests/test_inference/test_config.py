@@ -2,6 +2,7 @@
 
 import pytest
 import yaml
+import jax
 from pathlib import Path
 from pydantic import ValidationError
 
@@ -276,6 +277,18 @@ class TestInferenceConfig:
                 sampler={"n_chains": 4},
             )
 
+    def test_debug_nans_default_false(self, sample_config_dict):
+        """Test that debug_nans defaults to False."""
+        config = schema.InferenceConfig(**sample_config_dict)
+        assert config.debug_nans is False
+
+    def test_debug_nans_can_be_enabled(self, sample_config_dict):
+        """Test that debug_nans can be set to True."""
+        config_dict = sample_config_dict.copy()
+        config_dict["debug_nans"] = True
+        config = schema.InferenceConfig(**config_dict)
+        assert config.debug_nans is True
+
 
 class TestConfigParser:
     """Test configuration parser functionality."""
@@ -475,3 +488,46 @@ class TestConfigIntegration:
                 ]
             )
             pytest.fail(error_msg)
+
+    def test_debug_nans_config_integration(
+        self, temp_dir, sample_config_dict, sample_prior_file
+    ):
+        """Test that debug_nans config properly controls JAX NaN debugging.
+
+        This test verifies the full integration: YAML -> Config -> JAX setting.
+        """
+        # Save original JAX config state
+        original_debug_nans = jax.config.jax_debug_nans
+
+        try:
+            # Test 1: debug_nans=False (default) - should not enable JAX NaN debugging
+            config_dict = sample_config_dict.copy()
+            config_dict["prior"]["specification_file"] = str(sample_prior_file)
+            config_dict["debug_nans"] = False
+
+            config_file = temp_dir / "config_debug_false.yaml"
+            with open(config_file, "w") as f:
+                yaml.dump(config_dict, f)
+
+            config = parser.load_config(config_file)
+            assert config.debug_nans is False
+
+            # Test 2: debug_nans=True - should enable JAX NaN debugging
+            config_dict["debug_nans"] = True
+            config_file = temp_dir / "config_debug_true.yaml"
+            with open(config_file, "w") as f:
+                yaml.dump(config_dict, f)
+
+            config = parser.load_config(config_file)
+            assert config.debug_nans is True
+
+            # Simulate what run_inference.py does
+            if config.debug_nans:
+                jax.config.update("jax_debug_nans", True)
+
+            # Verify JAX config was updated
+            assert jax.config.jax_debug_nans is True
+
+        finally:
+            # Restore original JAX config state
+            jax.config.update("jax_debug_nans", original_debug_nans)

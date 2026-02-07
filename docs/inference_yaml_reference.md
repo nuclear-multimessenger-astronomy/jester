@@ -24,6 +24,7 @@ seed: 43
 postprocessing: enabled=True make_cornerplot=True make_massradius=True make_masslambda=True make_pressuredensity=True make_histograms=True make_cs2=True prior_dir=None injection_eos_path=None
 dry_run: False
 validate_only: False
+debug_nans: False
 
 # Transform configuration
 transform:
@@ -87,6 +88,11 @@ data_paths: {}
 
 - `validate_only`: `bool` (optional)
   - Default: `False`
+
+- `debug_nans`: `bool` (optional)
+  - Default: `False`
+  - Enable JAX NaN debugging for catching numerical issues during inference
+
 ### Transform Configuration (`transform:`)
 
 Defines how EOS parameters are transformed to observables.
@@ -136,6 +142,7 @@ Defines how EOS parameters are transformed to observables.
 Specifies prior distributions for parameters.
 
 - `specification_file`: `str` (**required**)
+
 ### Likelihood Configuration (`likelihoods:`)
 
 List of observational constraints. Each likelihood has:
@@ -147,6 +154,7 @@ List of observational constraints. Each likelihood has:
 
 - `parameters`: `dict[str, Any]` (optional)
   - Default: `{}`
+
 **Likelihood-Specific Parameters** (`parameters:`):
 
 #### Gravitational Wave (`type: "gw"`)

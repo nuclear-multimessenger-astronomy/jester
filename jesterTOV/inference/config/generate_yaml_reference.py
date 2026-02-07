@@ -272,6 +272,7 @@ The JESTER inference system uses YAML configuration files validated by Pydantic 
     # Top-level fields
     doc += "### Top-Level Configuration\n\n"
     doc += generate_field_docs(top_fields)
+    doc += "\n"  # Add blank line before next section
 
     # Transform fields
     doc += "### Transform Configuration (`transform:`)\n\n"
@@ -294,12 +295,14 @@ The JESTER inference system uses YAML configuration files validated by Pydantic 
     doc += "### Prior Configuration (`prior:`)\n\n"
     doc += "Specifies prior distributions for parameters.\n\n"
     doc += generate_field_docs(prior_fields)
+    doc += "\n"  # Add blank line before next section
 
     # Likelihood fields
     doc += "### Likelihood Configuration (`likelihoods:`)\n\n"
     doc += "List of observational constraints. Each likelihood has:\n\n"
     likelihood_fields = extract_field_info(LikelihoodConfig)
     doc += generate_field_docs(likelihood_fields)
+    doc += "\n"  # Add blank line before next section
 
     # Document likelihood-specific parameters
     doc += "**Likelihood-Specific Parameters** (`parameters:`):\n\n"

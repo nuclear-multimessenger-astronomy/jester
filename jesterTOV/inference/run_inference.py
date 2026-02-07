@@ -17,9 +17,6 @@ import jax.numpy as jnp
 # Enable 64-bit precision
 jax.config.update("jax_enable_x64", True)
 
-# FIXME: make a flag that turns this on/off and document it, turn OFF by default
-# jax.config.update("jax_debug_nans", True)
-
 from .config.parser import load_config
 from .config.schema import InferenceConfig
 from .priors.parser import parse_prior_file
@@ -400,6 +397,11 @@ def main(config_path: str) -> None:
     # Load configuration
     logger.info(f"Loading configuration from {config_path}")
     config = load_config(config_path)
+
+    # Enable NaN debugging if requested
+    if config.debug_nans:
+        logger.info("Enabling JAX NaN debugging")
+        jax.config.update("jax_debug_nans", True)
 
     outdir = config.sampler.output_dir
 
