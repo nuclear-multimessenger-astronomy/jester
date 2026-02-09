@@ -15,6 +15,7 @@ from jesterTOV.tov.gr import GRTOVSolver
 from jesterTOV.tov.anisotropy import PostTOVSolver
 from jesterTOV.tov.scalar_tensor import ScalarTensorTOVSolver
 from jesterTOV.tov.scalar_tensor_Creci import ScalarTensorTOVSolver_Creci
+from jesterTOV.tov.eibi import EiBITOVSolver
 
 __all__ = [
     "EOSData",
@@ -25,4 +26,5 @@ __all__ = [
     "PostTOVSolver",
     "ScalarTensorTOVSolver",
     "ScalarTensorTOVSolver_Creci",
+    "EiBITOVSolver",
 ]
