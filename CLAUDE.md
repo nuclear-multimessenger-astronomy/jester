@@ -20,6 +20,8 @@ This file provides guidance to Claude Code when working with the JESTER reposito
 
 **Backwards compatibility**: There has not been a release yet, so don't worry about breaking changes for now. Focus on code quality, testing, and documentation over supporting legacy APIs!
 
+**Documentation guidelines**: [WIP!] We have an `API reference` page. In case a major refactoring is done, changing the layout of the repo, then we have to check the API references automatic docs building is up to date.
+
 ---
 
 ## Current Status

@@ -1,18 +1,12 @@
-jesterTOV package
-=================
+.. currentmodule:: jesterTOV
 
-.. automodule:: jesterTOV
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Submodules
-----------
+jesterTOV
+=========
 
 .. toctree::
    :maxdepth: 1
 
-   eos
-   tov
-   ptov
-   utils
+   jesterTOV.eos
+   jesterTOV.tov
+   jesterTOV.inference
+   jesterTOV.utils
