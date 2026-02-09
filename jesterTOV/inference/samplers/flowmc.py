@@ -155,7 +155,7 @@ class FlowMCSampler(JesterSampler):
             output_thinning=config.output_thinning,
         )
 
-    def sample(self, key, initial_position=jnp.array([])):
+    def sample(self, key):
         """
         Run flowMC sampling.
 
@@ -163,8 +163,6 @@ class FlowMCSampler(JesterSampler):
         ----------
         key : PRNGKeyArray
             JAX random key
-        initial_position : Array, optional
-            Initial positions for chains. If not provided, samples from prior.
 
         Notes
         -----
@@ -172,44 +170,44 @@ class FlowMCSampler(JesterSampler):
         when converting from dictionary to array using a list comprehension instead
         of jax.tree.leaves().
         """
-        if initial_position.size == 0:
-            # Use jnp.inf instead of jnp.nan for initialization
-            initial_position = (
-                jnp.zeros((self.sampler.n_chains, self.prior.n_dim)) + jnp.inf
-            )
+        # Sample initial positions from prior
+        # Use jnp.inf instead of jnp.nan for initialization
+        initial_position = (
+            jnp.zeros((self.sampler.n_chains, self.prior.n_dim)) + jnp.inf
+        )
 
-            while not jax.tree.reduce(
-                jnp.logical_and,
-                jax.tree.map(lambda x: jnp.isfinite(x), initial_position),
-            ).all():
-                non_finite_index = jnp.where(
-                    jnp.any(
-                        ~jax.tree.reduce(
-                            jnp.logical_and,
-                            jax.tree.map(lambda x: jnp.isfinite(x), initial_position),
-                        ),
-                        axis=1,
-                    )
-                )[0]
+        while not jax.tree.reduce(
+            jnp.logical_and,
+            jax.tree.map(lambda x: jnp.isfinite(x), initial_position),
+        ).all():
+            non_finite_index = jnp.where(
+                jnp.any(
+                    ~jax.tree.reduce(
+                        jnp.logical_and,
+                        jax.tree.map(lambda x: jnp.isfinite(x), initial_position),
+                    ),
+                    axis=1,
+                )
+            )[0]
 
-                key, subkey = jax.random.split(key)
-                guess = self.prior.sample(subkey, self.sampler.n_chains)
-                for transform in self.sample_transforms:
-                    guess = jax.vmap(transform.forward)(guess)
+            key, subkey = jax.random.split(key)
+            guess = self.prior.sample(subkey, self.sampler.n_chains)
+            for transform in self.sample_transforms:
+                guess = jax.vmap(transform.forward)(guess)
 
-                # CRITICAL FIX: Preserve parameter order when converting dict to array
-                # Do NOT use jax.tree.leaves() as it doesn't preserve dictionary order
-                guess = jnp.array(
-                    [guess[param_name] for param_name in self.parameter_names]
-                ).T
+            # CRITICAL FIX: Preserve parameter order when converting dict to array
+            # Do NOT use jax.tree.leaves() as it doesn't preserve dictionary order
+            guess = jnp.array(
+                [guess[param_name] for param_name in self.parameter_names]
+            ).T
 
-                finite_guess = jnp.where(
-                    jnp.all(jax.tree.map(lambda x: jnp.isfinite(x), guess), axis=1)
-                )[0]
-                common_length = min(len(finite_guess), len(non_finite_index))
-                initial_position = initial_position.at[
-                    non_finite_index[:common_length]
-                ].set(guess[:common_length])
+            finite_guess = jnp.where(
+                jnp.all(jax.tree.map(lambda x: jnp.isfinite(x), guess), axis=1)
+            )[0]
+            common_length = min(len(finite_guess), len(non_finite_index))
+            initial_position = initial_position.at[
+                non_finite_index[:common_length]
+            ].set(guess[:common_length])
         self.sampler.sample(initial_position, None)  # type: ignore
 
     def print_summary(self, transform: bool = True):

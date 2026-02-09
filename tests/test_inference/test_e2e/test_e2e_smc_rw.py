@@ -15,7 +15,7 @@ from jesterTOV.inference.run_inference import (
     setup_likelihood,
     determine_keep_names,
 )
-from jesterTOV.inference.samplers.factory import create_sampler
+from jesterTOV.inference.samplers import create_sampler
 
 from .conftest import validate_sampler_output, NEP_PARAMS
 

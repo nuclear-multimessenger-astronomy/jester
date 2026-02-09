@@ -9,7 +9,6 @@ inherit from JesterSampler and implement the sampler initialization.
 from dataclasses import dataclass, field
 from typing import Any
 
-import jax.numpy as jnp
 from jaxtyping import Array, Float, PRNGKeyArray
 
 from jesterTOV.inference.base import (
@@ -223,21 +222,18 @@ class JesterSampler:
         named_params = self.add_name(params)
         return self.posterior_from_dict(named_params, data)
 
-    def sample(
-        self, key: PRNGKeyArray, initial_position: Array = jnp.array([])
-    ) -> None:
+    def sample(self, key: PRNGKeyArray) -> None:
         """
-        Run MCMC sampling.
+        Run sampling.
 
         This method must be implemented by backend-specific subclasses.
+        Initial positions are sampled from the prior internally by each
+        sampler implementation.
 
         Parameters
         ----------
         key : PRNGKeyArray
             JAX random key
-        initial_position : Array, optional
-            Initial positions for chains. If not provided, implementation
-            should sample from prior.
 
         Raises
         ------
@@ -377,11 +373,3 @@ class JesterSampler:
         raise NotImplementedError(
             "get_sampler_output() must be implemented by backend-specific subclass"
         )
-
-    # TODO: Future optimization - implement transform caching
-    # Current issue: JAX tracing limitations prevent caching inside compiled functions
-    # Potential solution: Cache transforms outside JAX trace (sampler-specific implementation)
-    # - FlowMC: Cache during production phase
-    # - BlackJAX SMC: Cache final temperature samples
-    # - BlackJAX NS-AW: Cache all samples
-    # Would eliminate redundant TOV solver calls when generating EOS samples

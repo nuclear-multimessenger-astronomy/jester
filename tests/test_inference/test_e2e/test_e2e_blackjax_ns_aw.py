@@ -15,7 +15,7 @@ from jesterTOV.inference.run_inference import (
     setup_likelihood,
     determine_keep_names,
 )
-from jesterTOV.inference.samplers.factory import create_sampler
+from jesterTOV.inference.samplers import create_sampler
 
 from .conftest import validate_sampler_output, NEP_PARAMS
 
@@ -126,7 +126,9 @@ class TestBlackJAXNSAWE2E:
         sampler.sample(key)
 
         # Check evidence in sampler metadata
-        from jesterTOV.inference.samplers.blackjax_ns_aw import BlackJAXNSAWSampler
+        from jesterTOV.inference.samplers.blackjax.nested_sampling import (
+            BlackJAXNSAWSampler,
+        )
 
         assert isinstance(sampler, BlackJAXNSAWSampler)
 
@@ -184,23 +186,28 @@ class TestBlackJAXNSAWE2E:
     def test_blackjax_ns_aw_unit_cube_transform(
         self, blackjax_ns_aw_prior_config, e2e_temp_dir
     ):
-        """Test that NS-AW properly creates unit cube transforms."""
+        """Test that NS-AW properly creates unit cube transforms automatically."""
         config = InferenceConfig(**blackjax_ns_aw_prior_config)
 
         prior = setup_prior(config)
+        keep_names = determine_keep_names(config, prior)
+        transform = setup_transform(config, prior=prior, keep_names=keep_names)
+        likelihood = setup_likelihood(config, transform)
 
-        # The factory should auto-create BoundToBound transforms
-        from jesterTOV.inference.samplers.transform_factory import (
-            create_sample_transforms,
+        # Create sampler WITHOUT providing sample_transforms (they should be auto-created)
+        sampler = create_sampler(
+            config=config.sampler,
+            prior=prior,
+            likelihood=likelihood,
+            likelihood_transforms=[transform],
+            seed=config.seed,
         )
 
-        transforms = create_sample_transforms(config.sampler, prior)
-
-        # Should have transforms for NS-AW
-        assert len(transforms) > 0, "NS-AW should have sample transforms"
+        # NS-AW should have auto-created BoundToBound transforms
+        assert len(sampler.sample_transforms) > 0, "NS-AW should have sample transforms"
 
         # Check they are BoundToBound (unit cube)
         from jesterTOV.inference.base.transform import BoundToBound
 
-        for t in transforms:
+        for t in sampler.sample_transforms:
             assert isinstance(t, BoundToBound), f"Expected BoundToBound, got {type(t)}"
