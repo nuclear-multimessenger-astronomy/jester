@@ -98,6 +98,11 @@ uv run pyright                 # All files
 uv run pyright jesterTOV/      # Specific directory
 ```
 
+To run with Jupyter notebooks:
+```bash
+uv run ipython kernel install --user --name=jester
+```
+
 A CLAUDE.md file already exists in the repo for developers that want to use Claude Code. 
 
 ## Acknowledgements
