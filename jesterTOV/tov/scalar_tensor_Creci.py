@@ -20,23 +20,33 @@ from jesterTOV.tov.data_classes import EOSData, TOVSolution
 
 
 def _tov_ode_iter(h, y, eos):
-    """
+    r"""
     Scalar-tensor TOV ODE system for interior solution.
-    Used for iterating scalar field mathing condition.
+    Used for iterating scalar field matching condition.
 
     Parameters
     ----------
     h : float
-        Enthalpy (independent variable)
+        Enthalpy (independent variable).
     y : tuple
-        State vector (r, m, nu, psi, phi)
+        State vector :math:`(r, m, \\nu, \\psi, \\phi)` where:
+        - :math:`r`: radial coordinate
+        - :math:`m`: mass enclosed
+        - :math:`\\nu`: metric function
+        - :math:`\\psi`: scalar field derivative :math:`d\\phi/dr`
+        - :math:`\\phi`: scalar field
     eos : dict
-        EOS data plus scalar-tensor parameters
+        Dictionary containing EOS arrays and scalar-tensor parameters:
+        - ``p``: pressure array
+        - ``h``: enthalpy array
+        - ``e``: energy density array
+        - ``dloge_dlogp``: logarithmic derivative :math:`d\\log e/d\\log p`
+        - ``beta_ST``: scalar-tensor coupling parameter
 
     Returns
     -------
     tuple
-        Derivatives (dr/dh, dm/dh, dnu/dh, dpsi/dh, dphi/dh)
+        Derivatives :math:`(dr/dh, dm/dh, d\\nu/dh, d\\psi/dh, d\\phi/dh)`.
     """
     # EOS quantities
     ps = eos["p"]
@@ -104,22 +114,36 @@ def _tov_ode_iter(h, y, eos):
 
 
 def _tov_ode_iter_tidal(h, y, eos):
-    """
+    r"""
     Scalar-tensor TOV ODE system for interior solution with tidal deformability.
 
     Parameters
     ----------
     h : float
-        Enthalpy (independent variable)
+        Enthalpy (independent variable).
     y : tuple
-        State vector (r, m, nu, psi, phi, H_0 and H_0', delta phi and delta phi')
+        State vector :math:`(r, m, \\nu, \\psi, \\phi, H_0, H_0', \\delta\\phi, \\delta\\phi')` where:
+        - :math:`r`: radial coordinate
+        - :math:`m`: mass enclosed
+        - :math:`\\nu`: metric function
+        - :math:`\\psi`: scalar field derivative :math:`d\\phi/dr`
+        - :math:`\\phi`: scalar field
+        - :math:`H_0`: metric perturbation (tidal field)
+        - :math:`H_0'`: derivative of :math:`H_0`
+        - :math:`\\delta\\phi`: scalar field perturbation
+        - :math:`\\delta\\phi'`: derivative of :math:`\\delta\\phi`
     eos : dict
-        EOS data plus scalar-tensor parameters
+        Dictionary containing EOS arrays and scalar-tensor parameters:
+        - ``p``: pressure array
+        - ``h``: enthalpy array
+        - ``e``: energy density array
+        - ``dloge_dlogp``: logarithmic derivative :math:`d\\log e/d\\log p`
+        - ``beta_ST``: scalar-tensor coupling parameter
 
     Returns
     -------
     tuple
-        Derivatives (dr/dh, dm/dh, dnu/dh, dpsi/dh, dphi/dh, dH0/dh, dH0_prime/dh, ddelta_phi/dh, ddelta_phi_prime/dh)
+        Derivatives :math:`(dr/dh, dm/dh, d\\nu/dh, d\\psi/dh, d\\phi/dh, dH_0/dh, dH_0'/dh, d\\delta\\phi/dh, d\\delta\\phi'/dh)`.
     """
     # EOS quantities
     ps = eos["p"]
@@ -273,6 +297,28 @@ def _tov_ode_iter_tidal(h, y, eos):
 
 
 def H0OnlyQT_jax(M, q, r):
+    r"""
+    Compute the H0 (only QT) basis function for exterior solution.
+
+    Parameters
+    ----------
+    M : jax.numpy.ndarray
+        Gravitational mass (geometric units).
+    q : jax.numpy.ndarray
+        Scalar charge.
+    r : jax.numpy.ndarray
+        Radial coordinate (distance from center).
+
+    Returns
+    -------
+    jax.numpy.ndarray
+        Value of the H0 (only QT) basis function.
+
+    Notes
+    -----
+    Series expansion from Creci et al. (2023) for scalar-tensor tidal perturbations.
+    Used to construct exterior basis for matching boundary conditions.
+    """
     return (
         29491200.0 * jnp.power(M, 19.0) / (23.0 * jnp.power(r, 22.0))
         - 159004594585600.0
@@ -628,6 +674,28 @@ def H0OnlyQT_jax(M, q, r):
 
 
 def PhiPOnlyQT_jax(M, q, r):
+    r"""
+    Compute the PhiP (only QT) basis function for exterior solution.
+
+    Parameters
+    ----------
+    M : jax.numpy.ndarray
+        Gravitational mass (geometric units).
+    q : jax.numpy.ndarray
+        Scalar charge.
+    r : jax.numpy.ndarray
+        Radial coordinate (distance from center).
+
+    Returns
+    -------
+    jax.numpy.ndarray
+        Value of the PhiP (only QT) basis function.
+
+    Notes
+    -----
+    Series expansion from Creci et al. (2023) for scalar-tensor tidal perturbations.
+    Used to construct exterior basis for matching boundary conditions.
+    """
     return (
         93388800.0 * jnp.power(M, 19.0) * q / (253.0 * jnp.power(r, 22.0))
         - 1982408089600.0
@@ -912,6 +980,28 @@ def PhiPOnlyQT_jax(M, q, r):
 
 
 def H0OnlyET_jax(M, q, r):
+    r"""
+    Compute the H0 (only ET) basis function for exterior solution.
+
+    Parameters
+    ----------
+    M : jax.numpy.ndarray
+        Gravitational mass (geometric units).
+    q : jax.numpy.ndarray
+        Scalar charge.
+    r : jax.numpy.ndarray
+        Radial coordinate (distance from center).
+
+    Returns
+    -------
+    jax.numpy.ndarray
+        Value of the H0 (only ET) basis function.
+
+    Notes
+    -----
+    Series expansion from Creci et al. (2023) for scalar-tensor tidal perturbations.
+    Used to construct exterior basis for matching boundary conditions.
+    """
     return (
         2.0 * jnp.power(M, 2.0) * jnp.power(q, 2.0) / 3.0
         - 1795948544.0
@@ -1362,6 +1452,28 @@ def H0OnlyET_jax(M, q, r):
 
 
 def PhiPOnlyET_jax(M, q, r):
+    r"""
+    Compute the PhiP (only ET) basis function for exterior solution.
+
+    Parameters
+    ----------
+    M : jax.numpy.ndarray
+        Gravitational mass (geometric units).
+    q : jax.numpy.ndarray
+        Scalar charge.
+    r : jax.numpy.ndarray
+        Radial coordinate (distance from center).
+
+    Returns
+    -------
+    jax.numpy.ndarray
+        Value of the PhiP (only ET) basis function.
+
+    Notes
+    -----
+    Series expansion from Creci et al. (2023) for scalar-tensor tidal perturbations.
+    Used to construct exterior basis for matching boundary conditions.
+    """
     return (
         -0.3333333333333333 * (jnp.power(M, 2.0) * q)
         - 1048576.0 * jnp.power(M, 24.0) * q / (57.0 * jnp.power(r, 22.0))
@@ -1739,6 +1851,28 @@ def PhiPOnlyET_jax(M, q, r):
 
 
 def H0OnlyQS_jax(M, q, r):
+    r"""
+    Compute the H0 (only QS) basis function for exterior solution.
+
+    Parameters
+    ----------
+    M : jax.numpy.ndarray
+        Gravitational mass (geometric units).
+    q : jax.numpy.ndarray
+        Scalar charge.
+    r : jax.numpy.ndarray
+        Radial coordinate (distance from center).
+
+    Returns
+    -------
+    jax.numpy.ndarray
+        Value of the H0 (only QS) basis function.
+
+    Notes
+    -----
+    Series expansion from Creci et al. (2023) for scalar-tensor tidal perturbations.
+    Used to construct exterior basis for matching boundary conditions.
+    """
     return (
         373555200.0 * jnp.power(M, 19.0) * q / (253.0 * jnp.power(r, 22.0))
         - 7929632358400.0
@@ -2026,6 +2160,28 @@ def H0OnlyQS_jax(M, q, r):
 
 
 def PhiPOnlyQS_jax(M, q, r):
+    r"""
+    Compute the PhiP (only QS) basis function for exterior solution.
+
+    Parameters
+    ----------
+    M : jax.numpy.ndarray
+        Gravitational mass (geometric units).
+    q : jax.numpy.ndarray
+        Scalar charge.
+    r : jax.numpy.ndarray
+        Radial coordinate (distance from center).
+
+    Returns
+    -------
+    jax.numpy.ndarray
+        Value of the PhiP (only QS) basis function.
+
+    Notes
+    -----
+    Series expansion from Creci et al. (2023) for scalar-tensor tidal perturbations.
+    Used to construct exterior basis for matching boundary conditions.
+    """
     return (
         137625600.0 * jnp.power(M, 19.0) / (253.0 * jnp.power(r, 22.0))
         - 25044285849600.0
@@ -2369,6 +2525,28 @@ def PhiPOnlyQS_jax(M, q, r):
 
 
 def H0OnlyES_jax(M, q, r):
+    r"""
+    Compute the H0 (only ES) basis function for exterior solution.
+
+    Parameters
+    ----------
+    M : jax.numpy.ndarray
+        Gravitational mass (geometric units).
+    q : jax.numpy.ndarray
+        Scalar charge.
+    r : jax.numpy.ndarray
+        Radial coordinate (distance from center).
+
+    Returns
+    -------
+    jax.numpy.ndarray
+        Value of the H0 (only ES) basis function.
+
+    Notes
+    -----
+    Series expansion from Creci et al. (2023) for scalar-tensor tidal perturbations.
+    Used to construct exterior basis for matching boundary conditions.
+    """
     return (
         -4.0 * jnp.power(M, 2.0) * q / 3.0
         - 4194304.0 * jnp.power(M, 24.0) * q / (57.0 * jnp.power(r, 22.0))
@@ -2755,6 +2933,28 @@ def H0OnlyES_jax(M, q, r):
 
 
 def PhiPOnlyES_jax(M, q, r):
+    r"""
+    Compute the PhiP (only ES) basis function for exterior solution.
+
+    Parameters
+    ----------
+    M : jax.numpy.ndarray
+        Gravitational mass (geometric units).
+    q : jax.numpy.ndarray
+        Scalar charge.
+    r : jax.numpy.ndarray
+        Radial coordinate (distance from center).
+
+    Returns
+    -------
+    jax.numpy.ndarray
+        Value of the PhiP (only ES) basis function.
+
+    Notes
+    -----
+    Series expansion from Creci et al. (2023) for scalar-tensor tidal perturbations.
+    Used to construct exterior basis for matching boundary conditions.
+    """
     return (
         2.0 * jnp.power(M, 2.0) / 3.0
         - 8041005056.0
@@ -3233,6 +3433,28 @@ def PhiPOnlyES_jax(M, q, r):
 
 
 def build_exterior_basis(M, q, R):
+    r"""
+    Build exterior basis functions for matching at stellar surface.
+
+    Constructs the 2x4 matrix of exterior basis functions (H0 and φ' components)
+    evaluated at the stellar surface radius R.
+
+    Parameters
+    ----------
+    M : jax.numpy.ndarray
+        Gravitational mass (geometric units).
+    q : jax.numpy.ndarray
+        Scalar charge.
+    R : jax.numpy.ndarray
+        Stellar radius (matching point).
+
+    Returns
+    -------
+    tuple
+        Two lists of length 4 each:
+        - First list: H0 basis functions [QT, ET, QS, ES]
+        - Second list: φ' basis functions [QT, ET, QS, ES]
+    """
     return [
         H0OnlyQT_jax(M, q, R),
         H0OnlyET_jax(M, q, R),
@@ -3247,6 +3469,28 @@ def build_exterior_basis(M, q, R):
 
 
 def build_exterior_basis_autodiff(M, q, R):
+    r"""
+    Build derivatives of exterior basis functions with respect to radius.
+
+    Uses automatic differentiation (JAX grad) to compute radial derivatives
+    of the basis functions at the stellar surface.
+
+    Parameters
+    ----------
+    M : jax.numpy.ndarray
+        Gravitational mass (geometric units).
+    q : jax.numpy.ndarray
+        Scalar charge.
+    R : jax.numpy.ndarray
+        Stellar radius (matching point).
+
+    Returns
+    -------
+    tuple
+        Two lists of length 4 each:
+        - First list: dH0/dr basis functions [QT', ET', QS', ES']
+        - Second list: dφ'/dr basis functions [QT', ET', QS', ES']
+    """
     H0OnlyQT_autodiff_jax = lambda M, q, R: jax.grad(H0OnlyQT_jax, argnums=2)(M, q, R)
     H0OnlyET_autodiff_jax = lambda M, q, R: jax.grad(H0OnlyET_jax, argnums=2)(M, q, R)
     H0OnlyQS_autodiff_jax = lambda M, q, R: jax.grad(H0OnlyQS_jax, argnums=2)(M, q, R)
@@ -3277,7 +3521,30 @@ def build_exterior_basis_autodiff(M, q, R):
 
 
 def coeff_solver(interior_sol, exterior_basis, exterior_basis_prime):
-    r"""Match interior solution to exterior basis at surface."""
+    r"""
+    Solve for exterior basis coefficients matching interior solution.
+
+    Solves the linear system:
+    .. math::
+        A \\cdot \\mathbf{c} = \\mathbf{b}
+    where :math:`A` is the 4x4 matrix of exterior basis functions (and their
+    derivatives), :math:`\\mathbf{c}` are the coefficients (cQT, cET, cQS, cES),
+    and :math:`\\mathbf{b}` is the interior solution vector (H0, H0', δφ, δφ').
+
+    Parameters
+    ----------
+    interior_sol : tuple
+        Tuple :math:`(H_0, H_0', \\delta\\phi, \\delta\\phi')` evaluated at surface.
+    exterior_basis : tuple
+        Two lists of length 4: H0 basis values and φ' basis values.
+    exterior_basis_prime : tuple
+        Two lists of length 4: dH0/dR basis values and dφ'/dR basis values.
+
+    Returns
+    -------
+    jax.numpy.ndarray
+        Coefficient vector :math:`[c_{QT}, c_{ET}, c_{QS}, c_{ES}]`.
+    """
     H0_int, H0_prime_int, delta_phi_int, delta_phi_prime_int = interior_sol
     H0_basis, delta_phi_basis = exterior_basis
     H0_basis_prime, delta_phi_basis_prime = exterior_basis_prime
@@ -3319,7 +3586,29 @@ def coeff_solver(interior_sol, exterior_basis, exterior_basis_prime):
 
 
 def compute_tidal_deformabilities(coefficients):
-    r"""Compute tidal deformabilities from matched coefficients."""
+    r"""
+    Compute tidal deformabilities from matched coefficients.
+
+    Converts the coefficient vector into four tidal deformabilities:
+    tensor (:math:`\\Lambda_T`), scalar (:math:`\\Lambda_S`), and two mixed
+    scalar-tensor (:math:`\\Lambda_{\\mathrm{ST}1}` and :math:`\\Lambda_{\\mathrm{ST}2}`)
+    using the relations from Creci et al. (2023).
+
+    Parameters
+    ----------
+    coefficients : tuple
+        Tuple of six coefficients :math:`(c_{QT1}, c_{QT2}, c_{ET}, c_{QS1}, c_{QS2}, c_{ES})`.
+
+    Returns
+    -------
+    tuple
+        Four tidal deformabilities:
+        - lambda_T: tensor deformability
+        - lambda_S: scalar deformability
+        - lambda_ST1: mixed deformability (tensor perturbation zero)
+        - lambda_ST2: mixed deformability (scalar perturbation zero)
+        These should satisfy :math:`\\Lambda_{\\mathrm{ST}1} = \\Lambda_{\\mathrm{ST}2}`.
+    """
     cQT1, cQT2, cET, cQS1, cQS2, cES = coefficients
     # case 1: scalar = 1, tensor = 0
     # case 2: scalar = 0, tensor = 1
@@ -3339,20 +3628,66 @@ def compute_tidal_deformabilities(coefficients):
 
 
 class ScalarTensorTOVSolver_Creci(TOVSolverBase):
-    """
+    r"""
     Scalar-tensor theory TOV solver.
 
     Solves modified TOV equations that include scalar field coupling.
     The solution requires iterative solving to match boundary conditions
     at the star surface and spatial infinity.
 
-    Note:
-        Tidal deformability calculation has not been implemented for
-        scalar-tensor theory. The k2 Love number is currently set to 0.
+    Implements the scalar-tensor TOV equations with tidal deformability
+    following Creci et al. (2023) Phys.Rev.D 111 (2025) 8, 089901 (erratum).
+
+    Parameters
+    ----------
+    beta_ST : float, optional
+        Scalar-tensor coupling parameter :math:`\\beta_{\\mathrm{ST}}`.
+    phi_inf_tgt : float, optional
+        Target asymptotic value of the scalar field at infinity.
+    phi_c : float, optional
+        Central value of the scalar field.
+
+    Notes
+    -----
+    The solver computes both the stellar structure and tidal deformabilities
+    (tensor :math:`\\Lambda_T`, scalar :math:`\\Lambda_S`, and mixed
+    :math:`\\Lambda_{\\mathrm{ST}}`) using matched asymptotic expansions.
     """
 
     def solve(self, eos_data: EOSData, pc: float, **kwargs) -> TOVSolution:
-        r""" """
+        r"""
+        Solve scalar-tensor TOV equations for given EOS and central pressure.
+
+        Parameters
+        ----------
+        eos_data : EOSData
+            Equation of state data containing pressure, enthalpy, energy density,
+            and logarithmic derivatives.
+        pc : float
+            Central pressure (geometric units).
+        **kwargs : dict
+            Additional parameters:
+            - beta_ST: Scalar-tensor coupling parameter (default: 0.0)
+            - phi_inf_tgt: Target asymptotic scalar field at infinity (default: 1e-3)
+            - phi_c: Central scalar field value (default: 1.0)
+
+        Returns
+        -------
+        TOVSolution
+            Solution containing mass, radius, and Love number k2 in Jordan frame.
+
+        Raises
+        ------
+        ValueError
+            If iteration fails to converge.
+
+        Notes
+        -----
+        The solver uses iterative matching to find the central scalar field value
+        that yields the desired asymptotic value at infinity. Tidal deformabilities
+        are computed using two particular interior solutions combined with exterior
+        basis functions.
+        """
         beta_ST = kwargs.get("beta_ST", 0.0)
         phi_inf_target = kwargs.get("phi_inf_tgt", 1e-3)
         phi0 = kwargs.get("phi_c", 1.0)
@@ -3459,7 +3794,7 @@ class ScalarTensorTOVSolver_Creci(TOVSolverBase):
                     jnp.power(nu_s_prime, 2) + 4 * jnp.power(psi_s, 2)
                 ) / (nu_s_prime + 2 / R)
                 phi_inf = phi_s + front * jnp.arctanh(inside_tanh)
-                # MODIFIED: Return shifted value (phi_inf - target) instead of just phi_inf
+                # Return shifted value (phi_inf - target) instead of just phi_inf
                 return jnp.array([phi_inf - phi_inf_target]), (R, M_s)
 
             # Define core step function for scan
@@ -3734,10 +4069,19 @@ class ScalarTensorTOVSolver_Creci(TOVSolverBase):
         return TOVSolution(M=M_inf_jordan, R=R_jordan, k2=3 / 2 * lambda_T / jnp.power(R_jordan, 5))  # type: ignore[arg-type]
 
     def get_required_parameters(self) -> list[str]:
-        """
-        Scalar-tensor TOV requires 3 additional parameters.
+        r"""
+        Return additional parameters required by scalar-tensor TOV solver.
 
-        Returns:
-            list[str]: ["beta_ST", "nu_c", "phi_c"]
+        Returns
+        -------
+        list[str]
+            List of parameter names: ``["beta_ST", "phi_inf_tgt", "phi_c"]``.
+
+        Notes
+        -----
+        These parameters correspond to:
+        - ``beta_ST``: Scalar-tensor coupling constant.
+        - ``phi_inf_tgt``: Target asymptotic scalar field value at infinity.
+        - ``phi_c``: Central scalar field value.
         """
         return ["beta_ST", "phi_inf_tgt", "phi_c"]
