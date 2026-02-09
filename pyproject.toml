@@ -74,14 +74,6 @@ train_jester_gw_flow = "jesterTOV.inference.flows.train_flow:main"
 
 [project.optional-dependencies]
 cuda12 = ["jax[cuda12]"]
-cpu = []  # CPU-only (default jax dependency)
-tests = [
-    "pytest>=7.0",
-    "pytest-cov>=4.0",
-    "pytest-xdist>=3.0",
-    "hypothesis>=6.0",
-    "pytest-timeout>=2.1.0",  # For timeout control in slow tests
-]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
@@ -93,15 +85,16 @@ dev = [
     "astropy>=5.0.0",
     "lalsuite",
 ]
-examples = ["ipykernel>=7.1.0"]
 docs = [
     "sphinx>=7.0",
+    "sphinx-autobuild",
     "sphinx-book-theme>=1.0",
     "nbsphinx>=0.9",
     "sphinx-autodoc-typehints>=1.12",
     "sphinx-copybutton>=0.5",
     "myst-parser>=2.0",
-    "sphinxcontrib-mermaid>=1.0"
+    "sphinxcontrib-mermaid>=1.0",
+    "ipykernel>=7.1.0"
 ]
 
 [tool.ruff]

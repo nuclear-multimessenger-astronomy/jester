@@ -1851,28 +1851,21 @@ dev = [
     { name = "pytest-xdist" },
 ]
 docs = [
+    { name = "ipykernel" },
     { name = "myst-parser", version = "4.0.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "myst-parser", version = "5.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "nbsphinx" },
     { name = "sphinx", version = "8.1.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "sphinx", version = "9.0.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
     { name = "sphinx", version = "9.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "sphinx-autobuild", version = "2024.10.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "sphinx-autobuild", version = "2025.8.25", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "sphinx-autodoc-typehints", version = "3.0.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "sphinx-autodoc-typehints", version = "3.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
     { name = "sphinx-autodoc-typehints", version = "3.6.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "sphinx-book-theme" },
     { name = "sphinx-copybutton" },
     { name = "sphinxcontrib-mermaid" },
-]
-examples = [
-    { name = "ipykernel" },
-]
-tests = [
-    { name = "hypothesis" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "pytest-timeout" },
-    { name = "pytest-xdist" },
 ]
 
 [package.metadata]
@@ -1890,9 +1883,8 @@ requires-dist = [
     { name = "flowmc", specifier = "==0.3.4" },
     { name = "h5py", specifier = ">=3.0" },
     { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.0" },
-    { name = "hypothesis", marker = "extra == 'tests'", specifier = ">=6.0" },
     { name = "interpax" },
-    { name = "ipykernel", marker = "extra == 'examples'", specifier = ">=7.1.0" },
+    { name = "ipykernel", marker = "extra == 'docs'", specifier = ">=7.1.0" },
     { name = "ipython", specifier = ">=8.0" },
     { name = "jax", specifier = "<0.8.2" },
     { name = "jax", extras = ["cuda12"], marker = "extra == 'cuda12'" },
@@ -1907,17 +1899,14 @@ requires-dist = [
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.5.0" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
-    { name = "pytest", marker = "extra == 'tests'", specifier = ">=7.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0" },
-    { name = "pytest-cov", marker = "extra == 'tests'", specifier = ">=4.0" },
     { name = "pytest-timeout", marker = "extra == 'dev'", specifier = ">=2.1.0" },
-    { name = "pytest-timeout", marker = "extra == 'tests'", specifier = ">=2.1.0" },
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.0" },
-    { name = "pytest-xdist", marker = "extra == 'tests'", specifier = ">=3.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "scipy", specifier = ">=1.10.0" },
     { name = "seaborn", specifier = ">=0.12.0" },
     { name = "sphinx", marker = "extra == 'docs'", specifier = ">=7.0" },
+    { name = "sphinx-autobuild", marker = "extra == 'docs'" },
     { name = "sphinx-autodoc-typehints", marker = "extra == 'docs'", specifier = ">=1.12" },
     { name = "sphinx-book-theme", marker = "extra == 'docs'", specifier = ">=1.0" },
     { name = "sphinx-copybutton", marker = "extra == 'docs'", specifier = ">=0.5" },
@@ -1926,7 +1915,7 @@ requires-dist = [
     { name = "typing-extensions", specifier = ">=4.5.0" },
     { name = "zenodo-get", specifier = ">=1.5.0" },
 ]
-provides-extras = ["cuda12", "cpu", "tests", "dev", "examples", "docs"]
+provides-extras = ["cuda12", "dev", "docs"]
 
 [[package]]
 name = "jinja2"
@@ -3837,6 +3826,48 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/cd/bd/f08eb0f4eed5c83f1ba2a3bd18f7745a2b1525fad70660a1c00224ec468a/sphinx-9.1.0.tar.gz", hash = "sha256:7741722357dd75f8190766926071fed3bdc211c74dd2d7d4df5404da95930ddb", size = 8718324, upload-time = "2025-12-31T15:09:27.646Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/73/f7/b1884cb3188ab181fc81fa00c266699dab600f927a964df02ec3d5d1916a/sphinx-9.1.0-py3-none-any.whl", hash = "sha256:c84fdd4e782504495fe4f2c0b3413d6c2bf388589bb352d439b2a3bb99991978", size = 3921742, upload-time = "2025-12-31T15:09:25.561Z" },
+]
+
+[[package]]
+name = "sphinx-autobuild"
+version = "2024.10.3"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.11'",
+]
+dependencies = [
+    { name = "colorama", marker = "python_full_version < '3.11'" },
+    { name = "sphinx", version = "8.1.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "starlette", marker = "python_full_version < '3.11'" },
+    { name = "uvicorn", marker = "python_full_version < '3.11'" },
+    { name = "watchfiles", marker = "python_full_version < '3.11'" },
+    { name = "websockets", marker = "python_full_version < '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a5/2c/155e1de2c1ba96a72e5dba152c509a8b41e047ee5c2def9e9f0d812f8be7/sphinx_autobuild-2024.10.3.tar.gz", hash = "sha256:248150f8f333e825107b6d4b86113ab28fa51750e5f9ae63b59dc339be951fb1", size = 14023, upload-time = "2024-10-02T23:15:30.172Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/18/c0/eba125db38c84d3c74717008fd3cb5000b68cd7e2cbafd1349c6a38c3d3b/sphinx_autobuild-2024.10.3-py3-none-any.whl", hash = "sha256:158e16c36f9d633e613c9aaf81c19b0fc458ca78b112533b20dafcda430d60fa", size = 11908, upload-time = "2024-10-02T23:15:28.739Z" },
+]
+
+[[package]]
+name = "sphinx-autobuild"
+version = "2025.8.25"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.12'",
+    "python_full_version == '3.11.*'",
+]
+dependencies = [
+    { name = "colorama", marker = "python_full_version >= '3.11'" },
+    { name = "sphinx", version = "9.0.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
+    { name = "sphinx", version = "9.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "starlette", marker = "python_full_version >= '3.11'" },
+    { name = "uvicorn", marker = "python_full_version >= '3.11'" },
+    { name = "watchfiles", marker = "python_full_version >= '3.11'" },
+    { name = "websockets", marker = "python_full_version >= '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e0/3c/a59a3a453d4133777f7ed2e83c80b7dc817d43c74b74298ca0af869662ad/sphinx_autobuild-2025.8.25.tar.gz", hash = "sha256:9cf5aab32853c8c31af572e4fecdc09c997e2b8be5a07daf2a389e270e85b213", size = 15200, upload-time = "2025-08-25T18:44:55.436Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d7/20/56411b52f917696995f5ad27d2ea7e9492c84a043c5b49a3a3173573cd93/sphinx_autobuild-2025.8.25-py3-none-any.whl", hash = "sha256:b750ac7d5a18603e4665294323fd20f6dcc0a984117026d1986704fa68f0379a", size = 12535, upload-time = "2025-08-25T18:44:54.164Z" },
 ]
 
 [[package]]

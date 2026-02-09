@@ -1,0 +1,25 @@
+﻿jesterTOV.tov.TOVSolverBase
+===========================
+
+.. currentmodule:: jesterTOV.tov
+
+.. autoclass:: TOVSolverBase
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~TOVSolverBase.__init__
+      ~TOVSolverBase.construct_family
+      ~TOVSolverBase.get_required_parameters
+      ~TOVSolverBase.solve
+   
+   
+
+   
+   
+   

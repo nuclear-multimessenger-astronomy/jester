@@ -1,52 +1,56 @@
 JESTER Documentation
 ====================
 
-**J**\ ax-based **E**\ o**S** and **T**\ ov solv\ **ER**
-
-JESTER is a scientific computing library for solving the Tolman-Oppenheimer-Volkoff (TOV) equations for neutron star physics. It provides hardware-accelerated computations via JAX with automatic differentiation capabilities.
-
-.. image:: https://img.shields.io/badge/arXiv-2024.12345-b31b1b.svg
-   :target: https://arxiv.org/abs/2024.12345
+.. image:: https://img.shields.io/badge/arXiv-2504.15893-b31b1b.svg
+   :target: https://arxiv.org/abs/2504.15893
    :alt: arXiv Paper
 
-.. image:: https://codecov.io/gh/your-username/jester/branch/main/graph/badge.svg
-   :target: https://codecov.io/gh/your-username/jester
-   :alt: Code Coverage
+.. image:: https://img.shields.io/badge/arXiv-2507.13039-b31b1b.svg
+   :target: https://arxiv.org/abs/2507.13039
+   :alt: arXiv Paper
 
-Key Features
-============
+JAX-accelerated equation of state inference and TOV solvers
 
-* **JAX-Accelerated**: Hardware acceleration with GPU/TPU support
-* **Automatic Differentiation**: Built-in gradients for parameter studies
-* **Neutron Star Physics**: Complete TOV equation solver with realistic equations of state
-* **Extensible**: Modular design for custom equation of state models
-* **Well-Tested**: Comprehensive test suite with 95+ tests
+``jester`` is a package to perform inference on the equation of state (EOS) with Bayesian inference and accelerates the TOV solver calls and the entire sampling procedure by using GPU hardware through ``jax``. 
 
-Quick Start
-===========
+Currently, ``jester`` supports the following EOS parametrizations:
 
-Install JESTER:
+* **Metamodel**: Taylor expansion of the energy density.
+* **Metamodel+CSE**: Metamodel up to breakdown density (varied on-the-fly), and speed-of-sound extrapolation above the breakdown density parametrized by linear interpolation through a grid of speed of sound values.
+* **Metamodel+peakCSE**: Metamodel up to breakdown density (varied on-the-fly), and speed-of-sound extrapolation above the breakdown density parametrized to have a Gaussian peak.
+* **Spectral expansion**: 4-parameter spectral expansion from Lindblom 2010
 
-.. code-block:: bash
+Moreover, the following samplers are supported:
 
-   pip install jester-tov
-   
-   # For GPU support
-   pip install "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+* **Sequential Monte Carlo** (Recommended): Implemented with `blackjax <https://github.com/blackjax-devs/blackjax>`_
+* **Nested sampling**: Implemented in ``blackjax`` in `this specific fork <https://github.com/handley-lab/blackjax>`_
+* **flowMC** (`GitHub <https://github.com/kazewong/flowMC>`_): Normalizing flow-enhanced MCMC sampling
 
-Basic usage:
 
-.. code-block:: python
+Installation
+=============
 
-   import jesterTOV as jtov
-   
-   # Create equation of state
-   eos = jtov.eos.MetaModel_EOS_model()
-   
-   # Solve TOV equations
-   masses, radii = eos.M_R_curve()
-   
-   print(f"Maximum mass: {max(masses):.2f} solar masses")
+The latest stable release version can be installed with ``pip``::
+
+    pip install jesterTOV
+
+To run Bayesian inference, make sure to install support for CUDA or upgrade ``jax`` according to the
+`jax documentation page <https://docs.jax.dev/en/latest/installation.html>`_::
+
+    pip install "jax[cuda12]"
+
+For developers, we recommend installing locally with ``uv``::
+
+    git clone https://github.com/nuclear-multimessenger-astronomy/jester
+    cd jester
+    uv sync
+
+Extra dependencies can be installed as follows::
+
+    uv sync --extra cuda12   # For GPU support (fast sampling)
+    uv sync --extra docs     # To work on documentation locally
+    uv sync --extra dev      # To run tests locally
+
 
 Contents
 ========
@@ -70,7 +74,6 @@ Contents
    :caption: API Reference
 
    api/jesterTOV
-   api/inference
 
 .. toctree::
    :maxdepth: 2

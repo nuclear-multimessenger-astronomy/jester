@@ -7,14 +7,15 @@ sys.path.insert(0, str(Path("..").resolve()))
 
 # -- Project information -----------------------------------------------------
 project = "JESTER"
-copyright = "2025, JESTER Contributors"
-author = "JESTER Contributors"
+copyright = "2026, jesterTOV developers"
+author = "jesterTOV developers"
 release = "0.1.1"
 version = "0.1.1"
 
 # -- General configuration ---------------------------------------------------
 extensions = [
     "sphinx.ext.autodoc",
+    "sphinx.ext.autosummary",
     "sphinx.ext.napoleon",
     "sphinx.ext.mathjax",
     "sphinx.ext.viewcode",
@@ -84,6 +85,10 @@ autodoc_mock_imports = [
 add_module_names = False
 autodoc_inherit_docstrings = False
 python_maximum_signature_line_length = 88
+
+# -- Autosummary configuration -----------------------------------------------
+autosummary_generate = True  # Auto-generate stub pages
+autosummary_imported_members = False
 
 # -- Napoleon configuration --------------------------------------------------
 napoleon_google_docstring = True
