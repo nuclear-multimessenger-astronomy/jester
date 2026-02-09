@@ -15,7 +15,7 @@ from jesterTOV.inference.run_inference import (
     setup_likelihood,
     determine_keep_names,
 )
-from jesterTOV.inference.samplers.factory import create_sampler
+from jesterTOV.inference.samplers import create_sampler
 
 
 @pytest.mark.integration
@@ -158,7 +158,7 @@ class TestSamplerFactorySmoke:
             seed=config.seed,
         )
 
-        from jesterTOV.inference.samplers.blackjax_smc import (
+        from jesterTOV.inference.samplers.blackjax.smc.random_walk import (
             BlackJAXSMCRandomWalkSampler,
         )
 
@@ -202,6 +202,8 @@ class TestSamplerFactorySmoke:
             seed=config.seed,
         )
 
-        from jesterTOV.inference.samplers.blackjax_ns_aw import BlackJAXNSAWSampler
+        from jesterTOV.inference.samplers.blackjax.nested_sampling import (
+            BlackJAXNSAWSampler,
+        )
 
         assert isinstance(sampler, BlackJAXNSAWSampler)
