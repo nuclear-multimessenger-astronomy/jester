@@ -3,8 +3,6 @@ r"""
 Modular inference script for jesterTOV
 """
 
-# FIXME: Need to organize this a bit better so that it is more modular and easier to process
-
 import os
 import time
 import warnings
@@ -13,8 +11,7 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
-# FIXME: make a flag that turns this on/off and document it, turn ON by default
-# Enable 64-bit precision
+# Enable 64-bit precision by default
 jax.config.update("jax_enable_x64", True)
 
 from .config.parser import load_config
@@ -24,8 +21,7 @@ from .base.prior import CombinePrior
 from .base.likelihood import LikelihoodBase
 from .transforms import JesterTransform
 from .likelihoods.factory import create_combined_likelihood
-from .samplers.factory import create_sampler
-from .samplers.jester_sampler import JesterSampler
+from .samplers import create_sampler, JesterSampler
 from .result import InferenceResult
 from jesterTOV.logging_config import get_logger
 
@@ -180,6 +176,7 @@ def setup_transform(
 
         if missing_params:
             eos_name = transform.get_eos_type()
+            # TODO: add repr to TOV solver for get_tov_type() so we can make this similar to EOS
             tov_name = repr(transform.tov_solver)
             raise ValueError(
                 f"Transform with EOS = {eos_name} and TOV = {tov_name} is missing "
@@ -254,12 +251,12 @@ def run_sampling(
     )
 
     # Generate diagnostic plots for SMC samplers
-    from .samplers.blackjax_smc import (
-        BlackJAXSMCRandomWalkSampler,
-        BlackJAXSMCNUTSSampler,
-    )
+    from .samplers.blackjax.smc.base import BlackjaxSMCSampler
 
-    if isinstance(sampler, (BlackJAXSMCRandomWalkSampler, BlackJAXSMCNUTSSampler)):
+    # TODO: plot_diagnostics should be in the base class, do not fail if not implemented but just pass
+    # Then, samplers can implement their own diagnostics as needed (e.g., FlowMC could have training diagnostics, acceptance rates, etc.) -- for now we only have this for SMC, but that is fine
+
+    if isinstance(sampler, BlackjaxSMCSampler):
         logger.info("Generating SMC diagnostic plots...")
         sampler.plot_diagnostics(outdir=outdir, filename="smc_diagnostics.png")
 
@@ -274,6 +271,7 @@ def run_sampling(
     return result
 
 
+# TODO: fully deprecate this: remove this entirely (if no other dependency on it)
 def generate_eos_samples(
     config: InferenceConfig,
     result: InferenceResult,

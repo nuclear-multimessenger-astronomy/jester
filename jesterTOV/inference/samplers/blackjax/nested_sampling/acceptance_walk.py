@@ -1,4 +1,4 @@
-"""BlackJAX Nested Sampling sampler for JESTER inference.
+"""BlackJAX Nested Sampling with acceptance walk kernel.
 
 This module provides nested sampling using the BlackJAX library (handley-lab fork)
 with acceptance walk kernel for efficient exploration of the parameter space.
@@ -17,20 +17,29 @@ from jaxtyping import Array, PRNGKeyArray
 
 from blackjax.ns.base import StateWithLogLikelihood
 
-from ..base import LikelihoodBase, Prior, BijectiveTransform, NtoMTransform
-from ..config.schema import BlackJAXNSAWConfig
-from .jester_sampler import JesterSampler, SamplerOutput
+from jesterTOV.inference.base import (
+    LikelihoodBase,
+    Prior,
+    BijectiveTransform,
+    NtoMTransform,
+)
+from jesterTOV.inference.config.schema import BlackJAXNSAWConfig
+from jesterTOV.inference.samplers.jester_sampler import SamplerOutput
+from jesterTOV.inference.samplers.blackjax.base import BlackjaxSampler
 from jesterTOV.logging_config import get_logger
 
 logger = get_logger("jester")
 
 
-class BlackJAXNSAWSampler(JesterSampler):
+class BlackJAXNSAWSampler(BlackjaxSampler):
     """BlackJAX Nested Sampling with acceptance walk kernel.
 
     This sampler implements nested sampling for Bayesian evidence calculation
     and posterior sampling. It uses unit cube transforms (all parameters mapped
     to [0, 1]) and the acceptance walk kernel for MCMC proposals.
+
+    Unlike SMC samplers, NS-AW works directly with dict-based functions from
+    BlackjaxSampler parent class (no flattening needed).
 
     Parameters
     ----------
@@ -98,9 +107,7 @@ class BlackJAXNSAWSampler(JesterSampler):
             logger.info(
                 "No sample transforms provided - creating unit cube transforms for NS-AW"
             )
-            from .transform_factory import create_sample_transforms
-
-            sample_transforms = create_sample_transforms(config, prior)
+            sample_transforms = self._create_unit_cube_transforms(prior)
             # Update the sample_transforms in the parent class
             self.sample_transforms = sample_transforms
             # Recompute parameter names after adding transforms
@@ -114,9 +121,10 @@ class BlackJAXNSAWSampler(JesterSampler):
         )
         logger.info(f"Termination: dlogZ < {config.termination_dlogz}")
 
-        # Pre-compile log prior and log likelihood functions
-        self._create_logprior_fn()
-        self._create_loglikelihood_fn()
+        # Use parent class methods to create log prior and log likelihood functions
+        # These work with dicts directly (no flattening needed for NS-AW)
+        self._logprior_fn = self._create_logprior_fn_from_dict()
+        self._loglikelihood_fn = self._create_loglikelihood_fn_from_dict()
 
         # Create unit cube stepper function (wraps at [0, 1] boundaries)
         self._create_unit_cube_stepper()
@@ -135,57 +143,83 @@ class BlackJAXNSAWSampler(JesterSampler):
         # Note: The actual nested sampler is created in sample() method
         # since it requires the acceptance walk kernel implementation
 
-    def _create_logprior_fn(self) -> None:
-        """Pre-compile log prior function in unit cube space.
+    def _create_unit_cube_transforms(self, prior: Prior) -> list[BijectiveTransform]:
+        """Create BoundToBound [0,1] transforms for all prior parameters.
 
-        This function:
-        1. Applies inverse sample transforms (unit cube → prior space)
-        2. Evaluates prior log probability
-        3. Adds Jacobian corrections from transforms
+        This is required for BlackJAX nested sampling with acceptance walk,
+        which samples in unit cube space and applies the inverse transform
+        to evaluate in prior space.
+
+        Parameters
+        ----------
+        prior : Prior
+            Prior distribution (must be CombinePrior of UniformPrior)
+
+        Returns
+        -------
+        list[BijectiveTransform]
+            List containing single BoundToBound transform mapping all parameters to [0,1]
+
+        Raises
+        ------
+        ValueError
+            If prior is not a CombinePrior or contains non-uniform priors
         """
+        from jesterTOV.inference.base.prior import UniformPrior, CombinePrior
+        from jesterTOV.inference.base.transform import BoundToBound
 
-        def logprior_fn(params_dict: dict[str, float]) -> float:
-            """Evaluate log prior in unit cube space."""
-            transform_jacobian = 0.0
-            named_params = params_dict.copy()
+        # Handle both single UniformPrior and CombinePrior
+        if isinstance(prior, UniformPrior):
+            prior = CombinePrior([prior])
+        elif not isinstance(prior, CombinePrior):
+            raise ValueError(
+                f"BlackJAX NS-AW requires UniformPrior or CombinePrior, got {type(prior).__name__}. "
+                "Ensure your prior is a (combination of) UniformPrior distribution(s)."
+            )
 
-            # Apply inverse transforms (unit cube → prior)
-            for transform in reversed(self.sample_transforms):
-                named_params, jacobian = transform.inverse(named_params)
-                transform_jacobian += jacobian
+        # Extract bounds from all component priors
+        original_lower = {}
+        original_upper = {}
+        param_names = []
 
-            # Evaluate prior + Jacobian
-            return self.prior.log_prob(named_params) + transform_jacobian
+        for component_prior in prior.base_prior:
+            # Validate that each component is a UniformPrior
+            if not isinstance(component_prior, UniformPrior):
+                error_msg = (
+                    f"BlackJAX NS-AW requires UniformPrior components, got {type(component_prior).__name__}. "
+                    f"Parameter: {component_prior.parameter_names[0]}\n"
+                )
+                if isinstance(component_prior, CombinePrior):
+                    error_msg += (
+                        "Hint: Nested CombinePrior detected. This likely means a CombinePrior was wrapped "
+                        "in another CombinePrior. Instead of CombinePrior([prior1, prior2]), use "
+                        "CombinePrior(prior1.base_prior + prior2.base_prior) to flatten the structure."
+                    )
+                raise ValueError(error_msg)
 
-        # JIT compile for performance
-        self._logprior_fn = jax.jit(logprior_fn)
+            # Extract bounds (UniformPrior has xmin, xmax attributes)
+            param_name = component_prior.parameter_names[0]
+            param_names.append(param_name)
+            original_lower[param_name] = component_prior.xmin
+            original_upper[param_name] = component_prior.xmax
 
-    def _create_loglikelihood_fn(self) -> None:
-        """Pre-compile log likelihood function in unit cube space.
+        # Create target bounds (unit cube [0, 1] for all parameters)
+        target_lower = {name: 0.0 for name in param_names}
+        target_upper = {name: 1.0 for name in param_names}
 
-        This function:
-        1. Applies inverse sample transforms (unit cube → prior space)
-        2. Applies forward likelihood transforms (prior → likelihood params)
-        3. Evaluates likelihood
-        """
+        # Create name mapping (same names in both spaces)
+        name_mapping = (param_names, param_names)
 
-        def loglikelihood_fn(params_dict: dict[str, float]) -> float:
-            """Evaluate log likelihood in unit cube space."""
-            named_params = params_dict.copy()
+        # Create single BoundToBound transform for all parameters
+        transform = BoundToBound(
+            name_mapping=name_mapping,
+            original_lower_bound=original_lower,
+            original_upper_bound=original_upper,
+            target_lower_bound=target_lower,
+            target_upper_bound=target_upper,
+        )
 
-            # Apply inverse sample transforms (unit cube → prior)
-            for transform in reversed(self.sample_transforms):
-                named_params, _ = transform.inverse(named_params)
-
-            # Apply likelihood transforms (prior → likelihood params)
-            for transform in self.likelihood_transforms:
-                named_params = transform.forward(named_params)
-
-            # Evaluate likelihood
-            return self.likelihood.evaluate(named_params)
-
-        # JIT compile for performance
-        self._loglikelihood_fn = jax.jit(loglikelihood_fn)
+        return [transform]
 
     def _create_unit_cube_stepper(self) -> None:
         """Create stepper function that wraps parameters at [0, 1] boundaries.
@@ -208,17 +242,18 @@ class BlackJAXNSAWSampler(JesterSampler):
 
         self._unit_cube_stepper = unit_cube_stepper
 
-    def sample(
-        self, key: PRNGKeyArray, initial_position: Array = jnp.array([])
-    ) -> None:
+    def sample(self, key: PRNGKeyArray) -> None:
         """Run nested sampling until termination criterion.
 
         Parameters
         ----------
         key : PRNGKeyArray
             JAX random key
-        initial_position : Array, optional
-            Not used for nested sampling (samples from prior in unit cube)
+
+        Notes
+        -----
+        Initial live points are sampled from the prior and transformed to
+        unit cube space internally.
         """
         logger.info("Starting nested sampling...")
         start_time = time.time()
