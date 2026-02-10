@@ -93,12 +93,12 @@ Building documentation locally:
 # Build the documentation
 uv run sphinx-build docs docs/_build/html
 
+# Or start up autobuild so the page refreshes automatically
+sphinx-autobuild docs docs/_build/html
+
 # Open in your browser
 open docs/_build/html/index.html      # macOS
 xdg-open docs/_build/html/index.html  # Linux
-
-# Enable autobuild so the page refreshes automatically
-sphinx-autobuild docs docs/_build/html
 ```
 
 ## Citing

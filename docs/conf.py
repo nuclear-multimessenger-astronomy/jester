@@ -57,6 +57,7 @@ html_theme_options = {
     "use_repository_button": True,
     "repository_url": "https://github.com/nuclear-multimessenger-astronomy/jester",
     "home_page_in_toc": True,
+    "show_toc_level": 2,  # Show headings up to level 2 in right sidebar
     "logo": {
         "image_light": "_static/logo_light.svg",
         "image_dark": "_static/logo_dark.svg",
