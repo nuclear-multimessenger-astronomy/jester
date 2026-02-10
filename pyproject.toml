@@ -84,8 +84,6 @@ dev = [
     "bilby>=2.0.0",
     "astropy>=5.0.0",
     "lalsuite",
-]
-docs = [
     "sphinx>=7.0",
     "sphinx-autobuild",
     "sphinx-book-theme>=1.0",
