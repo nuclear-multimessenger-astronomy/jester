@@ -1,18 +1,29 @@
 Equation of State (EOS) Models
 ================================
 
-[Placeholder: Introduction to EOS parametrizations in JESTER]
+JESTER provides multiple parametrizations for the neutron star equation of state, each with different physical assumptions and use cases.
 
-This section will cover:
+Available Parametrizations
+---------------------------
 
-* Overview of equation of state physics
-* Available EOS parametrizations:
+**Metamodel**
+   Taylor expansion of energy density around saturation density.
 
-  * MetaModel - Taylor expansion of energy density
-  * MetaModel+CSE - Metamodel with speed-of-sound extrapolation
-  * MetaModel+peakCSE - Metamodel with peaked speed-of-sound
-  * Spectral Decomposition - 4-parameter spectral expansion
+   :doc:`eos/metamodel`
 
-* How to construct an EOS
-* EOS validation and physical constraints
-* Crust composition and matching
+**Metamodel + CSE**
+   Metamodel with speed-of-sound extrapolation to high densities.
+
+   :doc:`eos/metamodel_cse`
+
+**Spectral Decomposition**
+   4-parameter spectral expansion of the EOS.
+
+   :doc:`eos/spectral`
+
+.. toctree::
+   :hidden:
+
+   eos/metamodel
+   eos/metamodel_cse
+   eos/spectral

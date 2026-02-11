@@ -1,35 +1,35 @@
 Likelihood Constraints
 ======================
 
-[Placeholder: Introduction to observational constraints in JESTER]
+JESTER supports multiple observational constraints from multi-messenger astronomy to constrain the neutron star equation of state. These likelihoods can be combined in Bayesian inference.
 
-This section will cover:
+Available Constraints
+---------------------
 
-* Overview of multi-messenger constraints on the EOS
-* Available likelihood types:
+**Gravitational Waves**
+   Binary neutron star merger observations (GW170817, etc.).
 
-  * **NICER** - X-ray timing constraints
+   :doc:`likelihoods/gw`
 
-    * PSR J0030+0451
-    * PSR J0740+6620
+**NICER**
+   X-ray timing constraints on mass and radius (PSR J0030+0451, PSR J0740+6620).
 
-  * **Gravitational Waves** - Binary neutron star mergers
+   :doc:`likelihoods/nicer`
 
-    * GW170817
-    * GW190425 (if applicable)
+**Nuclear Experiments (ChiEFT)**
+   Chiral effective field theory constraints on low-density nuclear matter.
 
-  * **Radio Timing** - Pulsar mass measurements
+   :doc:`likelihoods/chieft`
 
-    * High-precision mass constraints
+**Radio Timing**
+   High-precision pulsar mass measurements.
 
-  * **ChiEFT** - Chiral effective field theory constraints
+   :doc:`likelihoods/radio`
 
-    * Low-density nuclear matter constraints
+.. toctree::
+   :hidden:
 
-  * **REX** - Additional X-ray constraints
-
-  * **Custom Constraints** - User-defined likelihood functions
-
-* Combining multiple likelihoods
-* Data loading and caching
-* Configuration in YAML files
+   likelihoods/gw
+   likelihoods/nicer
+   likelihoods/chieft
+   likelihoods/radio

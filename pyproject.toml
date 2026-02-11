@@ -87,6 +87,7 @@ dev = [
     "sphinx>=7.0",
     "sphinx-autobuild",
     "sphinx-book-theme>=1.0",
+    "sphinx-design>=0.5",
     "nbsphinx>=0.9",
     "sphinx-autodoc-typehints>=1.12",
     "sphinx-copybutton>=0.5",
