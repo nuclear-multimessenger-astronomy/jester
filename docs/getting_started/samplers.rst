@@ -1,22 +1,29 @@
 Samplers
 ========
 
-[Placeholder: Introduction to Bayesian sampling methods in JESTER]
+JESTER provides modern Bayesian sampling algorithms optimized for EOS inference with JAX acceleration. All samplers support GPU hardware and automatic differentiation.
 
-This section will cover:
+Available Samplers
+------------------
 
-* Overview of Bayesian inference for EOS
-* Available samplers:
+**Sequential Monte Carlo (SMC)**
+   Adaptive tempering with Random Walk or NUTS kernels. Recommended default.
 
-  * Sequential Monte Carlo (SMC) - Recommended default
+   :doc:`samplers/smc`
 
-    * Random Walk kernel
-    * NUTS kernel
+**Nested Sampling (NS-AW)**
+   Acceptance Walk variant for evidence computation and parameter estimation.
 
-  * Nested Sampling (NS-AW) - Acceptance Walk variant
-  * FlowMC - Normalizing flow-enhanced MCMC
+   :doc:`samplers/nested_sampling`
 
-* Choosing the right sampler for your problem
-* Configuration and hyperparameters
-* Performance considerations and GPU acceleration
-* Post-processing and result analysis
+**FlowMC**
+   Normalizing flow-enhanced MCMC for efficient exploration of complex posteriors.
+
+   :doc:`samplers/flowmc`
+
+.. toctree::
+   :hidden:
+
+   samplers/smc
+   samplers/nested_sampling
+   samplers/flowmc

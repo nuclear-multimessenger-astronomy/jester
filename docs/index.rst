@@ -3,26 +3,49 @@ JESTER Documentation
 
 JAX-accelerated equation of state inference and TOV solvers
 
-``jester`` is a package to perform inference on the equation of state (EOS) with Bayesian inference and accelerates the TOV solver calls and the entire sampling procedure by using GPU hardware through ``jax``. 
+``jester`` performs Bayesian inference on neutron star equations of state using GPU-accelerated TOV solvers through ``jax``.
 
-Currently, ``jester`` supports the following EOS parametrizations:
+What's in JESTER?
+-----------------
 
-* **Metamodel**
-* **Metamodel + speed-of-sound**
-* **Metamodel+peakCSE** 
-* **Spectral expansion**
+JESTER combines flexible EOS parametrizations with GPU-accelerated TOV solvers and modern Bayesian samplers.
+See the :doc:`getting_started` guide for detailed explanations.
 
-``jester`` can supports the following TOV solver:
+.. grid:: 2
+    :class-container: component-grid
 
-* **GR**
-* **GR modified with pressure anisotropy**
-* **Scalar-tensor theory of gravity** (work in progress!)
+    .. grid-item:: 🧮 :doc:`EOS Models <getting_started/eos>`
 
-Moreover, the following samplers are supported:
+       Parametrize the equation of state of nuclear matter
 
-* **Sequential Monte Carlo** 
-* **Nested sampling**
-* **flowMC** 
+       - :doc:`Metamodel <getting_started/eos/metamodel>`
+       - :doc:`Metamodel + CSE <getting_started/eos/metamodel_cse>`
+       - :doc:`Spectral expansion <getting_started/eos/spectral>`
+
+    .. grid-item:: ⚙️ :doc:`TOV Solvers <getting_started/tov_solvers>`
+
+       Integrate neutron star structure equations
+
+       - :doc:`General Relativity <getting_started/tov/gr>`
+       - :doc:`Modified gravity theories <getting_started/tov/scalar_tensor>`
+       - :doc:`Pressure anisotropy <getting_started/tov/anisotropy>`
+
+    .. grid-item:: 🔭 :doc:`Likelihood Constraints <getting_started/likelihoods>`
+
+       Multi-messenger astronomical observations
+
+       - :doc:`Gravitational waves <getting_started/likelihoods/gw>`
+       - :doc:`NICER mass-radius <getting_started/likelihoods/nicer>`
+       - :doc:`Radio timing (mass measurements) <getting_started/likelihoods/radio>`
+       - :doc:`Nuclear experiments (chiEFT) <getting_started/likelihoods/chieft>`
+
+    .. grid-item:: 📊 :doc:`Samplers <getting_started/samplers>`
+
+       GPU-accelerated Bayesian inference
+
+       - :doc:`Sequential Monte Carlo <getting_started/samplers/smc>`
+       - :doc:`Nested Sampling <getting_started/samplers/nested_sampling>`
+       - :doc:`FlowMC (normalizing flows) <getting_started/samplers/flowmc>` 
 
 
 Installation
@@ -46,8 +69,7 @@ For developers, we recommend installing locally with ``uv``::
 Extra dependencies can be installed as follows::
 
     uv sync --extra cuda12   # For GPU support (fast sampling)
-    uv sync --extra docs     # To work on documentation locally
-    uv sync --extra dev      # To run tests locally
+    uv sync --extra dev      # For developers (work on documentation, run tests,...)
 
 
 Contents

@@ -69,3 +69,32 @@ Please consider citing the following papers as well:
       url={https://arxiv.org/abs/2202.02435}, 
 }
 ```
+
+## List of papers that used jester
+
+Here, we showcase papers that made use of ``jester`` in their methodology. 
+Did you write a paper using jester and would you like to show your work here? Open an issue or pull request!
+
+```bibtex
+@article{Wouters:2025ull,
+    author = "Wouters, Thibeau and Puecher, Anna and Pang, Peter T. H. and Dietrich, Tim",
+    title = "{Analyzing GW231109{\_}235456 and understanding its potential implications for population studies, nuclear physics, and multi-messenger astronomy}",
+    eprint = "2510.22290",
+    archivePrefix = "arXiv",
+    primaryClass = "astro-ph.HE",
+    month = "10",
+    year = "2025"
+}
+```
+
+```bibtex
+@article{Wouters:2025csq,
+    author = "Wouters, Thibeau and Pang, Peter T. H. and Dietrich, Tim and Van Den Broeck, Chris",
+    title = "{Incorporating neutron star physics into gravitational wave inference with neural priors}",
+    eprint = "2511.22987",
+    archivePrefix = "arXiv",
+    primaryClass = "astro-ph.HE",
+    month = "11",
+    year = "2025"
+}
+```

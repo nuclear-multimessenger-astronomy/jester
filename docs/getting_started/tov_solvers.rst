@@ -1,18 +1,29 @@
 TOV Solvers
 ===========
 
-[Placeholder: Introduction to TOV equation solvers in JESTER]
+JESTER provides TOV (Tolman-Oppenheimer-Volkoff) equation solvers to compute neutron star structure from a given equation of state. All solvers are JAX-accelerated and support automatic differentiation.
 
-This section will cover:
+Available Solvers
+-----------------
 
-* Tolman-Oppenheimer-Volkoff equations overview
-* Available solvers:
+**General Relativity**
+   Standard TOV solver in general relativity.
 
-  * GR TOV Solver - General relativity solver
-  * Scalar-Tensor TOV Solver - Modified gravity theories
-  * Post-TOV Solver - Anisotropic effects
+   :doc:`tov/gr`
 
-* Solving for neutron star structure
-* Computing observables (mass, radius, tidal deformability)
-* Constructing mass-radius curves
-* JAX acceleration and automatic differentiation
+**Modified Gravity**
+   Scalar-tensor theories and alternative gravity frameworks.
+
+   :doc:`tov/scalar_tensor`
+
+**Pressure Anisotropy**
+   Post-TOV solver including anisotropic effects.
+
+   :doc:`tov/anisotropy`
+
+.. toctree::
+   :hidden:
+
+   tov/gr
+   tov/scalar_tensor
+   tov/anisotropy
