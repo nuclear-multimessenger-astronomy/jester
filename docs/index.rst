@@ -62,6 +62,7 @@ Contents
    inference_index
    inference_quickstart
    inference
+   citing
 
 .. toctree::
    :maxdepth: 2
