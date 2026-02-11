@@ -85,22 +85,21 @@ Contents
    :maxdepth: 2
    :caption: Examples
 
-   examples 
+   examples/index
 
 .. toctree::
    :maxdepth: 2
    :caption: Inference Guide
 
-   inference_index
-   inference_quickstart
-   inference
-   citing
+   inference/index
+   inference/quickstart
+   inference/guide
 
 .. toctree::
    :maxdepth: 2
    :caption: Reference
 
-   inference_yaml_reference
+   inference/yaml_reference
 
 .. toctree::
    :maxdepth: 2
@@ -112,8 +111,9 @@ Contents
    :maxdepth: 2
    :caption: Developer Guide
 
-   inference_workflow
-   inference_documentation_guide
+   inference/workflow
+   inference/documentation_guide
+   citing
 
 Indices and tables
 ==================
