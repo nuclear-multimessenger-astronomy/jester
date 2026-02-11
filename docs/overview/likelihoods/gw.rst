@@ -1,3 +1,5 @@
+.. _likelihood-gw:
+
 Gravitational Wave Constraints
 ===============================
 

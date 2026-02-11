@@ -1,3 +1,5 @@
+.. _sampler-nested:
+
 Nested Sampling (NS-AW)
 =======================
 

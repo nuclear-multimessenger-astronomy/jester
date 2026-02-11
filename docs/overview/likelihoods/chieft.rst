@@ -1,3 +1,5 @@
+.. _likelihood-chieft:
+
 Nuclear Experiments (ChiEFT)
 =============================
 

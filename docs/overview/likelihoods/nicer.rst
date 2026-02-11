@@ -1,3 +1,5 @@
+.. _likelihood-nicer:
+
 NICER Constraints
 =================
 

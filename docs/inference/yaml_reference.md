@@ -1,3 +1,4 @@
+(yaml-reference)=
 # JESTER Inference YAML Configuration Reference
 
 **Auto-generated from Pydantic schemas** - This document is the authoritative reference for all supported YAML configuration options.

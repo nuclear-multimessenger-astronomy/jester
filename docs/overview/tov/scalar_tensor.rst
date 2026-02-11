@@ -1,3 +1,5 @@
+.. _tov-scalar-tensor:
+
 Scalar-Tensor TOV Solver
 ========================
 

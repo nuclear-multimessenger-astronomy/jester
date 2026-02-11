@@ -1,3 +1,5 @@
+.. _overview-eos:
+
 Equation of State (EOS) Models
 ================================
 

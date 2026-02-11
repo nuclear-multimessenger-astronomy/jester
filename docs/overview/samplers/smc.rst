@@ -1,3 +1,5 @@
+.. _sampler-smc:
+
 Sequential Monte Carlo (SMC)
 =============================
 
