@@ -95,6 +95,12 @@ dev = [
     "ipykernel>=7.1.0"
 ]
 
+[dependency-groups]
+dev = [
+    "nbqa>=1.9.1",
+    "ruff>=0.15.0",
+]
+
 [tool.ruff]
 extend-exclude = ["examples/"]
 
