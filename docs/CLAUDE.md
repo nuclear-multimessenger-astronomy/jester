@@ -77,7 +77,6 @@ docs/
 ├── conf.py                            # Sphinx configuration
 │
 ├── User Guide
-│   ├── inference_index.md             # Overview and navigation
 │   ├── inference/quickstart.md        # Quick start guide
 │   └── inference.md                   # Complete reference
 │

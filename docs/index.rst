@@ -91,7 +91,6 @@ Contents
    :maxdepth: 2
    :caption: Inference Guide
 
-   inference/index
    inference/quickstart
    inference/guide
    inference/yaml_reference

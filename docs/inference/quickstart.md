@@ -1,20 +1,23 @@
-# JESTER Inference Quick Start Guide
+# Quick Start
 
 **Get started with Bayesian EOS inference in 5 minutes**
 
-(installation)=
-## Installation
+This guide explains how to run Bayesian inference with ``jester`` using a simple configuration.
+As an example, we will run inference on the metamodel + speed-of-sound extension scheme EOS parametrization, using the GR TOV solver, and sampling the parametrization with sequential Monte Carlo. 
+To constrain the EOS, we will use the chiral effective field theory (``chiEFT``) likelihood. 
+This inference is fast enough that it can be executed locally on a laptop, and therefore ideal to (i) test whether your installation works successfully, (ii) get familiar with running ``jester``!
+<!-- TODO: add a link to the MM+CSE EOS here -->
+<!-- TODO: add a link to the chiEFT likelihood explanation here -->
 
-```bash
-# Install JESTER with inference dependencies
-cd jester
-uv pip install -e ".[inference]"
-```
 
-(run-your-first-inference)=
-## Run Your First Inference
+## Running Your First Inference
 
-### 1. Use an Example Configuration
+### 0. ``jester`` inference overview
+
+To run a ``jester`` inference, only two files are required:
+1. A ``config.yaml`` file: this specifies all the desired settings and hyperparameters for ``jester``.
+
+### 1. Specify config.yaml file
 
 JESTER provides ready-to-use example configurations:
 
