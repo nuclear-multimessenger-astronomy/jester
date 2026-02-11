@@ -92,7 +92,6 @@ Contents
    :caption: Inference Guide
 
    inference/quickstart
-   inference/guide
    inference/yaml_reference
    inference/workflow
 

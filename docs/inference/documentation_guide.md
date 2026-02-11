@@ -73,7 +73,6 @@ This automatically regenerates the reference when `schema.py` changes.
 
 | File | Update When | Contents |
 |------|-------------|----------|
-| `guide.md` | Major features added | Complete reference, explanations |
 | `quickstart.md` | User workflow changes | Quick start guide, examples |
 | `inference_architecture.md` | Architecture changes | Module structure, data flow |
 | `jesterTOV/inference/README.md` | Module structure changes | Module overview |
@@ -85,14 +84,12 @@ When adding a **new likelihood type**:
 - [ ] Update `likelihoods/factory.py`
 - [ ] Update `config/schema.py` (add to `LikelihoodConfig.type` Literal)
 - [ ] Regenerate YAML reference (auto)
-- [ ] Document in `guide.md` → "Likelihoods" section (manual)
 - [ ] Add example to `quickstart.md` (manual)
 - [ ] Update `yaml_reference.md` "Likelihood-Specific Parameters" (manual - generator doesn't know about `parameters` dict contents)
 
 When adding a **new prior type**:
 - [ ] Add to `priors/simple_priors.py`
 - [ ] Update `priors/parser.py` namespace
-- [ ] Document in `guide.md` → "Prior Specification" section (manual)
 - [ ] Add example to `quickstart.md` (manual)
 
 When adding a **new transform type**:
@@ -100,13 +97,11 @@ When adding a **new transform type**:
 - [ ] Update `transforms/factory.py`
 - [ ] Update `config/schema.py` (add to `TransformConfig.type` Literal)
 - [ ] Regenerate YAML reference (auto)
-- [ ] Document in `guide.md` → "Transforms" section (manual)
 - [ ] Add example configuration (manual)
 
 When modifying **configuration fields**:
 - [ ] Modify `config/schema.py`
 - [ ] Regenerate YAML reference (auto)
-- [ ] Update examples in `guide.md` if field is commonly used (manual)
 - [ ] Update `quickstart.md` if it affects quick start (manual)
 
 ---
@@ -124,14 +119,13 @@ When modifying **configuration fields**:
    - `docs/yaml_reference.md` - All YAML options
 
 3. **Manual docs** (requires human updates)
-   - `docs/guide.md` - Complete reference
    - `docs/quickstart.md` - Quick start
    - `docs/inference_architecture.md` - Architecture
 
 ### Avoiding Duplication
 
 **Don't duplicate information that can be auto-generated**:
-- ❌ List all YAML fields manually in `guide.md`
+- ❌ List all YAML fields manually in documentation
 - ✅ Link to `yaml_reference.md` for complete list
 - ✅ Show key examples and explain concepts
 
@@ -385,7 +379,7 @@ Modify schema.py? → Yes → Regenerate YAML reference
     ↓
 User-facing change? → Yes → Update manual docs
     ↓                           ↓
-    ↓                      (guide.md, quickstart.md, etc.)
+    ↓                      (quickstart.md, etc.)
     ↓
 Commit
     ↓
