@@ -3,124 +3,100 @@
 **Get started with Bayesian EOS inference in 5 minutes**
 
 This guide explains how to run Bayesian inference with ``jester`` using a simple configuration.
-As an example, we will run inference on the metamodel + speed-of-sound extension scheme EOS parametrization, using the GR TOV solver, and sampling the parametrization with sequential Monte Carlo. 
-To constrain the EOS, we will use the chiral effective field theory (``chiEFT``) likelihood. 
-This inference is fast enough that it can be executed locally on a laptop, and therefore ideal to (i) test whether your installation works successfully, (ii) get familiar with running ``jester``!
-<!-- TODO: add a link to the MM+CSE EOS here -->
-<!-- TODO: add a link to the chiEFT likelihood explanation here -->
+As an example, we will run inference on the {ref}`metamodel + speed-of-sound extension (CSE) <eos-metamodel-cse>` EOS parametrization, using the {ref}`GR TOV solver <tov-gr>`, and sampling the parametrization with {ref}`sequential Monte Carlo <sampler-smc>`.
+To constrain the EOS, we will use the {ref}`chiral effective field theory (chiEFT) <likelihood-chieft>` likelihood.
+This inference is fast enough to be executed locally on a laptop, making it ideal for testing whether your installation works successfully and for getting familiar with running ``jester``!
 
 
-## Running Your First Inference
+## Running your first inference
 
-### 0. ``jester`` inference overview
+### ``jester`` inference overview
 
 To run a ``jester`` inference, only two files are required:
 1. A ``config.yaml`` file: this specifies all the desired settings and hyperparameters for ``jester``.
+2. A ``prior.prior`` file: this specifies the prior distributions on the parameters to be sampled, which includes the EOS parameters and, possibly, additional parameters needed for some TOV solvers.
 
-### 1. Specify config.yaml file
+These two files should be stored in one directory.
+The following two sections provide more detail and example files.
 
-JESTER provides ready-to-use example configurations:
+### Specify ``config.yaml`` file
 
-```bash
-# List available examples
-ls examples/inference/
-
-# Examples include:
-# - prior/         : Prior-only sampling (no observational data)
-# - GW170817/      : Gravitational wave constraint
-# - NICER_J0030/   : NICER PSR J0030+0451 X-ray timing
-# - NICER_J0740/   : NICER PSR J0740+6620 X-ray timing
-# - radio/         : Radio pulsar timing constraints
-# - chiEFT/        : Chiral effective field theory bounds
-```
-
-### 2. Run Prior-Only Sampling
-
-**Fastest way to test the system:**
+The inference in ``jester`` handles everything under the hood and only needs a config file to start up and specify the inference settings.
+For this quickstart example, we will use the following ``config.yaml`` file: 
 
 ```bash
-cd examples/inference/prior/
-run_jester_inference config.yaml
-```
+# ChiEFT-only inference example configuration
+# SMC with Random Walk kernel with metamodel+CSE EOS
+seed: 44
 
-**What this does:**
-- Samples from the prior distribution (no observational data)
-- Uses MetaModel transform (8 NEP parameters)
-- Runs 2 training + 2 production loops with 10 chains
-- Takes ~2-5 minutes on CPU
+# Execution options
+dry_run: false
+validate_only: false
 
-**Output:**
-```bash
-ls outdir/
-# results_production.npz  - MCMC samples (K_sat, Q_sat, etc.)
-# eos_samples.npz         - EOS curves (M, R, Λ)
-# (Timing info stored in metadata)
-```
-
-### 3. Run With Real Data
-
-**Gravitational wave constraint (GW170817):**
-
-```bash
-cd examples/inference/GW170817/
-run_jester_inference config.yaml
-```
-
-**NICER X-ray timing (PSR J0030+0451):**
-
-```bash
-cd examples/inference/NICER_J0030/
-run_jester_inference config.yaml
-```
-
-**NICER X-ray timing (PSR J0740+6620):**
-
-```bash
-cd examples/inference/NICER_J0740/
-run_jester_inference config.yaml
-```
-
-**Radio pulsar timing:**
-
-```bash
-cd examples/inference/radio/
-run_jester_inference config.yaml
-```
-
-(configuration-files-explained)=
-## Configuration Files Explained
-
-### Minimal Configuration
-
-Create `config.yaml`:
-
-```yaml
-seed: 43
-
+# EOS type and transform settings
 transform:
-  type: "metamodel"  # Standard MetaModel EOS
+  type: "metamodel_cse"
+  ndat_metamodel: 100
+  nmax_nsat: 25.0
+  nb_CSE: 8
+  min_nsat_TOV: 0.75
+  ndat_TOV: 100
+  nb_masses: 100
+  crust_name: "DH"
 
+# Prior specification file
 prior:
-  specification_file: "prior.prior"  # Path to .prior file
+  specification_file: "prior.prior"
 
+# Likelihood constraints (only chiEFT + EOS constraints enabled)
 likelihoods:
-  - type: "zero"      # Prior-only (no data)
+  # Physical constraint likelihood - enforces EOS validity
+  - type: "constraints_eos"
     enabled: true
 
+  # ChiEFT likelihood - constrains low-density EOS using chiral effective field theory
+  - type: "chieft"
+    enabled: true
+    parameters:
+      nb_n: 100
+
+# SMC configuration with Random Walk kernel
 sampler:
-  n_chains: 10
-  n_loop_training: 2
-  n_loop_production: 2
+  type: "smc-rw"
+  n_particles: 2000        # Number of particles evolved at each inference step
+  n_mcmc_steps: 10         # MCMC steps per tempering level
+  target_ess: 0.9          # Target effective sample size (90%)
+  random_walk_sigma: 0.1   # Gaussian random walk step size scale
   output_dir: "./outdir/"
+
+# Postprocessing configuration
+postprocessing:
+  enabled: true
+  make_cornerplot: false
+  make_massradius: true
+  make_pressuredensity: true
 ```
 
-(prior-file)=
-### Prior File
+```{note}
+**Further Reading:**
+- Full explanation for ``config.yaml`` settings: See {ref}`yaml-reference`
+- EOS parametrization explanation: See {ref}`eos-metamodel-cse`
+- TOV solver explanation: See {ref}`tov-gr`
+- Sampler explanation: See {ref}`sampler-smc`
+- ChiEFT likelihood explanation: See {ref}`likelihood-chieft`
+``` 
 
-Create `prior.prior`:
+### Specify ``prior.prior`` file
+
+Create the ``prior.prior`` file.
+For the metamodel+CSE parametrization, this file must specify the parameters for the metamodel.
+The priors on the CSE parameters are generated automatically based on the ``transform`` settings specified in ``config.yaml``.
+The ``log`` file that is created during inference specifies the complete prior after prior generation has completed.
+
+Here is an example file with example ranges for the different parameters:
 
 ```python
-# Nuclear Empirical Parameters
+E_sat = UniformPrior(-16.1, -15.9, parameter_names=["E_sat"])
 K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
 Q_sat = UniformPrior(-500.0, 1100.0, parameter_names=["Q_sat"])
 Z_sat = UniformPrior(-2500.0, 1500.0, parameter_names=["Z_sat"])
@@ -131,277 +107,56 @@ Q_sym = UniformPrior(-1000.0, 1500.0, parameter_names=["Q_sym"])
 Z_sym = UniformPrior(-2000.0, 1500.0, parameter_names=["Z_sym"])
 ```
 
-### Run It
+### Run the inference
 
+From the directory containing the two files specified above, the inference can be launched with a single command that points to the ``config.yaml`` file (the path to the prior file is specified in the ``config.yaml`` file):
 ```bash
 run_jester_inference config.yaml
 ```
 
-(add-real-observational-data)=
-## Add Real Observational Data
+Note: This command is only recognized after activating the environment where `jester` was installed.
 
-### NICER X-ray Timing
+## Result
 
-```yaml
-likelihoods:
-  - type: "nicer"
-    enabled: true
-    parameters:
-      pulsars:
-        - name: "J0030"
-          amsterdam_samples_file: "data/NICER/J0030_amsterdam.npz"
-          maryland_samples_file: "data/NICER/J0030_maryland.npz"
-        - name: "J0740"
-          amsterdam_samples_file: "data/NICER/J0740_amsterdam.npz"
-          maryland_samples_file: "data/NICER/J0740_maryland.npz"
-      N_masses_evaluation: 100
-```
+The ``jester`` logger should have created a large ``log.out`` file that you can review to understand the various steps that ``jester`` has taken.
 
-### Gravitational Waves
+The results from the ``jester`` inference, such as the EOS posterior samples, are saved to an HDF5 file.
+This file can be loaded easily with the {class}`~jesterTOV.inference.result.InferenceResult` class.
 
-```yaml
-likelihoods:
-  - type: "gw"
-    enabled: true
-    parameters:
-      events:
-        - name: "GW170817"
-          model_dir: "data/GW/GW170817/model/"
-      N_masses_evaluation: 20
-```
+For details on loading and analyzing results, see the {class}`~jesterTOV.inference.result.InferenceResult` API reference.
 
-### Radio Pulsar Timing
+## Postprocessing
 
-```yaml
-likelihoods:
-  - type: "radio"
-    enabled: true
-    parameters:
-      pulsars:
-        - name: "J0740+6620"
-          mass_mean: 2.08  # Solar masses
-          mass_std: 0.07
-      nb_masses: 100
-```
+``jester`` automatically creates postprocessing diagnostic plots that are saved to the ``outdir``; these can be toggled in the ``config.yaml`` file. Some interesting plots to check out:
+- ``smc_diagnostics.png``: Shows the behavior of the SMC sampler during inference.
+- ``mass_radius_plot.pdf``: Displays the mass-radius curves corresponding to the posterior EOS samples, color-coded according to the magnitude of their posterior (log-)probability.
 
-### Chiral Effective Field Theory
+<!-- TODO: refer readers to postprocessing API NOTE: This postprocessing API reference does not exist yet and should be made first! -->
 
-```yaml
-likelihoods:
-  - type: "chieft"
-    enabled: true
-    parameters:
-      low_filename: "data/chiEFT/low.dat"  # Optional
-      high_filename: "data/chiEFT/high.dat"  # Optional
-      nb_n: 100
-```
+At this point, you should have successfully run your first ``jester`` inference. If you encountered any errors, please raise an issue on GitHub explaining the problem so we can fix the source code and/or this documentation.
 
-(use-metamodel--cse)=
-## Use MetaModel + CSE
+## Next steps
 
-For high-density physics (e.g., stiff EOS):
+So, what's next?
 
-```yaml
-transform:
-  type: "metamodel_cse"  # MetaModel + Constant Speed Extension
-  nb_CSE: 8              # Number of CSE grid points
+1. **Use other EOS constraints**: Try running ``jester`` with additional EOS constraints enabled.
+   ```{note}
+   Inferences that involve TOV quantities (e.g., mass, radius, tidal deformabilities of neutron stars) are slower during sampling and might require GPU acceleration. Trouble with getting started on GPUs? Refer to this page (TODO: the page does not exist yet so we will have to make that at some point).
+   ```
+   For inspiration on config files, refer to the inference examples in the jester repository at ``jester/examples/inference/smc_random_walk`` for more examples with the SMC sampler.
 
-# Add to prior.prior:
-# nbreak = UniformPrior(0.16, 0.32, parameter_names=["nbreak"])
-# (CSE grid parameters auto-generated)
-```
+   For a complete list of all configuration options, see the {ref}`YAML Configuration Reference <yaml-reference>`.
 
-(analyze-results)=
-## Analyze Results
+2. **Try other samplers**: Example config and prior files can be found at:
+   - ``jester/examples/inference/flowMC`` for the ``flowMC`` sampler
+   - ``jester/examples/inference/blackjax_ns_aw`` for ``blackjax``'s nested sampler
 
-### Load Samples
+3. **Try other EOS parametrizations**:
+   - ``jester/examples/inference/spectral`` shows how to run inference with the spectral expansion using SMC
 
-```python
-import numpy as np
-
-# Load MCMC samples
-results = np.load("outdir/results_production.npz")
-log_prob = results["log_prob"]
-K_sat = results["K_sat"]
-
-print(f"Number of samples: {len(log_prob)}")
-print(f"K_sat mean: {K_sat.mean():.2f} ± {K_sat.std():.2f} MeV")
-```
-
-### Load EOS Curves
-
-```python
-# Load EOS samples
-eos = np.load("outdir/eos_samples.npz")
-masses = eos["masses_EOS"]  # Shape: (n_samples, nb_masses)
-radii = eos["radii_EOS"]
-
-print(f"Mass range: {masses.min():.2f} - {masses.max():.2f} km (geometric)")
-print(f"Radius range: {radii.min():.2f} - {radii.max():.2f} km (geometric)")
-```
-
-(make-corner-plot)=
-### Make Corner Plot
-
-```python
-import corner
-import matplotlib.pyplot as plt
-
-# Select parameters to plot
-param_names = ["K_sat", "Q_sat", "E_sym", "L_sym"]
-samples_array = np.column_stack([results[name] for name in param_names])
-
-# Create corner plot
-fig = corner.corner(
-    samples_array,
-    labels=param_names,
-    quantiles=[0.16, 0.5, 0.84],
-    show_titles=True
-)
-plt.savefig("corner_plot.png", dpi=150, bbox_inches="tight")
-```
-
-(plot-m-r-diagram)=
-### Plot M-R Diagram
-
-```python
-import matplotlib.pyplot as plt
-
-masses_SI = eos["masses_EOS"] * 4.926e-6  # Convert to solar masses
-radii_SI = eos["radii_EOS"] * 1.477      # Convert to km
-
-# Plot all EOS curves
-fig, ax = plt.subplots(figsize=(8, 6))
-for i in range(len(masses_SI)):
-    ax.plot(radii_SI[i], masses_SI[i], alpha=0.1, color="C0")
-
-ax.set_xlabel("Radius [km]")
-ax.set_ylabel("Mass [M_sun]")
-ax.set_title("Mass-Radius Posteriors")
-ax.grid(True, alpha=0.3)
-plt.savefig("mass_radius.png", dpi=150, bbox_inches="tight")
-```
-
-## Command Line Options
-
-```bash
-# Basic usage
-run_jester_inference config.yaml
-
-# Override output directory
-run_jester_inference config.yaml --output-dir ./my_results/
-
-# Validate configuration without running
-run_jester_inference config.yaml --validate-only
-
-# Dry run (setup without sampling)
-run_jester_inference config.yaml --dry-run
-
-# Alternative syntax (module-based)
-uv run python -m jesterTOV.inference.run_inference --config config.yaml
-```
-
-(common-issues)=
-## Common Issues
-
-### Issue: "Prior specification file not found"
-
-**Solution**: Make sure `prior.prior` is in the same directory as `config.yaml`, or use an absolute path:
-
-```yaml
-prior:
-  specification_file: "/absolute/path/to/prior.prior"
-```
-
-### Issue: "At least one likelihood must be enabled"
-
-**Solution**: Enable at least one likelihood in config:
-
-```yaml
-likelihoods:
-  - type: "zero"
-    enabled: true  # Make sure this is true
-```
-
-### Issue: "nb_CSE must be 0 for type='metamodel'"
-
-**Solution**: Either remove `nb_CSE` or set it to 0 for metamodel:
-
-```yaml
-transform:
-  type: "metamodel"
-  nb_CSE: 0  # Or just don't specify it
-```
-
-Or use metamodel_cse:
-
-```yaml
-transform:
-  type: "metamodel_cse"
-  nb_CSE: 8
-```
-
-### Issue: Low acceptance rates (<5%)
-
-**Solution**: Decrease step size in `samplers/flowmc.py`:
-
-```python
-eps_mass_matrix = 1e-4  # Smaller step size
-```
-
-Or increase it if acceptance is too high (>90%).
-
-(performance-tips)=
-## Performance Tips
-
-### Fast Testing
-
-```yaml
-sampler:
-  n_chains: 5              # Fewer chains
-  n_loop_training: 1       # Minimal training
-  n_loop_production: 1     # Minimal production
-  n_local_steps: 50        # Fewer steps
-  n_eos_samples: 1000      # Fewer EOS samples
-```
-
-### Production Runs
-
-```yaml
-sampler:
-  n_chains: 20             # Good convergence
-  n_loop_training: 3       # Adequate training
-  n_loop_production: 5     # More production samples
-  n_local_steps: 200       # Better mixing
-  n_eos_samples: 10000     # Good statistics
-```
-
-### GPU Acceleration
-
-JAX automatically uses GPU if available. Check with:
-
-```python
-import jax
-print(jax.devices())  # Should show GPU if available
-```
-
-No configuration changes needed - JAX will use GPU automatically!
-
-## Next Steps
-
-1. **Read full documentation**: `docs/guide.md` for complete details
-2. **Explore examples**: Check `examples/inference/` for more configurations
-3. **Customize**: Add your own data, modify priors, adjust sampler settings
-4. **Advanced features**: Custom likelihoods, transforms, analysis pipelines
-
-## Getting Help
-
-- **Examples**: `jester/examples/inference/` - Working configurations
-- **Full docs**: `jester/docs/guide.md` - Complete reference
-- **Issues**: Report bugs on GitHub
-- **Source**: Read docstrings in module files
+4. **Try different TOV solvers**: Unfortunately, this is still work in progress, so stay tuned!
 
 ---
 
 **Quick Start Version**: 1.0
-**Last Updated**: December 2024
+**Last Updated**: February 2026

@@ -1,3 +1,5 @@
+.. _eos-metamodel-cse:
+
 Metamodel + CSE
 ===============
 

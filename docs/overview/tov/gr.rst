@@ -1,3 +1,5 @@
+.. _tov-gr:
+
 General Relativity TOV Solver
 ==============================
 

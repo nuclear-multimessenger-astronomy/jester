@@ -1,3 +1,5 @@
+.. _eos-spectral:
+
 Spectral Decomposition
 ======================
 
