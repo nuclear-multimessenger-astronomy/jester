@@ -3,7 +3,6 @@
 
 .. currentmodule:: jesterTOV.inference.base
 
-.. automodule:: jesterTOV.inference.base
 
 Base classes for inference components.
 

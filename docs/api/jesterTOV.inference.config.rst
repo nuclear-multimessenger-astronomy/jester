@@ -3,7 +3,6 @@
 
 .. currentmodule:: jesterTOV.inference.config
 
-.. automodule:: jesterTOV.inference.config
 
 Configuration parsing and validation for Bayesian inference runs.
 

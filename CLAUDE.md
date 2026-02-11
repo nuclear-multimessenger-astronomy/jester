@@ -8,6 +8,8 @@ This file provides guidance to Claude Code when working with the JESTER reposito
 
 **Documentation Style**: Write clear, concise documentation in full sentences as if by a human researcher. Avoid LLM-like verbosity.
 
+**Documentation Maintenance**: When making changes to source code (adding/removing/renaming classes, functions, or modules), check if API reference documentation needs updating. Module overview pages in `docs/api/` should list all public classes/functions. See `docs/CLAUDE.md` for detailed documentation guidelines.
+
 **Math Formatting in Docstrings**: All mathematical expressions in docstrings must use Sphinx/reStructuredText formatting for proper rendering in documentation:
 - Use `:math:` role for inline math: `:math:`\Gamma(x)`
 - Use `.. math::` directive for display equations

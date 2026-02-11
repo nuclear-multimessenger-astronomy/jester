@@ -3,7 +3,6 @@
 
 .. currentmodule:: jesterTOV.inference.samplers.blackjax
 
-.. automodule:: jesterTOV.inference.samplers.blackjax
 
 BlackJAX-based sampling algorithms (SMC, Nested Sampling).
 

@@ -3,8 +3,6 @@
 
 .. currentmodule:: jesterTOV.utils
 
-.. automodule:: jesterTOV.utils
-
 Utility functions and constants for neutron star physics calculations.
 
 Interpolation and Numerical Functions

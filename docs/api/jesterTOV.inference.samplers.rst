@@ -3,7 +3,6 @@
 
 .. currentmodule:: jesterTOV.inference.samplers
 
-.. automodule:: jesterTOV.inference.samplers
 
 MCMC and nested sampling algorithms for Bayesian inference.
 

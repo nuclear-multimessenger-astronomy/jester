@@ -3,7 +3,6 @@
 
 .. currentmodule:: jesterTOV.inference.samplers.blackjax.nested_sampling
 
-.. automodule:: jesterTOV.inference.samplers.blackjax.nested_sampling
 
 Nested sampling with acceptance walk.
 

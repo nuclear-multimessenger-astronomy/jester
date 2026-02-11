@@ -3,42 +3,16 @@
 
 .. currentmodule:: jesterTOV.tov
 
-.. automodule:: jesterTOV.tov
+TOV (Tolman-Oppenheimer-Volkoff) equation solvers for various theories of gravity.
 
-The TOV (Tolman-Oppenheimer-Volkoff) module provides solvers for the structure equations of neutron stars in various theories of gravity.
+Submodules
+----------
 
-Mathematical Background
------------------------
+.. toctree::
+   :maxdepth: 1
 
-The TOV equations describe hydrostatic equilibrium in spherically symmetric, non-rotating neutron stars. In general relativity, the equations are:
-
-.. math::
-
-   \frac{dP}{dr} = -\frac{(\varepsilon + P)(m + 4\pi r^3 P)}{r(r - 2m)}
-
-.. math::
-
-   \frac{dm}{dr} = 4\pi r^2 \varepsilon
-
-where :math:`P` is the pressure, :math:`\varepsilon` is the energy density, :math:`m` is the enclosed mass, and :math:`r` is the radial coordinate.
-
-Data Classes
-------------
-
-.. autosummary::
-   :toctree: _autosummary
-
-   EOSData
-   TOVSolution
-   FamilyData
-
-Solver Classes
---------------
-
-.. autosummary::
-   :toctree: _autosummary
-
-   TOVSolverBase
-   GRTOVSolver
-   PostTOVSolver
-   ScalarTensorTOVSolver
+   jesterTOV.tov.data_classes
+   jesterTOV.tov.base
+   jesterTOV.tov.gr
+   jesterTOV.tov.anisotropy
+   jesterTOV.tov.scalar_tensor

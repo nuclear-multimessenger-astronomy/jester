@@ -3,7 +3,6 @@
 
 .. currentmodule:: jesterTOV.inference.data
 
-.. automodule:: jesterTOV.inference.data
 
 Data loading and preprocessing for observational constraints.
 
