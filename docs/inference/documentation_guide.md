@@ -76,7 +76,6 @@ This automatically regenerates the reference when `schema.py` changes.
 | `guide.md` | Major features added | Complete reference, explanations |
 | `quickstart.md` | User workflow changes | Quick start guide, examples |
 | `inference_architecture.md` | Architecture changes | Module structure, data flow |
-| `inference_index.md` | New docs added | Navigation, table of contents |
 | `jesterTOV/inference/README.md` | Module structure changes | Module overview |
 
 ### Update Checklist
@@ -128,7 +127,6 @@ When modifying **configuration fields**:
    - `docs/guide.md` - Complete reference
    - `docs/quickstart.md` - Quick start
    - `docs/inference_architecture.md` - Architecture
-   - `docs/inference_index.md` - Navigation
 
 ### Avoiding Duplication
 

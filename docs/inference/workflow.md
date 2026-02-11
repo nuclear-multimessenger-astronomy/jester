@@ -857,4 +857,4 @@ The JESTER inference system is designed for modularity and extensibility:
 - **Well-tested**: Comprehensive test suite ensures reliability
 - **Documented**: Multiple docs at different detail levels
 
-For end-to-end examples, see `examples/inference/` directory. For specific component usage, see the other documentation files referenced in `inference_index.md`.
+For end-to-end examples, see `examples/inference/` directory. For specific component usage, see the other inference documentation files (quickstart, guide, workflow, yaml_reference).
