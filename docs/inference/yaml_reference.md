@@ -15,426 +15,611 @@ The JESTER inference system uses YAML configuration files validated by Pydantic 
 
 ---
 
-## Complete Configuration Template
+## Run Options
+
+Control runtime behavior for validation, debugging, and random seed configuration.
+
+::::{dropdown} **Configuration Options**
+:open:
 
 ```yaml
-# Complete JESTER inference configuration with all available options
-
-# Top-level configuration
-seed: 43
-postprocessing: enabled=True make_cornerplot=True make_massradius=True make_masslambda=True make_pressuredensity=True make_histograms=True make_cs2=True prior_dir=None injection_eos_path=None
-dry_run: False
-validate_only: False
-debug_nans: False
-
-# Transform configuration
-transform:
-  type: "..."
-  ndat_metamodel: 100
-  nmax_nsat: 25.0
-  nb_CSE: 8
-  n_points_high: 500
-  nmin_MM_nsat: 0.75
-  min_nsat_TOV: 0.75
-  ndat_TOV: 100
-  nb_masses: 100
-  crust_name: "DH"
-  tov_solver: "gr"
-
-# Prior configuration
-prior:
-  specification_file: "prior.prior"
-
-# Likelihoods (list of likelihood configurations)
-likelihoods:
-  - type: "gw"  # or "nicer", "radio", "chieft", "rex", "zero"
-    enabled: true
-    parameters:
-      # Likelihood-specific parameters (see section below)
-
-# Sampler configuration (choose one type)
-sampler:
-  type: "flowmc"  # or "blackjax-ns-aw", "smc-rw", "smc-nuts"
-  # See sampler-specific fields below
-
-# Data paths (optional overrides)
-data_paths: {}
+seed: 43                # Random seed for reproducibility
+dry_run: false          # Validate configuration without running inference
+validate_only: false    # Only validate configuration and exit
+debug_nans: false       # Enable JAX NaN debugging for numerical issues
 ```
+
+**Field Details:**
+
+- **`seed`** (`int`, default: `43`) - Random seed for reproducibility across runs
+- **`dry_run`** (`bool`, default: `false`) - Parse and validate configuration without running inference
+- **`validate_only`** (`bool`, default: `false`) - Validate configuration and prior file, then exit
+- **`debug_nans`** (`bool`, default: `false`) - Enable JAX NaN debugging to catch numerical issues during inference
+
+::::
 
 ---
 
-## Field Reference
+## EOS Transform Configuration
 
-### Top-Level Configuration
+The `transform` section specifies which equation of state (EOS) parametrization to use and how to transform EOS parameters to observables (mass, radius, tidal deformability).
 
-- `seed`: `int` (optional)
-  - Default: `43`
+### Metamodel (Piecewise Polytrope)
 
-- `transform`: `TransformConfig` (**required**)
+Standard piecewise polytrope parametrization without causal speed-of-sound enforcement.
 
-- `prior`: `PriorConfig` (**required**)
+::::{dropdown} **Metamodel Configuration**
 
-- `likelihoods`: `list[LikelihoodConfig]` (**required**)
+```yaml
+transform:
+  type: "metamodel"           # Required: EOS parametrization type
+  ndat_metamodel: 100         # Number of points for EOS table
+  nmax_nsat: 25.0             # Maximum density (in units of saturation density)
+  nmin_MM_nsat: 0.75          # Minimum density for metamodel (in units of n_sat)
+  min_nsat_TOV: 0.75          # Minimum density for TOV solver
+  ndat_TOV: 100               # Number of points for TOV integration
+  nb_masses: 100              # Number of masses for family construction
+  crust_name: "DH"            # Crust model: "DH", "BPS", "DH_fixed", or "SLy"
+  tov_solver: "gr"            # TOV solver: "gr", "post", or "scalar_tensor"
+```
 
-- `sampler`: `typing.Union[jesterTOV.inference.config.schema.FlowMCSamplerConfig, jesterTOV.inference.config.schema.BlackJAXNSAWConfig, jesterTOV.inference.config.schema.SMCRandomWalkSamplerConfig, jesterTOV.inference.config.schema.SMCNUTSSamplerConfig]` (**required**)
+**Requirements:**
+- `nb_CSE` must be 0 (or omitted) for this parametrization
 
-- `postprocessing`: `PostprocessingConfig` (optional)
-  - Default: `enabled=True make_cornerplot=True make_massradius=True make_masslambda=True make_pressuredensity=True make_histograms=True make_cs2=True prior_dir=None injection_eos_path=None`
+::::
 
-- `data_paths`: `dict[str, str]` (optional)
-  - Default: `{}`
+### Metamodel CSE (Causal Speed-of-Sound Enforcement)
 
-- `dry_run`: `bool` (optional)
-  - Default: `False`
+Piecewise polytrope with causal speed-of-sound (cs² ≤ 1) enforcement at high densities.
 
-- `validate_only`: `bool` (optional)
-  - Default: `False`
+::::{dropdown} **Metamodel CSE Configuration**
 
-- `debug_nans`: `bool` (optional)
-  - Default: `False`
-  - Enable JAX NaN debugging for catching numerical issues during inference
+```yaml
+transform:
+  type: "metamodel_cse"       # Required: EOS parametrization type
+  nb_CSE: 8                   # Number of CSE enforcement points (must be > 0)
+  ndat_metamodel: 100         # Number of points for EOS table
+  nmax_nsat: 25.0             # Maximum density (in units of saturation density)
+  nmin_MM_nsat: 0.75          # Minimum density for metamodel (in units of n_sat)
+  min_nsat_TOV: 0.75          # Minimum density for TOV solver
+  ndat_TOV: 100               # Number of points for TOV integration
+  nb_masses: 100              # Number of masses for family construction
+  crust_name: "DH"            # Crust model: "DH", "BPS", "DH_fixed", or "SLy"
+  tov_solver: "gr"            # TOV solver: "gr", "post", or "scalar_tensor"
+```
 
-### Transform Configuration (`transform:`)
+**Requirements:**
+- `nb_CSE` must be > 0 for this parametrization
 
-Defines how EOS parameters are transformed to observables.
+::::
 
-- ``type``: `"metamodel" | "metamodel_cse" | "spectral"` (**required**)
+### Spectral (LALSuite-Compatible)
 
-- `ndat_metamodel`: `int` (optional)
-  - Default: `100`
+Spectral decomposition parametrization compatible with LALSimulation for GW analysis.
 
-- `nmax_nsat`: `float` (optional)
-  - Default: `25.0`
+::::{dropdown} **Spectral Configuration**
 
-- `nb_CSE`: `int` (optional)
-  - Default: `8`
+```yaml
+transform:
+  type: "spectral"            # Required: EOS parametrization type
+  n_points_high: 500          # Number of points for high-density spectral region
+  min_nsat_TOV: 0.75          # Minimum density for TOV solver
+  ndat_TOV: 100               # Number of points for TOV integration
+  nb_masses: 100              # Number of masses for family construction
+  crust_name: "SLy"           # Must be "SLy" for LALSuite compatibility
+  tov_solver: "gr"            # TOV solver: "gr", "post", or "scalar_tensor"
+```
 
-- `n_points_high`: `int` (optional)
-  - Default: `500`
+**Requirements:**
+- `crust_name` must be `"SLy"` (LALSuite compatibility requirement)
+- `nb_CSE` must be 0 (or omitted)
+- `n_points_high` defines high-density spectral region sampling (default: 500)
 
-- `nmin_MM_nsat`: `float` (optional)
-  - Default: `0.75`
+**Recommended:**
+- Use `constraints_gamma` likelihood to bound Gamma parameters (optional but recommended)
 
-- `min_nsat_TOV`: `float` (optional)
-  - Default: `0.75`
+::::
 
-- `ndat_TOV`: `int` (optional)
-  - Default: `100`
+---
 
-- `nb_masses`: `int` (optional)
-  - Default: `100`
+## Prior Configuration
 
-- `crust_name`: `"DH" | "BPS" | "DH_fixed" | "SLy"` (optional)
-  - Default: `"DH"`
+Specify prior distributions for EOS parameters using a `.prior` specification file.
 
-- `tov_solver`: `"gr" | "post" | "scalar_tensor"` (optional)
-  - Default: `"gr"`
-**Validation Rules**:
-- If `type: "metamodel"`, then `nb_CSE` must be 0 (or omitted)
-- If `type: "metamodel_cse"`, then `nb_CSE` must be > 0
-- If `type: "spectral"`, then:
-  - `crust_name` must be `"SLy"` (LALSuite compatibility requirement)
-  - `nb_CSE` must be 0
-  - `n_points_high` defines high-density spectral region sampling (default: 500)
-- `crust_name` must be one of: `"DH"`, `"BPS"`, `"DH_fixed"`, or `"SLy"`
+::::{dropdown} **Prior Configuration**
 
-### Prior Configuration (`prior:`)
+```yaml
+prior:
+  specification_file: "prior.prior"   # Path to prior specification file (required)
+```
 
-Specifies prior distributions for parameters.
+**Field Details:**
 
-- `specification_file`: `str` (**required**)
+- **`specification_file`** (`str`, **required**) - Path to prior specification file (must end with `.prior`)
 
-### Likelihood Configuration (`likelihoods:`)
+**Prior File Format:**
 
-List of observational constraints. Each likelihood has:
+See the [Prior Specification Guide](https://nuclear-multimessenger-astronomy.github.io/jester/) for details on defining priors for different EOS parametrizations.
 
-- ``type``: `"gw" | "gw_resampled" | "nicer" | "radio" | "chieft" | "rex" | "constraints" | "constraints_eos" | "constraints_tov" | "constraints_gamma" | "zero"` (**required**)
+::::
 
-- `enabled`: `bool` (optional)
-  - Default: `True`
+---
 
-- `parameters`: `dict[str, Any]` (optional)
-  - Default: `{}`
+## Likelihoods
 
-**Likelihood-Specific Parameters** (`parameters:`):
+The `likelihoods` section specifies observational constraints to include in the inference. Multiple likelihoods can be combined for multi-messenger analysis.
 
-#### Gravitational Wave (`type: "gw"`)
+### Gravitational Wave Observations
+
+Constrain the EOS using gravitational wave observations of binary neutron star mergers.
+
+#### Standard GW Likelihood
+
+::::{dropdown} **GW Likelihood (type: "gw")**
 
 ```yaml
 - type: "gw"
   enabled: true
   parameters:
-    event_name: "GW170817"          # GW event name
-    model_path: "./NFs/model.eqx"   # Path to normalizing flow model
-    very_negative_value: -9999999.0  # Return for invalid M-R (optional)
+    event_name: "GW170817"              # GW event name
+    model_path: "./NFs/model.eqx"       # Path to normalizing flow model
+    very_negative_value: -9999999.0     # Return value for invalid M-R (optional)
 ```
 
-#### NICER X-ray Timing (`type: "nicer"`)
+**Field Details:**
+
+- **`event_name`** (`str`) - Gravitational wave event identifier (e.g., "GW170817")
+- **`model_path`** (`str`) - Path to trained normalizing flow model file (`.eqx` format)
+- **`very_negative_value`** (`float`, default: `-9999999.0`) - Penalty value returned for invalid mass-radius combinations
+
+::::
+
+#### Resampled GW Likelihood
+
+::::{dropdown} **GW Resampled Likelihood (type: "gw_resampled")**
+
+```yaml
+- type: "gw_resampled"
+  enabled: true
+  parameters:
+    event_name: "GW170817"              # GW event name
+    model_path: "./NFs/model.eqx"       # Path to normalizing flow model
+    very_negative_value: -9999999.0     # Return value for invalid M-R (optional)
+```
+
+**Usage:** Alternative GW likelihood implementation with different resampling strategy.
+
+::::
+
+### X-ray Observations
+
+Constrain the mass-radius relation using NICER X-ray timing observations of millisecond pulsars.
+
+::::{dropdown} **NICER Likelihood (type: "nicer")**
 
 ```yaml
 - type: "nicer"
   enabled: true
   parameters:
-    targets: ["J0030", "J0740"]              # Pulsar names
-    analysis_groups: ["amsterdam", "maryland"]  # Analysis groups to use
-    m_min: 1.0                                # Min mass for marginalization
-    m_max: 2.5                                # Max mass for marginalization
-    nb_masses: 100                            # Mass grid size
+    targets: ["J0030", "J0740"]                     # Pulsar targets
+    analysis_groups: ["amsterdam", "maryland"]      # Analysis groups to include
+    m_min: 1.0                                      # Minimum mass for marginalization (M☉)
+    m_max: 2.5                                      # Maximum mass for marginalization (M☉)
+    nb_masses: 100                                  # Number of mass grid points
 ```
 
-#### Radio Pulsar Timing (`type: "radio"`)
+**Field Details:**
+
+- **`targets`** (`list[str]`) - Pulsar identifiers (e.g., `["J0030", "J0740"]`)
+- **`analysis_groups`** (`list[str]`) - Analysis groups to use (e.g., `["amsterdam", "maryland"]`)
+- **`m_min`** (`float`) - Minimum mass for likelihood marginalization (solar masses)
+- **`m_max`** (`float`) - Maximum mass for likelihood marginalization (solar masses)
+- **`nb_masses`** (`int`) - Number of mass grid points for marginalization
+
+**Supported Targets:**
+- `"J0030"` - PSR J0030+0451
+- `"J0740"` - PSR J0740+6620
+
+**Supported Analysis Groups:**
+- `"amsterdam"` - Amsterdam analysis team
+- `"maryland"` - Maryland analysis team
+
+::::
+
+### Radio Pulsar Observations
+
+Constrain neutron star masses using radio pulsar timing measurements.
+
+::::{dropdown} **Radio Pulsar Likelihood (type: "radio")**
 
 ```yaml
 - type: "radio"
   enabled: true
   parameters:
-    psr_name: "J0740+6620"  # Pulsar name (for labeling)
-    mass_mean: 2.08         # Mean mass (solar masses)
-    mass_std: 0.07          # Mass uncertainty (1-sigma)
-    penalty_value: -1e5     # Penalty for invalid TOV solutions (default: -1e5)
-    nb_masses: 100          # Mass grid size for marginalization
+    psr_name: "J0740+6620"      # Pulsar name (for labeling)
+    mass_mean: 2.08             # Mean mass (M☉)
+    mass_std: 0.07              # Mass uncertainty (1-sigma, M☉)
+    penalty_value: -1e5         # Penalty for invalid TOV solutions
+    nb_masses: 100              # Mass grid size for marginalization
 ```
 
-#### Chiral Effective Field Theory (`type: "chieft"`)
+**Field Details:**
+
+- **`psr_name`** (`str`) - Pulsar identifier for labeling (e.g., `"J0740+6620"`)
+- **`mass_mean`** (`float`) - Mean mass from radio timing (solar masses)
+- **`mass_std`** (`float`) - 1-sigma mass uncertainty (solar masses)
+- **`penalty_value`** (`float`, default: `-1e5`) - Penalty value for invalid TOV solutions
+- **`nb_masses`** (`int`) - Number of mass grid points for marginalization
+
+::::
+
+### Nuclear Theory Constraints
+
+Constrain the low-density EOS using nuclear theory calculations and laboratory measurements.
+
+#### Chiral Effective Field Theory
+
+::::{dropdown} **ChiEFT Likelihood (type: "chieft")**
 
 ```yaml
 - type: "chieft"
   enabled: true
   parameters:
-    nb_n: 100  # Number of density points to check against bands
+    nb_n: 100                   # Number of density points to check against bands
 ```
 
-#### PREX/CREX (`type: "rex"`)
+**Field Details:**
+
+- **`nb_n`** (`int`, default: `100`) - Number of density points to evaluate against ChiEFT uncertainty bands
+
+**Description:**
+
+Constrains the EOS at densities below ~2 n_sat using chiral effective field theory calculations. The likelihood checks that the predicted pressure-density relation falls within the ChiEFT uncertainty bands.
+
+::::
+
+#### PREX/CREX Nuclear Skin Measurements
+
+::::{dropdown} **REX Likelihood (type: "rex")**
 
 ```yaml
 - type: "rex"
   enabled: true
   parameters:
-    experiment_name: "PREX"  # "PREX" or "CREX"
+    experiment_name: "PREX"     # Experiment: "PREX" or "CREX"
 ```
 
-#### Zero Likelihood (`type: "zero"`)
+**Field Details:**
+
+- **`experiment_name`** (`str`) - Nuclear experiment identifier: `"PREX"` or `"CREX"`
+
+**Description:**
+
+Constrains the nuclear symmetry energy using neutron skin thickness measurements:
+- **PREX** - Lead Radius Experiment (²⁰⁸Pb)
+- **CREX** - Calcium Radius Experiment (⁴⁸Ca)
+
+::::
+
+### Generic Constraints
+
+Apply custom physics-motivated constraints on EOS and TOV observables.
+
+#### EOS Constraints
+
+::::{dropdown} **EOS Constraints (type: "constraints_eos")**
+
+```yaml
+- type: "constraints_eos"
+  enabled: true
+  parameters:
+    # Custom EOS constraints (see documentation)
+```
+
+**Description:** Apply custom constraints on equation of state properties (pressure, energy density, sound speed).
+
+::::
+
+#### TOV Constraints
+
+::::{dropdown} **TOV Constraints (type: "constraints_tov")**
+
+```yaml
+- type: "constraints_tov"
+  enabled: true
+  parameters:
+    # Custom TOV constraints (see documentation)
+```
+
+**Description:** Apply custom constraints on TOV solution properties (maximum mass, radius bounds, etc.).
+
+::::
+
+#### Gamma Constraints (Spectral Only)
+
+::::{dropdown} **Gamma Constraints (type: "constraints_gamma")**
+
+```yaml
+- type: "constraints_gamma"
+  enabled: true
+  parameters:
+    # Gamma parameter bounds for spectral parametrization
+```
+
+**Description:** Apply bounds on spectral decomposition Gamma parameters. Recommended when using `type: "spectral"` transform.
+
+::::
+
+### Prior-Only Sampling
+
+Sample from the prior without applying observational constraints.
+
+::::{dropdown} **Zero Likelihood (type: "zero")**
 
 ```yaml
 - type: "zero"
   enabled: true
-  parameters: {}  # No parameters needed
+  parameters: {}              # No parameters needed
 ```
 
-### Sampler Configuration (`sampler:`)
+**Description:**
 
-The sampler configuration uses a discriminated union based on the `type` field. Choose one of:
+Returns zero log-likelihood (uniform likelihood) for all EOS configurations. Use this for prior-only sampling to explore the prior volume without observational constraints.
 
-#### FlowMC Sampler (`type: "flowmc"`)
+::::
 
-Normalizing flow-enhanced MCMC with local and global sampling phases.
+---
 
-- `output_dir`: `str` (optional)
-  - Default: `"./outdir/"`
+## Samplers
 
-- `n_eos_samples`: `int` (optional)
-  - Default: `10000`
+Choose a sampling algorithm for Bayesian inference. JESTER supports four production-ready samplers with different strengths.
 
-- `log_prob_batch_size`: `int` (optional)
-  - Default: `1000`
+### FlowMC (Normalizing Flow MCMC)
 
-- ``type``: `"flowmc"` (optional)
-  - Default: `"flowmc"`
+Normalizing flow-enhanced MCMC combining local MCMC proposals with global normalizing flow proposals.
 
-- `n_chains`: `int` (optional)
-  - Default: `20`
+::::{dropdown} **FlowMC Configuration (type: "flowmc")**
 
-- `n_loop_training`: `int` (optional)
-  - Default: `3`
+```yaml
+sampler:
+  type: "flowmc"              # Sampler type identifier
+  output_dir: "./outdir/"     # Output directory for results
+  n_eos_samples: 10000        # Number of final posterior samples
+  log_prob_batch_size: 1000   # Batch size for log-probability evaluation
 
-- `n_loop_production`: `int` (optional)
-  - Default: `3`
+  # Training phase
+  n_chains: 20                # Number of parallel MCMC chains
+  n_loop_training: 3          # Number of training loops
+  n_local_steps: 100          # Local MCMC steps per training loop
+  n_epochs: 30                # NF training epochs per loop
+  learning_rate: 0.001        # NF optimizer learning rate
+  train_thinning: 1           # Thinning factor for training samples
 
-- `n_local_steps`: `int` (optional)
-  - Default: `100`
+  # Production phase
+  n_loop_production: 3        # Number of production loops
+  n_global_steps: 100         # Global NF proposal steps per production loop
+  output_thinning: 5          # Thinning factor for output samples
+```
 
-- `n_global_steps`: `int` (optional)
-  - Default: `100`
+**Sampling Phases:**
 
-- `n_epochs`: `int` (optional)
-  - Default: `30`
+1. **Training Phase** - `n_loop_training` loops of:
+   - `n_local_steps` MCMC steps using local proposals
+   - Train normalizing flow for `n_epochs` on collected samples
 
-- `learning_rate`: `float` (optional)
-  - Default: `0.001`
+2. **Production Phase** - `n_loop_production` loops of:
+   - `n_local_steps` MCMC steps using local proposals
+   - `n_global_steps` using normalizing flow proposals
 
-- `train_thinning`: `int` (optional)
-  - Default: `1`
+**When to Use:**
+- Multi-modal or high-dimensional posteriors
+- Long production runs requiring efficient exploration
+- When training overhead is acceptable
 
-- `output_thinning`: `int` (optional)
-  - Default: `5`
+::::
 
-**Sampling Phases**:
-- **Training**: `n_loop_training` loops of `n_local_steps` MCMC + NF training for `n_epochs`
-- **Production**: `n_loop_production` loops of `n_local_steps` MCMC + `n_global_steps` NF proposals
+### Sequential Monte Carlo with Random Walk
 
-#### Nested Sampling (`type: "nested_sampling"`)
+BlackJAX SMC with adaptive tempering and Gaussian Random Walk kernel. **Production-ready and recommended for most analyses.**
 
-BlackJAX nested sampling with acceptance walk for Bayesian evidence estimation.
+::::{dropdown} **SMC Random Walk Configuration (type: "smc-rw")**
 
-- `output_dir`: `str` (optional)
-  - Default: `"./outdir/"`
+```yaml
+sampler:
+  type: "smc-rw"              # Sampler type identifier
+  output_dir: "./outdir/"     # Output directory for results
+  n_eos_samples: 10000        # Number of final posterior samples
+  log_prob_batch_size: 1000   # Batch size for log-probability evaluation
 
-- `n_eos_samples`: `int` (optional)
-  - Default: `10000`
+  n_particles: 10000          # Number of SMC particles
+  n_mcmc_steps: 1             # MCMC steps per tempering stage
+  target_ess: 0.9             # Target effective sample size (ESS) fraction
+  random_walk_sigma: 1.0      # Gaussian random walk step size
+```
 
-- `log_prob_batch_size`: `int` (optional)
-  - Default: `1000`
+**Field Details:**
 
-- ``type``: `"blackjax-ns-aw"` (optional)
-  - Default: `"blackjax-ns-aw"`
+- **`n_particles`** (`int`, default: `10000`) - Number of particles for SMC
+- **`n_mcmc_steps`** (`int`, default: `1`) - MCMC rejuvenation steps per tempering stage
+- **`target_ess`** (`float`, default: `0.9`) - Target ESS fraction for adaptive tempering (0.0-1.0)
+- **`random_walk_sigma`** (`float`, default: `1.0`) - Step size for Gaussian random walk kernel
 
-- `n_live`: `int` (optional)
-  - Default: `1000`
+**Output:**
+- Posterior samples with equal weights
+- Effective sample size (ESS) statistics per tempering stage
 
-- `n_delete_frac`: `float` (optional)
-  - Default: `0.5`
+**When to Use:**
+- General-purpose Bayesian inference (**recommended default**)
+- Fast inference on CPU or GPU
+- When derivative information is unavailable or expensive
 
-- `n_target`: `int` (optional)
-  - Default: `60`
+::::
 
-- `max_mcmc`: `int` (optional)
-  - Default: `5000`
+### Sequential Monte Carlo with NUTS
 
-- `max_proposals`: `int` (optional)
-  - Default: `1000`
+BlackJAX SMC with adaptive tempering and No-U-Turn Sampler (NUTS) kernel. **EXPERIMENTAL - use with caution.**
 
-- `termination_dlogz`: `float` (optional)
-  - Default: `0.1`
+::::{dropdown} **SMC NUTS Configuration (type: "smc-nuts")**
 
-**Output**: Evidence (logZ ± error) and posterior samples with importance weights.
+```yaml
+sampler:
+  type: "smc-nuts"            # Sampler type identifier (EXPERIMENTAL)
+  output_dir: "./outdir/"     # Output directory for results
+  n_eos_samples: 10000        # Number of final posterior samples
+  log_prob_batch_size: 1000   # Batch size for log-probability evaluation
 
-#### Sequential Monte Carlo with Random Walk (`type: "smc-rw"`)
+  n_particles: 10000          # Number of SMC particles
+  n_mcmc_steps: 1             # NUTS steps per tempering stage
+  target_ess: 0.9             # Target effective sample size (ESS) fraction
 
-BlackJAX SMC with adaptive tempering and Gaussian Random Walk kernel.
+  # NUTS kernel parameters
+  init_step_size: 0.01        # Initial NUTS step size
+  mass_matrix_base: 0.2       # Base value for mass matrix diagonal
+  mass_matrix_param_scales: {}  # Per-parameter mass matrix scaling
+  target_acceptance: 0.7      # Target acceptance rate for step size adaptation
+  adaptation_rate: 0.3        # Rate of step size adaptation
+```
 
-- `output_dir`: `str` (optional)
-  - Default: `"./outdir/"`
+**Field Details:**
 
-- `n_eos_samples`: `int` (optional)
-  - Default: `10000`
+- **`init_step_size`** (`float`, default: `0.01`) - Initial step size for NUTS integrator
+- **`mass_matrix_base`** (`float`, default: `0.2`) - Base diagonal value for mass matrix
+- **`mass_matrix_param_scales`** (`dict`, default: `{}`) - Per-parameter scaling factors for mass matrix
+- **`target_acceptance`** (`float`, default: `0.7`) - Target acceptance probability for step size tuning
+- **`adaptation_rate`** (`float`, default: `0.3`) - Adaptation rate for step size controller
 
-- `log_prob_batch_size`: `int` (optional)
-  - Default: `1000`
+**Output:**
+- Posterior samples with equal weights
+- Effective sample size (ESS) statistics per tempering stage
 
-- ``type``: `"smc-rw"` (optional)
-  - Default: `"smc-rw"`
+**When to Use:**
+- **EXPERIMENTAL** - Not recommended for production use
+- High-dimensional posteriors where gradient information helps
+- When NUTS kernel stability can be verified
 
-- `n_particles`: `int` (optional)
-  - Default: `10000`
+**Warning:** This sampler is experimental. Use SMC Random Walk for production analyses.
 
-- `n_mcmc_steps`: `int` (optional)
-  - Default: `1`
+::::
 
-- `target_ess`: `float` (optional)
-  - Default: `0.9`
+### Nested Sampling (BlackJAX NS-AW)
 
-- `random_walk_sigma`: `float` (optional)
-  - Default: `1.0`
+BlackJAX nested sampling with acceptance walk for Bayesian evidence estimation and posterior sampling.
 
-**Output**: Posterior samples and effective sample size (ESS) statistics.
+::::{dropdown} **Nested Sampling Configuration (type: "blackjax-ns-aw")**
 
-#### Sequential Monte Carlo with NUTS (`type: "smc-nuts"`)
+```yaml
+sampler:
+  type: "blackjax-ns-aw"      # Sampler type identifier
+  output_dir: "./outdir/"     # Output directory for results
+  n_eos_samples: 10000        # Number of final posterior samples
+  log_prob_batch_size: 1000   # Batch size for log-probability evaluation
 
-BlackJAX SMC with adaptive tempering and NUTS kernel (EXPERIMENTAL).
+  n_live: 1000                # Number of live points
+  n_delete_frac: 0.5          # Fraction of live points to delete per iteration
+  n_target: 60                # Target number of MCMC steps
+  max_mcmc: 5000              # Maximum MCMC steps per iteration
+  max_proposals: 1000         # Maximum proposals per live point update
+  termination_dlogz: 0.1      # Termination criterion (log evidence uncertainty)
+```
 
-- `output_dir`: `str` (optional)
-  - Default: `"./outdir/"`
+**Field Details:**
 
-- `n_eos_samples`: `int` (optional)
-  - Default: `10000`
+- **`n_live`** (`int`, default: `1000`) - Number of live points for nested sampling
+- **`n_delete_frac`** (`float`, default: `0.5`) - Fraction of live points to delete per iteration
+- **`n_target`** (`int`, default: `60`) - Target number of MCMC steps for acceptance walk
+- **`max_mcmc`** (`int`, default: `5000`) - Maximum MCMC steps per iteration
+- **`max_proposals`** (`int`, default: `1000`) - Maximum proposal attempts per live point update
+- **`termination_dlogz`** (`float`, default: `0.1`) - Terminate when log-evidence uncertainty < this value
 
-- `log_prob_batch_size`: `int` (optional)
-  - Default: `1000`
+**Output:**
+- Log-evidence (logZ) with uncertainty estimate
+- Posterior samples with importance weights
 
-- ``type``: `"smc-nuts"` (optional)
-  - Default: `"smc-nuts"`
+**When to Use:**
+- Model comparison requiring Bayesian evidence
+- Exploring multi-modal posteriors
+- When evidence estimation is primary goal
 
-- `n_particles`: `int` (optional)
-  - Default: `10000`
+::::
 
-- `n_mcmc_steps`: `int` (optional)
-  - Default: `1`
+---
 
-- `target_ess`: `float` (optional)
-  - Default: `0.9`
+## Data Paths (Optional)
 
-- `init_step_size`: `float` (optional)
-  - Default: `0.01`
+Override default data file locations for likelihoods.
 
-- `mass_matrix_base`: `float` (optional)
-  - Default: `0.2`
-
-- `mass_matrix_param_scales`: `dict[str, float]` (optional)
-  - Default: `{}`
-
-- `target_acceptance`: `float` (optional)
-  - Default: `0.7`
-
-- `adaptation_rate`: `float` (optional)
-  - Default: `0.3`
-
-**Output**: Posterior samples and effective sample size (ESS) statistics.
-
-### Data Paths (`data_paths:`)
-
-Optional dictionary to override default data file locations.
-
-**Supported keys**:
+::::{dropdown} **Data Path Overrides**
 
 ```yaml
 data_paths:
-  # NICER data
+  # NICER data files
   nicer_j0030_amsterdam: "./data/NICER/J0030/amsterdam.txt"
   nicer_j0030_maryland: "./data/NICER/J0030/maryland.txt"
   nicer_j0740_amsterdam: "./data/NICER/J0740/amsterdam.dat"
   nicer_j0740_maryland: "./data/NICER/J0740/maryland.txt"
-  
-  # ChiEFT bands
+
+  # ChiEFT uncertainty bands
   chieft_low: "./data/chieft/low_density.txt"
   chieft_high: "./data/chieft/high_density.txt"
-  
-  # GW normalizing flow models
+
+  # Gravitational wave normalizing flow models
   gw170817_model: "./NFs/GW170817/model.eqx"
-  
+
   # REX posteriors
   prex_posterior: "./data/REX/PREX_posterior.npz"
   crex_posterior: "./data/REX/CREX_posterior.npz"
 ```
 
-## Validation Rules
+**Description:**
 
-The configuration is validated using Pydantic. Common validation rules:
+The `data_paths` section allows overriding default data file locations. If omitted, JESTER uses built-in default paths from the package installation.
 
-1. **Transform type consistency**:
-   - `type: "metamodel"` requires `nb_CSE: 0`
-   - `type: "metamodel_cse"` requires `nb_CSE > 0`
-   - `type: "spectral"` requires:
-     - `crust_name: "SLy"` (LALSuite compatibility)
-     - `nb_CSE: 0`
-     - `constraints_gamma` likelihood recommended for Gamma bounds (optional)
+::::
 
-2. **Prior file extension**:
-   - Must end with `.prior`
+---
 
-3. **Likelihood requirements**:
-   - At least one likelihood must have `enabled: true`
+## Postprocessing
 
-4. **Positive values**:
-   - `n_chains`, `n_loop_training`, `n_loop_production` must be > 0
-   - `learning_rate` must be in (0, 1]
+Configure automatic plot generation and posterior analysis after inference completes.
 
-5. **Valid crust models**:
-   - `crust_name` must be `"DH"`, `"BPS"`, `"DH_fixed"`, or `"SLy"`
-   - Spectral transform specifically requires `"SLy"` for LALSuite compatibility
+::::{dropdown} **Postprocessing Configuration**
+
+```yaml
+postprocessing:
+  enabled: true                       # Enable postprocessing
+  make_cornerplot: true               # Generate corner plot of posterior
+  make_massradius: true               # Generate M-R diagram
+  make_masslambda: true               # Generate M-Λ diagram
+  make_pressuredensity: true          # Generate P-ε diagram
+  make_histograms: true               # Generate 1D posterior histograms
+  make_cs2: true                      # Generate speed-of-sound plot
+  prior_dir: null                     # Optional: directory with prior samples
+  injection_eos_path: null            # Optional: path to true EOS for injection studies
+```
+
+**Field Details:**
+
+- **`enabled`** (`bool`, default: `true`) - Enable/disable all postprocessing
+- **`make_cornerplot`** (`bool`, default: `true`) - Generate corner plot of EOS parameters
+- **`make_massradius`** (`bool`, default: `true`) - Generate mass-radius diagram with posterior families
+- **`make_masslambda`** (`bool`, default: `true`) - Generate mass-tidal deformability diagram
+- **`make_pressuredensity`** (`bool`, default: `true`) - Generate pressure-energy density relation
+- **`make_histograms`** (`bool`, default: `true`) - Generate 1D marginalized posterior histograms
+- **`make_cs2`** (`bool`, default: `true`) - Generate speed-of-sound as function of density
+- **`prior_dir`** (`str | None`, default: `null`) - Directory containing prior samples for comparison
+- **`injection_eos_path`** (`str | None`, default: `null`) - Path to true EOS for injection studies
+
+::::
+
+---
 
 ## Complete Examples
 
-### Minimal Configuration (Prior-only)
+### Minimal Configuration (Prior-Only)
+
+Sample from the prior distribution without observational constraints.
+
+::::{dropdown} **Prior-Only Example**
 
 ```yaml
 seed: 43
@@ -450,13 +635,18 @@ likelihoods:
     enabled: true
 
 sampler:
-  n_chains: 10
-  n_loop_training: 2
-  n_loop_production: 2
+  type: "smc-rw"
+  n_particles: 5000
   output_dir: "./outdir/"
 ```
 
-### Full Multi-Messenger Configuration
+::::
+
+### Multi-Messenger Configuration
+
+Combine gravitational wave, X-ray, radio, and nuclear theory constraints.
+
+::::{dropdown} **Multi-Messenger Example**
 
 ```yaml
 seed: 43
@@ -475,29 +665,116 @@ likelihoods:
     enabled: true
     parameters:
       event_name: "GW170817"
-  
+
   - type: "nicer"
     enabled: true
     parameters:
       targets: ["J0030", "J0740"]
-  
+      analysis_groups: ["amsterdam", "maryland"]
+
   - type: "radio"
     enabled: true
     parameters:
+      psr_name: "J0740+6620"
       mass_mean: 2.08
       mass_std: 0.07
-      penalty_value: -1e5  # Optional, default: -1e5
-  
+
   - type: "chieft"
     enabled: true
 
 sampler:
+  type: "smc-rw"
+  n_particles: 10000
+  n_mcmc_steps: 1
+  target_ess: 0.9
+  output_dir: "./outdir/"
+
+postprocessing:
+  enabled: true
+  make_cornerplot: true
+  make_massradius: true
+```
+
+::::
+
+### Spectral Parametrization (LALSuite-Compatible)
+
+Configuration using spectral decomposition for GW analysis workflows.
+
+::::{dropdown} **Spectral Example**
+
+```yaml
+seed: 43
+
+transform:
+  type: "spectral"
+  crust_name: "SLy"               # Required for spectral
+  n_points_high: 500
+
+prior:
+  specification_file: "spectral_prior.prior"
+
+likelihoods:
+  - type: "gw"
+    enabled: true
+    parameters:
+      event_name: "GW170817"
+
+  - type: "constraints_gamma"     # Recommended for spectral
+    enabled: true
+
+sampler:
+  type: "flowmc"
   n_chains: 20
   n_loop_training: 3
   n_loop_production: 5
-  n_local_steps: 200
-  n_global_steps: 200
   output_dir: "./outdir/"
+```
+
+::::
+
+---
+
+## Validation Rules
+
+The configuration is validated using Pydantic. Common validation errors:
+
+::::{dropdown} **Validation Rules Details**
+
+**Transform Type Consistency:**
+- `type: "metamodel"` requires `nb_CSE: 0` (or omit the field entirely)
+- `type: "metamodel_cse"` requires `nb_CSE > 0`
+- `type: "spectral"` requires:
+  - `crust_name: "SLy"` (LALSuite compatibility)
+  - `nb_CSE: 0` (or omit the field)
+  - Recommended: Include `constraints_gamma` likelihood
+
+**Prior File:**
+- `specification_file` must end with `.prior` extension
+
+**Likelihood Requirements:**
+- At least one likelihood must have `enabled: true`
+
+**Positive Value Constraints:**
+- `n_chains`, `n_loop_training`, `n_loop_production` must be > 0
+- `learning_rate` must be in range (0, 1]
+- `n_particles`, `n_live` must be > 0
+
+**Crust Models:**
+- `crust_name` must be one of: `"DH"`, `"BPS"`, `"DH_fixed"`, or `"SLy"`
+- Spectral transform specifically requires `"SLy"`
+
+::::
+
+---
+
+**Document Status**: Auto-generated
+**Source**: `jesterTOV/inference/config/schema.py`
+**Generator**: `jesterTOV/inference/config/generate_yaml_reference.py`
+
+To regenerate this reference after modifying `schema.py`:
+```bash
+uv run python -m jesterTOV.inference.config.generate_yaml_reference
 ```
 
 ---
