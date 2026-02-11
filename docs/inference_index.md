@@ -34,16 +34,6 @@ Choose the right guide for your needs:
 - Common pitfalls and best practices
 - **Start here if**: You want to understand how files connect or extend the system
 
-### 🏗️ Architecture Guide
-**[Architecture Documentation](inference_architecture.md)** - *20-40 minutes*
-- Module dependency graph
-- Execution flow diagrams
-- Component interfaces
-- Data transformations
-- Class hierarchy
-- Design patterns
-- **Start here if**: You want to understand implementation details or contribute code
-
 ### 📋 YAML Configuration Reference
 **[YAML Reference](inference_yaml_reference.md)** - *Auto-generated reference*
 - Complete list of all YAML options
@@ -143,7 +133,6 @@ Choose the right guide for your needs:
 | Add custom likelihood | {ref}`custom-likelihoods` | 30 min |
 | Add custom prior | {ref}`custom-priors` | 20 min |
 | Parallel runs | {ref}`parallel-runs` | 10 min |
-| Understand architecture | [Architecture](inference_architecture.md) | 40 min |
 
 ### Troubleshooting
 
@@ -173,9 +162,8 @@ Choose the right guide for your needs:
 
 **Recommended path**:
 1. Start: [Inference Workflow](inference_workflow.md)
-2. Deep dive: [Architecture Documentation](inference_architecture.md)
-3. Reference: [Complete Documentation](inference.md)
-4. Code: Module README (`jesterTOV/inference/README.md`)
+2. Reference: [Complete Documentation](inference.md)
+3. Code: Module README (`jesterTOV/inference/README.md`)
 
 **Focus areas**:
 - File connections and data flow
@@ -188,8 +176,7 @@ Choose the right guide for your needs:
 
 **Recommended path**:
 1. Start: [Complete Documentation](inference.md)
-2. Details: [Architecture Documentation](inference_architecture.md)
-3. Examples: Check `examples/inference/`
+2. Examples: Check `examples/inference/`
 
 **Focus areas**:
 - Transform mathematics
@@ -337,7 +324,6 @@ If you find errors or want to improve the documentation:
 | `inference_index.md` | Navigation hub | All |
 | `inference_quickstart.md` | Quick start guide | End users |
 | `inference.md` | Complete reference | All |
-| `inference_architecture.md` | Technical details | Developers |
 | `jesterTOV/inference/README.md` | Module overview | Developers |
 
 ---

@@ -1,14 +1,6 @@
 JESTER Documentation
 ====================
 
-.. image:: https://img.shields.io/badge/arXiv-2504.15893-b31b1b.svg
-   :target: https://arxiv.org/abs/2504.15893
-   :alt: arXiv Paper
-
-.. image:: https://img.shields.io/badge/arXiv-2507.13039-b31b1b.svg
-   :target: https://arxiv.org/abs/2507.13039
-   :alt: arXiv Paper
-
 JAX-accelerated equation of state inference and TOV solvers
 
 ``jester`` is a package to perform inference on the equation of state (EOS) with Bayesian inference and accelerates the TOV solver calls and the entire sampling procedure by using GPU hardware through ``jax``. 
@@ -57,7 +49,19 @@ Contents
 
 .. toctree::
    :maxdepth: 2
-   :caption: User Guide
+   :caption: Getting Started
+
+   getting_started
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Examples
+
+   examples 
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Inference Guide
 
    inference_index
    inference_quickstart
@@ -81,7 +85,6 @@ Contents
    :caption: Developer Guide
 
    inference_workflow
-   inference_architecture
    inference_documentation_guide
 
 Indices and tables

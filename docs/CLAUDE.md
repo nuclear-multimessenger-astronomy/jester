@@ -316,6 +316,57 @@ Before committing documentation changes:
 - **Logo**: `_static/logo_light.svg` (light mode), `_static/logo_dark.svg` (dark mode)
 - **Favicon**: `_static/icon.svg`
 
+## Common Pitfalls
+
+### Section Landing Pages Pattern
+
+**Problem**: Navigation breaks or sections disappear from sidebar when clicking through pages.
+
+**Solution**: Copy `examples.rst` structure exactly:
+
+```rst
+Intro text.
+
+Section Header
+--------------
+
+**Subsection Name**
+   Description.
+
+   :doc:`path/to/subsection`
+
+.. toctree::
+   :hidden:
+
+   path/to/subsection
+```
+
+**Key rules**:
+1. No top-level title with `===` (caption in index.rst provides this)
+2. Section header with `---`
+3. Toctree MUST be `:hidden:`
+4. After structural changes, do clean rebuild: `rm -rf docs/_build && uv run sphinx-build docs docs/_build/html`
+
+### Jupyter Notebooks with nbsphinx
+
+**Requirement**: Notebooks must be located within the `docs/` directory structure for nbsphinx to process them.
+
+**Problem**: Using `.. nbsphinx::` directive or external symlinks causes errors.
+
+**Solution**:
+1. Move notebooks to `docs/examples/` or appropriate subdirectory
+2. Reference them directly in toctrees: `examples/eos_tov/notebook_name`
+3. Ensure `pandoc` is installed: `brew install pandoc` (macOS) or `apt install pandoc` (Linux)
+
+**Example**:
+```rst
+.. toctree::
+   :hidden:
+
+   examples/eos_tov/eos_tov
+   examples/eos_tov/automatic_differentiation
+```
+
 ## Known Issues
 
 **LaTeX rendering**: Requires MathJax 3 (configured in `conf.py`). If math doesn't render, check browser console for MathJax errors.
