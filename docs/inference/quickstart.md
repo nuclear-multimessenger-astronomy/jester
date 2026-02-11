@@ -386,7 +386,7 @@ No configuration changes needed - JAX will use GPU automatically!
 
 ## Next Steps
 
-1. **Read full documentation**: `docs/inference.md` for complete details
+1. **Read full documentation**: `docs/guide.md` for complete details
 2. **Explore examples**: Check `examples/inference/` for more configurations
 3. **Customize**: Add your own data, modify priors, adjust sampler settings
 4. **Advanced features**: Custom likelihoods, transforms, analysis pipelines
@@ -394,7 +394,7 @@ No configuration changes needed - JAX will use GPU automatically!
 ## Getting Help
 
 - **Examples**: `jester/examples/inference/` - Working configurations
-- **Full docs**: `jester/docs/inference.md` - Complete reference
+- **Full docs**: `jester/docs/guide.md` - Complete reference
 - **Issues**: Report bugs on GitHub
 - **Source**: Read docstrings in module files
 

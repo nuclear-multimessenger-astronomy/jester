@@ -94,12 +94,8 @@ Contents
    inference/index
    inference/quickstart
    inference/guide
-
-.. toctree::
-   :maxdepth: 2
-   :caption: Reference
-
    inference/yaml_reference
+   inference/workflow
 
 .. toctree::
    :maxdepth: 2
@@ -111,7 +107,6 @@ Contents
    :maxdepth: 2
    :caption: Developer Guide
 
-   inference/workflow
    inference/documentation_guide
    citing
 

@@ -1,6 +1,6 @@
-# JESTER Inference Workflow: A Developer's Guide
+# JESTER Inference Workflow
 
-This guide explains how the JESTER inference system works from a file-level perspective, showing how different components connect and how data flows through the system. This is intended for developers who want to understand the implementation or extend the system.
+This guide explains how the JESTER inference system works from a file-level perspective, showing how different components connect and how data flows through the system.
 
 ## Table of Contents
 

@@ -16,7 +16,7 @@ This ensures accuracy while maintaining readability.
 
 ### YAML Configuration Reference
 
-**File**: `docs/inference_yaml_reference.md`
+**File**: `docs/yaml_reference.md`
 **Source**: `jesterTOV/inference/config/schema.py` (Pydantic models)
 **Generator**: `jesterTOV/inference/config/generate_yaml_reference.py`
 
@@ -35,7 +35,7 @@ Regenerate whenever you modify:
 uv run python -m jesterTOV.inference.config.generate_yaml_reference
 
 # This creates/updates:
-#   docs/inference_yaml_reference.md
+#   docs/yaml_reference.md
 ```
 
 #### Automated Reminder
@@ -73,8 +73,8 @@ This automatically regenerates the reference when `schema.py` changes.
 
 | File | Update When | Contents |
 |------|-------------|----------|
-| `inference.md` | Major features added | Complete reference, explanations |
-| `inference_quickstart.md` | User workflow changes | Quick start guide, examples |
+| `guide.md` | Major features added | Complete reference, explanations |
+| `quickstart.md` | User workflow changes | Quick start guide, examples |
 | `inference_architecture.md` | Architecture changes | Module structure, data flow |
 | `inference_index.md` | New docs added | Navigation, table of contents |
 | `jesterTOV/inference/README.md` | Module structure changes | Module overview |
@@ -86,29 +86,29 @@ When adding a **new likelihood type**:
 - [ ] Update `likelihoods/factory.py`
 - [ ] Update `config/schema.py` (add to `LikelihoodConfig.type` Literal)
 - [ ] Regenerate YAML reference (auto)
-- [ ] Document in `inference.md` → "Likelihoods" section (manual)
-- [ ] Add example to `inference_quickstart.md` (manual)
-- [ ] Update `inference_yaml_reference.md` "Likelihood-Specific Parameters" (manual - generator doesn't know about `parameters` dict contents)
+- [ ] Document in `guide.md` → "Likelihoods" section (manual)
+- [ ] Add example to `quickstart.md` (manual)
+- [ ] Update `yaml_reference.md` "Likelihood-Specific Parameters" (manual - generator doesn't know about `parameters` dict contents)
 
 When adding a **new prior type**:
 - [ ] Add to `priors/simple_priors.py`
 - [ ] Update `priors/parser.py` namespace
-- [ ] Document in `inference.md` → "Prior Specification" section (manual)
-- [ ] Add example to `inference_quickstart.md` (manual)
+- [ ] Document in `guide.md` → "Prior Specification" section (manual)
+- [ ] Add example to `quickstart.md` (manual)
 
 When adding a **new transform type**:
 - [ ] Add to `transforms/my_transform.py`
 - [ ] Update `transforms/factory.py`
 - [ ] Update `config/schema.py` (add to `TransformConfig.type` Literal)
 - [ ] Regenerate YAML reference (auto)
-- [ ] Document in `inference.md` → "Transforms" section (manual)
+- [ ] Document in `guide.md` → "Transforms" section (manual)
 - [ ] Add example configuration (manual)
 
 When modifying **configuration fields**:
 - [ ] Modify `config/schema.py`
 - [ ] Regenerate YAML reference (auto)
-- [ ] Update examples in `inference.md` if field is commonly used (manual)
-- [ ] Update `inference_quickstart.md` if it affects quick start (manual)
+- [ ] Update examples in `guide.md` if field is commonly used (manual)
+- [ ] Update `quickstart.md` if it affects quick start (manual)
 
 ---
 
@@ -122,19 +122,19 @@ When modifying **configuration fields**:
    - Type hints - Function signatures
 
 2. **Auto-generated docs** (always in sync with code)
-   - `docs/inference_yaml_reference.md` - All YAML options
+   - `docs/yaml_reference.md` - All YAML options
 
 3. **Manual docs** (requires human updates)
-   - `docs/inference.md` - Complete reference
-   - `docs/inference_quickstart.md` - Quick start
+   - `docs/guide.md` - Complete reference
+   - `docs/quickstart.md` - Quick start
    - `docs/inference_architecture.md` - Architecture
    - `docs/inference_index.md` - Navigation
 
 ### Avoiding Duplication
 
 **Don't duplicate information that can be auto-generated**:
-- ❌ List all YAML fields manually in `inference.md`
-- ✅ Link to `inference_yaml_reference.md` for complete list
+- ❌ List all YAML fields manually in `guide.md`
+- ✅ Link to `yaml_reference.md` for complete list
 - ✅ Show key examples and explain concepts
 
 **Example**:
@@ -144,7 +144,7 @@ When modifying **configuration fields**:
 ## Configuration System
 
 JESTER uses YAML files for configuration. For a complete list of all
-available options, see the [YAML Reference](inference_yaml_reference.md).
+available options, see the [YAML Reference](yaml_reference.md).
 
 Key configuration sections:
 - `transform`: How to convert parameters to observables
@@ -190,7 +190,7 @@ Extract and test code examples:
 
 ```bash
 # Test YAML examples
-cat docs/inference_quickstart.md | \
+cat docs/quickstart.md | \
   sed -n '/```yaml/,/```/p' | \
   sed '/```/d' > /tmp/test_config.yaml
 
@@ -266,21 +266,21 @@ class SamplerConfig(BaseModel):
     new_field: int = 100  # Added
 
 # ❌ Commit without regenerating reference
-# → docs/inference_yaml_reference.md is now out of sync!
+# → docs/yaml_reference.md is now out of sync!
 ```
 
 **Solution**: Always run generator after modifying schemas.
 
 **Pitfall 2: Duplicating auto-generated content**
 ```markdown
-<!-- ❌ Don't copy-paste from inference_yaml_reference.md -->
+<!-- ❌ Don't copy-paste from yaml_reference.md -->
 All sampler fields:
 - n_chains: int, default 20
 - n_loop_training: int, default 3
 ...
 
 <!-- ✅ Instead, link and explain -->
-See [YAML Reference](inference_yaml_reference.md#sampler-configuration)
+See [YAML Reference](yaml_reference.md#sampler-configuration)
 for all sampler fields. Key parameters to tune:
 - `n_chains`: More chains = better convergence but slower
 - `learning_rate`: Controls NF training speed
@@ -297,7 +297,7 @@ sampler:
 ```
 
 <!-- ✅ Show minimal example, reference defaults -->
-Run with default settings (see [defaults](inference_yaml_reference.md)):
+Run with default settings (see [defaults](yaml_reference.md)):
 ```yaml
 sampler:
   output_dir: "./outdir/"  # Only override what you need
@@ -387,7 +387,7 @@ Modify schema.py? → Yes → Regenerate YAML reference
     ↓
 User-facing change? → Yes → Update manual docs
     ↓                           ↓
-    ↓                      (inference.md, quickstart.md, etc.)
+    ↓                      (guide.md, quickstart.md, etc.)
     ↓
 Commit
     ↓

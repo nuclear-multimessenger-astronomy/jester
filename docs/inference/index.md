@@ -7,7 +7,7 @@
 Choose the right guide for your needs:
 
 ### 🚀 Quick Start
-**[Quick Start Guide](inference_quickstart.md)** - *5-10 minutes*
+**[Quick Start Guide](quickstart.md)** - *5-10 minutes*
 - Installation instructions
 - Run your first inference
 - Minimal configuration examples
@@ -15,7 +15,7 @@ Choose the right guide for your needs:
 - **Start here if**: You want to get up and running quickly
 
 ### 📘 Complete Reference
-**[Complete Documentation](inference.md)** - *30-60 minutes*
+**[Complete Documentation](guide.md)** - *30-60 minutes*
 - Full system architecture
 - Configuration system in detail
 - Prior specification format
@@ -26,7 +26,7 @@ Choose the right guide for your needs:
 - **Start here if**: You want comprehensive understanding
 
 ### 🏗️ Workflow Guide
-**[Inference Workflow](inference_workflow.md)** - *30-45 minutes*
+**[Inference Workflow](workflow.md)** - *30-45 minutes*
 - Interactive Mermaid diagrams showing file connections
 - Step-by-step data flow from config to results
 - Understanding how components connect
@@ -35,7 +35,7 @@ Choose the right guide for your needs:
 - **Start here if**: You want to understand how files connect or extend the system
 
 ### 📋 YAML Configuration Reference
-**[YAML Reference](inference_yaml_reference.md)** - *Auto-generated reference*
+**[YAML Reference](yaml_reference.md)** - *Auto-generated reference*
 - Complete list of all YAML options
 - Auto-generated from Pydantic schemas
 - Every field with type, default, and description
@@ -68,7 +68,7 @@ Choose the right guide for your needs:
 | Task | Documentation | Time |
 |------|---------------|------|
 | Create config file | {ref}`configuration-files-explained` | 5 min |
-| See all YAML options | [YAML Reference](inference_yaml_reference.md) | 2 min |
+| See all YAML options | [YAML Reference](yaml_reference.md) | 2 min |
 | Understand YAML structure | {ref}`configuration-system` | 15 min |
 | Validation rules | {ref}`configuration-validation` | 10 min |
 | Path resolution | {ref}`path-resolution` | 5 min |
@@ -148,8 +148,8 @@ Choose the right guide for your needs:
 ### 👤 End User (Running Inference)
 
 **Recommended path**:
-1. Start: [Quick Start Guide](inference_quickstart.md)
-2. Deep dive: [Complete Documentation](inference.md)
+1. Start: [Quick Start Guide](quickstart.md)
+2. Deep dive: [Complete Documentation](guide.md)
 3. Reference: Module README (`jesterTOV/inference/README.md`)
 
 **Focus areas**:
@@ -161,8 +161,8 @@ Choose the right guide for your needs:
 ### 👨‍💻 Developer (Contributing Code)
 
 **Recommended path**:
-1. Start: [Inference Workflow](inference_workflow.md)
-2. Reference: [Complete Documentation](inference.md)
+1. Start: [Inference Workflow](workflow.md)
+2. Reference: [Complete Documentation](guide.md)
 3. Code: Module README (`jesterTOV/inference/README.md`)
 
 **Focus areas**:
@@ -175,7 +175,7 @@ Choose the right guide for your needs:
 ### 👨‍🔬 Researcher (Method Development)
 
 **Recommended path**:
-1. Start: [Complete Documentation](inference.md)
+1. Start: [Complete Documentation](guide.md)
 2. Examples: Check `examples/inference/`
 
 **Focus areas**:
@@ -322,8 +322,8 @@ If you find errors or want to improve the documentation:
 | File | Purpose | Audience |
 |------|---------|----------|
 | `inference_index.md` | Navigation hub | All |
-| `inference_quickstart.md` | Quick start guide | End users |
-| `inference.md` | Complete reference | All |
+| `quickstart.md` | Quick start guide | End users |
+| `guide.md` | Complete reference | All |
 | `jesterTOV/inference/README.md` | Module overview | Developers |
 
 ---
