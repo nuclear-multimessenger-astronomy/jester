@@ -1,7 +1,7 @@
-﻿jesterTOV.tov.TOVSolverBase
-===========================
+﻿jesterTOV.tov.base.TOVSolverBase
+================================
 
-.. currentmodule:: jesterTOV.tov
+.. currentmodule:: jesterTOV.tov.base
 
 .. autoclass:: TOVSolverBase
 

@@ -1,7 +1,7 @@
-﻿jesterTOV.tov.ScalarTensorTOVSolver
-===================================
+﻿jesterTOV.tov.scalar\_tensor.ScalarTensorTOVSolver
+==================================================
 
-.. currentmodule:: jesterTOV.tov
+.. currentmodule:: jesterTOV.tov.scalar_tensor
 
 .. autoclass:: ScalarTensorTOVSolver
 

@@ -3,14 +3,13 @@
 
 .. currentmodule:: jesterTOV.eos.spectral
 
-.. automodule:: jesterTOV.eos.spectral
+Spectral decomposition equation of state parametrization.
 
-This module provides spectral decomposition-based equation of state parametrizations.
-
-Spectral Decomposition
------------------------
+Classes
+-------
 
 .. autosummary::
-   :toctree: _autosummary
+   :nosignatures:
+   :toctree: _autosummary/
 
    SpectralDecomposition_EOS_model

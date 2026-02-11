@@ -1,7 +1,7 @@
-﻿jesterTOV.tov.TOVSolution
-=========================
+﻿jesterTOV.tov.data\_classes.TOVSolution
+=======================================
 
-.. currentmodule:: jesterTOV.tov
+.. currentmodule:: jesterTOV.tov.data_classes
 
 .. autoclass:: TOVSolution
 

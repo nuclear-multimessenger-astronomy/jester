@@ -4,7 +4,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Inspiration
 
-The `jax` documentation is very clear and well organized, and we can take inspiration from their source code that give the docs pages here (local development only): `/Users/Woute029/Documents/Code/projects/jester_review/docs_resources/jax/docs`
+Reference documentation sources (local development only):
+- **JAX**: `/Users/Woute029/Documents/Code/projects/jester_review/docs_resources/jax/docs` - Clean API structure
+- **scikit-learn**: `/Users/Woute029/Documents/Code/projects/jester_review/docs_resources/scikit-learn/doc` - Hierarchical API reference with individual class pages
+
+## Documentation Workflow
+
+**IMPORTANT**: When working on documentation changes, pause after making initial changes and let the user review before proceeding. Documentation is user-facing and requires careful review.
+
+**Recommended workflow:**
+1. Make proposed changes to documentation files
+2. Build locally to check for errors
+3. **PAUSE** - Let user open and review the changes in browser themselves (do NOT use `open` command)
+4. Wait for user feedback before making additional changes
+5. Iterate based on feedback
 
 ## Building Documentation
 
@@ -157,6 +170,54 @@ graph TD
 ````
 
 **NOT** `` ```mermaid`` (plain code fence) - must use MyST directive syntax.
+
+## API Reference Structure
+
+**Hierarchical organization** (inspired by sklearn):
+
+1. **Top level** (`jesterTOV.eos.rst`) - Navigation only, lists submodules via `toctree`
+2. **Mid level** (`jesterTOV.eos.metamodel.rst`) - Overview with `autosummary` listing classes
+3. **Leaf level** (`jesterTOV.eos.metamodel.MetaModel_EOS_model.html`) - Individual class pages
+
+### Module Overview Page Pattern
+
+**Correct pattern** for module overview pages (e.g., `jesterTOV.eos.metamodel.rst`):
+
+```rst
+``jesterTOV.eos.metamodel`` module
+===================================
+
+.. currentmodule:: jesterTOV.eos.metamodel
+
+Module description here (1-2 sentences).
+
+Mathematical Background (optional)
+-----------------------------------
+
+Additional context, equations, etc.
+
+Classes
+-------
+
+.. autosummary::
+   :nosignatures:              # Clean table without signatures
+   :toctree: _autosummary/     # Generate individual class pages
+
+   ClassName1
+   ClassName2
+```
+
+**Key principles:**
+- **DO NOT** use `.. automodule::` directive - this expands all class details on the overview page
+- **DO** use `.. currentmodule::` to set the module context
+- **DO** use `:toctree: _autosummary/` to generate individual class pages
+- **DO** keep overview text concise - just enough to understand what's in the module
+- Individual class pages are auto-generated using the `_templates/class.rst` template
+
+**Import structure:**
+- Remove `__all__` re-exports from `__init__.py` files
+- Use explicit imports: `from jesterTOV.eos.metamodel import MetaModel_EOS_model`
+- This ensures Sphinx autodoc organizes classes by their actual module location
 
 ### Code Examples
 

@@ -3,8 +3,6 @@
 
 .. currentmodule:: jesterTOV.inference.priors
 
-.. automodule:: jesterTOV.inference.priors
-
 Prior specification and parsing for Bayesian inference.
 
 Parser Functions

@@ -1,7 +1,7 @@
-﻿jesterTOV.tov.GRTOVSolver
-=========================
+﻿jesterTOV.tov.gr.GRTOVSolver
+============================
 
-.. currentmodule:: jesterTOV.tov
+.. currentmodule:: jesterTOV.tov.gr
 
 .. autoclass:: GRTOVSolver
 

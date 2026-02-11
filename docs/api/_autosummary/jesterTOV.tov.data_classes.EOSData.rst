@@ -1,7 +1,7 @@
-﻿jesterTOV.tov.EOSData
-=====================
+﻿jesterTOV.tov.data\_classes.EOSData
+===================================
 
-.. currentmodule:: jesterTOV.tov
+.. currentmodule:: jesterTOV.tov.data_classes
 
 .. autoclass:: EOSData
 

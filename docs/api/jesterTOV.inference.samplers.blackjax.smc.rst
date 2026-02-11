@@ -3,7 +3,6 @@
 
 .. currentmodule:: jesterTOV.inference.samplers.blackjax.smc
 
-.. automodule:: jesterTOV.inference.samplers.blackjax.smc
 
 Sequential Monte Carlo samplers with adaptive tempering.
 

@@ -1,7 +1,7 @@
-﻿jesterTOV.tov.FamilyData
-========================
+﻿jesterTOV.tov.data\_classes.FamilyData
+======================================
 
-.. currentmodule:: jesterTOV.tov
+.. currentmodule:: jesterTOV.tov.data_classes
 
 .. autoclass:: FamilyData
 

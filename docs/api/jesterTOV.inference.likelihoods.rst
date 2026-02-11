@@ -3,8 +3,6 @@
 
 .. currentmodule:: jesterTOV.inference.likelihoods
 
-.. automodule:: jesterTOV.inference.likelihoods
-
 Likelihood functions for multi-messenger observations.
 
 Gravitational Wave Likelihoods

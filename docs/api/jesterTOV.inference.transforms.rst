@@ -3,7 +3,6 @@
 
 .. currentmodule:: jesterTOV.inference.transforms
 
-.. automodule:: jesterTOV.inference.transforms
 
 Parameter space transforms for EOS inference.
 

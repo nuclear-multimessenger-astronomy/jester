@@ -1,7 +1,7 @@
-﻿jesterTOV.tov.PostTOVSolver
-===========================
+﻿jesterTOV.tov.anisotropy.PostTOVSolver
+======================================
 
-.. currentmodule:: jesterTOV.tov
+.. currentmodule:: jesterTOV.tov.anisotropy
 
 .. autoclass:: PostTOVSolver
 
