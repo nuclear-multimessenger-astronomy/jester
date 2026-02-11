@@ -9,43 +9,43 @@ What's in JESTER?
 -----------------
 
 JESTER combines flexible EOS parametrizations with GPU-accelerated TOV solvers and modern Bayesian samplers.
-See the :doc:`getting_started` guide for detailed explanations.
+See the :doc:`overview` guide for detailed explanations.
 
 .. grid:: 2
     :class-container: component-grid
 
-    .. grid-item:: 🧮 :doc:`EOS Models <getting_started/eos>`
+    .. grid-item:: 🧮 :doc:`EOS Models <overview/eos>`
 
        Parametrize the equation of state of nuclear matter
 
-       - :doc:`Metamodel <getting_started/eos/metamodel>`
-       - :doc:`Metamodel + CSE <getting_started/eos/metamodel_cse>`
-       - :doc:`Spectral expansion <getting_started/eos/spectral>`
+       - :doc:`Metamodel <overview/eos/metamodel>`
+       - :doc:`Metamodel + CSE <overview/eos/metamodel_cse>`
+       - :doc:`Spectral expansion <overview/eos/spectral>`
 
-    .. grid-item:: ⚙️ :doc:`TOV Solvers <getting_started/tov_solvers>`
+    .. grid-item:: ⚙️ :doc:`TOV Solvers <overview/tov_solvers>`
 
        Integrate neutron star structure equations
 
-       - :doc:`General Relativity <getting_started/tov/gr>`
-       - :doc:`Modified gravity theories <getting_started/tov/scalar_tensor>`
-       - :doc:`Pressure anisotropy <getting_started/tov/anisotropy>`
+       - :doc:`General Relativity <overview/tov/gr>`
+       - :doc:`Modified gravity theories <overview/tov/scalar_tensor>`
+       - :doc:`Pressure anisotropy <overview/tov/anisotropy>`
 
-    .. grid-item:: 🔭 :doc:`Likelihood Constraints <getting_started/likelihoods>`
+    .. grid-item:: 🔭 :doc:`Likelihood Constraints <overview/likelihoods>`
 
        Multi-messenger astronomical observations
 
-       - :doc:`Gravitational waves <getting_started/likelihoods/gw>`
-       - :doc:`NICER mass-radius <getting_started/likelihoods/nicer>`
-       - :doc:`Radio timing (mass measurements) <getting_started/likelihoods/radio>`
-       - :doc:`Nuclear experiments (chiEFT) <getting_started/likelihoods/chieft>`
+       - :doc:`Gravitational waves <overview/likelihoods/gw>`
+       - :doc:`NICER mass-radius <overview/likelihoods/nicer>`
+       - :doc:`Radio timing (mass measurements) <overview/likelihoods/radio>`
+       - :doc:`Nuclear experiments (chiEFT) <overview/likelihoods/chieft>`
 
-    .. grid-item:: 📊 :doc:`Samplers <getting_started/samplers>`
+    .. grid-item:: 📊 :doc:`Samplers <overview/samplers>`
 
        GPU-accelerated Bayesian inference
 
-       - :doc:`Sequential Monte Carlo <getting_started/samplers/smc>`
-       - :doc:`Nested Sampling <getting_started/samplers/nested_sampling>`
-       - :doc:`FlowMC (normalizing flows) <getting_started/samplers/flowmc>` 
+       - :doc:`Sequential Monte Carlo <overview/samplers/smc>`
+       - :doc:`Nested Sampling <overview/samplers/nested_sampling>`
+       - :doc:`FlowMC (normalizing flows) <overview/samplers/flowmc>` 
 
 
 Installation
@@ -77,9 +77,9 @@ Contents
 
 .. toctree::
    :maxdepth: 2
-   :caption: Getting Started
+   :caption: Overview
 
-   getting_started
+   overview
 
 .. toctree::
    :maxdepth: 2
