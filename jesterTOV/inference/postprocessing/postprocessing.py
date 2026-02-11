@@ -124,6 +124,15 @@ R_MAX = 18.0  # Maximum radius [km]
 # Prior directory (for loading prior samples)
 PRIOR_DIR = "./outdir/"
 
+# Observational constraint contour settings
+NICER_CONTOUR_COLOR = "red"
+NICER_CONTOUR_ALPHA = 0.3
+NICER_CONTOUR_LINEWIDTH = 2.0
+GW_CONTOUR_COLOR = "green"
+GW_CONTOUR_ALPHA = 0.3
+GW_CONTOUR_LINEWIDTH = 2.0
+CONTOUR_LEVELS = [0.90]  # 90% credible region
+
 
 def load_eos_data(outdir: str) -> Dict[str, np.ndarray]:
     """Load EOS data from the specified output directory.
@@ -218,6 +227,158 @@ def load_prior_data(prior_dir: str = PRIOR_DIR) -> Optional[Dict[str, np.ndarray
     except FileNotFoundError:
         logger.warning(f"Prior data not found at {prior_dir}")
         return None
+
+
+def load_nicer_constraints(
+    nicer_files: Optional[list[str]] = None,
+) -> Optional[Dict[str, np.ndarray]]:
+    """Load NICER mass-radius posterior samples for plotting contours.
+
+    Parameters
+    ----------
+    nicer_files : list[str] or None
+        List of paths to NICER posterior NPZ files.
+        If None, returns None.
+
+    Returns
+    -------
+    dict or None
+        Dictionary containing combined mass and radius samples from all files,
+        or None if loading fails.
+
+    Notes
+    -----
+    Each NPZ file should contain 'mass' and 'radius' arrays.
+    Samples from multiple files are concatenated together.
+    """
+    if nicer_files is None or len(nicer_files) == 0:
+        return None
+
+    all_masses = []
+    all_radii = []
+
+    for filepath in nicer_files:
+        try:
+            logger.info(f"Loading NICER constraint from {filepath}")
+            data = np.load(filepath, allow_pickle=True)
+
+            if "mass" not in data or "radius" not in data:
+                logger.warning(
+                    f"NICER file {filepath} missing 'mass' or 'radius' arrays. Skipping."
+                )
+                continue
+
+            all_masses.append(data["mass"])
+            all_radii.append(data["radius"])
+
+        except FileNotFoundError:
+            logger.warning(f"NICER constraint file not found: {filepath}")
+            continue
+        except Exception as e:
+            logger.error(f"Failed to load NICER constraint from {filepath}: {e}")
+            continue
+
+    if len(all_masses) == 0:
+        logger.warning("No NICER constraint data loaded")
+        return None
+
+    # Concatenate all samples
+    combined_mass = np.concatenate(all_masses)
+    combined_radius = np.concatenate(all_radii)
+
+    logger.info(
+        f"Loaded {len(combined_mass)} NICER M-R samples from {len(all_masses)} file(s)"
+    )
+
+    return {"mass": combined_mass, "radius": combined_radius}
+
+
+def load_gw_constraints(
+    gw_flow_dirs: Optional[list[str]] = None, n_samples: int = 10000, seed: int = 42
+) -> Optional[Dict[str, np.ndarray]]:
+    """Load GW mass-lambda posterior samples by sampling from trained flows.
+
+    Parameters
+    ----------
+    gw_flow_dirs : list[str] or None
+        List of paths to directories containing trained GW normalizing flow models.
+        If None, returns None.
+    n_samples : int, optional
+        Number of samples to draw from each flow (default: 10000)
+    seed : int, optional
+        Random seed for sampling (default: 42)
+
+    Returns
+    -------
+    dict or None
+        Dictionary containing combined mass and lambda samples from all flows,
+        or None if loading fails.
+
+    Notes
+    -----
+    Each flow directory should contain a trained normalizing flow model
+    that can be loaded with Flow.from_directory().
+    Flow samples have shape (n_samples, 4) with columns [m1, m2, Lambda1, Lambda2].
+    We extract only the mass and lambda values for plotting.
+    """
+    if gw_flow_dirs is None or len(gw_flow_dirs) == 0:
+        return None
+
+    try:
+        import jax
+        import jax.numpy as jnp
+        from jesterTOV.inference.flows.flow import Flow
+    except ImportError as e:
+        logger.warning(f"Failed to import JAX or Flow for GW constraints: {e}")
+        return None
+
+    all_masses = []
+    all_lambdas = []
+
+    for flow_dir in gw_flow_dirs:
+        try:
+            logger.info(f"Loading GW flow from {flow_dir}")
+            flow = Flow.from_directory(flow_dir)
+
+            # Sample from the flow
+            key = jax.random.key(seed)
+            samples = flow.sample(key, (n_samples,))  # Shape: (n_samples, 4)
+
+            # Extract m1, m2, Lambda1, Lambda2
+            # Flow outputs [m1, m2, Lambda1, Lambda2]
+            m1 = np.array(samples[:, 0])
+            m2 = np.array(samples[:, 1])
+            lambda1 = np.array(samples[:, 2])
+            lambda2 = np.array(samples[:, 3])
+
+            # Combine both components
+            all_masses.append(m1)
+            all_masses.append(m2)
+            all_lambdas.append(lambda1)
+            all_lambdas.append(lambda2)
+
+            logger.info(f"Sampled {n_samples} mass pairs from {flow_dir}")
+
+        except FileNotFoundError:
+            logger.warning(f"GW flow directory not found: {flow_dir}")
+            continue
+        except Exception as e:
+            logger.error(f"Failed to load GW flow from {flow_dir}: {e}")
+            continue
+
+    if len(all_masses) == 0:
+        logger.warning("No GW constraint data loaded")
+        return None
+
+    # Concatenate all samples
+    combined_mass = np.concatenate(all_masses)
+    combined_lambda = np.concatenate(all_lambdas)
+
+    logger.info(
+        f"Loaded {len(combined_mass)} GW M-Lambda samples from {len(gw_flow_dirs)} flow(s)"
+    )
+
+    return {"mass": combined_mass, "lambda": combined_lambda}
 
 
 def load_injection_eos(
@@ -320,6 +481,107 @@ def load_injection_eos(
     except Exception as e:
         logger.error(f"Failed to load injection EOS from {injection_path}: {e}")
         return None
+
+
+def plot_2d_contour(
+    x: np.ndarray,
+    y: np.ndarray,
+    color: str,
+    alpha: float,
+    linewidth: float,
+    levels: list[float] = CONTOUR_LEVELS,
+    label: Optional[str] = None,
+) -> None:
+    """Plot 2D contours from samples using kernel density estimation.
+
+    Parameters
+    ----------
+    x : np.ndarray
+        X-axis samples
+    y : np.ndarray
+        Y-axis samples
+    color : str
+        Contour color
+    alpha : float
+        Contour transparency
+    linewidth : float
+        Contour line width
+    levels : list[float], optional
+        Credible levels to plot (default: [0.90])
+    label : str or None, optional
+        Legend label for the contour
+
+    Notes
+    -----
+    Uses gaussian_kde for density estimation and matplotlib's contour
+    to plot the specified credible regions.
+    """
+    try:
+        # Create 2D KDE
+        kde = gaussian_kde(np.vstack([x, y]))
+
+        # Create grid for evaluation
+        x_min, x_max = np.min(x), np.max(x)
+        y_min, y_max = np.min(y), np.max(y)
+
+        # Add padding to grid
+        x_range = x_max - x_min
+        y_range = y_max - y_min
+        x_min -= 0.1 * x_range
+        x_max += 0.1 * x_range
+        y_min -= 0.1 * y_range
+        y_max += 0.1 * y_range
+
+        # Create grid
+        x_grid = np.linspace(x_min, x_max, 100)
+        y_grid = np.linspace(y_min, y_max, 100)
+        X, Y = np.meshgrid(x_grid, y_grid)
+
+        # Evaluate KDE on grid
+        positions = np.vstack([X.ravel(), Y.ravel()])
+        Z = np.reshape(kde(positions).T, X.shape)
+
+        # Convert credible levels to density thresholds
+        # Sort densities and find threshold for each level
+        sorted_z = np.sort(Z.ravel())[::-1]
+        cumsum = np.cumsum(sorted_z)
+        cumsum = cumsum / cumsum[-1]
+
+        # Find density thresholds for each credible level
+        density_thresholds = []
+        for level in levels:
+            idx = np.argmax(cumsum >= level)
+            density_thresholds.append(sorted_z[idx])
+
+        # Plot contours
+        contours = plt.contour(
+            X,
+            Y,
+            Z,
+            levels=density_thresholds,
+            colors=color,
+            linewidths=linewidth,
+            alpha=alpha,
+        )
+
+        # Add filled contour with lower alpha
+        plt.contourf(
+            X, Y, Z, levels=density_thresholds, colors=color, alpha=alpha * 0.3
+        )
+
+        # Add label to legend if provided
+        if label is not None:
+            # Create a proxy artist for the legend
+            from matplotlib.lines import Line2D
+
+            proxy = Line2D([0], [0], color=color, linewidth=linewidth, label=label)
+            ax = plt.gca()
+            handles, labels = ax.get_legend_handles_labels()
+            handles.append(proxy)
+            # Don't update legend here - let the main function do it
+
+    except Exception as e:
+        logger.warning(f"Failed to plot 2D contour: {e}")
 
 
 def report_credible_interval(
@@ -449,6 +711,7 @@ def make_mass_radius_plot(
     outdir: str,
     use_crest_cmap: bool = True,
     injection_data: Optional[Dict[str, Any]] = None,
+    nicer_constraint_files: Optional[list[str]] = None,
 ):
     """Create mass-radius plot with posterior probability coloring.
 
@@ -464,6 +727,9 @@ def make_mass_radius_plot(
         Whether to use seaborn crest colormap, by default True
     injection_data : dict or None, optional
         Injection EOS data for plotting true values, by default None
+    nicer_constraint_files : list[str] or None, optional
+        List of paths to NICER mass-radius posterior NPZ files for plotting
+        observational constraints, by default None
     """
     logger.info("Creating mass-radius plot...")
 
@@ -585,8 +851,21 @@ def make_mass_radius_plot(
     cbar.ax.tick_params(labelsize=0, length=0)
     cbar.ax.xaxis.set_label_position("top")
 
-    # Add legend for prior and/or injection
-    if prior_data is not None or injection_data is not None:
+    # Plot NICER observational constraints
+    nicer_data = load_nicer_constraints(nicer_constraint_files)
+    if nicer_data is not None:
+        logger.info("Plotting NICER M-R constraints")
+        plot_2d_contour(
+            nicer_data["radius"],
+            nicer_data["mass"],
+            color=NICER_CONTOUR_COLOR,
+            alpha=NICER_CONTOUR_ALPHA,
+            linewidth=NICER_CONTOUR_LINEWIDTH,
+            label="NICER",
+        )
+
+    # Add legend for prior, injection, and/or NICER
+    if prior_data is not None or injection_data is not None or nicer_data is not None:
         from matplotlib.lines import Line2D
 
         legend_elements = []
@@ -608,6 +887,17 @@ def make_mass_radius_plot(
                     label="Injection",
                 )
             )
+        if nicer_data is not None:
+            legend_elements.append(
+                Line2D(
+                    [0],
+                    [0],
+                    color=NICER_CONTOUR_COLOR,
+                    lw=NICER_CONTOUR_LINEWIDTH,
+                    alpha=NICER_CONTOUR_ALPHA,
+                    label="NICER",
+                )
+            )
         plt.legend(handles=legend_elements, loc="upper right")
 
     # Save figure
@@ -623,6 +913,8 @@ def make_mass_lambda_plot(
     outdir: str,
     use_crest_cmap: bool = True,
     injection_data: Optional[Dict[str, Any]] = None,
+    gw_flow_dirs: Optional[list[str]] = None,
+    gw_n_samples: int = 10000,
 ) -> None:
     """Create mass-Lambda plot with posterior probability coloring.
 
@@ -638,6 +930,11 @@ def make_mass_lambda_plot(
         Whether to use seaborn crest colormap, by default True
     injection_data : dict or None, optional
         Injection EOS data for plotting true values, by default None
+    gw_flow_dirs : list[str] or None, optional
+        List of paths to GW normalizing flow model directories for plotting
+        gravitational wave constraints, by default None
+    gw_n_samples : int, optional
+        Number of samples to draw from each GW flow (default: 10000)
     """
     logger.info("Creating mass-Lambda plot...")
 
@@ -758,8 +1055,21 @@ def make_mass_lambda_plot(
     cbar.ax.tick_params(labelsize=0, length=0)
     cbar.ax.xaxis.set_label_position("top")
 
-    # Add legend for prior and/or injection
-    if prior_data is not None or injection_data is not None:
+    # Plot GW observational constraints
+    gw_data = load_gw_constraints(gw_flow_dirs, n_samples=gw_n_samples)
+    if gw_data is not None:
+        logger.info("Plotting GW M-Lambda constraints")
+        plot_2d_contour(
+            gw_data["mass"],
+            gw_data["lambda"],
+            color=GW_CONTOUR_COLOR,
+            alpha=GW_CONTOUR_ALPHA,
+            linewidth=GW_CONTOUR_LINEWIDTH,
+            label="GW",
+        )
+
+    # Add legend for prior, injection, and/or GW
+    if prior_data is not None or injection_data is not None or gw_data is not None:
         from matplotlib.lines import Line2D
 
         legend_elements = []
@@ -779,6 +1089,17 @@ def make_mass_lambda_plot(
                     linestyle=INJECTION_LINESTYLE,
                     alpha=INJECTION_ALPHA,
                     label="Injection",
+                )
+            )
+        if gw_data is not None:
+            legend_elements.append(
+                Line2D(
+                    [0],
+                    [0],
+                    color=GW_CONTOUR_COLOR,
+                    lw=GW_CONTOUR_LINEWIDTH,
+                    alpha=GW_CONTOUR_ALPHA,
+                    label="GW",
                 )
             )
         plt.legend(handles=legend_elements, loc="upper right")
@@ -1273,8 +1594,9 @@ def make_contour_radii_plot(
     outdir: str,
     m_min: float = 0.6,
     m_max: float = 2.1,
+    nicer_constraint_files: Optional[list[str]] = None,
 ):
-    """Create contour plot of radii vs mass.
+    """Create contour plot of radii vs mass showing credible regions.
 
     Parameters
     ----------
@@ -1288,6 +1610,9 @@ def make_contour_radii_plot(
         Minimum mass, by default 0.6
     m_max : float, optional
         Maximum mass, by default 2.1
+    nicer_constraint_files : list[str] or None, optional
+        List of paths to NICER mass-radius posterior NPZ files for plotting
+        observational constraints, by default None
     """
     logger.info("Creating radii contour plot...")
 
@@ -1357,7 +1682,57 @@ def make_contour_radii_plot(
     plt.ylabel(ylabel)
     plt.xlim(8.0, 16.0)
     plt.ylim(m_min, m_max)
-    plt.legend()
+
+    # Plot NICER observational constraints if provided
+    nicer_data = load_nicer_constraints(nicer_constraint_files)
+    if nicer_data is not None:
+        logger.info("Adding NICER M-R constraints to contour plot")
+        # Plot NICER samples as scatter with low alpha for density visualization
+        plt.scatter(
+            nicer_data["radius"],
+            nicer_data["mass"],
+            c=NICER_CONTOUR_COLOR,
+            alpha=0.01,
+            s=1,
+            rasterized=True,
+            label="NICER",
+        )
+
+    # Update legend
+    if prior_data is not None or nicer_data is not None:
+        from matplotlib.lines import Line2D
+
+        legend_elements = []
+        if prior_data is not None:
+            legend_elements.append(
+                Line2D(
+                    [0], [0], color=COLORS_DICT["prior"], lw=2, alpha=0.7, label="Prior"
+                )
+            )
+        legend_elements.append(
+            Line2D(
+                [0],
+                [0],
+                color=COLORS_DICT["posterior"],
+                lw=2,
+                alpha=0.7,
+                label="Posterior",
+            )
+        )
+        if nicer_data is not None:
+            legend_elements.append(
+                Line2D(
+                    [0],
+                    [0],
+                    color=NICER_CONTOUR_COLOR,
+                    lw=2,
+                    alpha=NICER_CONTOUR_ALPHA,
+                    label="NICER",
+                )
+            )
+        plt.legend(handles=legend_elements, loc="best")
+    else:
+        plt.legend()
 
     save_name = os.path.join(outdir, "radii_contour_plot.pdf")
     plt.savefig(save_name, bbox_inches="tight")
@@ -1436,6 +1811,9 @@ def generate_all_plots(
     make_histograms_flag: bool = True,
     make_cs2_flag: bool = True,
     injection_eos_path: Optional[str] = None,
+    nicer_constraint_files: Optional[list[str]] = None,
+    gw_flow_dirs: Optional[list[str]] = None,
+    gw_n_samples: int = 10000,
 ):
     """Generate selected plots for the specified output directory.
 
@@ -1459,6 +1837,14 @@ def generate_all_plots(
         Whether to generate cs2-density plot, by default True
     injection_eos_path : str, optional
         Path to NPZ file containing injection EOS data, by default None
+    nicer_constraint_files : list[str] or None, optional
+        List of paths to NICER mass-radius posterior NPZ files for plotting
+        observational constraints on mass-radius plots, by default None
+    gw_flow_dirs : list[str] or None, optional
+        List of paths to GW normalizing flow model directories for plotting
+        gravitational wave constraints on mass-lambda plots, by default None
+    gw_n_samples : int, optional
+        Number of samples to draw from each GW flow (default: 10000)
     """
     logger.info(f"Generating plots for directory: {outdir}")
 
@@ -1499,12 +1885,21 @@ def generate_all_plots(
 
     if make_massradius_flag:
         make_mass_radius_plot(
-            data, prior_data, figures_dir, injection_data=injection_data
+            data,
+            prior_data,
+            figures_dir,
+            injection_data=injection_data,
+            nicer_constraint_files=nicer_constraint_files,
         )
 
     if make_masslambda_flag:
         make_mass_lambda_plot(
-            data, prior_data, figures_dir, injection_data=injection_data
+            data,
+            prior_data,
+            figures_dir,
+            injection_data=injection_data,
+            gw_flow_dirs=gw_flow_dirs,
+            gw_n_samples=gw_n_samples,
         )
 
     if make_pressuredensity_flag:
@@ -1558,6 +1953,9 @@ def run_from_config(config_path: str) -> None:
     logger.info(f"Output directory: {outdir}")
     logger.info(f"Prior directory: {config.postprocessing.prior_dir}")
     logger.info(f"Injection EOS: {config.postprocessing.injection_eos_path}")
+    logger.info(f"NICER constraints: {config.postprocessing.nicer_constraint_files}")
+    logger.info(f"GW flow dirs: {config.postprocessing.gw_flow_dirs}")
+    logger.info(f"GW n_samples: {config.postprocessing.gw_n_samples}")
     logger.info(f"Make cornerplot: {config.postprocessing.make_cornerplot}")
     logger.info(f"Make mass-radius: {config.postprocessing.make_massradius}")
     logger.info(f"Make mass-lambda: {config.postprocessing.make_masslambda}")
@@ -1577,6 +1975,9 @@ def run_from_config(config_path: str) -> None:
         make_histograms_flag=config.postprocessing.make_histograms,
         make_cs2_flag=config.postprocessing.make_cs2,
         injection_eos_path=config.postprocessing.injection_eos_path,
+        nicer_constraint_files=config.postprocessing.nicer_constraint_files,
+        gw_flow_dirs=config.postprocessing.gw_flow_dirs,
+        gw_n_samples=config.postprocessing.gw_n_samples,
     )
 
     logger.info(

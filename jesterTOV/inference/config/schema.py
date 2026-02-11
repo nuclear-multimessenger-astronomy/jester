@@ -694,6 +694,16 @@ class PostprocessingConfig(BaseModel):
         - e: geometric units :math:`m^{-2}`
         - cs2: dimensionless
         This matches LALSuite EOS format and JESTER HDF5 output. Missing keys handled gracefully.
+    nicer_constraint_files : list[str] | None
+        List of paths to NICER mass-radius posterior NPZ files for plotting
+        observational constraints on mass-radius plots (default: None).
+        Each NPZ file should contain 'mass' and 'radius' arrays.
+    gw_flow_dirs : list[str] | None
+        List of paths to GW normalizing flow model directories for plotting
+        gravitational wave constraints on mass-lambda plots (default: None).
+        Each directory should contain a trained normalizing flow model.
+    gw_n_samples : int
+        Number of samples to draw from each GW flow for contour plotting (default: 10000)
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -707,6 +717,9 @@ class PostprocessingConfig(BaseModel):
     make_cs2: bool = True
     prior_dir: str | None = None
     injection_eos_path: str | None = None
+    nicer_constraint_files: list[str] | None = None
+    gw_flow_dirs: list[str] | None = None
+    gw_n_samples: int = 10000
 
 
 class InferenceConfig(BaseModel):
