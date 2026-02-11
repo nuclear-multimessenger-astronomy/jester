@@ -8,6 +8,10 @@ Reference documentation sources (local development only):
 - **JAX**: `/Users/Woute029/Documents/Code/projects/jester_review/docs_resources/jax/docs` - Clean API structure
 - **scikit-learn**: `/Users/Woute029/Documents/Code/projects/jester_review/docs_resources/scikit-learn/doc` - Hierarchical API reference with individual class pages
 
+## Style
+
+When discussing something in long-form, use full sentences and not a list of bullet points with short sentences. Make it easy to read and clear for new users!
+
 ## Documentation Workflow
 
 **IMPORTANT**: When working on documentation changes, pause after making initial changes and let the user review before proceeding. Documentation is user-facing and requires careful review.
