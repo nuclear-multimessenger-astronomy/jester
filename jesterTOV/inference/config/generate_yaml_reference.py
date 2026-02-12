@@ -23,7 +23,7 @@ from .schema import (
     InferenceConfig,
     TransformConfig,
     PriorConfig,
-    LikelihoodConfig,
+    # LikelihoodConfig,  # TODO: Will be used in Branch 2 for introspection
     FlowMCSamplerConfig,
     BlackJAXNSAWConfig,
     SMCRandomWalkSamplerConfig,
@@ -300,8 +300,10 @@ The JESTER inference system uses YAML configuration files validated by Pydantic 
     # Likelihood fields
     doc += "### Likelihood Configuration (`likelihoods:`)\n\n"
     doc += "List of observational constraints. Each likelihood has:\n\n"
-    likelihood_fields = extract_field_info(LikelihoodConfig)
-    doc += generate_field_docs(likelihood_fields)
+    # TODO: Update this in Branch 2 to introspect discriminated union
+    # likelihood_fields = extract_field_info(LikelihoodConfig)
+    # doc += generate_field_docs(likelihood_fields)
+    doc += "See likelihood-specific parameters below.\n\n"
     doc += "\n"  # Add blank line before next section
 
     # Document likelihood-specific parameters
