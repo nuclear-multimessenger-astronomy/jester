@@ -93,77 +93,162 @@ class TestLikelihoodConfig:
 
     def test_zero_likelihood_config(self):
         """Test zero likelihood configuration (for prior-only sampling)."""
-        config = schema.LikelihoodConfig(
-            type="zero",
+        config = schema.ZeroLikelihoodConfig(
             enabled=True,
-            parameters={},
         )
         assert config.type == "zero"
         assert config.enabled is True
-        assert config.parameters == {}
 
     def test_gw_likelihood_config(self):
         """Test GW likelihood configuration."""
-        config = schema.LikelihoodConfig(
-            type="gw",
+        config = schema.GWLikelihoodConfig(
             enabled=True,
-            parameters={
-                "events": [{"name": "GW170817", "model_dir": "/path/to/data"}],
-                "penalty_value": -99999.0,
-                "N_masses_evaluation": 20,
-            },
+            events=[{"name": "GW170817", "model_dir": "/path/to/data"}],
+            penalty_value=-99999.0,
+            N_masses_evaluation=20,
         )
         assert config.type == "gw"
-        assert len(config.parameters["events"]) == 1
-        assert config.parameters["penalty_value"] == -99999.0
+        assert len(config.events) == 1
+        assert config.penalty_value == -99999.0
+
+    def test_gw_likelihood_missing_event_name_fails(self):
+        """Test that GW likelihood without event name fails."""
+        with pytest.raises(ValidationError, match="missing required 'name' field"):
+            schema.GWLikelihoodConfig(
+                events=[{"model_dir": "/path/to/data"}],  # Missing 'name'
+            )
+
+    def test_gw_likelihood_empty_events_fails(self):
+        """Test that GW likelihood with empty events list fails."""
+        with pytest.raises(ValidationError):
+            schema.GWLikelihoodConfig(
+                events=[],  # Empty list
+            )
 
     def test_nicer_likelihood_config(self):
         """Test NICER likelihood configuration."""
-        config = schema.LikelihoodConfig(
-            type="nicer",
+        config = schema.NICERLikelihoodConfig(
             enabled=True,
-            parameters={
-                "pulsars": [
-                    {
-                        "name": "J0030",
-                        "amsterdam_samples_file": "/path/to/amsterdam.txt",
-                        "maryland_samples_file": "/path/to/maryland.txt",
-                    }
-                ],
-                "N_masses_evaluation": 100,
-            },
+            pulsars=[
+                {
+                    "name": "J0030",
+                    "amsterdam_samples_file": "/path/to/amsterdam.txt",
+                    "maryland_samples_file": "/path/to/maryland.txt",
+                }
+            ],
+            N_masses_evaluation=100,
         )
         assert config.type == "nicer"
-        assert len(config.parameters["pulsars"]) == 1
+        assert len(config.pulsars) == 1
+
+    def test_nicer_likelihood_missing_files_fails(self):
+        """Test that NICER likelihood without sample files fails."""
+        with pytest.raises(
+            ValidationError, match="missing required 'amsterdam_samples_file' field"
+        ):
+            schema.NICERLikelihoodConfig(
+                pulsars=[
+                    {
+                        "name": "J0030",
+                        # Missing sample files
+                    }
+                ],
+            )
 
     def test_radio_likelihood_config(self):
         """Test radio timing likelihood configuration."""
-        config = schema.LikelihoodConfig(
-            type="radio",
+        config = schema.RadioLikelihoodConfig(
             enabled=True,
-            parameters={
-                "pulsars": [
-                    {"name": "J0348+0432", "mass_mean": 2.01, "mass_std": 0.04}
-                ],
-            },
+            pulsars=[{"name": "J0348+0432", "mass_mean": 2.01, "mass_std": 0.04}],
         )
         assert config.type == "radio"
-        assert config.parameters["pulsars"][0]["mass_mean"] == 2.01
+        assert config.pulsars[0]["mass_mean"] == 2.01
 
-    def test_invalid_likelihood_type(self):
-        """Test that invalid likelihood types fail validation."""
-        with pytest.raises(ValidationError):
-            schema.LikelihoodConfig(
-                type="invalid_type",
-                enabled=True,
+    def test_radio_likelihood_missing_mass_fails(self):
+        """Test that radio likelihood without mass parameters fails."""
+        with pytest.raises(ValidationError, match="missing required fields"):
+            schema.RadioLikelihoodConfig(
+                pulsars=[{"name": "J0348+0432"}],  # Missing mass_mean and mass_std
             )
+
+    def test_radio_likelihood_negative_std_fails(self):
+        """Test that radio likelihood with negative mass_std fails."""
+        with pytest.raises(ValidationError, match="must be a positive number"):
+            schema.RadioLikelihoodConfig(
+                pulsars=[{"name": "J0348+0432", "mass_mean": 2.01, "mass_std": -0.04}],
+            )
+
+    def test_chieft_likelihood_config(self):
+        """Test ChiEFT likelihood configuration."""
+        config = schema.ChiEFTLikelihoodConfig(
+            enabled=True,
+            low_filename="/path/to/low.dat",
+            high_filename="/path/to/high.dat",
+            nb_n=100,
+        )
+        assert config.type == "chieft"
+        assert config.nb_n == 100
+
+    def test_eos_constraints_config(self):
+        """Test EOS constraints likelihood configuration."""
+        config = schema.EOSConstraintsLikelihoodConfig(
+            enabled=True,
+            penalty_causality=-1e10,
+            penalty_stability=-1e5,
+        )
+        assert config.type == "constraints_eos"
+        assert config.penalty_causality == -1e10
+
+    def test_tov_constraints_config(self):
+        """Test TOV constraints likelihood configuration."""
+        config = schema.TOVConstraintsLikelihoodConfig(
+            enabled=True,
+            penalty_tov=-1e10,
+        )
+        assert config.type == "constraints_tov"
+        assert config.penalty_tov == -1e10
+
+    def test_discriminated_union_from_dict(self):
+        """Test that discriminated union works with dict input."""
+        from pydantic import TypeAdapter
+
+        # Create type adapter for LikelihoodConfig union
+        adapter = TypeAdapter(schema.LikelihoodConfig)
+
+        # Test GW likelihood
+        gw_dict = {
+            "type": "gw",
+            "enabled": True,
+            "events": [{"name": "GW170817"}],
+        }
+        gw_config = adapter.validate_python(gw_dict)
+        assert isinstance(gw_config, schema.GWLikelihoodConfig)
+
+        # Test NICER likelihood
+        nicer_dict = {
+            "type": "nicer",
+            "enabled": True,
+            "pulsars": [
+                {
+                    "name": "J0030",
+                    "amsterdam_samples_file": "/path/to/amsterdam.txt",
+                    "maryland_samples_file": "/path/to/maryland.txt",
+                }
+            ],
+        }
+        nicer_config = adapter.validate_python(nicer_dict)
+        assert isinstance(nicer_config, schema.NICERLikelihoodConfig)
+
+        # Test Zero likelihood
+        zero_dict = {"type": "zero"}
+        zero_config = adapter.validate_python(zero_dict)
+        assert isinstance(zero_config, schema.ZeroLikelihoodConfig)
 
     def test_disabled_likelihood(self):
         """Test that likelihoods can be disabled."""
-        config = schema.LikelihoodConfig(
-            type="gw",
+        config = schema.GWLikelihoodConfig(
             enabled=False,
-            parameters={},
+            events=[{"name": "GW170817"}],
         )
         assert config.enabled is False
 
@@ -231,33 +316,32 @@ class TestInferenceConfig:
             {
                 "type": "gw",
                 "enabled": True,
-                "parameters": {
-                    "events": [{"name": "GW170817", "model_dir": "/path/to/data"}]
-                },
+                "events": [{"name": "GW170817", "model_dir": "/path/to/data"}],
             },
             {
                 "type": "nicer",
                 "enabled": True,
-                "parameters": {
-                    "pulsars": [
-                        {
-                            "name": "J0030",
-                            "amsterdam_samples_file": "/path/to/amsterdam.txt",
-                            "maryland_samples_file": "/path/to/maryland.txt",
-                        }
-                    ]
-                },
+                "pulsars": [
+                    {
+                        "name": "J0030",
+                        "amsterdam_samples_file": "/path/to/amsterdam.txt",
+                        "maryland_samples_file": "/path/to/maryland.txt",
+                    }
+                ],
             },
             {
                 "type": "radio",
                 "enabled": False,
-                "parameters": {},  # Empty OK when disabled
+                "pulsars": [
+                    {"name": "J0348+0432", "mass_mean": 2.01, "mass_std": 0.04}
+                ],  # Still need valid data even when disabled
             },
         ]
         config = schema.InferenceConfig(**config_dict)
         assert len(config.likelihoods) == 3
-        assert config.likelihoods[0].type == "gw"
-        assert config.likelihoods[1].type == "nicer"
+        assert isinstance(config.likelihoods[0], schema.GWLikelihoodConfig)
+        assert isinstance(config.likelihoods[1], schema.NICERLikelihoodConfig)
+        assert isinstance(config.likelihoods[2], schema.RadioLikelihoodConfig)
         assert config.likelihoods[2].enabled is False
 
     def test_config_with_cse(self, sample_config_dict):
@@ -377,10 +461,8 @@ class TestExtraFieldValidation:
     def test_likelihood_config_rejects_extra_fields(self):
         """Test that LikelihoodConfig rejects unknown fields."""
         with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-            schema.LikelihoodConfig(
-                type="zero",
+            schema.ZeroLikelihoodConfig(
                 enabled=True,
-                parameters={},
                 extra_field="should_fail",  # Should be rejected
             )
 
