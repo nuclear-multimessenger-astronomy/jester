@@ -10,7 +10,7 @@ This ensures the user documentation stays in sync with the actual validation rul
 """
 
 from pydantic import BaseModel, Field, field_validator, ValidationInfo, ConfigDict
-from typing import Literal, Dict, Any, Union, Annotated
+from typing import Literal, Union, Annotated
 from pydantic import Discriminator
 
 
@@ -110,288 +110,511 @@ class PriorConfig(BaseModel):
         return v
 
 
-class LikelihoodConfig(BaseModel):
-    """Configuration for individual likelihood.
+# Base likelihood configuration
+class BaseLikelihoodConfig(BaseModel):
+    """Base configuration for all likelihood types."""
 
-    Attributes
-    ----------
-    type : Literal["gw", "gw_resampled", "nicer", "radio", "chieft", "rex", "constraints", "zero"]
-        Type of likelihood constraint
-    enabled : bool
-        Whether this likelihood is enabled
-    parameters : dict
-        Likelihood-specific parameters
+    enabled: bool = Field(
+        default=True, description="Whether this likelihood is enabled in the analysis"
+    )
 
-        For GW likelihoods (type: "gw", presampled version - default):
-            events : list[dict]
-                List of GW events with 'name' and 'model_dir' keys
-            penalty_value : float
-                Penalty for masses exceeding Mtov (default: -99999.0)
-            N_masses_evaluation : int
-                Number of mass samples to pre-sample (default: 2000)
-            N_masses_batch_size : int
-                Batch size for jax.lax.map processing (default: 1000)
-            seed : int
-                Random seed for mass pre-sampling (default: 42)
 
-        For GW resampled likelihoods (type: "gw_resampled", legacy on-the-fly resampling):
-            events : list[dict]
-                List of GW events with 'name' and 'model_dir' keys
-            penalty_value : float
-                Penalty for masses exceeding Mtov (default: -99999.0)
-            N_masses_evaluation : int
-                Number of mass samples per evaluation (default: 20)
-            N_masses_batch_size : int
-                Batch size for mass sampling (default: 10)
+# GW Likelihood Configs
+class GWLikelihoodConfig(BaseLikelihoodConfig):
+    """Gravitational wave likelihood configuration (presampled version).
 
-        For NICER likelihoods:
-            pulsars : list[dict]
-                List of pulsars with 'name', 'amsterdam_samples_file', and 'maryland_samples_file' keys
-            N_masses_evaluation : int
-                Number of mass grid points for marginalization (default: 100)
-            N_masses_batch_size : int
-                Batch size for processing mass grid points (default: 20)
+    This is the default GW likelihood that pre-samples masses from the
+    GW posterior for efficient evaluation during MCMC sampling.
 
-        For radio timing likelihoods:
-            pulsars : list[dict]
-                List of pulsars with 'name', 'mass_mean', and 'mass_std' keys
-            penalty_value : float
-                Penalty for invalid TOV solutions (M_TOV ≤ m_min) (default: -1e5)
-            nb_masses : int
-                Number of mass points for numerical integration (default: 100)
+    Examples
+    --------
+    .. code-block:: yaml
 
-        For chiEFT likelihoods:
-            low_filename : str, optional
-                Path to lower bound data file (default: data/chiEFT/2402.04172/low.dat)
-            high_filename : str, optional
-                Path to upper bound data file (default: data/chiEFT/2402.04172/high.dat)
-            nb_n : int
-                Number of density points for integration (default: 100)
-
-        For constraint likelihoods (type: "constraints" - deprecated, use constraints_eos + constraints_tov):
-            penalty_tov : float
-                Log likelihood penalty for TOV integration failure (default: -1e10)
-            penalty_causality : float
-                Log likelihood penalty for causality violation (cs^2 > 1) (default: -1e10)
-            penalty_stability : float
-                Log likelihood penalty for thermodynamic instability (cs^2 < 0) (default: -1e5)
-            penalty_pressure : float
-                Log likelihood penalty for non-monotonic pressure (default: -1e5)
-
-        For EOS constraint likelihoods (type: "constraints_eos"):
-            penalty_causality : float
-                Log likelihood penalty for causality violation (cs^2 > 1) (default: -1e10)
-            penalty_stability : float
-                Log likelihood penalty for thermodynamic instability (cs^2 < 0) (default: -1e5)
-            penalty_pressure : float
-                Log likelihood penalty for non-monotonic pressure (default: -1e5)
-
-        For TOV constraint likelihoods (type: "constraints_tov"):
-            penalty_tov : float
-                Log likelihood penalty for TOV integration failure (default: -1e10)
-
-        For Gamma constraint likelihoods (type: "constraints_gamma", spectral EOS only):
-            penalty_gamma : float
-                Log likelihood penalty for Gamma bound violation (default: -1e10)
-                Only applies to spectral decomposition EOS (Γ ∈ [0.6, 4.5])
+        - type: "gw"
+          enabled: true
+          events:
+            - name: "GW170817"
+              model_dir: "./NFs/GW170817"
+          penalty_value: -99999.0
+          N_masses_evaluation: 2000
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    # TODO: deprecate rex for now: not implemented yet
-    type: Literal[
-        "gw",
-        "gw_resampled",
-        "nicer",
-        "radio",
-        "chieft",
-        "rex",
-        "constraints",
-        "constraints_eos",
-        "constraints_tov",
-        "constraints_gamma",
-        "zero",
-    ]
-    enabled: bool = True
-    parameters: Dict[str, Any] = Field(default_factory=dict)
+    type: Literal["gw"] = Field(default="gw", description="Likelihood type identifier")
 
-    @field_validator("parameters")
+    events: list[dict[str, str]] = Field(
+        description=(
+            "List of GW events to include. Each event must have 'name' key. "
+            "Optional 'model_dir' key specifies path to normalizing flow model. "
+            "If omitted, uses preset paths based on event name."
+        ),
+        min_length=1,
+    )
+
+    penalty_value: float = Field(
+        default=-99999.0,
+        description="Log-likelihood penalty returned when M > M_TOV",
+    )
+
+    N_masses_evaluation: int = Field(
+        default=2000,
+        gt=0,
+        description="Number of mass samples to pre-sample from GW posterior",
+    )
+
+    N_masses_batch_size: int = Field(
+        default=1000,
+        gt=0,
+        description="Batch size for jax.lax.map processing of mass grid",
+    )
+
+    seed: int = Field(
+        default=42,
+        ge=0,
+        description="Random seed for reproducible mass sampling from GW posterior",
+    )
+
+    @field_validator("events")
     @classmethod
-    def validate_likelihood_parameters(
-        cls, v: Dict[str, Any], info: ValidationInfo
-    ) -> Dict[str, Any]:
-        """Validate likelihood-specific parameters."""
-        if "type" not in info.data:
-            return v
-
-        # Skip validation if likelihood is disabled
-        if "enabled" in info.data and not info.data["enabled"]:
-            return v
-
-        likelihood_type = info.data["type"]
-
-        # Validate GW likelihood parameters (presampled is now default)
-        if likelihood_type == "gw":
-            if "events" not in v:
-                raise ValueError(
-                    "GW likelihood requires 'events' parameter (list of dicts with 'name' and 'model_dir')"
-                )
-
-            events = v["events"]
-            if not isinstance(events, list) or len(events) == 0:
-                raise ValueError("GW likelihood 'events' must be a non-empty list")
-
-            # Validate each event
-            for i, event in enumerate(events):
-                if not isinstance(event, dict):
-                    raise ValueError(
-                        f"Event {i} must be a dict with 'name' and optional 'model_dir' keys"
-                    )
-                if "name" not in event:
-                    raise ValueError(f"Event {i} missing required 'name' field")
-                # model_dir is now optional - will use presets if not provided
-
-            # Set defaults for optional parameters (presampled version)
-            v.setdefault("penalty_value", -99999.0)
-            v.setdefault("N_masses_evaluation", 2000)  # Default for presampled
-            v.setdefault("N_masses_batch_size", 1000)
-            v.setdefault("seed", 42)
-
-        # Validate GW resampled likelihood parameters (legacy behavior)
-        elif likelihood_type == "gw_resampled":
-            if "events" not in v:
-                raise ValueError(
-                    "GW resampled likelihood requires 'events' parameter (list of dicts with 'name' and 'model_dir')"
-                )
-
-            events = v["events"]
-            if not isinstance(events, list) or len(events) == 0:
-                raise ValueError(
-                    "GW resampled likelihood 'events' must be a non-empty list"
-                )
-
-            # Validate each event
-            for i, event in enumerate(events):
-                if not isinstance(event, dict):
-                    raise ValueError(
-                        f"Event {i} must be a dict with 'name' and optional 'model_dir' keys"
-                    )
-                if "name" not in event:
-                    raise ValueError(f"Event {i} missing required 'name' field")
-                # model_dir is now optional - will use presets if not provided
-
-            # Set defaults for optional parameters (resampled version)
-            v.setdefault("penalty_value", -99999.0)
-            v.setdefault("N_masses_evaluation", 20)
-            v.setdefault("N_masses_batch_size", 10)
-
-        # Validate NICER likelihood parameters
-        elif likelihood_type == "nicer":
-            if "pulsars" not in v:
-                raise ValueError(
-                    "NICER likelihood requires 'pulsars' parameter "
-                    "(list of dicts with 'name', 'amsterdam_samples_file', and 'maryland_samples_file')"
-                )
-
-            pulsars = v["pulsars"]
-            if not isinstance(pulsars, list) or len(pulsars) == 0:
-                raise ValueError("NICER likelihood 'pulsars' must be a non-empty list")
-
-            # Validate each pulsar
-            for i, pulsar in enumerate(pulsars):
-                if not isinstance(pulsar, dict):
-                    raise ValueError(
-                        f"Pulsar {i} must be a dict with 'name', 'amsterdam_samples_file', "
-                        f"and 'maryland_samples_file' keys"
-                    )
-                if "name" not in pulsar:
-                    raise ValueError(f"Pulsar {i} missing required 'name' field")
-                if "amsterdam_samples_file" not in pulsar:
-                    raise ValueError(
-                        f"Pulsar {i} missing required 'amsterdam_samples_file' field"
-                    )
-                if "maryland_samples_file" not in pulsar:
-                    raise ValueError(
-                        f"Pulsar {i} missing required 'maryland_samples_file' field"
-                    )
-
-            # Set defaults for optional parameters
-            v.setdefault("N_masses_evaluation", 100)
-            v.setdefault("N_masses_batch_size", 20)
-
-        # Validate radio timing likelihood parameters
-        elif likelihood_type == "radio":
-            if "pulsars" not in v:
-                raise ValueError(
-                    "Radio timing likelihood requires 'pulsars' parameter "
-                    "(list of dicts with 'name', 'mass_mean', and 'mass_std')"
-                )
-
-            pulsars = v["pulsars"]
-            if not isinstance(pulsars, list) or len(pulsars) == 0:
-                raise ValueError(
-                    "Radio timing likelihood 'pulsars' must be a non-empty list"
-                )
-
-            # Validate each pulsar
-            for i, pulsar in enumerate(pulsars):
-                if not isinstance(pulsar, dict):
-                    raise ValueError(
-                        f"Pulsar {i} must be a dict with 'name', 'mass_mean', and 'mass_std' keys"
-                    )
-                if "name" not in pulsar:
-                    raise ValueError(f"Pulsar {i} missing required 'name' field")
-                if "mass_mean" not in pulsar:
-                    raise ValueError(f"Pulsar {i} missing required 'mass_mean' field")
-                if "mass_std" not in pulsar:
-                    raise ValueError(f"Pulsar {i} missing required 'mass_std' field")
-
-                # Validate mass values
-                if (
-                    not isinstance(pulsar["mass_mean"], (int, float))
-                    or pulsar["mass_mean"] <= 0
-                ):
-                    raise ValueError(
-                        f"Pulsar {i} 'mass_mean' must be a positive number, got: {pulsar['mass_mean']}"
-                    )
-                if (
-                    not isinstance(pulsar["mass_std"], (int, float))
-                    or pulsar["mass_std"] <= 0
-                ):
-                    raise ValueError(
-                        f"Pulsar {i} 'mass_std' must be a positive number, got: {pulsar['mass_std']}"
-                    )
-
-            # Set defaults for optional parameters
-            v.setdefault("penalty_value", -1e5)
-            v.setdefault("nb_masses", 100)
-
-        # Validate constraint likelihood parameters (deprecated - use constraints_eos + constraints_tov)
-        elif likelihood_type == "constraints":
-            # Set defaults for optional parameters
-            v.setdefault("penalty_tov", -1e10)
-            v.setdefault("penalty_causality", -1e10)
-            v.setdefault("penalty_stability", -1e5)
-            v.setdefault("penalty_pressure", -1e5)
-
-        # Validate EOS constraint likelihood parameters
-        elif likelihood_type == "constraints_eos":
-            # Set defaults for optional parameters
-            v.setdefault("penalty_causality", -1e10)
-            v.setdefault("penalty_stability", -1e5)
-            v.setdefault("penalty_pressure", -1e5)
-
-        # Validate TOV constraint likelihood parameters
-        elif likelihood_type == "constraints_tov":
-            # Set defaults for optional parameters
-            v.setdefault("penalty_tov", -1e10)
-
-        # Validate gamma constraint likelihood parameters
-        elif likelihood_type == "constraints_gamma":
-            # Set defaults for optional parameters
-            v.setdefault("penalty_gamma", -1e10)
-
+    def validate_events(cls, v: list[dict[str, str]]) -> list[dict[str, str]]:
+        """Validate event structure."""
+        for i, event in enumerate(v):
+            if "name" not in event:
+                raise ValueError(f"Event {i} missing required 'name' field")
+            if not isinstance(event["name"], str):
+                raise ValueError(f"Event {i} 'name' must be a string")
         return v
+
+
+class GWResampledLikelihoodConfig(BaseLikelihoodConfig):
+    """Gravitational wave likelihood configuration (legacy resampled version).
+
+    Legacy version that resamples masses from GW posterior on-the-fly
+    during each likelihood evaluation. Slower than presampled version.
+
+    Examples
+    --------
+    .. code-block:: yaml
+
+        - type: "gw_resampled"
+          enabled: true
+          events:
+            - name: "GW170817"
+          N_masses_evaluation: 20
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["gw_resampled"] = Field(
+        default="gw_resampled", description="Likelihood type identifier"
+    )
+
+    events: list[dict[str, str]] = Field(
+        description="List of GW events (see GWLikelihoodConfig for format)",
+        min_length=1,
+    )
+
+    penalty_value: float = Field(default=-99999.0)
+    N_masses_evaluation: int = Field(default=20, gt=0)
+    N_masses_batch_size: int = Field(default=10, gt=0)
+
+    @field_validator("events")
+    @classmethod
+    def validate_events(cls, v: list[dict[str, str]]) -> list[dict[str, str]]:
+        """Validate event structure."""
+        for i, event in enumerate(v):
+            if "name" not in event:
+                raise ValueError(f"Event {i} missing required 'name' field")
+        return v
+
+
+# NICER Likelihood Config
+class NICERLikelihoodConfig(BaseLikelihoodConfig):
+    """NICER X-ray timing likelihood configuration.
+
+    Constrains mass-radius relation using NICER observations of
+    millisecond pulsars. Marginalizes over pulsar mass using
+    M-R posterior samples from analysis teams.
+
+    Examples
+    --------
+    .. code-block:: yaml
+
+        - type: "nicer"
+          enabled: true
+          pulsars:
+            - name: "J0030"
+              amsterdam_samples_file: "./data/J0030_amsterdam.txt"
+              maryland_samples_file: "./data/J0030_maryland.txt"
+            - name: "J0740"
+          N_masses_evaluation: 100
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["nicer"] = Field(
+        default="nicer", description="Likelihood type identifier"
+    )
+
+    pulsars: list[dict[str, str]] = Field(
+        description=(
+            "List of pulsars to include. Each pulsar must have 'name' key. "
+            "Optional 'amsterdam_samples_file' and 'maryland_samples_file' keys "
+            "specify paths to M-R posterior samples. If omitted, uses preset paths."
+        ),
+        min_length=1,
+    )
+
+    N_masses_evaluation: int = Field(
+        default=100,
+        gt=0,
+        description="Number of mass grid points for marginalization over pulsar mass",
+    )
+
+    N_masses_batch_size: int = Field(
+        default=20,
+        gt=0,
+        description="Batch size for processing mass grid points",
+    )
+
+    @field_validator("pulsars")
+    @classmethod
+    def validate_pulsars(cls, v: list[dict[str, str]]) -> list[dict[str, str]]:
+        """Validate pulsar structure."""
+        for i, pulsar in enumerate(v):
+            if "name" not in pulsar:
+                raise ValueError(f"Pulsar {i} missing required 'name' field")
+            # Currently both sample files are required (preset paths not implemented yet)
+            if "amsterdam_samples_file" not in pulsar:
+                raise ValueError(
+                    f"Pulsar {i} missing required 'amsterdam_samples_file' field"
+                )
+            if "maryland_samples_file" not in pulsar:
+                raise ValueError(
+                    f"Pulsar {i} missing required 'maryland_samples_file' field"
+                )
+        return v
+
+
+# Radio Likelihood Config
+class RadioLikelihoodConfig(BaseLikelihoodConfig):
+    """Radio pulsar timing likelihood configuration.
+
+    Constrains neutron star masses using radio timing measurements.
+    Applies Gaussian mass constraints from pulsar timing observations.
+
+    Examples
+    --------
+    .. code-block:: yaml
+
+        - type: "radio"
+          enabled: true
+          pulsars:
+            - name: "J0740+6620"
+              mass_mean: 2.08
+              mass_std: 0.07
+          penalty_value: -1e5
+          nb_masses: 100
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["radio"] = Field(
+        default="radio", description="Likelihood type identifier"
+    )
+
+    pulsars: list[dict[str, str | float]] = Field(
+        description=(
+            "List of pulsars with timing mass measurements. Each pulsar must have "
+            "'name', 'mass_mean' (solar masses), and 'mass_std' (1-sigma, solar masses) keys."
+        ),
+        min_length=1,
+    )
+
+    penalty_value: float = Field(
+        default=-1e5,
+        description="Log-likelihood penalty for invalid TOV solutions (M_TOV ≤ m_min)",
+    )
+
+    nb_masses: int = Field(
+        default=100,
+        gt=0,
+        description="Number of mass points for numerical integration of Gaussian constraint",
+    )
+
+    @field_validator("pulsars")
+    @classmethod
+    def validate_pulsars(cls, v: list[dict]) -> list[dict]:
+        """Validate pulsar structure."""
+        for i, pulsar in enumerate(v):
+            required = {"name", "mass_mean", "mass_std"}
+            missing = required - set(pulsar.keys())
+            if missing:
+                raise ValueError(f"Pulsar {i} missing required fields: {missing}")
+            if not isinstance(pulsar["mass_mean"], (int, float)):
+                raise ValueError(f"Pulsar {i} 'mass_mean' must be a number")
+            if (
+                not isinstance(pulsar["mass_std"], (int, float))
+                or pulsar["mass_std"] <= 0
+            ):
+                raise ValueError(f"Pulsar {i} 'mass_std' must be a positive number")
+        return v
+
+
+# ChiEFT Likelihood Config
+class ChiEFTLikelihoodConfig(BaseLikelihoodConfig):
+    """Chiral effective field theory likelihood configuration.
+
+    Constrains EOS at low densities using chiral EFT uncertainty bands.
+    Checks that predicted pressure-density relation falls within bands.
+
+    Examples
+    --------
+    .. code-block:: yaml
+
+        - type: "chieft"
+          enabled: true
+          low_filename: "./data/chiEFT/low.dat"
+          high_filename: "./data/chiEFT/high.dat"
+          nb_n: 100
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["chieft"] = Field(
+        default="chieft", description="Likelihood type identifier"
+    )
+
+    low_filename: str | None = Field(
+        default=None,
+        description=(
+            "Path to lower bound ChiEFT data file. "
+            "If None, uses default: data/chiEFT/2402.04172/low.dat"
+        ),
+    )
+
+    high_filename: str | None = Field(
+        default=None,
+        description=(
+            "Path to upper bound ChiEFT data file. "
+            "If None, uses default: data/chiEFT/2402.04172/high.dat"
+        ),
+    )
+
+    nb_n: int = Field(
+        default=100,
+        gt=0,
+        description="Number of density points to evaluate against ChiEFT bands",
+    )
+
+
+# Constraint Likelihood Configs
+class EOSConstraintsLikelihoodConfig(BaseLikelihoodConfig):
+    """EOS constraint likelihood configuration.
+
+    Applies physics-motivated constraints on equation of state properties:
+    causality (cs² ≤ 1), thermodynamic stability (cs² ≥ 0), and
+    monotonic pressure.
+
+    Examples
+    --------
+    .. code-block:: yaml
+
+        - type: "constraints_eos"
+          enabled: true
+          penalty_causality: -1e10
+          penalty_stability: -1e5
+          penalty_pressure: -1e5
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["constraints_eos"] = Field(
+        default="constraints_eos", description="Likelihood type identifier"
+    )
+
+    penalty_causality: float = Field(
+        default=-1e10,
+        description="Log-likelihood penalty for causality violation (cs² > 1)",
+    )
+
+    penalty_stability: float = Field(
+        default=-1e5,
+        description="Log-likelihood penalty for thermodynamic instability (cs² < 0)",
+    )
+
+    penalty_pressure: float = Field(
+        default=-1e5,
+        description="Log-likelihood penalty for non-monotonic pressure",
+    )
+
+
+class TOVConstraintsLikelihoodConfig(BaseLikelihoodConfig):
+    """TOV constraint likelihood configuration.
+
+    Applies penalty for TOV integration failures.
+
+    Examples
+    --------
+    .. code-block:: yaml
+
+        - type: "constraints_tov"
+          enabled: true
+          penalty_tov: -1e10
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["constraints_tov"] = Field(
+        default="constraints_tov", description="Likelihood type identifier"
+    )
+
+    penalty_tov: float = Field(
+        default=-1e10,
+        description="Log-likelihood penalty for TOV integration failure",
+    )
+
+
+class GammaConstraintsLikelihoodConfig(BaseLikelihoodConfig):
+    """Gamma constraint likelihood configuration (spectral EOS only).
+
+    Applies bounds on spectral decomposition Gamma parameters.
+    Only applicable when using spectral EOS parametrization.
+
+    Examples
+    --------
+    .. code-block:: yaml
+
+        - type: "constraints_gamma"
+          enabled: true
+          penalty_gamma: -1e10
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["constraints_gamma"] = Field(
+        default="constraints_gamma", description="Likelihood type identifier"
+    )
+
+    penalty_gamma: float = Field(
+        default=-1e10,
+        description=(
+            "Log-likelihood penalty for Gamma bound violation. "
+            "Applies bounds Γ ∈ [0.6, 4.5] for spectral decomposition EOS."
+        ),
+    )
+
+
+class DeprecatedConstraintsLikelihoodConfig(BaseLikelihoodConfig):
+    """Deprecated combined constraint likelihood configuration.
+
+    DEPRECATED: Use constraints_eos + constraints_tov instead.
+    Combined EOS and TOV constraints in a single likelihood.
+
+    Examples
+    --------
+    .. code-block:: yaml
+
+        - type: "constraints"
+          enabled: true
+          penalty_tov: -1e10
+          penalty_causality: -1e10
+          penalty_stability: -1e5
+          penalty_pressure: -1e5
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["constraints"] = Field(
+        default="constraints", description="Likelihood type identifier"
+    )
+
+    penalty_tov: float = Field(
+        default=-1e10,
+        description="Log-likelihood penalty for TOV integration failure",
+    )
+
+    penalty_causality: float = Field(
+        default=-1e10,
+        description="Log-likelihood penalty for causality violation (cs² > 1)",
+    )
+
+    penalty_stability: float = Field(
+        default=-1e5,
+        description="Log-likelihood penalty for thermodynamic instability (cs² < 0)",
+    )
+
+    penalty_pressure: float = Field(
+        default=-1e5,
+        description="Log-likelihood penalty for non-monotonic pressure",
+    )
+
+
+class REXLikelihoodConfig(BaseLikelihoodConfig):
+    """REX (PREX/CREX) likelihood configuration.
+
+    NOT IMPLEMENTED YET - placeholder for future development.
+
+    Examples
+    --------
+    .. code-block:: yaml
+
+        - type: "rex"
+          enabled: true
+          experiment_name: "PREX"
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["rex"] = Field(
+        default="rex", description="Likelihood type identifier"
+    )
+
+    experiment_name: str = Field(
+        default="PREX",
+        description="Name of REX experiment (PREX or CREX)",
+    )
+
+
+class ZeroLikelihoodConfig(BaseLikelihoodConfig):
+    """Zero likelihood configuration for prior-only sampling.
+
+    Returns zero log-likelihood (uniform likelihood) for all EOS configurations.
+    Use this for prior-only sampling without observational constraints.
+
+    Examples
+    --------
+    .. code-block:: yaml
+
+        - type: "zero"
+          enabled: true
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["zero"] = Field(
+        default="zero", description="Likelihood type identifier"
+    )
+
+
+# Discriminated union of all likelihood types
+LikelihoodConfig = Annotated[
+    Union[
+        GWLikelihoodConfig,
+        GWResampledLikelihoodConfig,
+        NICERLikelihoodConfig,
+        RadioLikelihoodConfig,
+        ChiEFTLikelihoodConfig,
+        EOSConstraintsLikelihoodConfig,
+        TOVConstraintsLikelihoodConfig,
+        GammaConstraintsLikelihoodConfig,
+        DeprecatedConstraintsLikelihoodConfig,
+        REXLikelihoodConfig,
+        ZeroLikelihoodConfig,
+    ],
+    Discriminator("type"),
+]
 
 
 class BaseSamplerConfig(BaseModel):
@@ -620,7 +843,7 @@ class SMCNUTSSamplerConfig(BaseSamplerConfig):
     target_ess: float = 0.9
     init_step_size: float = 1e-2
     mass_matrix_base: float = 2e-1
-    mass_matrix_param_scales: Dict[str, float] = Field(default_factory=dict)
+    mass_matrix_param_scales: dict[str, float] = Field(default_factory=dict)
     target_acceptance: float = 0.7
     adaptation_rate: float = 0.3
 
@@ -744,7 +967,7 @@ class InferenceConfig(BaseModel):
     likelihoods: list[LikelihoodConfig]
     sampler: SamplerConfig
     postprocessing: PostprocessingConfig = Field(default_factory=PostprocessingConfig)
-    data_paths: Dict[str, str] = Field(default_factory=dict)
+    data_paths: dict[str, str] = Field(default_factory=dict)
     dry_run: bool = False
     validate_only: bool = False
     debug_nans: bool = Field(

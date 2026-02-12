@@ -205,7 +205,7 @@ uv run python -m jesterTOV.inference.config.generate_yaml_reference
 
 ### Prior Specification
 
-Priors are specified in `.prior` files using bilby-style Python syntax:
+Priors are specified in `.prior` files using bilby-style Python syntax: (note: the following example is specific for `metamodel` or `metamodel_cse`)
 
 ```python
 # Nuclear Empirical Parameters (required for MetaModel/MetaModelCSE)

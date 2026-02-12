@@ -67,7 +67,7 @@ def sample_config_dict():
             "crust_name": "DH",
         },
         "prior": {"specification_file": "test.prior"},
-        "likelihoods": [{"type": "zero", "enabled": True, "parameters": {}}],
+        "likelihoods": [{"type": "zero", "enabled": True}],
         "sampler": {
             "type": "flowmc",
             "n_chains": 4,
