@@ -1,57 +1,37 @@
-# Radio timing inference configuration
-# SMC with Random Walk kernel for constraining EOS using radio pulsar mass measurements
-
 seed: 43
-
-# Execution options
 dry_run: false
 validate_only: false
-
-# Transform configuration: MetaModel + CSE for high-density region
 transform:
-  type: "metamodel_cse"
+  type: metamodel_cse
   ndat_metamodel: 100
   nmax_nsat: 25.0
   nb_CSE: 8
   min_nsat_TOV: 0.75
   ndat_TOV: 100
   nb_masses: 100
-  crust_name: "DH"
-
-# Prior specification file
+  crust_name: DH
 prior:
-  specification_file: "prior.prior"
-
-# Likelihood constraints
+  specification_file: prior.prior
 likelihoods:
-  # Physical constraint likelihood - enforces EOS validity
-  - type: "constraints_eos"
-    enabled: true
-
-  # Radio timing observations - constrain maximum TOV mass using observed pulsar masses
-  - type: "radio"
-    enabled: true
-    parameters:
-      pulsars:
-        - name: "J1614"
-          mass_mean: 1.94
-          mass_std: 0.06
-
-        - name: "J0740"
-          mass_mean: 2.08
-          mass_std: 0.14
-
-# SMC configuration with Random Walk kernel
+- type: constraints_eos
+  enabled: true
+- type: radio
+  enabled: true
+  pulsars:
+  - name: J1614
+    mass_mean: 1.94
+    mass_std: 0.06
+  - name: J0740
+    mass_mean: 2.08
+    mass_std: 0.14
 sampler:
-  type: "smc-rw"
-  n_particles: 5000         # Number of particles evolved at each inference step
-  n_mcmc_steps: 10          # MCMC steps per tempering level
-  target_ess: 0.9           # Target effective sample size (90%)
-  random_walk_sigma: 0.05   # Gaussian random walk step size scale
-  n_eos_samples: 5000       # Number of EOS samples to generate after inference
-  output_dir: "./outdir/"
-
-# Postprocessing configuration
+  type: smc-rw
+  n_particles: 5000
+  n_mcmc_steps: 10
+  target_ess: 0.9
+  random_walk_sigma: 0.05
+  n_eos_samples: 5000
+  output_dir: ./outdir/
 postprocessing:
   enabled: true
   make_cornerplot: false
