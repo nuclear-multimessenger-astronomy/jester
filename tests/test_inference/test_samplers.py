@@ -889,7 +889,7 @@ class TestSamplerFactory:
             seed=42,
             transform={"type": "metamodel", "nb_CSE": 0},
             prior={"specification_file": "test.prior"},
-            likelihoods=[{"type": "zero", "enabled": True, "parameters": {}}],
+            likelihoods=[{"type": "zero", "enabled": True}],
             sampler=FlowMCSamplerConfig(
                 type="flowmc",
                 n_chains=2,

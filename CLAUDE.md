@@ -46,6 +46,38 @@ examples/inference/smc_random_walk/chiEFT/config.yaml
 
 ---
 
+## Likelihood Configuration Refactor (February 2025)
+
+**Status**: ✅ Branch 1 Complete (API Changes) - Tests Passing
+
+### Completed Work
+
+**Branch 1: Typed Likelihood Configs** (`refactor/typed-likelihood-configs`)
+- ✅ Created typed Pydantic models for all likelihood types with discriminated unions
+- ✅ Updated test fixtures in `tests/test_inference/test_e2e/conftest.py`
+- ✅ Updated integration tests in `tests/test_inference/test_integration.py`
+- ✅ Updated sampler tests in `tests/test_inference/test_samplers.py`
+- ✅ All e2e tests passing (BlackJAX NS-AW, prior-only, integration)
+- ✅ Pyright type checking passing
+
+**Key Changes**:
+- Removed `parameters` wrapper from likelihood configs
+- Fields now at top level: `{"type": "chieft", "enabled": true, "nb_n": 30}`
+- Full type safety with Pydantic discriminated unions
+- IDE autocomplete and type checking support
+
+### Next Steps
+
+**Branch 2: Documentation Tooling** (After PR merge)
+- Update `generate_yaml_reference.py` to use introspection
+- Auto-generate docs from Pydantic field metadata
+- Update user-facing documentation
+- Verify docs build without warnings
+
+See `likelihood_config_refactor_plan.md` for complete implementation plan.
+
+---
+
 ## API Migration (January 2025 Refactoring)
 
 **construct_family moved from EOS to TOV solver:**
@@ -59,7 +91,7 @@ family_data = solver.construct_family(eos_data, ndat=100, min_nsat=0.75)
 # Access: family_data.masses, family_data.radii, family_data.lambdas
 ```
 
-**E_sat is now required** (was fixed at -16.0): Add `E_sat = UniformPrior(-16.1, -15.9)` to priors
+**E_sat is now required** (was fixed at -16.0): Add `E_sat = UniformPrior(-16.1, -15.9)` for priors if we make use of `metamodel` or `metamodel_cse`
 
 **EOSData is NamedTuple** (8 fields): Access by name `eos_data.ns`, NOT by unpacking
 

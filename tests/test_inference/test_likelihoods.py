@@ -464,11 +464,7 @@ class TestLikelihoodFactory:
 
     def test_create_zero_likelihood(self):
         """Test creating ZeroLikelihood via factory."""
-        config = schema.LikelihoodConfig(
-            type="zero",
-            enabled=True,
-            parameters={},
-        )
+        config = schema.ZeroLikelihoodConfig(enabled=True)
 
         likelihood = factory.create_likelihood(config)
 
@@ -476,13 +472,10 @@ class TestLikelihoodFactory:
 
     def test_create_constraint_eos_likelihood(self):
         """Test creating ConstraintEOSLikelihood via factory."""
-        config = schema.LikelihoodConfig(
-            type="constraints_eos",
+        config = schema.EOSConstraintsLikelihoodConfig(
             enabled=True,
-            parameters={
-                "penalty_causality": -1e10,
-                "penalty_stability": -1e5,
-            },
+            penalty_causality=-1e10,
+            penalty_stability=-1e5,
         )
 
         likelihood = factory.create_likelihood(config)
@@ -493,12 +486,9 @@ class TestLikelihoodFactory:
 
     def test_create_constraint_tov_likelihood(self):
         """Test creating ConstraintTOVLikelihood via factory."""
-        config = schema.LikelihoodConfig(
-            type="constraints_tov",
+        config = schema.TOVConstraintsLikelihoodConfig(
             enabled=True,
-            parameters={
-                "penalty_tov": -1e10,
-            },
+            penalty_tov=-1e10,
         )
 
         likelihood = factory.create_likelihood(config)
@@ -508,12 +498,9 @@ class TestLikelihoodFactory:
 
     def test_create_constraint_gamma_likelihood(self):
         """Test creating ConstraintGammaLikelihood via factory."""
-        config = schema.LikelihoodConfig(
-            type="constraints_gamma",
+        config = schema.GammaConstraintsLikelihoodConfig(
             enabled=True,
-            parameters={
-                "penalty_gamma": -1e10,
-            },
+            penalty_gamma=-1e10,
         )
 
         likelihood = factory.create_likelihood(config)
@@ -523,12 +510,9 @@ class TestLikelihoodFactory:
 
     def test_create_chieft_likelihood(self):
         """Test creating ChiEFTLikelihood via factory."""
-        config = schema.LikelihoodConfig(
-            type="chieft",
+        config = schema.ChiEFTLikelihoodConfig(
             enabled=True,
-            parameters={
-                "nb_n": 100,
-            },
+            nb_n=100,
         )
 
         try:
@@ -540,23 +524,16 @@ class TestLikelihoodFactory:
 
     def test_create_disabled_likelihood_returns_none(self):
         """Test that factory returns None for disabled likelihoods."""
-        config = schema.LikelihoodConfig(
-            type="zero",
-            enabled=False,
-            parameters={},
-        )
+        config = schema.ZeroLikelihoodConfig(enabled=False)
 
         likelihood = factory.create_likelihood(config)
         assert likelihood is None
 
     def test_create_gw_likelihood_via_factory_raises_error(self):
         """Test that GW likelihoods must be created via create_combined_likelihood."""
-        config = schema.LikelihoodConfig(
-            type="gw",
+        config = schema.GWLikelihoodConfig(
             enabled=True,
-            parameters={
-                "events": [{"name": "GW170817", "model_dir": "/path/to/data"}],
-            },
+            events=[{"name": "GW170817", "model_dir": "/path/to/data"}],
         )
 
         with pytest.raises(
@@ -566,18 +543,15 @@ class TestLikelihoodFactory:
 
     def test_create_nicer_likelihood_via_factory_raises_error(self):
         """Test that NICER likelihoods must be created via create_combined_likelihood."""
-        config = schema.LikelihoodConfig(
-            type="nicer",
+        config = schema.NICERLikelihoodConfig(
             enabled=True,
-            parameters={
-                "pulsars": [
-                    {
-                        "name": "J0030",
-                        "amsterdam_samples_file": "/path/to/amsterdam.txt",
-                        "maryland_samples_file": "/path/to/maryland.txt",
-                    }
-                ],
-            },
+            pulsars=[
+                {
+                    "name": "J0030",
+                    "amsterdam_samples_file": "/path/to/amsterdam.txt",
+                    "maryland_samples_file": "/path/to/maryland.txt",
+                }
+            ],
         )
 
         with pytest.raises(
@@ -591,13 +565,17 @@ class TestLikelihoodFactory:
         NOTE: Pydantic catches this during config creation, not in factory.
         This is the correct behavior - validation happens at config time.
         """
-        from pydantic import ValidationError
+        from pydantic import ValidationError, TypeAdapter
 
-        with pytest.raises(ValidationError, match="Input should be"):
-            schema.LikelihoodConfig(
-                type="invalid_type",
-                enabled=True,
-                parameters={},
+        # Test using TypeAdapter since LikelihoodConfig is now a Union
+        adapter = TypeAdapter(schema.LikelihoodConfig)
+
+        with pytest.raises(ValidationError, match="Input tag"):
+            adapter.validate_python(
+                {
+                    "type": "invalid_type",
+                    "enabled": True,
+                }
             )
 
 
@@ -606,13 +584,7 @@ class TestCombinedLikelihoodFactory:
 
     def test_create_combined_likelihood_single(self):
         """Test that single enabled likelihood is returned directly (not wrapped)."""
-        configs = [
-            schema.LikelihoodConfig(
-                type="zero",
-                enabled=True,
-                parameters={},
-            ),
-        ]
+        configs = [schema.ZeroLikelihoodConfig(enabled=True)]
 
         likelihood = factory.create_combined_likelihood(configs)
 
@@ -622,12 +594,8 @@ class TestCombinedLikelihoodFactory:
     def test_create_combined_likelihood_multiple(self):
         """Test that multiple likelihoods are combined."""
         configs = [
-            schema.LikelihoodConfig(type="zero", enabled=True, parameters={}),
-            schema.LikelihoodConfig(
-                type="constraints_eos",
-                enabled=True,
-                parameters={},
-            ),
+            schema.ZeroLikelihoodConfig(enabled=True),
+            schema.EOSConstraintsLikelihoodConfig(enabled=True),
         ]
 
         likelihood = factory.create_combined_likelihood(configs)
@@ -639,8 +607,8 @@ class TestCombinedLikelihoodFactory:
     def test_create_combined_likelihood_with_disabled(self):
         """Test that disabled likelihoods are skipped."""
         configs = [
-            schema.LikelihoodConfig(type="zero", enabled=True, parameters={}),
-            schema.LikelihoodConfig(type="zero", enabled=False, parameters={}),
+            schema.ZeroLikelihoodConfig(enabled=True),
+            schema.ZeroLikelihoodConfig(enabled=False),
         ]
 
         likelihood = factory.create_combined_likelihood(configs)
@@ -651,8 +619,8 @@ class TestCombinedLikelihoodFactory:
     def test_create_combined_likelihood_all_disabled_raises_error(self):
         """Test that all disabled likelihoods raises ValueError."""
         configs = [
-            schema.LikelihoodConfig(type="zero", enabled=False, parameters={}),
-            schema.LikelihoodConfig(type="zero", enabled=False, parameters={}),
+            schema.ZeroLikelihoodConfig(enabled=False),
+            schema.ZeroLikelihoodConfig(enabled=False),
         ]
 
         with pytest.raises(ValueError, match="No likelihoods enabled"):
@@ -661,18 +629,15 @@ class TestCombinedLikelihoodFactory:
     def test_create_combined_likelihood_with_radio_timing(self):
         """Test creating combined likelihood with radio timing constraint."""
         configs = [
-            schema.LikelihoodConfig(
-                type="radio",
+            schema.RadioLikelihoodConfig(
                 enabled=True,
-                parameters={
-                    "pulsars": [
-                        {
-                            "name": "J0348+0432",
-                            "mass_mean": 2.01,
-                            "mass_std": 0.04,
-                        },
-                    ],
-                },
+                pulsars=[
+                    {
+                        "name": "J0348+0432",
+                        "mass_mean": 2.01,
+                        "mass_std": 0.04,
+                    },
+                ],
             ),
         ]
 
