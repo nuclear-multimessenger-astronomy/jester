@@ -128,15 +128,15 @@ class GWLikelihoodConfig(BaseLikelihoodConfig):
 
     Examples
     --------
-    ```yaml
-    - type: "gw"
-      enabled: true
-      events:
-        - name: "GW170817"
-          model_dir: "./NFs/GW170817"
-      penalty_value: -99999.0
-      N_masses_evaluation: 2000
-    ```
+    .. code-block:: yaml
+
+        - type: "gw"
+          enabled: true
+          events:
+            - name: "GW170817"
+              model_dir: "./NFs/GW170817"
+          penalty_value: -99999.0
+          N_masses_evaluation: 2000
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -195,13 +195,13 @@ class GWResampledLikelihoodConfig(BaseLikelihoodConfig):
 
     Examples
     --------
-    ```yaml
-    - type: "gw_resampled"
-      enabled: true
-      events:
-        - name: "GW170817"
-      N_masses_evaluation: 20
-    ```
+    .. code-block:: yaml
+
+        - type: "gw_resampled"
+          enabled: true
+          events:
+            - name: "GW170817"
+          N_masses_evaluation: 20
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -239,16 +239,16 @@ class NICERLikelihoodConfig(BaseLikelihoodConfig):
 
     Examples
     --------
-    ```yaml
-    - type: "nicer"
-      enabled: true
-      pulsars:
-        - name: "J0030"
-          amsterdam_samples_file: "./data/J0030_amsterdam.txt"
-          maryland_samples_file: "./data/J0030_maryland.txt"
-        - name: "J0740"
-      N_masses_evaluation: 100
-    ```
+    .. code-block:: yaml
+
+        - type: "nicer"
+          enabled: true
+          pulsars:
+            - name: "J0030"
+              amsterdam_samples_file: "./data/J0030_amsterdam.txt"
+              maryland_samples_file: "./data/J0030_maryland.txt"
+            - name: "J0740"
+          N_masses_evaluation: 100
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -306,16 +306,16 @@ class RadioLikelihoodConfig(BaseLikelihoodConfig):
 
     Examples
     --------
-    ```yaml
-    - type: "radio"
-      enabled: true
-      pulsars:
-        - name: "J0740+6620"
-          mass_mean: 2.08
-          mass_std: 0.07
-      penalty_value: -1e5
-      nb_masses: 100
-    ```
+    .. code-block:: yaml
+
+        - type: "radio"
+          enabled: true
+          pulsars:
+            - name: "J0740+6620"
+              mass_mean: 2.08
+              mass_std: 0.07
+          penalty_value: -1e5
+          nb_masses: 100
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -371,13 +371,13 @@ class ChiEFTLikelihoodConfig(BaseLikelihoodConfig):
 
     Examples
     --------
-    ```yaml
-    - type: "chieft"
-      enabled: true
-      low_filename: "./data/chiEFT/low.dat"
-      high_filename: "./data/chiEFT/high.dat"
-      nb_n: 100
-    ```
+    .. code-block:: yaml
+
+        - type: "chieft"
+          enabled: true
+          low_filename: "./data/chiEFT/low.dat"
+          high_filename: "./data/chiEFT/high.dat"
+          nb_n: 100
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -419,13 +419,13 @@ class EOSConstraintsLikelihoodConfig(BaseLikelihoodConfig):
 
     Examples
     --------
-    ```yaml
-    - type: "constraints_eos"
-      enabled: true
-      penalty_causality: -1e10
-      penalty_stability: -1e5
-      penalty_pressure: -1e5
-    ```
+    .. code-block:: yaml
+
+        - type: "constraints_eos"
+          enabled: true
+          penalty_causality: -1e10
+          penalty_stability: -1e5
+          penalty_pressure: -1e5
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -457,11 +457,11 @@ class TOVConstraintsLikelihoodConfig(BaseLikelihoodConfig):
 
     Examples
     --------
-    ```yaml
-    - type: "constraints_tov"
-      enabled: true
-      penalty_tov: -1e10
-    ```
+    .. code-block:: yaml
+
+        - type: "constraints_tov"
+          enabled: true
+          penalty_tov: -1e10
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -484,11 +484,11 @@ class GammaConstraintsLikelihoodConfig(BaseLikelihoodConfig):
 
     Examples
     --------
-    ```yaml
-    - type: "constraints_gamma"
-      enabled: true
-      penalty_gamma: -1e10
-    ```
+    .. code-block:: yaml
+
+        - type: "constraints_gamma"
+          enabled: true
+          penalty_gamma: -1e10
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -514,14 +514,14 @@ class DeprecatedConstraintsLikelihoodConfig(BaseLikelihoodConfig):
 
     Examples
     --------
-    ```yaml
-    - type: "constraints"
-      enabled: true
-      penalty_tov: -1e10
-      penalty_causality: -1e10
-      penalty_stability: -1e5
-      penalty_pressure: -1e5
-    ```
+    .. code-block:: yaml
+
+        - type: "constraints"
+          enabled: true
+          penalty_tov: -1e10
+          penalty_causality: -1e10
+          penalty_stability: -1e5
+          penalty_pressure: -1e5
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -558,11 +558,11 @@ class REXLikelihoodConfig(BaseLikelihoodConfig):
 
     Examples
     --------
-    ```yaml
-    - type: "rex"
-      enabled: true
-      experiment_name: "PREX"
-    ```
+    .. code-block:: yaml
+
+        - type: "rex"
+          enabled: true
+          experiment_name: "PREX"
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -585,10 +585,10 @@ class ZeroLikelihoodConfig(BaseLikelihoodConfig):
 
     Examples
     --------
-    ```yaml
-    - type: "zero"
-      enabled: true
-    ```
+    .. code-block:: yaml
+
+        - type: "zero"
+          enabled: true
     """
 
     model_config = ConfigDict(extra="forbid")
