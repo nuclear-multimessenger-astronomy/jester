@@ -253,8 +253,7 @@ The JESTER inference system uses YAML configuration files validated by Pydantic 
     doc += "likelihoods:\n"
     doc += '  - type: "gw"  # or "nicer", "radio", "chieft", "rex", "zero"\n'
     doc += "    enabled: true\n"
-    doc += "    parameters:\n"
-    doc += "      # Likelihood-specific parameters (see section below)\n"
+    doc += "    # Likelihood-specific parameters at top level (see section below)\n"
 
     doc += "\n# Sampler configuration (choose one type)\n"
     doc += "sampler:\n"
@@ -313,61 +312,67 @@ The JESTER inference system uses YAML configuration files validated by Pydantic 
     doc += "```yaml\n"
     doc += '- type: "gw"\n'
     doc += "  enabled: true\n"
-    doc += "  parameters:\n"
-    doc += '    event_name: "GW170817"          # GW event name\n'
-    doc += '    model_path: "./NFs/model.eqx"   # Path to normalizing flow model\n'
-    doc += "    very_negative_value: -9999999.0  # Return for invalid M-R (optional)\n"
+    doc += "  events:\n"
+    doc += '    - name: "GW170817"\n'
+    doc += (
+        '      model_dir: "./NFs/GW170817"  # Optional, uses preset path if omitted\n'
+    )
+    doc += (
+        "  penalty_value: -99999.0          # Log-likelihood penalty when M > M_TOV\n"
+    )
+    doc += "  N_masses_evaluation: 2000        # Number of mass samples from GW posterior\n"
+    doc += "  N_masses_batch_size: 1000        # Batch size for processing\n"
+    doc += "  seed: 42                         # Random seed for mass sampling\n"
     doc += "```\n\n"
 
     doc += '#### NICER X-ray Timing (`type: "nicer"`)\n\n'
     doc += "```yaml\n"
     doc += '- type: "nicer"\n'
     doc += "  enabled: true\n"
-    doc += "  parameters:\n"
-    doc += '    targets: ["J0030", "J0740"]              # Pulsar names\n'
-    doc += '    analysis_groups: ["amsterdam", "maryland"]  # Analysis groups to use\n'
-    doc += (
-        "    m_min: 1.0                                # Min mass for marginalization\n"
-    )
-    doc += (
-        "    m_max: 2.5                                # Max mass for marginalization\n"
-    )
-    doc += "    nb_masses: 100                            # Mass grid size\n"
+    doc += "  pulsars:\n"
+    doc += '    - name: "J0030"\n'
+    doc += '      amsterdam_samples_file: "./data/J0030_amsterdam.npz"\n'
+    doc += '      maryland_samples_file: "./data/J0030_maryland.npz"\n'
+    doc += '    - name: "J0740"\n'
+    doc += '      amsterdam_samples_file: "./data/J0740_amsterdam.npz"\n'
+    doc += '      maryland_samples_file: "./data/J0740_maryland.npz"\n'
+    doc += "  N_masses_evaluation: 100         # Mass grid points for marginalization\n"
+    doc += "  N_masses_batch_size: 20          # Batch size for processing\n"
     doc += "```\n\n"
 
     doc += '#### Radio Pulsar Timing (`type: "radio"`)\n\n'
     doc += "```yaml\n"
     doc += '- type: "radio"\n'
     doc += "  enabled: true\n"
-    doc += "  parameters:\n"
-    doc += '    psr_name: "J0740+6620"  # Pulsar name (for labeling)\n'
-    doc += "    mass_mean: 2.08         # Mean mass (solar masses)\n"
-    doc += "    mass_std: 0.07          # Mass uncertainty (1-sigma)\n"
-    doc += "    penalty_value: -1e5     # Penalty for invalid TOV solutions (default: -1e5)\n"
-    doc += "    nb_masses: 100          # Mass grid size for marginalization\n"
+    doc += "  pulsars:\n"
+    doc += '    - name: "J0740+6620"\n'
+    doc += "      mass_mean: 2.08       # Mean mass (solar masses)\n"
+    doc += "      mass_std: 0.07        # Mass uncertainty (1-sigma)\n"
+    doc += "  penalty_value: -1e5       # Penalty for invalid TOV solutions\n"
+    doc += "  nb_masses: 100            # Mass grid size for marginalization\n"
     doc += "```\n\n"
 
     doc += '#### Chiral Effective Field Theory (`type: "chieft"`)\n\n'
     doc += "```yaml\n"
     doc += '- type: "chieft"\n'
     doc += "  enabled: true\n"
-    doc += "  parameters:\n"
-    doc += "    nb_n: 100  # Number of density points to check against bands\n"
+    doc += '  low_filename: "./data/chiEFT/low.dat"   # Optional, uses default if omitted\n'
+    doc += '  high_filename: "./data/chiEFT/high.dat" # Optional, uses default if omitted\n'
+    doc += "  nb_n: 100                                # Number of density points\n"
     doc += "```\n\n"
 
     doc += '#### PREX/CREX (`type: "rex"`)\n\n'
     doc += "```yaml\n"
     doc += '- type: "rex"\n'
     doc += "  enabled: true\n"
-    doc += "  parameters:\n"
-    doc += '    experiment_name: "PREX"  # "PREX" or "CREX"\n'
+    doc += '  experiment_name: "PREX"  # "PREX" or "CREX"\n'
     doc += "```\n\n"
 
     doc += '#### Zero Likelihood (`type: "zero"`)\n\n'
     doc += "```yaml\n"
     doc += '- type: "zero"\n'
     doc += "  enabled: true\n"
-    doc += "  parameters: {}  # No parameters needed\n"
+    doc += "  # No additional parameters needed\n"
     doc += "```\n\n"
 
     # Sampler fields - discriminated union
@@ -463,6 +468,7 @@ The JESTER inference system uses YAML configuration files validated by Pydantic 
     doc += '  - type: "zero"\n'
     doc += "    enabled: true\n\n"
     doc += "sampler:\n"
+    doc += '  type: "flowmc"\n'
     doc += "  n_chains: 10\n"
     doc += "  n_loop_training: 2\n"
     doc += "  n_loop_production: 2\n"
@@ -482,24 +488,31 @@ The JESTER inference system uses YAML configuration files validated by Pydantic 
     doc += "likelihoods:\n"
     doc += '  - type: "gw"\n'
     doc += "    enabled: true\n"
-    doc += "    parameters:\n"
-    doc += '      event_name: "GW170817"\n'
+    doc += "    events:\n"
+    doc += '      - name: "GW170817"\n'
     doc += "  \n"
     doc += '  - type: "nicer"\n'
     doc += "    enabled: true\n"
-    doc += "    parameters:\n"
-    doc += '      targets: ["J0030", "J0740"]\n'
+    doc += "    pulsars:\n"
+    doc += '      - name: "J0030"\n'
+    doc += '        amsterdam_samples_file: "./data/NICER/J0030_amsterdam.npz"\n'
+    doc += '        maryland_samples_file: "./data/NICER/J0030_maryland.npz"\n'
+    doc += '      - name: "J0740"\n'
+    doc += '        amsterdam_samples_file: "./data/NICER/J0740_amsterdam.npz"\n'
+    doc += '        maryland_samples_file: "./data/NICER/J0740_maryland.npz"\n'
     doc += "  \n"
     doc += '  - type: "radio"\n'
     doc += "    enabled: true\n"
-    doc += "    parameters:\n"
-    doc += "      mass_mean: 2.08\n"
-    doc += "      mass_std: 0.07\n"
-    doc += "      penalty_value: -1e5  # Optional, default: -1e5\n"
+    doc += "    pulsars:\n"
+    doc += '      - name: "J0740+6620"\n'
+    doc += "        mass_mean: 2.08\n"
+    doc += "        mass_std: 0.07\n"
+    doc += "    penalty_value: -1e5\n"
     doc += "  \n"
     doc += '  - type: "chieft"\n'
     doc += "    enabled: true\n\n"
     doc += "sampler:\n"
+    doc += '  type: "flowmc"\n'
     doc += "  n_chains: 20\n"
     doc += "  n_loop_training: 3\n"
     doc += "  n_loop_production: 5\n"

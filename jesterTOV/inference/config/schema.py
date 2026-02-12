@@ -10,7 +10,7 @@ This ensures the user documentation stays in sync with the actual validation rul
 """
 
 from pydantic import BaseModel, Field, field_validator, ValidationInfo, ConfigDict
-from typing import Literal, Dict, Union, Annotated
+from typing import Literal, Union, Annotated
 from pydantic import Discriminator
 
 
@@ -843,7 +843,7 @@ class SMCNUTSSamplerConfig(BaseSamplerConfig):
     target_ess: float = 0.9
     init_step_size: float = 1e-2
     mass_matrix_base: float = 2e-1
-    mass_matrix_param_scales: Dict[str, float] = Field(default_factory=dict)
+    mass_matrix_param_scales: dict[str, float] = Field(default_factory=dict)
     target_acceptance: float = 0.7
     adaptation_rate: float = 0.3
 
@@ -967,7 +967,7 @@ class InferenceConfig(BaseModel):
     likelihoods: list[LikelihoodConfig]
     sampler: SamplerConfig
     postprocessing: PostprocessingConfig = Field(default_factory=PostprocessingConfig)
-    data_paths: Dict[str, str] = Field(default_factory=dict)
+    data_paths: dict[str, str] = Field(default_factory=dict)
     dry_run: bool = False
     validate_only: bool = False
     debug_nans: bool = Field(
