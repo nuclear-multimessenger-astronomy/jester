@@ -1,47 +1,30 @@
-# Prior-Only Sampling Configuration
-# This configuration samples from the prior distribution without any observational constraints
-
 seed: 43
-
-# Execution options
-dry_run: false        # Set to true to setup everything but not run sampler
-validate_only: false  # Set to true to only validate configuration
-
-# Transform configuration: MetaModel + CSE for complete EOS curves
+dry_run: false
+validate_only: false
 transform:
-  type: "metamodel_cse"
-  ndat_metamodel: 100        # Number of data points for MetaModel interpolation
-  nmax_nsat: 25.0            # Maximum density (in units of nsat) for MetaModel
-  nb_CSE: 8                  # Number of CSE grid points
-  min_nsat_TOV: 0.75         # Minimum density for TOV integration
-  ndat_TOV: 100              # Number of points for TOV integration
-  nb_masses: 100             # Number of mass samples for M-R curve
-  crust_name: "DH"           # Crust model (Douchin-Haensel)
-
-# Prior specification file
+  type: metamodel_cse
+  ndat_metamodel: 100
+  nmax_nsat: 25.0
+  nb_CSE: 8
+  min_nsat_TOV: 0.75
+  ndat_TOV: 100
+  nb_masses: 100
+  crust_name: DH
 prior:
-  specification_file: "prior.prior"
-
-# Likelihood constraints: Use zero likelihood for prior-only sampling
+  specification_file: prior.prior
 likelihoods:
-  - type: "constraints_eos"
-    enabled: true
-  - type: "zero"
-    enabled: true
-    parameters: {}
-
-# MCMC sampler configuration
-# Note: Prior-only sampling typically requires fewer production loops
+- type: constraints_eos
+  enabled: true
+- type: zero
+  enabled: true
 sampler:
-  type: "flowmc"
-  n_chains: 1000               # Number of parallel chains
-  n_loop_training: 10         # Training loops (fewer needed for prior sampling)
-  n_loop_production: 10       # Production loops (fewer needed for prior sampling)
-  n_local_steps: 100         # Steps per local MCMC iteration
-  n_global_steps: 100        # Steps per global MCMC iteration
-  n_epochs: 20               # Epochs for flow training (fewer needed)
-  learning_rate: 0.001       # Learning rate for flow optimization
-  output_dir: "./outdir/"
-
-# Data paths (none needed for prior-only sampling)
+  type: flowmc
+  n_chains: 1000
+  n_loop_training: 10
+  n_loop_production: 10
+  n_local_steps: 100
+  n_global_steps: 100
+  n_epochs: 20
+  learning_rate: 0.001
+  output_dir: ./outdir/
 data_paths: {}

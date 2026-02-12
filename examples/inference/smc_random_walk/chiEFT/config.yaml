@@ -1,51 +1,32 @@
-# ChiEFT-only inference configuration
-# SMC with Random Walk kernel for constraining EOS using chiral effective field theory
-
 seed: 44
-
-# Execution options
 dry_run: false
 validate_only: false
-
-# EOS type and transform settings
 transform:
-  type: "metamodel_cse"
+  type: metamodel_cse
   ndat_metamodel: 100
   nmax_nsat: 25.0
   nb_CSE: 8
   min_nsat_TOV: 0.75
   ndat_TOV: 100
   nb_masses: 100
-  crust_name: "DH"
-
-# Prior specification file
+  crust_name: DH
 prior:
-  specification_file: "prior.prior"
-
-# Likelihood constraints (only chiEFT + EOS constraints enabled)
+  specification_file: prior.prior
 likelihoods:
-  # Physical constraint likelihood - enforces EOS validity
-  - type: "constraints_eos"
-    enabled: true
-
-  # ChiEFT likelihood - constrains low-density EOS using chiral effective field theory
-  - type: "chieft"
-    enabled: true
-    parameters:
-      low_filename: "../../../../jesterTOV/inference/data/chiEFT/2402.04172/low.dat"
-      high_filename: "../../../../jesterTOV/inference/data/chiEFT/2402.04172/high.dat"
-      nb_n: 100
-
-# SMC configuration with Random Walk kernel
+- type: constraints_eos
+  enabled: true
+- type: chieft
+  enabled: true
+  low_filename: ../../../../jesterTOV/inference/data/chiEFT/2402.04172/low.dat
+  high_filename: ../../../../jesterTOV/inference/data/chiEFT/2402.04172/high.dat
+  nb_n: 100
 sampler:
-  type: "smc-rw"
-  n_particles: 2000        # Number of particles evolved at each inference step
-  n_mcmc_steps: 10         # MCMC steps per tempering level
-  target_ess: 0.9          # Target effective sample size (90%)
-  random_walk_sigma: 0.1   # Gaussian random walk step size scale
-  output_dir: "./outdir/"
-
-# Postprocessing configuration
+  type: smc-rw
+  n_particles: 2000
+  n_mcmc_steps: 10
+  target_ess: 0.9
+  random_walk_sigma: 0.1
+  output_dir: ./outdir/
 postprocessing:
   enabled: true
   make_cornerplot: false

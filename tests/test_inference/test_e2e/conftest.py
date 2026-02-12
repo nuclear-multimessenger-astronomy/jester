@@ -145,8 +145,8 @@ def build_prior_only_config(
         },
         "prior": {"specification_file": str(prior_file)},
         "likelihoods": [
-            {"type": "constraints_eos", "enabled": True, "parameters": {}},
-            {"type": "zero", "enabled": True, "parameters": {}},
+            {"type": "constraints_eos", "enabled": True},
+            {"type": "zero", "enabled": True},
         ],
         "sampler": {
             **sampler_config,
@@ -175,13 +175,11 @@ def build_chieft_config(
         },
         "prior": {"specification_file": str(prior_file)},
         "likelihoods": [
-            {"type": "constraints_eos", "enabled": True, "parameters": {}},
+            {"type": "constraints_eos", "enabled": True},
             {
                 "type": "chieft",
                 "enabled": True,
-                "parameters": {
-                    "nb_n": 30,  # 100 -> 30 for speed
-                },
+                "nb_n": 30,  # 100 -> 30 for speed
             },
         ],
         "sampler": {
