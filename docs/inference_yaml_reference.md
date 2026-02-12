@@ -48,8 +48,7 @@ prior:
 likelihoods:
   - type: "gw"  # or "nicer", "radio", "chieft", "rex", "zero"
     enabled: true
-    parameters:
-      # Likelihood-specific parameters (see section below)
+    # Likelihood-specific parameters at top level (see section below)
 
 # Sampler configuration (choose one type)
 sampler:
@@ -73,7 +72,7 @@ data_paths: {}
 
 - `prior`: `PriorConfig` (**required**)
 
-- `likelihoods`: `list[LikelihoodConfig]` (**required**)
+- `likelihoods`: `list[typing.Annotated[typing.Union[jesterTOV.inference.config.schema.GWLikelihoodConfig, jesterTOV.inference.config.schema.GWResampledLikelihoodConfig, jesterTOV.inference.config.schema.NICERLikelihoodConfig, jesterTOV.inference.config.schema.RadioLikelihoodConfig, jesterTOV.inference.config.schema.ChiEFTLikelihoodConfig, jesterTOV.inference.config.schema.EOSConstraintsLikelihoodConfig, jesterTOV.inference.config.schema.TOVConstraintsLikelihoodConfig, jesterTOV.inference.config.schema.GammaConstraintsLikelihoodConfig, jesterTOV.inference.config.schema.DeprecatedConstraintsLikelihoodConfig, jesterTOV.inference.config.schema.REXLikelihoodConfig, jesterTOV.inference.config.schema.ZeroLikelihoodConfig], Discriminator(discriminator='type', custom_error_type=None, custom_error_message=None, custom_error_context=None)]]` (**required**)
 
 - `sampler`: `typing.Union[jesterTOV.inference.config.schema.FlowMCSamplerConfig, jesterTOV.inference.config.schema.BlackJAXNSAWConfig, jesterTOV.inference.config.schema.SMCRandomWalkSamplerConfig, jesterTOV.inference.config.schema.SMCNUTSSamplerConfig]` (**required**)
 
@@ -147,13 +146,8 @@ Specifies prior distributions for parameters.
 
 List of observational constraints. Each likelihood has:
 
-- ``type``: `"gw" | "gw_resampled" | "nicer" | "radio" | "chieft" | "rex" | "constraints" | "constraints_eos" | "constraints_tov" | "constraints_gamma" | "zero"` (**required**)
+See likelihood-specific parameters below.
 
-- `enabled`: `bool` (optional)
-  - Default: `True`
-
-- `parameters`: `dict[str, Any]` (optional)
-  - Default: `{}`
 
 **Likelihood-Specific Parameters** (`parameters:`):
 
@@ -162,10 +156,13 @@ List of observational constraints. Each likelihood has:
 ```yaml
 - type: "gw"
   enabled: true
-  parameters:
-    event_name: "GW170817"          # GW event name
-    model_path: "./NFs/model.eqx"   # Path to normalizing flow model
-    very_negative_value: -9999999.0  # Return for invalid M-R (optional)
+  events:
+    - name: "GW170817"
+      model_dir: "./NFs/GW170817"  # Optional, uses preset path if omitted
+  penalty_value: -99999.0          # Log-likelihood penalty when M > M_TOV
+  N_masses_evaluation: 2000        # Number of mass samples from GW posterior
+  N_masses_batch_size: 1000        # Batch size for processing
+  seed: 42                         # Random seed for mass sampling
 ```
 
 #### NICER X-ray Timing (`type: "nicer"`)
@@ -173,12 +170,15 @@ List of observational constraints. Each likelihood has:
 ```yaml
 - type: "nicer"
   enabled: true
-  parameters:
-    targets: ["J0030", "J0740"]              # Pulsar names
-    analysis_groups: ["amsterdam", "maryland"]  # Analysis groups to use
-    m_min: 1.0                                # Min mass for marginalization
-    m_max: 2.5                                # Max mass for marginalization
-    nb_masses: 100                            # Mass grid size
+  pulsars:
+    - name: "J0030"
+      amsterdam_samples_file: "./data/J0030_amsterdam.npz"
+      maryland_samples_file: "./data/J0030_maryland.npz"
+    - name: "J0740"
+      amsterdam_samples_file: "./data/J0740_amsterdam.npz"
+      maryland_samples_file: "./data/J0740_maryland.npz"
+  N_masses_evaluation: 100         # Mass grid points for marginalization
+  N_masses_batch_size: 20          # Batch size for processing
 ```
 
 #### Radio Pulsar Timing (`type: "radio"`)
@@ -186,12 +186,12 @@ List of observational constraints. Each likelihood has:
 ```yaml
 - type: "radio"
   enabled: true
-  parameters:
-    psr_name: "J0740+6620"  # Pulsar name (for labeling)
-    mass_mean: 2.08         # Mean mass (solar masses)
-    mass_std: 0.07          # Mass uncertainty (1-sigma)
-    penalty_value: -1e5     # Penalty for invalid TOV solutions (default: -1e5)
-    nb_masses: 100          # Mass grid size for marginalization
+  pulsars:
+    - name: "J0740+6620"
+      mass_mean: 2.08       # Mean mass (solar masses)
+      mass_std: 0.07        # Mass uncertainty (1-sigma)
+  penalty_value: -1e5       # Penalty for invalid TOV solutions
+  nb_masses: 100            # Mass grid size for marginalization
 ```
 
 #### Chiral Effective Field Theory (`type: "chieft"`)
@@ -199,8 +199,9 @@ List of observational constraints. Each likelihood has:
 ```yaml
 - type: "chieft"
   enabled: true
-  parameters:
-    nb_n: 100  # Number of density points to check against bands
+  low_filename: "./data/chiEFT/low.dat"   # Optional, uses default if omitted
+  high_filename: "./data/chiEFT/high.dat" # Optional, uses default if omitted
+  nb_n: 100                                # Number of density points
 ```
 
 #### PREX/CREX (`type: "rex"`)
@@ -208,8 +209,7 @@ List of observational constraints. Each likelihood has:
 ```yaml
 - type: "rex"
   enabled: true
-  parameters:
-    experiment_name: "PREX"  # "PREX" or "CREX"
+  experiment_name: "PREX"  # "PREX" or "CREX"
 ```
 
 #### Zero Likelihood (`type: "zero"`)
@@ -217,7 +217,7 @@ List of observational constraints. Each likelihood has:
 ```yaml
 - type: "zero"
   enabled: true
-  parameters: {}  # No parameters needed
+  # No additional parameters needed
 ```
 
 ### Sampler Configuration (`sampler:`)
@@ -449,6 +449,7 @@ likelihoods:
     enabled: true
 
 sampler:
+  type: "flowmc"
   n_chains: 10
   n_loop_training: 2
   n_loop_production: 2
@@ -472,25 +473,32 @@ prior:
 likelihoods:
   - type: "gw"
     enabled: true
-    parameters:
-      event_name: "GW170817"
+    events:
+      - name: "GW170817"
   
   - type: "nicer"
     enabled: true
-    parameters:
-      targets: ["J0030", "J0740"]
+    pulsars:
+      - name: "J0030"
+        amsterdam_samples_file: "./data/NICER/J0030_amsterdam.npz"
+        maryland_samples_file: "./data/NICER/J0030_maryland.npz"
+      - name: "J0740"
+        amsterdam_samples_file: "./data/NICER/J0740_amsterdam.npz"
+        maryland_samples_file: "./data/NICER/J0740_maryland.npz"
   
   - type: "radio"
     enabled: true
-    parameters:
-      mass_mean: 2.08
-      mass_std: 0.07
-      penalty_value: -1e5  # Optional, default: -1e5
+    pulsars:
+      - name: "J0740+6620"
+        mass_mean: 2.08
+        mass_std: 0.07
+    penalty_value: -1e5
   
   - type: "chieft"
     enabled: true
 
 sampler:
+  type: "flowmc"
   n_chains: 20
   n_loop_training: 3
   n_loop_production: 5

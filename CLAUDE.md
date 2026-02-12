@@ -87,7 +87,7 @@ family_data = solver.construct_family(eos_data, ndat=100, min_nsat=0.75)
 # Access: family_data.masses, family_data.radii, family_data.lambdas
 ```
 
-**E_sat is now required** (was fixed at -16.0): Add `E_sat = UniformPrior(-16.1, -15.9)` to priors
+**E_sat is now required** (was fixed at -16.0): Add `E_sat = UniformPrior(-16.1, -15.9)` for priors if we make use of `metamodel` or `metamodel_cse`
 
 **EOSData is NamedTuple** (8 fields): Access by name `eos_data.ns`, NOT by unpacking
 
