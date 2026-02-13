@@ -99,17 +99,10 @@ from flowjax.train import fit_to_data
 from .config import FlowTrainingConfig
 from .flow import create_flow
 
-# # TODO: decide later on if this is necessary, but this might be much faster
-# # # Enable 64-bit precision for numerical accuracy
-# jax.config.update("jax_enable_x64", True)
-
-# Default parameter names for GW posteriors (backward compatibility)
-DEFAULT_GW_PARAMETER_NAMES = ["mass_1_source", "mass_2_source", "lambda_1", "lambda_2"]
-
 
 def load_posterior(
     filepath: str,
-    parameter_names: list[str] | None = None,
+    parameter_names: list[str],
     max_samples: int = 20_000,
 ) -> Tuple[np.ndarray, Dict[str, Any]]:
     """
@@ -117,8 +110,7 @@ def load_posterior(
 
     Args:
         filepath: Path to .npz file
-        parameter_names: List of parameter names to extract from file.
-            If None, uses default GW parameters: ["mass_1_source", "mass_2_source", "lambda_1", "lambda_2"]
+        parameter_names: List of parameter names to extract from file
         max_samples: Maximum number of samples to use (downsampling if needed)
 
     Returns:
@@ -131,10 +123,6 @@ def load_posterior(
     """
     if not os.path.exists(filepath):
         raise FileNotFoundError(f"Posterior file not found: {filepath}")
-
-    # Use default GW parameters if not specified
-    if parameter_names is None:
-        parameter_names = DEFAULT_GW_PARAMETER_NAMES
 
     # Load data
     posterior = np.load(filepath)
@@ -379,7 +367,7 @@ def plot_corner(
     data: np.ndarray,
     flow_samples: np.ndarray,
     output_path: str,
-    labels: list[str] | None = None,
+    labels: list[str],
 ) -> None:
     """Create corner plot comparing data and flow samples.
 
@@ -387,7 +375,7 @@ def plot_corner(
         data: Original data samples
         flow_samples: Samples from trained flow
         output_path: Path to save plot
-        labels: Parameter labels for plot. If None, uses default GW labels.
+        labels: Parameter labels for plot
     """
     try:
         import corner
@@ -395,15 +383,6 @@ def plot_corner(
     except ImportError:
         print("Warning: corner package not available, skipping corner plot")
         return
-
-    # Default to GW labels if not provided
-    if labels is None:
-        labels = [
-            r"$m_1$ [$M_\odot$]",
-            r"$m_2$ [$M_\odot$]",
-            r"$\Lambda_1$",
-            r"$\Lambda_2$",
-        ]
 
     hist_kwargs = {"color": "blue", "density": True}
 
@@ -464,7 +443,7 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
     print("=" * 60)
     print(f"Posterior file: {config.posterior_file}")
     print(f"Output directory: {config.output_dir}")
-    print(f"Parameter names: {config.parameter_names or 'Default GW parameters'}")
+    print(f"Parameter names: {config.parameter_names}")
     print(f"Max samples: {config.max_samples}")
     print(f"Flow type: {config.flow_type}")
     print(f"NN depth: {config.nn_depth}")

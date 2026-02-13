@@ -62,6 +62,7 @@ def sample_flow_config_dict(tmp_path):
     return {
         "posterior_file": str(posterior_file),
         "output_dir": str(output_dir),
+        "parameter_names": ["mass_1_source", "mass_2_source", "lambda_1", "lambda_2"],
         "num_epochs": 100,
         "learning_rate": 1e-3,
         "max_patience": 10,
@@ -174,6 +175,7 @@ class TestFlowTrainingConfig:
         config = FlowTrainingConfig(
             posterior_file=str(tmp_path / "test.npz"),
             output_dir=str(tmp_path / "output"),
+            parameter_names=["mass_1_source", "mass_2_source", "lambda_1", "lambda_2"],
         )
         assert config.num_epochs == 600
         assert config.learning_rate == 1e-3
@@ -193,7 +195,12 @@ class TestFlowTrainingConfig:
         assert config.transformer == "rational_quadratic_spline"  # Changed from affine
         assert config.transformer_knots == 10  # Changed from 8
         assert config.transformer_interval == 5.0  # Changed from 4.0
-        assert config.parameter_names is None  # New field
+        assert config.parameter_names == [
+            "mass_1_source",
+            "mass_2_source",
+            "lambda_1",
+            "lambda_2",
+        ]
         assert config.val_prop == 0.2
         assert config.batch_size == 128
 
@@ -221,9 +228,11 @@ class TestDataLoading:
     """Test data loading functionality."""
 
     def test_load_posterior_basic(self, synthetic_gw_posterior):
-        """Test loading posterior from npz file with default GW parameters."""
+        """Test loading posterior from npz file with GW parameters."""
         data, metadata = load_posterior(
-            str(synthetic_gw_posterior), parameter_names=None, max_samples=50000
+            str(synthetic_gw_posterior),
+            parameter_names=["mass_1_source", "mass_2_source", "lambda_1", "lambda_2"],
+            max_samples=50000,
         )
 
         assert data.shape[0] == 1000  # All samples loaded
@@ -240,7 +249,11 @@ class TestDataLoading:
 
     def test_load_posterior_with_downsampling(self, synthetic_gw_posterior):
         """Test downsampling when n_samples > max_samples."""
-        data, metadata = load_posterior(str(synthetic_gw_posterior), max_samples=500)
+        data, metadata = load_posterior(
+            str(synthetic_gw_posterior),
+            parameter_names=["mass_1_source", "mass_2_source", "lambda_1", "lambda_2"],
+            max_samples=500,
+        )
 
         # Should downsample to ~500 samples
         assert data.shape[0] <= 500
@@ -283,7 +296,15 @@ class TestDataLoading:
         """Test that missing file raises FileNotFoundError."""
         nonexistent_file = tmp_path / "does_not_exist.npz"
         with pytest.raises(FileNotFoundError, match="Posterior file not found"):
-            load_posterior(str(nonexistent_file))
+            load_posterior(
+                str(nonexistent_file),
+                parameter_names=[
+                    "mass_1_source",
+                    "mass_2_source",
+                    "lambda_1",
+                    "lambda_2",
+                ],
+            )
 
     def test_load_handles_flattening(self, tmp_path):
         """Test that multi-dimensional arrays are flattened correctly."""
@@ -297,7 +318,10 @@ class TestDataLoading:
             lambda_2=np.random.randn(n_samples, 1),
         )
 
-        data, metadata = load_posterior(str(posterior_file))
+        data, metadata = load_posterior(
+            str(posterior_file),
+            parameter_names=["mass_1_source", "mass_2_source", "lambda_1", "lambda_2"],
+        )
         assert data.shape == (n_samples, 4)
 
 
@@ -405,14 +429,14 @@ class TestDataPreprocessing:
 class TestNewFlowFeatures:
     """Test new flow features: parameter_names, standardization_method, flexible dimensionality."""
 
-    def test_parameter_names_none_is_valid(self, tmp_path):
-        """Test that parameter_names=None uses default GW parameters."""
-        config = FlowTrainingConfig(
-            posterior_file=str(tmp_path / "test.npz"),
-            output_dir=str(tmp_path / "output"),
-            parameter_names=None,
-        )
-        assert config.parameter_names is None
+    def test_parameter_names_required(self, tmp_path):
+        """Test that parameter_names is required."""
+        with pytest.raises(ValidationError, match="Field required"):
+            FlowTrainingConfig(
+                posterior_file=str(tmp_path / "test.npz"),
+                output_dir=str(tmp_path / "output"),
+                # Missing parameter_names - should fail
+            )
 
     def test_parameter_names_non_empty_list_is_valid(self, tmp_path):
         """Test that non-empty parameter_names list is valid."""
@@ -437,6 +461,7 @@ class TestNewFlowFeatures:
         config = FlowTrainingConfig(
             posterior_file=str(tmp_path / "test.npz"),
             output_dir=str(tmp_path / "output"),
+            parameter_names=["mass_1_source", "mass_2_source", "lambda_1", "lambda_2"],
             standardization_method="zscore",
         )
         assert config.standardization_method == "zscore"
@@ -446,6 +471,7 @@ class TestNewFlowFeatures:
         config = FlowTrainingConfig(
             posterior_file=str(tmp_path / "test.npz"),
             output_dir=str(tmp_path / "output"),
+            parameter_names=["mass_1_source", "mass_2_source", "lambda_1", "lambda_2"],
             standardization_method="minmax",
         )
         assert config.standardization_method == "minmax"
@@ -456,6 +482,12 @@ class TestNewFlowFeatures:
             FlowTrainingConfig(
                 posterior_file=str(tmp_path / "test.npz"),
                 output_dir=str(tmp_path / "output"),
+                parameter_names=[
+                    "mass_1_source",
+                    "mass_2_source",
+                    "lambda_1",
+                    "lambda_2",
+                ],
                 standardization_method="invalid",  # Invalid method
             )
 
