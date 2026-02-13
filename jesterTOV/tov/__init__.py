@@ -20,8 +20,6 @@ Import classes from their specific modules:
     from jesterTOV.tov.scalar_tensor_Creci import ScalarTensorTOVSolver_Creci
     from jesterTOV.tov.eibi import EiBITOVSolver
 """
-<<<<<<< HEAD
-=======
 
 from jesterTOV.tov.data_classes import EOSData, TOVSolution, FamilyData
 from jesterTOV.tov.base import TOVSolverBase
@@ -40,4 +38,4 @@ __all__ = [
     "ScalarTensorTOVSolver",
     "EiBITOVSolver",
 ]
->>>>>>> e2995cc (Remove old scalar tensor, Default now from Creci et al)
+
