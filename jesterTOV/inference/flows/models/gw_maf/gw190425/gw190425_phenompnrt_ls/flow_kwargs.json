@@ -8,19 +8,20 @@
   "cond_dim": null,
   "seed": 0,
   "standardize": true,
+  "standardization_method": "zscore",
   "transformer_type": "rational_quadratic_spline",
-  "transformer_knots": 8,
-  "transformer_interval": 4.0,
-  "data_bounds_min": [
-    1.6033207383055592,
-    1.260301129420437,
-    0.00735915723009391,
-    0.03532548982551843
+  "transformer_knots": 10,
+  "transformer_interval": 5.0,
+  "data_mean": [
+    1.7580108069325395,
+    1.5545122885793192,
+    466.39971757457323,
+    669.7008392737225
   ],
-  "data_bounds_max": [
-    2.172661322593547,
-    1.6876294495659923,
-    4935.3471134152205,
-    9590.196610261799
+  "data_std": [
+    0.08207345965735639,
+    0.06843443298724528,
+    520.98089395902,
+    752.7345334957078
   ]
 }
