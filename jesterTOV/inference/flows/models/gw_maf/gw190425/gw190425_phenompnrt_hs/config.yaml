@@ -1,12 +1,10 @@
 # Configuration for training normalizing flow
 # Updated to use new default hyperparameters (PR #55)
 posterior_file: ../../../../../data/gw190425/gw190425_phenompnrt-hs_posterior.npz
-...
 output_dir: .
-...
 
 # Parameter selection
-parameter_names: None
+parameter_names: ["mass_1_source", "mass_2_source", "lambda_1", "lambda_2"]
 
 # Training parameters
 num_epochs: 3000
@@ -18,21 +16,14 @@ seed: 0
 
 # Flow architecture
 flow_type: masked_autoregressive_flow
-...
 flow_layers: 1
-...
 nn_depth: 4
-...
 nn_width: 50
-...
 nn_block_dim: 8
-...
 invert: true
-...
 
 # Transformer settings (NEW DEFAULTS)
 transformer: rational_quadratic_spline
-...
 transformer_knots: 10
 transformer_interval: 5.0
 
@@ -40,11 +31,10 @@ transformer_interval: 5.0
 max_samples: 50000
 standardize: true
 standardization_method: zscore
-...
 
 # Plotting
 plot_corner: true
 plot_losses: true
 
 # Conditional flow settings
-cond_dim: None
+cond_dim: null

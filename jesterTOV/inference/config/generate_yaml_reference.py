@@ -471,23 +471,28 @@ def extract_likelihoods() -> list[dict[str, Any]]:
             "description": "Constrain the mass-radius relation using NICER X-ray timing observations of millisecond pulsars.",
             "likelihoods": [
                 {
-                    "title": "NICER Likelihood",
+                    "title": "NICER Flow Likelihood (DEFAULT)",
                     "type": "nicer",
                     "parameters": [
                         {
                             "name": "pulsars",
-                            "example": '[{"name": "J0030", "amsterdam_samples_file": "...", "maryland_samples_file": "..."}]',
-                            "inline_comment": "List of pulsars",
+                            "example": '[{"name": "J0030", "amsterdam_model_dir": "./flows/models/nicer_maf/J0030/amsterdam", "maryland_model_dir": "./flows/models/nicer_maf/J0030/maryland"}]',
+                            "inline_comment": "List of pulsars with flow model directories",
                         },
                         {
                             "name": "N_masses_evaluation",
                             "example": "100",
-                            "inline_comment": "Number of mass grid points (optional, default: 100)",
+                            "inline_comment": "Number of mass samples (optional, default: 100)",
                         },
                         {
                             "name": "N_masses_batch_size",
                             "example": "20",
                             "inline_comment": "Batch size for processing (optional, default: 20)",
+                        },
+                        {
+                            "name": "seed",
+                            "example": "42",
+                            "inline_comment": "Random seed for mass pre-sampling (optional, default: 42)",
                         },
                     ],
                     "field_details": [
@@ -495,22 +500,70 @@ def extract_likelihoods() -> list[dict[str, Any]]:
                             "name": "pulsars",
                             "type": "list[dict]",
                             "default": None,
-                            "description": "List of pulsars with `name`, `amsterdam_samples_file`, and `maryland_samples_file` keys. If sample files are omitted, uses preset paths.",
+                            "description": "List of pulsars with `name`, `amsterdam_model_dir`, and `maryland_model_dir` keys. Model directories must point to trained normalizing flow models.",
                         },
                         {
                             "name": "N_masses_evaluation",
                             "type": "int",
                             "default": "100",
-                            "description": "Number of mass grid points for marginalization over pulsar mass",
+                            "description": "Number of mass samples to pre-sample from flow for deterministic evaluation",
                         },
                         {
                             "name": "N_masses_batch_size",
                             "type": "int",
                             "default": "20",
-                            "description": "Batch size for processing mass grid points",
+                            "description": "Batch size for processing mass samples with jax.lax.map",
+                        },
+                        {
+                            "name": "seed",
+                            "type": "int",
+                            "default": "42",
+                            "description": "Random seed for reproducible mass pre-sampling from flow",
                         },
                     ],
-                    "description_text": "Marginalizes over pulsar mass using M-R posterior samples from NICER analysis teams (Amsterdam and Maryland).",
+                    "description_text": "**Default NICER likelihood** using pre-trained normalizing flows on M-R posteriors. Pre-samples masses once at initialization for efficient, deterministic evaluation. Recommended for production use.",
+                },
+                {
+                    "title": "NICER KDE Likelihood (LEGACY)",
+                    "type": "nicer_kde",
+                    "parameters": [
+                        {
+                            "name": "pulsars",
+                            "example": '[{"name": "J0030", "amsterdam_samples_file": "./data/NICER/J0030/amsterdam.npz", "maryland_samples_file": "./data/NICER/J0030/maryland.npz"}]',
+                            "inline_comment": "List of pulsars with sample files",
+                        },
+                        {
+                            "name": "N_masses_evaluation",
+                            "example": "100",
+                            "inline_comment": "Number of masses per evaluation (optional, default: 100)",
+                        },
+                        {
+                            "name": "N_masses_batch_size",
+                            "example": "20",
+                            "inline_comment": "Batch size for sampling (optional, default: 20)",
+                        },
+                    ],
+                    "field_details": [
+                        {
+                            "name": "pulsars",
+                            "type": "list[dict]",
+                            "default": None,
+                            "description": "List of pulsars with `name`, `amsterdam_samples_file`, and `maryland_samples_file` keys pointing to M-R posterior samples (npz format).",
+                        },
+                        {
+                            "name": "N_masses_evaluation",
+                            "type": "int",
+                            "default": "100",
+                            "description": "Number of mass samples to draw on-the-fly from posterior samples per evaluation",
+                        },
+                        {
+                            "name": "N_masses_batch_size",
+                            "type": "int",
+                            "default": "20",
+                            "description": "Batch size for mass sampling and KDE evaluation",
+                        },
+                    ],
+                    "description_text": "**Legacy NICER likelihood** using kernel density estimation on M-R posterior samples. Resamples masses during each evaluation (slower, non-deterministic). For backward compatibility only - use flow-based version for new analyses.",
                 },
             ],
         },

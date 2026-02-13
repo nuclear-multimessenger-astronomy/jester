@@ -21,11 +21,10 @@ class FlowTrainingConfig(BaseModel):
         Path to .npz file with posterior samples
     output_dir : str
         Directory to save model weights, kwargs, and plots
-    parameter_names : list[str] | None
+    parameter_names : list[str]
         List of parameter names to extract from posterior file.
-        Default None → uses GW parameters ["mass_1_source", "mass_2_source", "lambda_1", "lambda_2"].
-        Other examples: NICER ["mass", "radius"], EOS parameters, etc.
-        Cannot be an empty list (must be None or non-empty list).
+        Examples: GW parameters ["mass_1_source", "mass_2_source", "lambda_1", "lambda_2"],
+        NICER ["mass", "radius"]
     num_epochs : int
         Number of training epochs (default: 600)
     learning_rate : float
@@ -76,7 +75,7 @@ class FlowTrainingConfig(BaseModel):
 
     posterior_file: str
     output_dir: str
-    parameter_names: list[str] | None = None
+    parameter_names: list[str]
     num_epochs: int = 600
     learning_rate: float = 1e-3
     max_patience: int = 50
@@ -141,12 +140,10 @@ class FlowTrainingConfig(BaseModel):
 
     @field_validator("parameter_names")
     @classmethod
-    def validate_parameter_names(cls, v: list[str] | None) -> list[str] | None:
-        """Validate that parameter_names is either None or a non-empty list."""
-        if v is not None and len(v) == 0:
-            raise ValueError(
-                "parameter_names cannot be an empty list. Use None for default GW parameters."
-            )
+    def validate_parameter_names(cls, v: list[str]) -> list[str]:
+        """Validate that parameter_names is a non-empty list."""
+        if len(v) == 0:
+            raise ValueError("parameter_names cannot be an empty list.")
         return v
 
     @classmethod

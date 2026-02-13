@@ -268,6 +268,7 @@ def create_combined_likelihood(
                         maryland_model_dir=pulsar.get("maryland_model_dir"),
                         N_masses_evaluation=config.N_masses_evaluation,
                         N_masses_batch_size=config.N_masses_batch_size,
+                        seed=config.seed,
                     )
                     likelihoods.append(nicer_likelihood)
 

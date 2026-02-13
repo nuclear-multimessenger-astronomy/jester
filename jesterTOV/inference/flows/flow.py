@@ -106,7 +106,7 @@ class Flow:
         self.flow = flow
         self.metadata = metadata
         self.flow_kwargs = flow_kwargs
-        self.standardize = metadata["standardize"]
+        self.standardize = metadata.get("standardize", False)
 
         # Detect standardization method from metadata
         has_mean_std = "data_mean" in metadata and "data_std" in metadata

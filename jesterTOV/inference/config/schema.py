@@ -281,6 +281,12 @@ class NICERLikelihoodConfig(BaseLikelihoodConfig):
         description="Batch size for processing mass samples",
     )
 
+    seed: int = Field(
+        default=42,
+        ge=0,
+        description="Random seed for reproducible mass sampling in NICER likelihood",
+    )
+
     @field_validator("pulsars")
     @classmethod
     def validate_pulsars(cls, v: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -328,6 +334,8 @@ class NICERKDELikelihoodConfig(BaseLikelihoodConfig):
               amsterdam_samples_file: "./data/J0030_amsterdam.npz"
               maryland_samples_file: "./data/J0030_maryland.npz"
             - name: "J0740"
+              amsterdam_samples_file: "./data/J0740_amsterdam.npz"
+              maryland_samples_file: "./data/J0740_maryland.npz"
           N_masses_evaluation: 100
     """
 

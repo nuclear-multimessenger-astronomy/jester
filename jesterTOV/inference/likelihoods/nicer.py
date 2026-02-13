@@ -12,7 +12,6 @@ import numpy as np
 from jax.scipy.stats import gaussian_kde
 from jaxtyping import Array, Float
 from jax.scipy.special import logsumexp
-from typing import Optional
 
 from jesterTOV.inference.base.likelihood import LikelihoodBase
 from jesterTOV.logging_config import get_logger
@@ -41,11 +40,11 @@ class NICERLikelihood(LikelihoodBase):
     ----------
     psr_name : str
         Pulsar name (e.g., "J0030", "J0740")
-    amsterdam_model_dir : Optional[str]
+    amsterdam_model_dir : str | None
         Path to directory containing Amsterdam flow model
         (flow_weights.eqx, metadata.json, flow_kwargs.json).
         If None, uses preset model path.
-    maryland_model_dir : Optional[str]
+    maryland_model_dir : str | None
         Path to directory containing Maryland flow model.
         If None, uses preset model path.
     penalty_value : float, optional
@@ -88,8 +87,8 @@ class NICERLikelihood(LikelihoodBase):
     def __init__(
         self,
         psr_name: str,
-        amsterdam_model_dir: Optional[str] = None,
-        maryland_model_dir: Optional[str] = None,
+        amsterdam_model_dir: str | None = None,
+        maryland_model_dir: str | None = None,
         penalty_value: float = -99999.0,
         N_masses_evaluation: int = 20,
         N_masses_batch_size: int = 10,
@@ -105,20 +104,18 @@ class NICERLikelihood(LikelihoodBase):
         # Import Flow here to avoid circular imports
         from jesterTOV.inference.flows.flow import Flow
 
-        # Determine model paths (use presets if not provided)
-        if amsterdam_model_dir is None:
-            amsterdam_model_dir = self._get_preset_model_path(psr_name, "amsterdam")
-            logger.warning(
-                f"No amsterdam_model_dir provided for {psr_name}, "
-                f"using preset: {amsterdam_model_dir}"
+        # Validate that both model directories are provided
+        if amsterdam_model_dir is None or maryland_model_dir is None:
+            raise ValueError(
+                f"Both amsterdam_model_dir and maryland_model_dir must be provided for {psr_name}. "
+                "Preset model paths are not yet implemented. "
+                "Please provide explicit paths to trained flow models "
+                "(see TODO_FLOW_TRAINING.md Phase 3)."
             )
 
-        if maryland_model_dir is None:
-            maryland_model_dir = self._get_preset_model_path(psr_name, "maryland")
-            logger.warning(
-                f"No maryland_model_dir provided for {psr_name}, "
-                f"using preset: {maryland_model_dir}"
-            )
+        # Use provided model paths
+        logger.info(f"Using Amsterdam model directory: {amsterdam_model_dir}")
+        logger.info(f"Using Maryland model directory: {maryland_model_dir}")
 
         # Load flow models
         logger.info(f"Loading Amsterdam flow for {psr_name} from {amsterdam_model_dir}")
@@ -145,8 +142,8 @@ class NICERLikelihood(LikelihoodBase):
         )
 
         # Extract only masses (first column), discard radius values
-        self.amsterdam_fixed_mass_samples = amsterdam_samples[:, :1]  # Shape: (N, 1)
-        self.maryland_fixed_mass_samples = maryland_samples[:, :1]  # Shape: (N, 1)
+        self.amsterdam_fixed_mass_samples = amsterdam_samples[:, 0]  # Shape: (N,)
+        self.maryland_fixed_mass_samples = maryland_samples[:, 0]  # Shape: (N,)
 
         logger.info(
             f"Pre-sampled Amsterdam mass range: "
@@ -216,25 +213,27 @@ class NICERLikelihood(LikelihoodBase):
         radii_EOS: Float[Array, " n_points"] = params["radii_EOS"]
         mtov: Float = jnp.max(masses_EOS)
 
-        def process_sample_amsterdam(mass: Float[Array, " 1"]) -> Float:
+        def process_sample_amsterdam(mass: Float) -> Float:
             """
-            Process a single mass sample
+            Process a single Amsterdam mass sample
 
             Parameters
             ----------
-            mass : Float[Array, " 1"]
-                Sampled mass value
+            mass : Float
+                Sampled mass value (scalar)
 
             Returns
             -------
             Float
-                Log probability from Amsterdam KDE including penalty
+                Log probability from Amsterdam flow including penalty
             """
             # Interpolate radius from EOS
             radius = jnp.interp(mass, masses_EOS, radii_EOS)
 
-            # Evaluate Amsterdam KDE at (mass, radius)
-            mr_point = jnp.array([[mass], [radius]])  # Shape: (2, 1)
+            # Evaluate Amsterdam flow at (mass, radius)
+            mr_point = jnp.array(
+                [[mass, radius]]
+            )  # Shape: (1, 2) for (n_samples, n_features)
             logpdf = self.amsterdam_flow.log_prob(mr_point)
 
             # Penalty for mass exceeding Mtov
@@ -242,25 +241,27 @@ class NICERLikelihood(LikelihoodBase):
 
             return logpdf + penalty
 
-        def process_sample_maryland(mass: Float[Array, " 1"]) -> Float:
+        def process_sample_maryland(mass: Float) -> Float:
             """
             Process a single Maryland mass sample
 
             Parameters
             ----------
-            mass : Float[Array, " 1"]
-                Sampled mass value
+            mass : Float
+                Sampled mass value (scalar)
 
             Returns
             -------
             Float
-                Log probability from Maryland KDE including penalty
+                Log probability from Maryland flow including penalty
             """
             # Interpolate radius from EOS
             radius = jnp.interp(mass, masses_EOS, radii_EOS)
 
-            # Evaluate Maryland KDE at (mass, radius)
-            mr_point = jnp.array([[mass], [radius]])  # Shape: (2, 1)
+            # Evaluate Maryland flow at (mass, radius)
+            mr_point = jnp.array(
+                [[mass, radius]]
+            )  # Shape: (1, 2) for (n_samples, n_features)
             logpdf = self.maryland_flow.log_prob(mr_point)
 
             # Penalty for mass exceeding Mtov
@@ -281,12 +282,16 @@ class NICERLikelihood(LikelihoodBase):
             batch_size=self.N_masses_batch_size,
         )
 
-        # Average over all samples for each group
-        logL_amsterdam = logsumexp(amsterdam_logprobs)
-        logL_maryland = logsumexp(maryland_logprobs)
+        # Average over all samples for each group (log-mean = logsumexp - log(N))
+        N_amsterdam = amsterdam_logprobs.shape[0]
+        N_maryland = maryland_logprobs.shape[0]
+        logL_amsterdam = logsumexp(amsterdam_logprobs) - jnp.log(N_amsterdam)
+        logL_maryland = logsumexp(maryland_logprobs) - jnp.log(N_maryland)
 
-        # Average the two groups (equal weights)
-        log_likelihood = logsumexp(jnp.array([logL_amsterdam, logL_maryland]))
+        # Average the two groups (equal weights, log-mean = logsumexp - log(2))
+        log_likelihood = logsumexp(
+            jnp.array([logL_amsterdam, logL_maryland])
+        ) - jnp.log(2.0)
 
         return log_likelihood
 
@@ -518,11 +523,15 @@ class NICERKDELikelihood(LikelihoodBase):
             batch_size=self.N_masses_batch_size,
         )
 
-        # Average over all samples for each group
-        logL_amsterdam = logsumexp(amsterdam_logprobs)
-        logL_maryland = logsumexp(maryland_logprobs)
+        # Average over all samples for each group (log-mean = logsumexp - log(N))
+        N_amsterdam = amsterdam_logprobs.shape[0]
+        N_maryland = maryland_logprobs.shape[0]
+        logL_amsterdam = logsumexp(amsterdam_logprobs) - jnp.log(N_amsterdam)
+        logL_maryland = logsumexp(maryland_logprobs) - jnp.log(N_maryland)
 
-        # Average the two groups (equal weights)
-        log_likelihood = logsumexp(jnp.array([logL_amsterdam, logL_maryland]))
+        # Average the two groups (equal weights, log-mean = logsumexp - log(2))
+        log_likelihood = logsumexp(
+            jnp.array([logL_amsterdam, logL_maryland])
+        ) - jnp.log(2.0)
 
         return log_likelihood
