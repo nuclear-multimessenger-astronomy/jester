@@ -247,11 +247,18 @@ class NICERLikelihoodConfig(BaseLikelihoodConfig):
           enabled: true
           pulsars:
             - name: "J0030"
-              amsterdam_model_dir: "./flows/models/nicer_maf/J0030/amsterdam"
-              maryland_model_dir: "./flows/models/nicer_maf/J0030/maryland"
+              amsterdam_model_dir: "./flows/models/nicer_maf/J00300451/amsterdam_st_pst"
+              maryland_model_dir: "./flows/models/nicer_maf/J00300451/maryland_2spot_rm"
             - name: "J0740"
-              # If model_dir omitted, uses preset paths (if available)
+              amsterdam_model_dir: "./flows/models/nicer_maf/J07406620/amsterdam_gamma_nicerxmm"
+              maryland_model_dir: "./flows/models/nicer_maf/J07406620/maryland_unknown_nicerxmm_rm"
           N_masses_evaluation: 100
+
+    Notes
+    -----
+    Both ``amsterdam_model_dir`` and ``maryland_model_dir`` are REQUIRED for each pulsar.
+    The schema validator will issue warnings if omitted, but ``NICERLikelihood.__init__``
+    will raise ``ValueError`` at runtime. Preset model paths are not yet implemented.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -263,8 +270,9 @@ class NICERLikelihoodConfig(BaseLikelihoodConfig):
     pulsars: list[dict[str, str]] = Field(
         description=(
             "List of pulsars to include. Each pulsar must have 'name' key. "
-            "Optional 'amsterdam_model_dir' and 'maryland_model_dir' keys "
-            "specify paths to flow model directories. If omitted, uses preset paths."
+            "REQUIRED: 'amsterdam_model_dir' and 'maryland_model_dir' keys "
+            "specify paths to trained flow model directories. "
+            "NICERLikelihood.__init__ will raise ValueError if either is missing."
         ),
         min_length=1,
     )
@@ -299,16 +307,18 @@ class NICERLikelihoodConfig(BaseLikelihoodConfig):
             if "name" not in pulsar:
                 raise ValueError(f"Pulsar {i} missing required 'name' field")
 
-            # Warn if model directories not provided (will use presets)
+            # Warn if model directories not provided (will fail at runtime)
             if "amsterdam_model_dir" not in pulsar:
                 logger.warning(
-                    f"Pulsar {i} ({pulsar['name']}) missing 'amsterdam_model_dir', "
-                    "will attempt to use preset model path"
+                    f"Pulsar {i} ({pulsar['name']}) missing 'amsterdam_model_dir'. "
+                    "NICERLikelihood.__init__ will raise ValueError at runtime. "
+                    "Preset model paths are not yet implemented."
                 )
             if "maryland_model_dir" not in pulsar:
                 logger.warning(
-                    f"Pulsar {i} ({pulsar['name']}) missing 'maryland_model_dir', "
-                    "will attempt to use preset model path"
+                    f"Pulsar {i} ({pulsar['name']}) missing 'maryland_model_dir'. "
+                    "NICERLikelihood.__init__ will raise ValueError at runtime. "
+                    "Preset model paths are not yet implemented."
                 )
         return v
 
