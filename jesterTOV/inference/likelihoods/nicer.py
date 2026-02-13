@@ -1,5 +1,9 @@
 r"""
 NICER X-ray timing likelihood implementations
+
+This module provides two implementations:
+1. NICERLikelihood - Flow-based (NEW DEFAULT, more efficient)
+2. NICERKDELikelihood - KDE-based (legacy, for backward compatibility)
 """
 
 import jax
@@ -8,6 +12,7 @@ import numpy as np
 from jax.scipy.stats import gaussian_kde
 from jaxtyping import Array, Float
 from jax.scipy.special import logsumexp
+from typing import Optional
 
 from jesterTOV.inference.base.likelihood import LikelihoodBase
 from jesterTOV.logging_config import get_logger
@@ -17,7 +22,281 @@ logger = get_logger("jester")
 
 class NICERLikelihood(LikelihoodBase):
     """
-    NICER likelihood using mass sampling and EOS interpolation
+    NICER likelihood using normalizing flows (NEW DEFAULT).
+
+    This is the recommended NICER likelihood implementation that uses
+    pre-trained normalizing flows on M-R posteriors for efficient and
+    deterministic likelihood evaluation.
+
+    For the legacy KDE-based version, see NICERKDELikelihood.
+
+    The likelihood loads pre-trained flow models for Amsterdam and Maryland
+    groups and evaluates the likelihood by:
+    1. Pre-sampling masses ONCE at initialization (deterministic with seed)
+    2. During evaluation: interpolating radius from the EOS for pre-sampled masses
+    3. Evaluating the flow log probability at (mass, radius)
+    4. Averaging over all samples
+
+    Parameters
+    ----------
+    psr_name : str
+        Pulsar name (e.g., "J0030", "J0740")
+    amsterdam_model_dir : Optional[str]
+        Path to directory containing Amsterdam flow model
+        (flow_weights.eqx, metadata.json, flow_kwargs.json).
+        If None, uses preset model path.
+    maryland_model_dir : Optional[str]
+        Path to directory containing Maryland flow model.
+        If None, uses preset model path.
+    penalty_value : float, optional
+        Penalty value for samples where mass exceeds Mtov (default: -99999.0)
+    N_masses_evaluation : int, optional
+        Number of mass samples per likelihood evaluation (default: 20)
+    N_masses_batch_size : int, optional
+        Batch size for processing mass samples (default: 10)
+    seed : int, optional
+        Random seed for pre-sampling masses (default: 42)
+
+    Attributes
+    ----------
+    psr_name : str
+        Pulsar name
+    penalty_value : float
+        Penalty value for samples where mass exceeds Mtov
+    N_masses_evaluation : int
+        Number of mass samples per likelihood evaluation
+    N_masses_batch_size : int
+        Batch size for processing mass samples
+    seed : int
+        Random seed for deterministic pre-sampling
+    amsterdam_flow : Flow
+        Normalizing flow for Amsterdam M-R posterior
+    maryland_flow : Flow
+        Normalizing flow for Maryland M-R posterior
+    amsterdam_fixed_mass_samples : Float[Array, "n_samples"]
+        Pre-sampled mass values from Amsterdam flow (fixed at initialization)
+    maryland_fixed_mass_samples : Float[Array, "n_samples"]
+        Pre-sampled mass values from Maryland flow (fixed at initialization)
+    """
+
+    psr_name: str
+    penalty_value: float
+    N_masses_evaluation: int
+    N_masses_batch_size: int
+    seed: int
+
+    def __init__(
+        self,
+        psr_name: str,
+        amsterdam_model_dir: Optional[str] = None,
+        maryland_model_dir: Optional[str] = None,
+        penalty_value: float = -99999.0,
+        N_masses_evaluation: int = 20,
+        N_masses_batch_size: int = 10,
+        seed: int = 42,
+    ) -> None:
+        super().__init__()
+        self.psr_name = psr_name
+        self.penalty_value = penalty_value
+        self.N_masses_evaluation = N_masses_evaluation
+        self.N_masses_batch_size = N_masses_batch_size
+        self.seed = seed
+
+        # Import Flow here to avoid circular imports
+        from jesterTOV.inference.flows.flow import Flow
+
+        # Determine model paths (use presets if not provided)
+        if amsterdam_model_dir is None:
+            amsterdam_model_dir = self._get_preset_model_path(psr_name, "amsterdam")
+            logger.warning(
+                f"No amsterdam_model_dir provided for {psr_name}, "
+                f"using preset: {amsterdam_model_dir}"
+            )
+
+        if maryland_model_dir is None:
+            maryland_model_dir = self._get_preset_model_path(psr_name, "maryland")
+            logger.warning(
+                f"No maryland_model_dir provided for {psr_name}, "
+                f"using preset: {maryland_model_dir}"
+            )
+
+        # Load flow models
+        logger.info(f"Loading Amsterdam flow for {psr_name} from {amsterdam_model_dir}")
+        self.amsterdam_flow = Flow.from_directory(amsterdam_model_dir)
+
+        logger.info(f"Loading Maryland flow for {psr_name} from {maryland_model_dir}")
+        self.maryland_flow = Flow.from_directory(maryland_model_dir)
+
+        logger.info(f"Loaded normalizing flows for {psr_name}")
+
+        # Pre-sample masses ONCE at initialization (deterministic with seed)
+        logger.info(
+            f"Pre-sampling {N_masses_evaluation} masses with seed={seed} for {psr_name}"
+        )
+        key = jax.random.key(seed)
+        key_amsterdam, key_maryland = jax.random.split(key)
+
+        # Sample (mass, radius) from flows
+        amsterdam_samples = self.amsterdam_flow.sample(
+            key_amsterdam, (N_masses_evaluation,)
+        )
+        maryland_samples = self.maryland_flow.sample(
+            key_maryland, (N_masses_evaluation,)
+        )
+
+        # Extract only masses (first column), discard radius values
+        self.amsterdam_fixed_mass_samples = amsterdam_samples[:, :1]  # Shape: (N, 1)
+        self.maryland_fixed_mass_samples = maryland_samples[:, :1]  # Shape: (N, 1)
+
+        logger.info(
+            f"Pre-sampled Amsterdam mass range: "
+            f"[{jnp.min(self.amsterdam_fixed_mass_samples):.3f}, "
+            f"{jnp.max(self.amsterdam_fixed_mass_samples):.3f}] Msun"
+        )
+        logger.info(
+            f"Pre-sampled Maryland mass range: "
+            f"[{jnp.min(self.maryland_fixed_mass_samples):.3f}, "
+            f"{jnp.max(self.maryland_fixed_mass_samples):.3f}] Msun"
+        )
+
+    def _get_preset_model_path(self, psr_name: str, group: str) -> str:
+        """
+        Get preset model path for a pulsar and analysis group.
+
+        Parameters
+        ----------
+        psr_name : str
+            Pulsar name (e.g., "J0030", "J0740")
+        group : str
+            Analysis group ("amsterdam" or "maryland")
+
+        Returns
+        -------
+        str
+            Path to preset model directory
+
+        Raises
+        ------
+        ValueError
+            If no preset exists for this pulsar/group combination
+        """
+        # TODO: Define preset paths once NICER flow models are trained
+        # For now, this is a placeholder that will be updated in Phase 3
+
+        # Example preset structure (to be implemented):
+        # base_dir = Path(__file__).parent.parent / "flows" / "models" / "nicer_maf"
+        # model_dir = base_dir / psr_name / f"{psr_name}_{group}_NICER_model"
+
+        raise NotImplementedError(
+            f"Preset model paths for {psr_name} {group} not yet implemented. "
+            "Please provide explicit model_dir paths or train NICER flows first "
+            "(see TODO_FLOW_TRAINING.md Phase 3)."
+        )
+
+    def evaluate(self, params: dict[str, Float | Array]) -> Float:
+        """
+        Evaluate log likelihood for given EOS parameters.
+
+        Uses pre-sampled masses from initialization (deterministic evaluation).
+
+        Parameters
+        ----------
+        params : dict[str, Float | Array]
+            Must contain:
+            - 'masses_EOS': Array of neutron star masses from EOS
+            - 'radii_EOS': Array of neutron star radii from EOS
+
+        Returns
+        -------
+        Float
+            Log likelihood value for this NICER observation
+        """
+        # Extract parameters
+        masses_EOS: Float[Array, " n_points"] = params["masses_EOS"]
+        radii_EOS: Float[Array, " n_points"] = params["radii_EOS"]
+        mtov: Float = jnp.max(masses_EOS)
+
+        def process_sample_amsterdam(mass: Float[Array, " 1"]) -> Float:
+            """
+            Process a single mass sample
+
+            Parameters
+            ----------
+            mass : Float[Array, " 1"]
+                Sampled mass value
+
+            Returns
+            -------
+            Float
+                Log probability from Amsterdam KDE including penalty
+            """
+            # Interpolate radius from EOS
+            radius = jnp.interp(mass, masses_EOS, radii_EOS)
+
+            # Evaluate Amsterdam KDE at (mass, radius)
+            mr_point = jnp.array([[mass], [radius]])  # Shape: (2, 1)
+            logpdf = self.amsterdam_flow.log_prob(mr_point)
+
+            # Penalty for mass exceeding Mtov
+            penalty = jnp.where(mass > mtov, self.penalty_value, 0.0)
+
+            return logpdf + penalty
+
+        def process_sample_maryland(mass: Float[Array, " 1"]) -> Float:
+            """
+            Process a single Maryland mass sample
+
+            Parameters
+            ----------
+            mass : Float[Array, " 1"]
+                Sampled mass value
+
+            Returns
+            -------
+            Float
+                Log probability from Maryland KDE including penalty
+            """
+            # Interpolate radius from EOS
+            radius = jnp.interp(mass, masses_EOS, radii_EOS)
+
+            # Evaluate Maryland KDE at (mass, radius)
+            mr_point = jnp.array([[mass], [radius]])  # Shape: (2, 1)
+            logpdf = self.maryland_flow.log_prob(mr_point)
+
+            # Penalty for mass exceeding Mtov
+            penalty = jnp.where(mass > mtov, self.penalty_value, 0.0)
+
+            return logpdf + penalty
+
+        # Use jax.lax.map with batching for memory-efficient processing
+        amsterdam_logprobs = jax.lax.map(
+            process_sample_amsterdam,
+            self.amsterdam_fixed_mass_samples,
+            batch_size=self.N_masses_batch_size,
+        )
+
+        maryland_logprobs = jax.lax.map(
+            process_sample_maryland,
+            self.maryland_fixed_mass_samples,
+            batch_size=self.N_masses_batch_size,
+        )
+
+        # Average over all samples for each group
+        logL_amsterdam = logsumexp(amsterdam_logprobs)
+        logL_maryland = logsumexp(maryland_logprobs)
+
+        # Average the two groups (equal weights)
+        log_likelihood = logsumexp(jnp.array([logL_amsterdam, logL_maryland]))
+
+        return log_likelihood
+
+
+class NICERKDELikelihood(LikelihoodBase):
+    """
+    NICER likelihood using KDE (Kernel Density Estimation) approach.
+
+    This is the original NICER likelihood implementation that uses KDE
+    on M-R posterior samples. For the flow-based version, see NICERLikelihood.
 
     TODO: Generalize to e.g. only one group, weights between different hotspot models,...
 

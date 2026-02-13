@@ -106,28 +106,42 @@ class Flow:
         self.flow = flow
         self.metadata = metadata
         self.flow_kwargs = flow_kwargs
-        self.standardize = metadata[
-            "standardize"
-        ]  # TODO: this is a bit redunant, only used below, simplify
+        self.standardize = metadata["standardize"]
 
-        # Always store bounds as JAX arrays
-        # If standardization is disabled, use trivial bounds (min=0, range=1)
-        # that make standardization operations identity transformations
+        # Detect standardization method from metadata
+        has_mean_std = "data_mean" in metadata and "data_std" in metadata
+        has_bounds = "data_bounds_min" in metadata and "data_bounds_max" in metadata
+
         if self.standardize:
-            self.data_min = jnp.array(metadata["data_bounds_min"])
-            self.data_max = jnp.array(metadata["data_bounds_max"])
+            if has_mean_std:
+                # Z-score standardization (new default)
+                self.standardization_method = "zscore"
+                self.data_mean = jnp.array(metadata["data_mean"])
+                self.data_std = jnp.array(metadata["data_std"])
+                # Avoid division by zero
+                self.data_std = jnp.where(self.data_std == 0, 1.0, self.data_std)
+            elif has_bounds:
+                # Min-max standardization (legacy)
+                self.standardization_method = "minmax"
+                self.data_min = jnp.array(metadata["data_bounds_min"])
+                self.data_max = jnp.array(metadata["data_bounds_max"])
+                self.data_range = self.data_max - self.data_min
+                # Avoid division by zero
+                self.data_range = jnp.where(self.data_range == 0, 1.0, self.data_range)
+            else:
+                raise ValueError(
+                    "Standardization enabled but metadata missing both "
+                    "(data_mean, data_std) and (data_bounds_min, data_bounds_max)"
+                )
         else:
-            # Trivial bounds: min=0, max=1 → operations become identity
-            # Assume 4D flow (m1, m2, lambda1, lambda2)
-            # TODO: this might have to be changed in the future, but keep for now
-            n_features = 4
+            # No standardization - create identity transform
+            # Infer dimensionality from flow
+            n_features = self.flow.shape[0]
+            self.standardization_method = "none"
+            # For identity: use minmax with min=0, range=1
             self.data_min = jnp.zeros(n_features)
             self.data_max = jnp.ones(n_features)
-
-        # Precompute data range (max - min) to avoid repeated computation
-        self.data_range = self.data_max - self.data_min
-        # Avoid division by zero (though this shouldn't happen with our bounds)
-        self.data_range = jnp.where(self.data_range == 0, 1.0, self.data_range)
+            self.data_range = jnp.ones(n_features)
 
     @classmethod
     def from_directory(cls, output_dir: str) -> "Flow":
@@ -158,8 +172,8 @@ class Flow:
         Sample from the flow and return in original scale.
 
         If standardization was used during training, samples are automatically
-        converted back to the original scale. If not, the transformation is
-        identity (no-op).
+        converted back to the original scale using the inverse transformation
+        (z-score or min-max). If not, the transformation is identity (no-op).
 
         Args:
             key: JAX random key (jax.Array)
@@ -172,42 +186,52 @@ class Flow:
             >>> samples = flow.sample(jax.random.key(0), (1000,))
             >>> print(samples.shape)  # (1000, 4) for 4D flow
         """
+        # Sample in standardized space
         samples = self.flow.sample(key, shape)
 
-        # Inverse standardization: [0,1] -> original scale
-        # If standardization was disabled, this is identity (min=0, range=1)
-        samples = samples * self.data_range + self.data_min
+        # Inverse transformation to original scale (method-dependent)
+        samples = self.destandardize_output(samples)
 
         return samples
 
     def standardize_input(self, data: Array) -> Array:
         """
-        Standardize input data to [0, 1] domain using training bounds.
+        Standardize input data using the method from training.
 
-        If standardization was disabled, this is identity (no-op).
+        Applies the same standardization method used during training:
+        - Z-score: (x - mean) / std → mean=0, std=1
+        - Min-max: (x - min) / (max - min) → [0, 1]
+        - None: identity (no-op)
 
         Args:
             data: Input data in original scale (JAX array)
 
         Returns:
-            Data scaled to [0, 1] (or unchanged if standardization not used)
+            Standardized data (z-score, [0,1], or unchanged)
 
         Example:
             >>> original_data = jnp.array([[1.4, 1.3, 100, 200]])
             >>> standardized = flow.standardize_input(original_data)
         """
-        # Standardization: original scale -> [0,1]
-        # If standardization was disabled, this is identity (min=0, range=1)
-        return (data - self.data_min) / self.data_range
+        if self.standardization_method == "zscore":
+            # Z-score: (x - mean) / std
+            return (data - self.data_mean) / self.data_std
+        else:
+            # Min-max or none: (x - min) / range
+            # If standardization disabled, this is identity (min=0, range=1)
+            return (data - self.data_min) / self.data_range
 
     def destandardize_output(self, data: Array) -> Array:
         """
         Convert standardized data back to original scale.
 
-        If standardization was disabled, this is identity (no-op).
+        Applies the inverse of the standardization method:
+        - Z-score: x * std + mean
+        - Min-max: x * (max - min) + min
+        - None: identity (no-op)
 
         Args:
-            data: Data in [0, 1] domain (JAX array)
+            data: Data in standardized space (z-score or [0, 1])
 
         Returns:
             Data in original scale (or unchanged if standardization not used)
@@ -216,9 +240,13 @@ class Flow:
             >>> standardized_data = jnp.array([[0.5, 0.5, 0.5, 0.5]])
             >>> original = flow.destandardize_output(standardized_data)
         """
-        # Inverse standardization: [0,1] -> original scale
-        # If standardization was disabled, this is identity (min=0, range=1)
-        return data * self.data_range + self.data_min
+        if self.standardization_method == "zscore":
+            # Inverse z-score: x * std + mean
+            return data * self.data_std + self.data_mean
+        else:
+            # Inverse min-max or identity: x * range + min
+            # If standardization disabled, this is identity (min=0, range=1)
+            return data * self.data_range + self.data_min
 
     def log_prob(self, x: Array) -> Array:
         """
@@ -227,6 +255,11 @@ class Flow:
         If standardization was used, input data is automatically standardized
         before evaluation and Jacobian correction is applied. If not, operations
         are identity (no-op).
+
+        The Jacobian correction accounts for the change of variables:
+        - Z-score: log p(x) = log p(x_std) - sum(log(std))
+        - Min-max: log p(x) = log p(x_std) - sum(log(max - min))
+        - None: log p(x) = log p(x_std) (no correction)
 
         Args:
             x: Data in original scale, shape (n_samples, n_features).
@@ -239,16 +272,21 @@ class Flow:
             >>> data = jnp.array([[1.4, 1.3, 100, 200]])
             >>> log_prob = flow.log_prob(data)
         """
-        # Standardize input (identity if standardization disabled)
+        # Standardize input (method-dependent or identity)
         x_std = self.standardize_input(x)
 
-        # Evaluate log probability
+        # Evaluate log probability in standardized space
         log_p = self.flow.log_prob(x_std)
 
         # Account for Jacobian of inverse transformation
-        # For min-max scaling: log p(x) = log p(x_std) - sum(log(x_max - x_min))
-        # If standardization was disabled (range=1), log_det_jacobian = 0
-        log_det_jacobian = -jnp.sum(jnp.log(self.data_range))
+        if self.standardization_method == "zscore":
+            # Z-score: log |det J| = sum(log(std))
+            log_det_jacobian = -jnp.sum(jnp.log(self.data_std))
+        else:
+            # Min-max or none: log |det J| = sum(log(range))
+            # If standardization disabled (range=1), log_det_jacobian = 0
+            log_det_jacobian = -jnp.sum(jnp.log(self.data_range))
+
         log_p = log_p + log_det_jacobian
 
         return log_p
@@ -285,6 +323,7 @@ def create_transformer(
 
 def create_flow(
     key: Array,
+    dim: int = 4,
     flow_type: str = "masked_autoregressive_flow",
     nn_depth: int = 5,
     nn_block_dim: int = 8,
@@ -297,10 +336,12 @@ def create_flow(
     transformer_interval: float = 4.0,
 ) -> Any:
     """
-    Create a normalizing flow of the specified type.
+    Create a normalizing flow of the specified type with flexible dimensionality.
 
     Args:
         key: JAX random key
+        dim: Dimensionality of the data (default: 4 for GW [m1, m2, λ1, λ2],
+            can be 2 for NICER [M, R], etc.)
         flow_type: Type of flow ("block_neural_autoregressive_flow",
             "masked_autoregressive_flow", "coupling_flow")
         nn_depth: Depth of neural network (for block_neural_autoregressive_flow,
@@ -318,7 +359,7 @@ def create_flow(
     Returns:
         Untrained flowjax flow model
     """
-    base_dist = Normal(jnp.zeros(4))  # 4D: m1, m2, lambda1, lambda2
+    base_dist = Normal(jnp.zeros(dim))
 
     if flow_type == "block_neural_autoregressive_flow":
         flow = block_neural_autoregressive_flow(
@@ -377,20 +418,36 @@ def load_model(output_dir: str) -> Tuple[Any, Dict[str, Any]]:
 
     Returns:
         flow: Loaded flow model
-        metadata: Training metadata (includes data_bounds if standardization was used)
+        metadata: Training metadata (includes data statistics if standardization was used)
 
     Example:
         >>> flow, metadata = load_model("./models/gw170817/")
     """
+    # Load metadata first to infer dimensionality
+    metadata_path = os.path.join(output_dir, "metadata.json")
+    with open(metadata_path, "r") as f:
+        metadata = json.load(f)
+
     # Load kwargs
     kwargs_path = os.path.join(output_dir, "flow_kwargs.json")
     with open(kwargs_path, "r") as f:
         flow_kwargs = json.load(f)
 
+    # Infer dimensionality from metadata
+    # Try data_mean first (new format), then data_bounds_min (legacy)
+    if "data_mean" in metadata:
+        dim = len(metadata["data_mean"])
+    elif "data_bounds_min" in metadata:
+        dim = len(metadata["data_bounds_min"])
+    else:
+        # Default to 4 for backward compatibility with old models without standardization
+        dim = 4
+
     # Recreate flow architecture
     key = jax.random.key(flow_kwargs["seed"])
     flow = create_flow(
         key=key,
+        dim=dim,
         flow_type=flow_kwargs["flow_type"],
         nn_depth=flow_kwargs["nn_depth"],
         nn_block_dim=flow_kwargs["nn_block_dim"],
@@ -406,10 +463,5 @@ def load_model(output_dir: str) -> Tuple[Any, Dict[str, Any]]:
     # Load weights
     weights_path = os.path.join(output_dir, "flow_weights.eqx")
     flow = eqx.tree_deserialise_leaves(weights_path, flow)
-
-    # Load metadata
-    metadata_path = os.path.join(output_dir, "metadata.json")
-    with open(metadata_path, "r") as f:
-        metadata = json.load(f)
 
     return flow, metadata

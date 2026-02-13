@@ -34,7 +34,7 @@ echo "Dataset: gw170817_high_spin"
 echo ""
 
 # Train using config in current directory
-train_jester_gw_flow "./config.yaml"
+train_jester_flow "./config.yaml"
 
 echo ""
 echo "DONE"
