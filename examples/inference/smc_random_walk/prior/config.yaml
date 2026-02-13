@@ -1,51 +1,32 @@
-# Sequential Monte Carlo (SMC) with Random Walk Kernel Configuration Example
-# Uses BlackJAX SMC with adaptive tempering and Gaussian Random Walk kernel
-# Sample from the prior for testing
-
 seed: 43
-
-# Execution options
-dry_run: false        # Set to true to setup everything but not run sampler
-validate_only: false  # Set to true to only validate configuration
-
-# Transform configuration: MetaModel+CSE for EOS curves
+dry_run: false
+validate_only: false
 transform:
-  type: "metamodel_cse"
-  ndat_metamodel: 100        # Number of data points for MetaModel interpolation
-  nmax_nsat: 25.0            # Maximum density (in units of nsat) for MetaModel
-  nb_CSE: 8                  # CSE extension with 8 parameters
-  min_nsat_TOV: 0.75         # Minimum density for TOV integration
-  ndat_TOV: 100              # Number of points for TOV integration
-  nb_masses: 100             # Number of mass samples for M-R curve
-  crust_name: "DH"           # Crust model (Douchin-Haensel)
-
-# Prior specification file
+  type: metamodel_cse
+  ndat_metamodel: 100
+  nmax_nsat: 25.0
+  nb_CSE: 8
+  min_nsat_TOV: 0.75
+  ndat_TOV: 100
+  nb_masses: 100
+  crust_name: DH
 prior:
-  specification_file: "prior.prior"
-
-# Likelihood constraints: Use zero likelihood for prior-only sampling
+  specification_file: prior.prior
 likelihoods:
-  - type: "constraints_eos"
-    enabled: true
-  - type: "zero"
-    enabled: true
-    parameters: {}
-
-# SMC configuration with Random Walk kernel
+- type: constraints_eos
+  enabled: true
+- type: zero
+  enabled: true
 sampler:
-  type: "smc-rw"
-  n_particles: 2000        # Number of particles evolved at each inference step
-  n_mcmc_steps: 10         # MCMC steps per tempering level
-  target_ess: 0.9          # Target effective sample size (90%)
-  random_walk_sigma: 0.1   # Gaussian random walk step size scale
-  output_dir: "./outdir/"
-
-# Postprocessing configuration
+  type: smc-rw
+  n_particles: 2000
+  n_mcmc_steps: 10
+  target_ess: 0.9
+  random_walk_sigma: 0.1
+  output_dir: ./outdir/
 postprocessing:
   enabled: true
   make_cornerplot: false
   make_massradius: true
   make_pressuredensity: true
-
-# Data paths (none needed for prior-only sampling)
 data_paths: {}

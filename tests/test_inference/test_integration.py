@@ -116,10 +116,8 @@ Z_sym = UniformPrior(-2000.0, 1500.0, parameter_names=["Z_sym"])
                 {
                     "type": "constraints_eos",
                     "enabled": True,
-                    "parameters": {
-                        "penalty_causality": -1e10,
-                        "penalty_stability": -1e5,
-                    },
+                    "penalty_causality": -1e10,
+                    "penalty_stability": -1e5,
                 }
             ],
             "sampler": {
@@ -419,10 +417,8 @@ class TestConfigValidationIntegration:
 
         # GW likelihood requires 'events' parameter
         with pytest.raises(ValidationError):
-            schema.LikelihoodConfig(
-                type="gw",
-                enabled=True,
-                parameters={},  # Missing 'events' - should fail
+            schema.GWLikelihoodConfig(
+                # Missing 'events' - should fail
             )
 
 
@@ -472,7 +468,7 @@ class TestEOSSampleGeneration:
             "seed": 42,
             "transform": {"type": "metamodel", "nb_CSE": 0},
             "prior": {"specification_file": "dummy.prior"},
-            "likelihoods": [{"type": "zero", "enabled": True, "parameters": {}}],
+            "likelihoods": [{"type": "zero", "enabled": True}],
             "sampler": {
                 "type": "flowmc",
                 "n_chains": 10,
@@ -571,7 +567,7 @@ class TestEOSSampleGeneration:
             "seed": 123,
             "transform": {"type": "metamodel", "nb_CSE": 0},
             "prior": {"specification_file": "dummy.prior"},
-            "likelihoods": [{"type": "zero", "enabled": True, "parameters": {}}],
+            "likelihoods": [{"type": "zero", "enabled": True}],
             "sampler": {
                 "type": "smc-rw",
                 "n_particles": 100,
