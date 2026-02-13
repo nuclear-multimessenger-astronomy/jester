@@ -62,7 +62,7 @@ class Crust:
     --------
     Load a crust model with default settings:
 
-    >>> from jesterTOV.eos import Crust
+    >>> from jesterTOV.eos.crust import Crust
     >>> crust = Crust("DH")
     >>> print(f"Loaded {len(crust)} crust points")
     >>> n, p, e = crust.get_data()

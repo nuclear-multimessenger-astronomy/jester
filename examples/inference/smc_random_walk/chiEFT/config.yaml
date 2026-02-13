@@ -13,13 +13,18 @@ transform:
 prior:
   specification_file: prior.prior
 likelihoods:
-- type: constraints_eos
-  enabled: true
-- type: chieft
-  enabled: true
-  low_filename: ../../../../jesterTOV/inference/data/chiEFT/2402.04172/low.dat
-  high_filename: ../../../../jesterTOV/inference/data/chiEFT/2402.04172/high.dat
-  nb_n: 100
+  # Physical constraint likelihood - enforces EOS validity
+  - type: constraints_eos
+    enabled: true
+
+  # ChiEFT likelihood - constrains low-density EOS using chiral effective field theory
+  - type: chieft
+    enabled: true
+    low_filename: ../../../../jesterTOV/inference/data/chiEFT/2402.04172/low.dat
+    high_filename: ../../../../jesterTOV/inference/data/chiEFT/2402.04172/high.dat
+    nb_n: 100
+
+# SMC configuration with Random Walk kernel
 sampler:
   type: smc-rw
   n_particles: 2000

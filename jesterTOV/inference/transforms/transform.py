@@ -5,14 +5,16 @@ from typing import Any
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jesterTOV.eos import (
+from jesterTOV.eos.base import Interpolate_EOS_model
+from jesterTOV.eos.metamodel import (
     MetaModel_EOS_model,
     MetaModel_with_CSE_EOS_model,
-    SpectralDecomposition_EOS_model,
 )
-from jesterTOV.eos.base import Interpolate_EOS_model
-from jesterTOV.tov import GRTOVSolver, PostTOVSolver, ScalarTensorTOVSolver
+from jesterTOV.eos.spectral import SpectralDecomposition_EOS_model
 from jesterTOV.tov.base import TOVSolverBase
+from jesterTOV.tov.gr import GRTOVSolver
+from jesterTOV.tov.anisotropy import PostTOVSolver
+from jesterTOV.tov.scalar_tensor import ScalarTensorTOVSolver
 from jesterTOV.inference.base import NtoMTransform
 from jesterTOV.inference.likelihoods.constraints import check_all_constraints
 from jesterTOV.logging_config import get_logger
@@ -65,8 +67,8 @@ class JesterTransform(NtoMTransform):
     Examples
     --------
     >>> # Direct instantiation
-    >>> from jesterTOV.eos import MetaModel_EOS_model
-    >>> from jesterTOV.tov import GRTOVSolver
+    >>> from jesterTOV.eos.metamodel import MetaModel_EOS_model
+    >>> from jesterTOV.tov.gr import GRTOVSolver
     >>> eos = MetaModel_EOS_model(crust_name="DH")
     >>> solver = GRTOVSolver()
     >>> transform = JesterTransform(eos=eos, tov_solver=solver)

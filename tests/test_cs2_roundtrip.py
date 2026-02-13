@@ -22,9 +22,9 @@ Pass cs2 directly through to construct_family instead of recomputing it.
 
 import jax.numpy as jnp
 
-import jesterTOV.eos as eos
 from jesterTOV import utils
-from jesterTOV.tov import GRTOVSolver
+from jesterTOV.eos.metamodel import MetaModel_EOS_model
+from jesterTOV.tov.gr import GRTOVSolver
 from jesterTOV.tov.data_classes import EOSData
 
 
@@ -95,7 +95,7 @@ class TestCS2Roundtrip:
             "Z_sym": 0.0,
         }
 
-        model = eos.MetaModel_EOS_model(**metamodel_params)
+        model = MetaModel_EOS_model(**metamodel_params)
         eos_data = model.construct_eos(nep_dict)
         ns, ps, hs, es, dloge_dlogps, cs2_analytical = (
             eos_data.ns,
@@ -154,7 +154,7 @@ class TestCS2Roundtrip:
             "Z_sym": 0.0,
         }
 
-        model = eos.MetaModel_EOS_model(**metamodel_params)
+        model = MetaModel_EOS_model(**metamodel_params)
         eos_data = model.construct_eos(nep_dict)
 
         # Construct family (including cs2 to avoid bug)
@@ -201,7 +201,7 @@ class TestCS2Roundtrip:
             "Z_sym": 0.0,
         }
 
-        model = eos.MetaModel_EOS_model(**metamodel_params)
+        model = MetaModel_EOS_model(**metamodel_params)
         eos_data = model.construct_eos(nep_dict)
         ns, ps, hs, es, dloge_dlogps, cs2_analytical = (
             eos_data.ns,
