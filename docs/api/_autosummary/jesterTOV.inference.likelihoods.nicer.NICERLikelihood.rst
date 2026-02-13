@@ -30,9 +30,6 @@
       ~NICERLikelihood.penalty_value
       ~NICERLikelihood.N_masses_evaluation
       ~NICERLikelihood.N_masses_batch_size
-      ~NICERLikelihood.amsterdam_masses
-      ~NICERLikelihood.maryland_masses
-      ~NICERLikelihood.amsterdam_posterior
-      ~NICERLikelihood.maryland_posterior
+      ~NICERLikelihood.seed
    
    
