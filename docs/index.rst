@@ -109,6 +109,9 @@ Contents
    :maxdepth: 2
    :caption: Developer Guide
 
+   developer_guide/adding_new_eos
+   developer_guide/adding_new_tov
+   developer_guide/adding_new_likelihood
    inference/documentation_guide
    citing
 
