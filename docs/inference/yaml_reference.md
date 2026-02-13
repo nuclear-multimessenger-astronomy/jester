@@ -220,29 +220,59 @@ Constrain the EOS using gravitational wave observations of binary neutron star m
 
 Constrain the mass-radius relation using NICER X-ray timing observations of millisecond pulsars.
 
+#### NICER Flow Likelihood (DEFAULT)
 
-::::{dropdown} **NICER Likelihood (type: "nicer")**
+::::{dropdown} **NICER Flow Likelihood (DEFAULT) (type: "nicer")**
 
 ```yaml
 - type: "nicer"
   enabled: true
   parameters:
-    pulsars: [{"name": "J0030", "amsterdam_samples_file": "...", "maryland_samples_file": "..."}]  # List of pulsars
-    N_masses_evaluation: 100  # Number of mass grid points (optional, default: 100)
+    pulsars: [{"name": "J0030", "amsterdam_model_dir": "./flows/models/nicer_maf/J0030/amsterdam", "maryland_model_dir": "./flows/models/nicer_maf/J0030/maryland"}]  # List of pulsars with flow model directories
+    N_masses_evaluation: 100  # Number of mass samples (optional, default: 100)
     N_masses_batch_size: 20  # Batch size for processing (optional, default: 20)
+    seed: 42  # Random seed for mass pre-sampling (optional, default: 42)
 ```
 
 **Field Details:**
 
-- **`pulsars`** (`list[dict]`) - List of pulsars with `name`, `amsterdam_samples_file`, and `maryland_samples_file` keys. If sample files are omitted, uses preset paths.
-- **`N_masses_evaluation`** (`int`, default: `100`) - Number of mass grid points for marginalization over pulsar mass
-- **`N_masses_batch_size`** (`int`, default: `20`) - Batch size for processing mass grid points
+- **`pulsars`** (`list[dict]`) - List of pulsars with `name`, `amsterdam_model_dir`, and `maryland_model_dir` keys. Model directories must point to trained normalizing flow models.
+- **`N_masses_evaluation`** (`int`, default: `100`) - Number of mass samples to pre-sample from flow for deterministic evaluation
+- **`N_masses_batch_size`** (`int`, default: `20`) - Batch size for processing mass samples with jax.lax.map
+- **`seed`** (`int`, default: `42`) - Random seed for reproducible mass pre-sampling from flow
 
 
 
 **Description:**
 
-Marginalizes over pulsar mass using M-R posterior samples from NICER analysis teams (Amsterdam and Maryland).
+**Default NICER likelihood** using pre-trained normalizing flows on M-R posteriors. Pre-samples masses once at initialization for efficient, deterministic evaluation. Recommended for production use.
+
+::::
+
+#### NICER KDE Likelihood (LEGACY)
+
+::::{dropdown} **NICER KDE Likelihood (LEGACY) (type: "nicer_kde")**
+
+```yaml
+- type: "nicer_kde"
+  enabled: true
+  parameters:
+    pulsars: [{"name": "J0030", "amsterdam_samples_file": "./data/NICER/J0030/amsterdam.npz", "maryland_samples_file": "./data/NICER/J0030/maryland.npz"}]  # List of pulsars with sample files
+    N_masses_evaluation: 100  # Number of masses per evaluation (optional, default: 100)
+    N_masses_batch_size: 20  # Batch size for sampling (optional, default: 20)
+```
+
+**Field Details:**
+
+- **`pulsars`** (`list[dict]`) - List of pulsars with `name`, `amsterdam_samples_file`, and `maryland_samples_file` keys pointing to M-R posterior samples (npz format).
+- **`N_masses_evaluation`** (`int`, default: `100`) - Number of mass samples to draw on-the-fly from posterior samples per evaluation
+- **`N_masses_batch_size`** (`int`, default: `20`) - Batch size for mass sampling and KDE evaluation
+
+
+
+**Description:**
+
+**Legacy NICER likelihood** using kernel density estimation on M-R posterior samples. Resamples masses during each evaluation (slower, non-deterministic). For backward compatibility only - use flow-based version for new analyses.
 
 ::::
 

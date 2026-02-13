@@ -7,6 +7,7 @@ from ..config.schema import (
     GWLikelihoodConfig,
     GWResampledLikelihoodConfig,
     NICERLikelihoodConfig,
+    NICERKDELikelihoodConfig,
     RadioLikelihoodConfig,
     ChiEFTLikelihoodConfig,
     EOSConstraintsLikelihoodConfig,
@@ -18,7 +19,7 @@ from ..config.schema import (
 )
 from .combined import CombinedLikelihood, ZeroLikelihood
 from .gw import GWLikelihood, GWLikelihoodResampled
-from .nicer import NICERLikelihood
+from .nicer import NICERLikelihood, NICERKDELikelihood
 from .radio import RadioTimingLikelihood
 from .chieft import ChiEFTLikelihood
 from .constraints import (
@@ -118,9 +119,9 @@ def create_likelihood(
                 "not create_likelihood directly"
             )
 
-        case NICERLikelihoodConfig():
+        case NICERLikelihoodConfig() | NICERKDELikelihoodConfig():
             # NICER likelihoods are handled specially in create_combined_likelihood
-            # This function should not be called directly for NICER type
+            # This function should not be called directly for NICER types
             raise RuntimeError(
                 "NICER likelihoods should be created via create_combined_likelihood, "
                 "not create_likelihood directly"
@@ -257,18 +258,32 @@ def create_combined_likelihood(
                     )
                     likelihoods.append(gw_likelihood)
 
-            # Special handling for NICER likelihoods: create one likelihood per pulsar
+            # Special handling for NICER likelihoods (flow-based): create one likelihood per pulsar
             case NICERLikelihoodConfig():
-                # Create one NICERLikelihood per pulsar
+                # Create one NICERLikelihood (flow-based) per pulsar
                 for pulsar in config.pulsars:
                     nicer_likelihood = NICERLikelihood(
+                        psr_name=pulsar["name"],
+                        amsterdam_model_dir=pulsar.get("amsterdam_model_dir"),
+                        maryland_model_dir=pulsar.get("maryland_model_dir"),
+                        N_masses_evaluation=config.N_masses_evaluation,
+                        N_masses_batch_size=config.N_masses_batch_size,
+                        seed=config.seed,
+                    )
+                    likelihoods.append(nicer_likelihood)
+
+            # Special handling for NICER KDE likelihoods (legacy): create one likelihood per pulsar
+            case NICERKDELikelihoodConfig():
+                # Create one NICERKDELikelihood (KDE-based) per pulsar
+                for pulsar in config.pulsars:
+                    nicer_kde_likelihood = NICERKDELikelihood(
                         psr_name=pulsar["name"],
                         amsterdam_samples_file=pulsar["amsterdam_samples_file"],
                         maryland_samples_file=pulsar["maryland_samples_file"],
                         N_masses_evaluation=config.N_masses_evaluation,
                         N_masses_batch_size=config.N_masses_batch_size,
                     )
-                    likelihoods.append(nicer_likelihood)
+                    likelihoods.append(nicer_kde_likelihood)
 
             # Special handling for radio timing likelihoods: create one likelihood per pulsar
             case RadioLikelihoodConfig():

@@ -1,0 +1,24 @@
+{
+  "n_samples_total": 100000,
+  "n_samples_used": 50000,
+  "parameter_names": [
+    "mass",
+    "radius"
+  ],
+  "filepath": "../../../../../data/NICER/J07406620_amsterdam_gamma_NICERXMM_equal_weights_recent.npz",
+  "flow_type": "masked_autoregressive_flow",
+  "num_epochs": 643,
+  "learning_rate": 0.0001,
+  "max_patience": 500,
+  "val_prop": 0.2,
+  "standardize": true,
+  "standardization_method": "zscore",
+  "data_mean": [
+    2.072476954202874,
+    12.657037915419494
+  ],
+  "data_std": [
+    0.06819938112486473,
+    1.0803589354829444
+  ]
+}
