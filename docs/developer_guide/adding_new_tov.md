@@ -526,6 +526,6 @@ R_km = R_geometric  # Already in km if using correct units
 ## Need Help?
 
 - See existing implementations: `jesterTOV/tov/gr.py`, `jesterTOV/tov/scalar_tensor.py`
-- Review BlackJAX source code for sampler best practices: `/Users/Woute029/Documents/Code/projects/jester_review/blackjax`
+- Review BlackJAX source code and documentation for sampler best practices
 - Check Diffrax documentation: https://docs.kidger.site/diffrax/
 - Review `jesterTOV/inference/CLAUDE.md` for inference system architecture
