@@ -226,7 +226,7 @@ uv run pytest tests/
 ### Documentation
 ```bash
 # Build docs locally
-uv pip install -e ".[docs]"
+uv pip install -e ".[dev]"
 uv run sphinx-build docs docs/_build/html
 open docs/_build/html/index.html
 
