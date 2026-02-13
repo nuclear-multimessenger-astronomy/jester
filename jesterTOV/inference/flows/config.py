@@ -1,8 +1,8 @@
 """Pydantic configuration schema for normalizing flow training.
 
 This module provides type-safe configuration for training normalizing flows
-on gravitational wave posterior samples, replacing the argparse interface
-in train_flow.py.
+on posterior samples (GW, NICER, EOS parameters, etc.), replacing the argparse
+interface in train_flow.py.
 """
 
 from pathlib import Path
@@ -13,15 +13,19 @@ from pydantic import BaseModel, field_validator
 
 
 class FlowTrainingConfig(BaseModel):
-    """Configuration for training normalizing flows on GW posterior samples.
+    """Configuration for training normalizing flows on posterior samples.
 
     Attributes
     ----------
     posterior_file : str
-        Path to .npz file with GW posterior samples (must contain:
-        mass_1_source, mass_2_source, lambda_1, lambda_2)
+        Path to .npz file with posterior samples
     output_dir : str
         Directory to save model weights, kwargs, and plots
+    parameter_names : list[str] | None
+        List of parameter names to extract from posterior file.
+        Default None → uses GW parameters ["mass_1_source", "mass_2_source", "lambda_1", "lambda_2"].
+        Other examples: NICER ["mass", "radius"], EOS parameters, etc.
+        Cannot be an empty list (must be None or non-empty list).
     num_epochs : int
         Number of training epochs (default: 600)
     learning_rate : float
@@ -51,13 +55,19 @@ class FlowTrainingConfig(BaseModel):
     nn_width : int
         Width of neural network hidden layers (default: 50)
     standardize : bool
-        Standardize input data to [0,1] domain using min-max scaling (default: False)
+        Whether to standardize input data (default: True, changed from False)
+    standardization_method : Literal["zscore", "minmax"]
+        Method for standardizing input data (default: zscore).
+        - "zscore": Standardize to mean=0, std=1 (recommended for most cases)
+        - "minmax": Standardize to [0, 1] range (legacy, for backward compatibility)
+        Only used if standardize=True.
     transformer : Literal["affine", "rational_quadratic_spline"]
-        Transformer type for masked_autoregressive_flow and coupling_flow (default: affine)
+        Transformer type for masked_autoregressive_flow and coupling_flow
+        (default: rational_quadratic_spline, changed from affine)
     transformer_knots : int
-        Number of knots for RationalQuadraticSpline transformer (default: 8)
+        Number of knots for RationalQuadraticSpline transformer (default: 10, changed from 8)
     transformer_interval : float
-        Interval for RationalQuadraticSpline transformer (default: 4.0)
+        Interval for RationalQuadraticSpline transformer (default: 5.0, changed from 4.0)
     val_prop : float
         Proportion of data to use for validation (default: 0.2)
     batch_size : int
@@ -66,6 +76,7 @@ class FlowTrainingConfig(BaseModel):
 
     posterior_file: str
     output_dir: str
+    parameter_names: list[str] | None = None
     num_epochs: int = 600
     learning_rate: float = 1e-3
     max_patience: int = 50
@@ -84,10 +95,13 @@ class FlowTrainingConfig(BaseModel):
         "coupling_flow",
     ] = "masked_autoregressive_flow"
     nn_width: int = 50
-    standardize: bool = False
-    transformer: Literal["affine", "rational_quadratic_spline"] = "affine"
-    transformer_knots: int = 8
-    transformer_interval: float = 4.0
+    standardize: bool = True
+    standardization_method: Literal["zscore", "minmax"] = "zscore"
+    transformer: Literal["affine", "rational_quadratic_spline"] = (
+        "rational_quadratic_spline"
+    )
+    transformer_knots: int = 10
+    transformer_interval: float = 5.0
     val_prop: float = 0.2
     batch_size: int = 128
 
@@ -123,6 +137,16 @@ class FlowTrainingConfig(BaseModel):
         """Validate that validation proportion is in (0, 1)."""
         if v <= 0 or v >= 1:
             raise ValueError(f"val_prop must be in (0, 1), got: {v}")
+        return v
+
+    @field_validator("parameter_names")
+    @classmethod
+    def validate_parameter_names(cls, v: list[str] | None) -> list[str] | None:
+        """Validate that parameter_names is either None or a non-empty list."""
+        if v is not None and len(v) == 0:
+            raise ValueError(
+                "parameter_names cannot be an empty list. Use None for default GW parameters."
+            )
         return v
 
     @classmethod

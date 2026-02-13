@@ -126,8 +126,24 @@ class TestLikelihoodConfig:
             )
 
     def test_nicer_likelihood_config(self):
-        """Test NICER likelihood configuration."""
+        """Test NICER flow-based likelihood configuration."""
         config = schema.NICERLikelihoodConfig(
+            enabled=True,
+            pulsars=[
+                {
+                    "name": "J0030",
+                    "amsterdam_model_dir": "/path/to/amsterdam_flow",
+                    "maryland_model_dir": "/path/to/maryland_flow",
+                }
+            ],
+            N_masses_evaluation=100,
+        )
+        assert config.type == "nicer"
+        assert len(config.pulsars) == 1
+
+    def test_nicer_kde_likelihood_config(self):
+        """Test NICER KDE-based likelihood configuration."""
+        config = schema.NICERKDELikelihoodConfig(
             enabled=True,
             pulsars=[
                 {
@@ -138,15 +154,15 @@ class TestLikelihoodConfig:
             ],
             N_masses_evaluation=100,
         )
-        assert config.type == "nicer"
+        assert config.type == "nicer_kde"
         assert len(config.pulsars) == 1
 
-    def test_nicer_likelihood_missing_files_fails(self):
-        """Test that NICER likelihood without sample files fails."""
+    def test_nicer_kde_likelihood_missing_files_fails(self):
+        """Test that NICER KDE likelihood without sample files fails."""
         with pytest.raises(
             ValidationError, match="missing required 'amsterdam_samples_file' field"
         ):
-            schema.NICERLikelihoodConfig(
+            schema.NICERKDELikelihoodConfig(
                 pulsars=[
                     {
                         "name": "J0030",
@@ -224,15 +240,15 @@ class TestLikelihoodConfig:
         gw_config = adapter.validate_python(gw_dict)
         assert isinstance(gw_config, schema.GWLikelihoodConfig)
 
-        # Test NICER likelihood
+        # Test NICER flow-based likelihood
         nicer_dict = {
             "type": "nicer",
             "enabled": True,
             "pulsars": [
                 {
                     "name": "J0030",
-                    "amsterdam_samples_file": "/path/to/amsterdam.txt",
-                    "maryland_samples_file": "/path/to/maryland.txt",
+                    "amsterdam_model_dir": "/path/to/amsterdam_flow",
+                    "maryland_model_dir": "/path/to/maryland_flow",
                 }
             ],
         }
@@ -324,8 +340,8 @@ class TestInferenceConfig:
                 "pulsars": [
                     {
                         "name": "J0030",
-                        "amsterdam_samples_file": "/path/to/amsterdam.txt",
-                        "maryland_samples_file": "/path/to/maryland.txt",
+                        "amsterdam_model_dir": "/path/to/amsterdam_flow",
+                        "maryland_model_dir": "/path/to/maryland_flow",
                     }
                 ],
             },

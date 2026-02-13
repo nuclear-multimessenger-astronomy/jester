@@ -231,11 +231,13 @@ class GWResampledLikelihoodConfig(BaseLikelihoodConfig):
 
 # NICER Likelihood Config
 class NICERLikelihoodConfig(BaseLikelihoodConfig):
-    """NICER X-ray timing likelihood configuration.
+    """NICER X-ray timing likelihood configuration using normalizing flows (DEFAULT).
 
     Constrains mass-radius relation using NICER observations of
-    millisecond pulsars. Marginalizes over pulsar mass using
-    M-R posterior samples from analysis teams.
+    millisecond pulsars. Uses pre-trained normalizing flows on M-R
+    posteriors for efficient likelihood evaluation.
+
+    For the legacy KDE-based version, use type: "nicer_kde".
 
     Examples
     --------
@@ -245,9 +247,10 @@ class NICERLikelihoodConfig(BaseLikelihoodConfig):
           enabled: true
           pulsars:
             - name: "J0030"
-              amsterdam_samples_file: "./data/J0030_amsterdam.txt"
-              maryland_samples_file: "./data/J0030_maryland.txt"
+              amsterdam_model_dir: "./flows/models/nicer_maf/J0030/amsterdam"
+              maryland_model_dir: "./flows/models/nicer_maf/J0030/maryland"
             - name: "J0740"
+              # If model_dir omitted, uses preset paths (if available)
           N_masses_evaluation: 100
     """
 
@@ -260,8 +263,85 @@ class NICERLikelihoodConfig(BaseLikelihoodConfig):
     pulsars: list[dict[str, str]] = Field(
         description=(
             "List of pulsars to include. Each pulsar must have 'name' key. "
-            "Optional 'amsterdam_samples_file' and 'maryland_samples_file' keys "
-            "specify paths to M-R posterior samples. If omitted, uses preset paths."
+            "Optional 'amsterdam_model_dir' and 'maryland_model_dir' keys "
+            "specify paths to flow model directories. If omitted, uses preset paths."
+        ),
+        min_length=1,
+    )
+
+    N_masses_evaluation: int = Field(
+        default=100,
+        gt=0,
+        description="Number of mass samples for likelihood evaluation",
+    )
+
+    N_masses_batch_size: int = Field(
+        default=20,
+        gt=0,
+        description="Batch size for processing mass samples",
+    )
+
+    @field_validator("pulsars")
+    @classmethod
+    def validate_pulsars(cls, v: list[dict[str, str]]) -> list[dict[str, str]]:
+        """Validate pulsar structure."""
+        from jesterTOV.logging_config import get_logger
+
+        logger = get_logger("jester")
+
+        for i, pulsar in enumerate(v):
+            if "name" not in pulsar:
+                raise ValueError(f"Pulsar {i} missing required 'name' field")
+
+            # Warn if model directories not provided (will use presets)
+            if "amsterdam_model_dir" not in pulsar:
+                logger.warning(
+                    f"Pulsar {i} ({pulsar['name']}) missing 'amsterdam_model_dir', "
+                    "will attempt to use preset model path"
+                )
+            if "maryland_model_dir" not in pulsar:
+                logger.warning(
+                    f"Pulsar {i} ({pulsar['name']}) missing 'maryland_model_dir', "
+                    "will attempt to use preset model path"
+                )
+        return v
+
+
+class NICERKDELikelihoodConfig(BaseLikelihoodConfig):
+    """NICER X-ray timing likelihood configuration using KDE (LEGACY).
+
+    This is the legacy KDE-based NICER likelihood. For the recommended
+    flow-based version, use type: "nicer".
+
+    Constrains mass-radius relation using NICER observations of
+    millisecond pulsars. Uses kernel density estimation on M-R
+    posterior samples from analysis teams.
+
+    Examples
+    --------
+    .. code-block:: yaml
+
+        - type: "nicer_kde"
+          enabled: true
+          pulsars:
+            - name: "J0030"
+              amsterdam_samples_file: "./data/J0030_amsterdam.npz"
+              maryland_samples_file: "./data/J0030_maryland.npz"
+            - name: "J0740"
+          N_masses_evaluation: 100
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["nicer_kde"] = Field(
+        default="nicer_kde", description="Likelihood type identifier"
+    )
+
+    pulsars: list[dict[str, str]] = Field(
+        description=(
+            "List of pulsars to include. Each pulsar must have 'name' key. "
+            "'amsterdam_samples_file' and 'maryland_samples_file' keys "
+            "specify paths to M-R posterior samples (.npz files)."
         ),
         min_length=1,
     )
@@ -285,7 +365,7 @@ class NICERLikelihoodConfig(BaseLikelihoodConfig):
         for i, pulsar in enumerate(v):
             if "name" not in pulsar:
                 raise ValueError(f"Pulsar {i} missing required 'name' field")
-            # Currently both sample files are required (preset paths not implemented yet)
+            # Both sample files are required for KDE approach
             if "amsterdam_samples_file" not in pulsar:
                 raise ValueError(
                     f"Pulsar {i} missing required 'amsterdam_samples_file' field"
@@ -604,6 +684,7 @@ LikelihoodConfig = Annotated[
         GWLikelihoodConfig,
         GWResampledLikelihoodConfig,
         NICERLikelihoodConfig,
+        NICERKDELikelihoodConfig,
         RadioLikelihoodConfig,
         ChiEFTLikelihoodConfig,
         EOSConstraintsLikelihoodConfig,
