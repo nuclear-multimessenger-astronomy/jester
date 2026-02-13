@@ -47,9 +47,9 @@ uv run sphinx-build -W --keep-going docs docs/_build/html
 
 ### Installation
 
-Documentation dependencies are in the `[docs]` extra:
+Documentation dependencies are in the `[dev]` extra:
 ```bash
-uv sync --extra docs
+uv sync --extra dev
 ```
 
 ## Documentation Architecture
