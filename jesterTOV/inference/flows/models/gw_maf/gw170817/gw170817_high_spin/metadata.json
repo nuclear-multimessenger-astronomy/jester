@@ -1,6 +1,12 @@
 {
   "n_samples_total": 9117,
   "n_samples_used": 9117,
+  "parameter_names": [
+    "mass_1_source",
+    "mass_2_source",
+    "lambda_1",
+    "lambda_2"
+  ],
   "filepath": "../../../../../data/gw170817/gw170817_high_spin_posterior.npz",
   "flow_type": "masked_autoregressive_flow",
   "num_epochs": 3000,
@@ -8,16 +14,17 @@
   "max_patience": 500,
   "val_prop": 0.2,
   "standardize": true,
-  "data_bounds_min": [
-    1.361790002655541,
-    0.739335399595211,
-    0.01222474814779595,
-    0.09296248470609214
+  "standardization_method": "zscore",
+  "data_mean": [
+    1.6424120002473879,
+    1.155874452208493,
+    251.89840740608676,
+    681.0250900794808
   ],
-  "data_bounds_max": [
-    2.7310913359719406,
-    1.3697753338880796,
-    2638.191948129514,
-    4993.662303957473
+  "data_std": [
+    0.19904540555290365,
+    0.11801027787386481,
+    265.8676928438671,
+    647.9483542101042
   ]
 }
