@@ -17,7 +17,7 @@ from diffrax import diffeqsolve, ODETerm, Dopri8, SaveAt, PIDController, Event
 from jesterTOV import utils
 from jesterTOV.tov.base import TOVSolverBase
 from jesterTOV.tov.data_classes import EOSData, TOVSolution
-from .scalar_tensor_utils import build_exterior_basis, build_exterior_basis_autodiff, coeff_solver, compute_tidal_deformabilities
+from jesterTOV.tov.scalar_tensor_utils import build_exterior_basis, build_exterior_basis_autodiff, coeff_solver, compute_tidal_deformabilities
 
 
 def _tov_ode_iter(h, y, eos):
