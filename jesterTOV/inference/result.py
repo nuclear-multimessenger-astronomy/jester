@@ -306,11 +306,11 @@ class InferenceResult:
         Notes
         -----
         When n_eos_samples < total samples:
+
         - Randomly selects n_eos_samples from posterior
         - Applies transform to selected samples
-        - Filters log_prob and sampler-specific fields (weights, ess, logL, logL_birth)
-          to match selected samples
-        - Backs up full arrays as *_full before filtering
+        - Filters log_prob and sampler-specific fields (weights, ess, logL, logL_birth) to match selected samples
+        - Backs up full arrays as ``*_full`` before filtering
         """
         import jax
         import jax.numpy as jnp

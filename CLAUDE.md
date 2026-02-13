@@ -8,6 +8,8 @@ This file provides guidance to Claude Code when working with the JESTER reposito
 
 **Documentation Style**: Write clear, concise documentation in full sentences as if by a human researcher. Avoid LLM-like verbosity.
 
+**Documentation Maintenance**: When making changes to source code (adding/removing/renaming classes, functions, or modules), check if API reference documentation needs updating. Module overview pages in `docs/api/` should list all public classes/functions. See `docs/CLAUDE.md` for detailed documentation guidelines.
+
 **Math Formatting in Docstrings**: All mathematical expressions in docstrings must use Sphinx/reStructuredText formatting for proper rendering in documentation:
 - Use `:math:` role for inline math: `:math:`\Gamma(x)`
 - Use `.. math::` directive for display equations
@@ -19,6 +21,8 @@ This file provides guidance to Claude Code when working with the JESTER reposito
 **GitHub Issue Comments**: When posting comments on GitHub issues, always identify as "Claude" or "Claude Code" to make it clear the comment is AI-generated. Never post as if you were the human user. This maintains transparency about AI contributions to the project.
 
 **Backwards compatibility**: There has not been a release yet, so don't worry about breaking changes for now. Focus on code quality, testing, and documentation over supporting legacy APIs!
+
+**Documentation guidelines**: [WIP!] We have an `API reference` page. In case a major refactoring is done, changing the layout of the repo, then we have to check the API references automatic docs building is up to date.
 
 ---
 
@@ -222,7 +226,7 @@ uv run pytest tests/
 ### Documentation
 ```bash
 # Build docs locally
-uv pip install -e ".[docs]"
+uv pip install -e ".[dev]"
 uv run sphinx-build docs docs/_build/html
 open docs/_build/html/index.html
 

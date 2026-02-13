@@ -7,14 +7,15 @@ sys.path.insert(0, str(Path("..").resolve()))
 
 # -- Project information -----------------------------------------------------
 project = "JESTER"
-copyright = "2025, JESTER Contributors"
-author = "JESTER Contributors"
+copyright = "2026, jesterTOV developers"
+author = "jesterTOV developers"
 release = "0.1.1"
 version = "0.1.1"
 
 # -- General configuration ---------------------------------------------------
 extensions = [
     "sphinx.ext.autodoc",
+    "sphinx.ext.autosummary",
     "sphinx.ext.napoleon",
     "sphinx.ext.mathjax",
     "sphinx.ext.viewcode",
@@ -25,10 +26,11 @@ extensions = [
     "sphinx_copybutton",
     "sphinx_autodoc_typehints",
     "sphinxcontrib.mermaid",
+    "sphinx_design",
 ]
 
 templates_path = ["_templates"]
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "CLAUDE.md"]
 
 language = "en"
 
@@ -56,6 +58,7 @@ html_theme_options = {
     "use_repository_button": True,
     "repository_url": "https://github.com/nuclear-multimessenger-astronomy/jester",
     "home_page_in_toc": True,
+    "show_toc_level": 2,  # Show headings up to level 2 in right sidebar
     "logo": {
         "image_light": "_static/logo_light.svg",
         "image_dark": "_static/logo_dark.svg",
@@ -84,6 +87,10 @@ autodoc_mock_imports = [
 add_module_names = False
 autodoc_inherit_docstrings = False
 python_maximum_signature_line_length = 88
+
+# -- Autosummary configuration -----------------------------------------------
+autosummary_generate = True  # Auto-generate stub pages
+autosummary_imported_members = False
 
 # -- Napoleon configuration --------------------------------------------------
 napoleon_google_docstring = True
