@@ -1,46 +1,30 @@
-# NICER PSR J0740+6620-only inference configuration
-# Configuration for constraining EOS using NICER X-ray timing observations
-
 seed: 45
-
-# Execution options
-dry_run: false          # Set to false to run full MCMC sampling
-validate_only: false   # Set to true to only validate configuration (faster than dry_run)
-
-# Transform configuration: MetaModel + CSE for high-density region
+dry_run: false
+validate_only: false
 transform:
-  type: "metamodel_cse"
+  type: metamodel_cse
   ndat_metamodel: 100
   nmax_nsat: 25.0
   nb_CSE: 8
   min_nsat_TOV: 0.75
   ndat_TOV: 100
   nb_masses: 100
-  crust_name: "DH"
-
-# Prior specification file
+  crust_name: DH
 prior:
-  specification_file: "prior.prior"
-
-# Likelihood constraints
+  specification_file: prior.prior
 likelihoods:
-  - type: "constraints_eos"
-    enabled: true
-
-  # NICER X-ray timing constraint (PSR J0740+6620)
-  - type: "nicer"
-    enabled: true
-    parameters:
-      pulsars:
-        - name: "J0740"
-          amsterdam_samples_file: "../../../../jesterTOV/inference/data/NICER/J07406620_amsterdam_gamma_NICERXMM_equal_weights_recent.npz"
-          maryland_samples_file: "../../../../jesterTOV/inference/data/NICER/J07406620_maryland_unknown_NICERXMM_RM.npz"
-      N_masses_evaluation: 20    # Number of mass samples per likelihood evaluation (updated to match GW approach)
-      N_masses_batch_size: 10    # Batch size for processing mass samples
-
-# MCMC sampler configuration
+- type: constraints_eos
+  enabled: true
+- type: nicer
+  enabled: true
+  pulsars:
+  - name: J0740
+    amsterdam_samples_file: ../../../../jesterTOV/inference/data/NICER/J07406620_amsterdam_gamma_NICERXMM_equal_weights_recent.npz
+    maryland_samples_file: ../../../../jesterTOV/inference/data/NICER/J07406620_maryland_unknown_NICERXMM_RM.npz
+  N_masses_evaluation: 20
+  N_masses_batch_size: 10
 sampler:
-  type: "flowmc"
+  type: flowmc
   n_chains: 1000
   n_loop_training: 30
   n_loop_production: 30
@@ -48,9 +32,7 @@ sampler:
   n_global_steps: 100
   n_epochs: 30
   learning_rate: 0.001
-  output_dir: "./outdir/"
-
-# Postprocessing configuration
+  output_dir: ./outdir/
 postprocessing:
   enabled: true
   make_cornerplot: false
