@@ -1,0 +1,39 @@
+# Configuration for training normalizing flow on NICER J0740+6620 (Maryland unknown NICER only full)
+posterior_file: ../../../../../data/NICER/J07406620_maryland_unknown_NICER_only_full.npz
+output_dir: .
+
+# Parameter selection
+parameter_names: ["mass", "radius"]
+
+# Training parameters
+num_epochs: 3000
+learning_rate: 0.0001
+max_patience: 500
+batch_size: 128
+val_prop: 0.2
+seed: 0
+
+# Flow architecture
+flow_type: masked_autoregressive_flow
+flow_layers: 1
+nn_depth: 4
+nn_width: 50
+nn_block_dim: 8
+invert: true
+
+# Transformer settings
+transformer: rational_quadratic_spline
+transformer_knots: 10
+transformer_interval: 5.0
+
+# Data preprocessing
+max_samples: 50000
+standardize: true
+standardization_method: zscore
+
+# Plotting
+plot_corner: true
+plot_losses: true
+
+# Conditional flow settings
+cond_dim: null
