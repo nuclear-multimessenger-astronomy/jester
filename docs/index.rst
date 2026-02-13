@@ -5,6 +5,10 @@ JAX-accelerated equation of state inference and TOV solvers
 
 ``jester`` performs Bayesian inference on neutron star equations of state using GPU-accelerated TOV solvers through ``jax``.
 
+.. note::
+
+   **Documentation is work in progress!** Some sections may be incomplete or under active development. We appreciate your patience as we improve the documentation.
+
 What's in JESTER?
 -----------------
 
