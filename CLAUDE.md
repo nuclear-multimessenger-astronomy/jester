@@ -24,6 +24,13 @@ This file provides guidance to Claude Code when working with the JESTER reposito
 
 **Backwards compatibility**: There has not been a release yet, so don't worry about breaking changes for now. Focus on code quality, testing, and documentation over supporting legacy APIs!
 
+**Extending JESTER**: When users mention working on adding new components, refer them to the relevant developer guide:
+- **Adding a new EOS model**: See `docs/developer_guide/adding_new_eos.md` for complete checklist (EOS class, schema updates, factory registration, tests, documentation)
+- **Adding a new TOV solver**: See `docs/developer_guide/adding_new_tov.md` for complete checklist (solver class, schema updates, factory registration, tests, documentation)
+- **Adding a new likelihood**: See `docs/developer_guide/adding_new_likelihood.md` for complete checklist (likelihood class, data loading, schema updates, factory registration, tests, documentation)
+
+These guides ensure all integration points are covered (configuration schema, transform factory, parameter validation, tests, and documentation).
+
 ---
 
 ## Current Status
