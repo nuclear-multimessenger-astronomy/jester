@@ -18,7 +18,7 @@ version = "0.1.1"
 description = "JAX-accelerated nuclear equation of state code and TOV solver with automatic differentiation"
 keywords = ["neutron-stars", "eos", "tov", "jax", "physics", "astronomy", "automatic-differentiation"]
 readme = "README.md"
-requires-python = ">=3.10, <3.13"
+requires-python = ">=3.11, <3.14"
 license = {file = "LICENSE"}
 urls = {repository = "https://github.com/nuclear-multimessenger-astronomy/jester"}
 dependencies = [
@@ -54,6 +54,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     'Programming Language :: Python :: 3.11',
     'Programming Language :: Python :: 3.12',
+    'Programming Language :: Python :: 3.13',
     'License :: OSI Approved :: MIT License',
     'Intended Audience :: Science/Research',
     'Intended Audience :: End Users/Desktop',
