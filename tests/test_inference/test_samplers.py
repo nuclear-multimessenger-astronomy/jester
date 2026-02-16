@@ -476,6 +476,8 @@ class TestFlowMCSamplerParameterOrdering:
             n_local_steps=1,
             n_global_steps=1,
             n_epochs=1,
+            train_thinning=1,  # Must not exceed n_local_steps/n_global_steps
+            output_thinning=1,  # Must not exceed n_local_steps/n_global_steps
             output_dir="./test_output/",
         )
 
