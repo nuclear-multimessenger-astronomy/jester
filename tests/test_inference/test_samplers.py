@@ -426,6 +426,8 @@ class TestSamplerIntegration:
             n_global_steps=2,
             n_epochs=2,
             learning_rate=0.001,
+            train_thinning=1,  # No thinning for minimal test
+            output_thinning=1,  # No thinning for minimal test
             output_dir="./test_output/",
         )
 
@@ -1066,6 +1068,8 @@ class TestSamplerOutputInterface:
             n_local_steps=2,
             n_global_steps=2,
             n_epochs=2,
+            train_thinning=1,  # No thinning for minimal test
+            output_thinning=1,  # No thinning for minimal test
             output_dir="./test_output/",
         )
 
