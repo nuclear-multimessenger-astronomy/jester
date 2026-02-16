@@ -130,7 +130,33 @@ class FlowMCSampler(JesterSampler):
         output_local_thinning = config.output_thinning
         output_global_thinning = config.output_thinning
 
-        # Calculate buffer sizes
+        # Validate thinning values to prevent zero-length buffers
+        thinning_errors = []
+        if local_thinning > n_local_steps:
+            thinning_errors.append(
+                f"train_thinning ({local_thinning}) exceeds n_local_steps ({n_local_steps})"
+            )
+        if global_thinning > n_global_steps:
+            thinning_errors.append(
+                f"train_thinning ({global_thinning}) exceeds n_global_steps ({n_global_steps})"
+            )
+        if output_local_thinning > n_local_steps:
+            thinning_errors.append(
+                f"output_thinning ({output_local_thinning}) exceeds n_local_steps ({n_local_steps})"
+            )
+        if output_global_thinning > n_global_steps:
+            thinning_errors.append(
+                f"output_thinning ({output_global_thinning}) exceeds n_global_steps ({n_global_steps})"
+            )
+        if thinning_errors:
+            error_msg = (
+                "Thinning values exceed step counts, which would produce zero-length buffers:\n  "
+                + "\n  ".join(thinning_errors)
+                + "\nPlease reduce thinning values or increase step counts in your config."
+            )
+            raise ValueError(error_msg)
+
+        # Calculate buffer sizes (guaranteed non-zero after validation)
         n_training_steps = (
             n_local_steps // local_thinning * n_training_loops
             + n_global_steps // global_thinning * n_training_loops
