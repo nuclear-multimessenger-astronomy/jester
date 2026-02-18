@@ -2,25 +2,28 @@
 
 import pytest
 from unittest.mock import MagicMock
-from jesterTOV.inference.config.schema import TransformConfig
+from jesterTOV.inference.config.schema import MetamodelEOSConfig, TOVConfig
 from jesterTOV.inference.run_inference import setup_transform
 from jesterTOV.inference.base.prior import CombinePrior, UniformPrior
 
 
 def test_missing_parameters_raises_error():
     """Test that setup_transform raises ValueError when parameters are missing from prior."""
-    # Create a metamodel transform config (requires 9 NEP parameters)
-    transform_config = TransformConfig(
+    # Create a metamodel EOS config (requires 9 NEP parameters)
+    eos_config = MetamodelEOSConfig(
         type="metamodel",
         ndat_metamodel=100,
-        ndat_TOV=100,
-        min_nsat_TOV=0.75,
         nmax_nsat=25.0,
     )
+    tov_config = TOVConfig(
+        ndat_TOV=100,
+        min_nsat_TOV=0.75,
+    )
 
-    # Create minimal config mock with just transform
+    # Create minimal config mock with eos and tov
     config = MagicMock()
-    config.transform = transform_config
+    config.eos = eos_config
+    config.tov = tov_config
 
     # Create a prior with only SOME of the required parameters (missing E_sat, K_sat, Q_sat)
     # MetaModel requires: E_sat, K_sat, Q_sat, Z_sat, E_sym, L_sym, K_sym, Q_sym, Z_sym
@@ -53,17 +56,20 @@ def test_missing_parameters_raises_error():
 
 def test_all_parameters_present_succeeds():
     """Test that setup_transform succeeds when all parameters are present."""
-    # Create a metamodel transform config
-    transform_config = TransformConfig(
+    # Create a metamodel EOS config
+    eos_config = MetamodelEOSConfig(
         type="metamodel",
         ndat_metamodel=100,
+        nmax_nsat=25.0,
+    )
+    tov_config = TOVConfig(
         ndat_TOV=100,
         min_nsat_TOV=0.75,
-        nmax_nsat=25.0,
     )
 
     config = MagicMock()
-    config.transform = transform_config
+    config.eos = eos_config
+    config.tov = tov_config
 
     # Create a prior with ALL required parameters
     priors = [
@@ -88,17 +94,20 @@ def test_all_parameters_present_succeeds():
 
 def test_unused_parameters_succeeds():
     """Test that unused parameters in prior don't cause errors (only warnings)."""
-    # Create a metamodel transform config
-    transform_config = TransformConfig(
+    # Create a metamodel EOS config
+    eos_config = MetamodelEOSConfig(
         type="metamodel",
         ndat_metamodel=100,
+        nmax_nsat=25.0,
+    )
+    tov_config = TOVConfig(
         ndat_TOV=100,
         min_nsat_TOV=0.75,
-        nmax_nsat=25.0,
     )
 
     config = MagicMock()
-    config.transform = transform_config
+    config.eos = eos_config
+    config.tov = tov_config
 
     # Create prior with ALL required parameters PLUS extra unused ones
     priors = [

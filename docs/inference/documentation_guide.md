@@ -92,15 +92,20 @@ When adding a **new prior type**:
 - [ ] Update `priors/parser.py` namespace
 - [ ] Add example to `quickstart.md` (manual)
 
-When adding a **new transform type**:
-- [ ] Add to `transforms/my_transform.py`
-- [ ] Update `transforms/factory.py`
-- [ ] Update `config/schema.py` (add to `TransformConfig.type` Literal)
+When adding a **new EOS type**:
+- [ ] Add config class to `config/schemas/eos.py` (extend `BaseEOSConfig`) and add to `EOSConfig` union
+- [ ] Register in `transforms/transform.py` (`_create_eos` with `isinstance` check)
+- [ ] Regenerate YAML reference (auto)
+- [ ] Add example configuration (manual)
+
+When adding a **new TOV solver**:
+- [ ] Add config class to `config/schemas/tov.py` (extend `BaseTOVConfig`) and switch `TOVConfig` to a discriminated union
+- [ ] Register in `transforms/transform.py` (`_create_tov_solver` with `isinstance` check)
 - [ ] Regenerate YAML reference (auto)
 - [ ] Add example configuration (manual)
 
 When modifying **configuration fields**:
-- [ ] Modify `config/schema.py`
+- [ ] Modify the relevant file under `config/schemas/`
 - [ ] Regenerate YAML reference (auto)
 - [ ] Update `quickstart.md` if it affects quick start (manual)
 
@@ -149,8 +154,9 @@ Key configuration sections:
 
 All available fields:
 - seed: int, default 43
-- transform: TransformConfig (required)
-  - type: "metamodel" | "metamodel_cse" (required)
+- eos: EOSConfig (required, discriminated by type)
+  - type: "metamodel" | "metamodel_cse" | "spectral" (required)
+- tov: TOVConfig (required, discriminated by tov_solver)
   - ndat_metamodel: int, default 100
   ... (this will get out of sync!)
 ```

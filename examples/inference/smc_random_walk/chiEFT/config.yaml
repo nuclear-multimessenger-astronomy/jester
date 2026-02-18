@@ -1,30 +1,27 @@
 seed: 44
 dry_run: false
 validate_only: false
-transform:
+eos:
   type: metamodel_cse
   ndat_metamodel: 100
   nmax_nsat: 25.0
   nb_CSE: 8
+  crust_name: DH
+tov:
+  tov_solver: gr
   min_nsat_TOV: 0.75
   ndat_TOV: 100
   nb_masses: 100
-  crust_name: DH
 prior:
   specification_file: prior.prior
 likelihoods:
-  # Physical constraint likelihood - enforces EOS validity
-  - type: constraints_eos
-    enabled: true
-
-  # ChiEFT likelihood - constrains low-density EOS using chiral effective field theory
-  - type: chieft
-    enabled: true
-    low_filename: ../../../../jesterTOV/inference/data/chiEFT/2402.04172/low.dat
-    high_filename: ../../../../jesterTOV/inference/data/chiEFT/2402.04172/high.dat
-    nb_n: 100
-
-# SMC configuration with Random Walk kernel
+- type: constraints_eos
+  enabled: true
+- type: chieft
+  enabled: true
+  low_filename: ../../../../jesterTOV/inference/data/chiEFT/2402.04172/low.dat
+  high_filename: ../../../../jesterTOV/inference/data/chiEFT/2402.04172/high.dat
+  nb_n: 100
 sampler:
   type: smc-rw
   n_particles: 2000

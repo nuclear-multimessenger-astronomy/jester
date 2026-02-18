@@ -42,37 +42,37 @@ Control runtime behavior for validation, debugging, and random seed configuratio
 
 ---
 
-## EOS Transform Configuration
+## EOS Configuration
 
-The `transform` section specifies which equation of state (EOS) parametrization to use and how to transform EOS parameters to observables (mass, radius, tidal deformability).
+The `eos` section specifies which equation of state (EOS) parametrization to use.
 
-{% for transform in transforms %}
-### {{ transform.title }}
+{% for eos in eos_configs %}
+### {{ eos.title }}
 
-{{ transform.description }}
+{{ eos.description }}
 
-::::{dropdown} **{{ transform.title }} Configuration**
-{% if transform.open %}
+::::{dropdown} **{{ eos.title }} Configuration**
+{% if eos.open %}
 :open:
 {% endif %}
 
 ```yaml
-transform:
-{% for field in transform.fields %}
+eos:
+{% for field in eos.fields %}
   {{ field.name }}: {{ field.example }}{{ "  # " + field.inline_comment if field.inline_comment else "" }}
 {% endfor %}
 ```
 
-{% if transform.requirements %}
+{% if eos.requirements %}
 **Requirements:**
-{% for req in transform.requirements %}
+{% for req in eos.requirements %}
 - {{ req }}
 {% endfor %}
 {% endif %}
 
-{% if transform.recommended %}
+{% if eos.recommended %}
 **Recommended:**
-{% for rec in transform.recommended %}
+{% for rec in eos.recommended %}
 - {{ rec }}
 {% endfor %}
 {% endif %}
@@ -80,6 +80,30 @@ transform:
 ::::
 
 {% endfor %}
+
+---
+
+## TOV Configuration
+
+The `tov` section configures the Tolman-Oppenheimer-Volkoff equation solver used to compute neutron star structure (mass-radius-tidal deformability).
+
+::::{dropdown} **{{ tov_config.title }}**
+:open:
+
+```yaml
+tov:
+{% for field in tov_config.fields %}
+  {{ field.name }}: {{ field.example }}{{ "  # " + field.inline_comment if field.inline_comment else "" }}
+{% endfor %}
+```
+
+**Field Details:**
+
+{% for field in tov_config.field_details %}
+- **`{{ field.name }}`** (`{{ field.type }}`, default: `{{ field.default }}`) - {{ field.description }}
+{% endfor %}
+
+::::
 
 ---
 

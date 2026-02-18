@@ -44,9 +44,9 @@ debug_nans: false  # Enable JAX NaN debugging for numerical issues
 
 ---
 
-## EOS Transform Configuration
+## EOS Configuration
 
-The `transform` section specifies which equation of state (EOS) parametrization to use and how to transform EOS parameters to observables (mass, radius, tidal deformability).
+The `eos` section specifies which equation of state (EOS) parametrization to use.
 
 ### Metamodel
 
@@ -55,16 +55,13 @@ Metamodel EOS parametrization
 ::::{dropdown} **Metamodel Configuration**
 
 ```yaml
-transform:
+eos:
   type: "metamodel"  # Required: EOS parametrization type
   ndat_metamodel: 100  # Number of points for EOS table
   nmax_nsat: 25.0  # Maximum density (in units of saturation density)
   nmin_MM_nsat: 0.75  # Minimum density for metamodel (in units of n_sat)
-  min_nsat_TOV: 0.75  # Minimum density for TOV solver
-  ndat_TOV: 100  # Number of points for TOV integration
-  nb_masses: 100  # Number of masses for family construction
   crust_name: "DH"  # Crust model: "DH", "BPS", "DH_fixed", or "SLy"
-  tov_solver: "gr"  # TOV solver: "gr", "post", or "scalar_tensor"
+  nb_CSE: 0  # Must be 0 for standard metamodel
 ```
 
 **Requirements:**
@@ -80,17 +77,13 @@ Metamodel EOS parametrization with speed-of-sound extension above a breakdown de
 ::::{dropdown} **Metamodel CSE Configuration**
 
 ```yaml
-transform:
+eos:
   type: "metamodel_cse"  # Required: EOS parametrization type
   nb_CSE: 8  # Number of CSE enforcement points (must be > 0)
   ndat_metamodel: 100  # Number of points for EOS table
   nmax_nsat: 25.0  # Maximum density (in units of saturation density)
   nmin_MM_nsat: 0.75  # Minimum density for metamodel (in units of n_sat)
-  min_nsat_TOV: 0.75  # Minimum density for TOV solver
-  ndat_TOV: 100  # Number of points for TOV integration
-  nb_masses: 100  # Number of masses for family construction
   crust_name: "DH"  # Crust model: "DH", "BPS", "DH_fixed", or "SLy"
-  tov_solver: "gr"  # TOV solver: "gr", "post", or "scalar_tensor"
 ```
 
 **Requirements:**
@@ -106,14 +99,10 @@ Spectral decomposition parametrization compatible with LALSimulation for GW anal
 ::::{dropdown} **Spectral (LALSuite-Compatible) Configuration**
 
 ```yaml
-transform:
+eos:
   type: "spectral"  # Required: EOS parametrization type
   n_points_high: 500  # Number of points for high-density spectral region
-  min_nsat_TOV: 0.75  # Minimum density for TOV solver
-  ndat_TOV: 100  # Number of points for TOV integration
-  nb_masses: 100  # Number of masses for family construction
   crust_name: "SLy"  # Must be "SLy" for LALSuite compatibility
-  tov_solver: "gr"  # TOV solver: "gr", "post", or "scalar_tensor"
 ```
 
 **Requirements:**
@@ -126,6 +115,32 @@ transform:
 
 ::::
 
+
+---
+
+## TOV Configuration
+
+The `tov` section configures the Tolman-Oppenheimer-Volkoff equation solver used to compute neutron star structure (mass-radius-tidal deformability).
+
+::::{dropdown} **TOV Solver Configuration**
+:open:
+
+```yaml
+tov:
+  tov_solver: "gr"  # TOV solver: "gr", "post", or "scalar_tensor"
+  min_nsat_TOV: 0.75  # Minimum density for TOV solver (in units of n_sat)
+  ndat_TOV: 100  # Number of points for TOV integration
+  nb_masses: 100  # Number of masses for family construction
+```
+
+**Field Details:**
+
+- **`tov_solver`** (`str`, default: `"gr"`) - TOV solver type: 'gr' (General Relativity), 'post' (Beyond-GR modifications), or 'scalar_tensor' (Scalar-tensor gravity)
+- **`min_nsat_TOV`** (`float`, default: `0.75`) - Minimum central density for TOV integration in units of saturation density
+- **`ndat_TOV`** (`int`, default: `100`) - Number of data points for TOV integration
+- **`nb_masses`** (`int`, default: `100`) - Number of masses to sample when constructing the M-R-Λ family
+
+::::
 
 ---
 
@@ -704,8 +719,11 @@ Sample from the prior distribution without observational constraints.
 ```yaml
 seed: 43
 
-transform:
+eos:
   type: "metamodel"
+
+tov:
+  tov_solver: "gr"
 
 prior:
   specification_file: "prior.prior"
@@ -731,11 +749,17 @@ Combine gravitational wave, X-ray, radio, and nuclear theory constraints.
 ```yaml
 seed: 43
 
-transform:
+eos:
   type: "metamodel_cse"
   nb_CSE: 8
   ndat_metamodel: 100
   nmax_nsat: 25.0
+
+tov:
+  tov_solver: "gr"
+  min_nsat_TOV: 0.75
+  ndat_TOV: 100
+  nb_masses: 100
 
 prior:
   specification_file: "prior.prior"
@@ -786,10 +810,16 @@ Configuration using spectral decomposition for GW analysis workflows.
 ```yaml
 seed: 43
 
-transform:
+eos:
   type: "spectral"
   crust_name: "SLy"               # Required for spectral
   n_points_high: 500
+
+tov:
+  tov_solver: "gr"
+  min_nsat_TOV: 0.75
+  ndat_TOV: 100
+  nb_masses: 100
 
 prior:
   specification_file: "spectral_prior.prior"
@@ -822,13 +852,17 @@ The configuration is validated using Pydantic. Common validation errors:
 
 ::::{dropdown} **Validation Rules Details**
 
-**Transform Type Consistency:**
+**EOS Type Consistency:**
 - `type: "metamodel"` requires `nb_CSE: 0` (or omit the field entirely)
 - `type: "metamodel_cse"` requires `nb_CSE > 0`
 - `type: "spectral"` requires:
 -   - `crust_name: "SLy"` (LALSuite compatibility)
 -   - `nb_CSE: 0` (or omit the field)
 -   - Recommended: Include `constraints_gamma` likelihood
+
+**TOV Configuration:**
+- `tov_solver` must be one of: `"gr"`, `"post"`, or `"scalar_tensor"`
+- `min_nsat_TOV`, `ndat_TOV`, and `nb_masses` must be positive
 
 **Prior File:**
 - `specification_file` must end with `.prior` extension
@@ -843,7 +877,7 @@ The configuration is validated using Pydantic. Common validation errors:
 
 **Crust Models:**
 - `crust_name` must be one of: `"DH"`, `"BPS"`, `"DH_fixed"`, or `"SLy"`
-- Spectral transform specifically requires `"SLy"`
+- Spectral EOS specifically requires `"SLy"`
 
 ::::
 

@@ -1,15 +1,17 @@
 seed: 43
 dry_run: false
 validate_only: false
-transform:
+eos:
   type: metamodel_cse
   ndat_metamodel: 100
   nmax_nsat: 25.0
   nb_CSE: 8
+  crust_name: DH
+tov:
   min_nsat_TOV: 0.75
   ndat_TOV: 100
   nb_masses: 100
-  crust_name: DH
+  tov_solver: gr
 prior:
   specification_file: prior.prior
 likelihoods:
