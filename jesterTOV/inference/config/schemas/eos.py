@@ -109,8 +109,6 @@ class SpectralEOSConfig(BaseEOSConfig):
     ----------
     type : Literal["spectral"]
         EOS type identifier
-    crust_name : Literal["SLy"]
-        Must be "SLy" for LALSuite compatibility (default: "SLy")
     n_points_high : int
         Number of high-density points for spectral EOS (default: 500)
     nb_CSE : int
@@ -118,9 +116,6 @@ class SpectralEOSConfig(BaseEOSConfig):
     """
 
     type: Literal["spectral"] = "spectral"
-    crust_name: Literal["SLy"] = (
-        "SLy"  # pyright: ignore[reportIncompatibleVariableOverride]  # Literal["SLy"] ⊂ parent
-    )
     n_points_high: int = 500
     nb_CSE: int = 0
 
