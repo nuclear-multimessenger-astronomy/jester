@@ -8,7 +8,7 @@ TOV solvers are independent of specific EOS models and work with any EOS through
 
 **Key files:**
 - TOV solver implementation: `jesterTOV/tov/your_solver.py`
-- Configuration schema: `jesterTOV/inference/config/schema.py`
+- Configuration schema: `jesterTOV/inference/config/schemas/tov.py`
 - Transform factory: `jesterTOV/inference/transforms/transform.py`
 - Tests: `tests/test_tov/test_your_solver.py`
 
@@ -186,22 +186,31 @@ class MyNewTOVSolver(TOVSolverBase):
 
 ## Step 2: Update Configuration Schema
 
-Add your solver to `jesterTOV/inference/config/schema.py`:
+Add a concrete config class for your solver to `jesterTOV/inference/config/schemas/tov.py` and include it in the `TOVConfig` discriminated union. `BaseTOVConfig` already provides `min_nsat_TOV`, `ndat_TOV`, and `nb_masses`; only add solver-specific fields to your subclass:
 
 ```python
-class TransformConfig(BaseModel):
-    """Transform configuration for EOS and TOV solver."""
+# In jesterTOV/inference/config/schemas/tov.py
 
-    tov_solver: Literal["gr", "post", "scalar_tensor", "my_new_solver"] = "gr"
+class MyNewTOVConfig(BaseTOVConfig):
+    """Configuration for MyNewTOVSolver."""
 
-    # Add solver-specific configuration fields
+    tov_solver: Literal["my_new_solver"] = "my_new_solver"  # type: ignore[override]
+
+    # Solver-specific fields
     my_solver_coupling: float = Field(
         default=0.0,
         description="Coupling constant for my new solver"
     )
 
-    # ... rest of configuration ...
+
+# Switch TOVConfig to a discriminated union
+TOVConfig = Annotated[
+    Union[GRTOVConfig, MyNewTOVConfig],
+    Discriminator("tov_solver"),
+]
 ```
+
+Also export `MyNewTOVConfig` from `schema.py`.
 
 **Regenerate YAML documentation:**
 
@@ -211,18 +220,20 @@ uv run python -m jesterTOV.inference.config.generate_yaml_reference
 
 ## Step 3: Register in Transform Factory
 
-Add your solver to `jesterTOV/inference/transforms/transform.py`:
+Add your solver to `jesterTOV/inference/transforms/transform.py` using an `isinstance` check:
 
 ```python
-def _create_tov_solver(config: TransformConfig) -> TOVSolverBase:
+from jesterTOV.inference.config.schema import BaseTOVConfig, GRTOVConfig, MyNewTOVConfig
+
+def _create_tov_solver(config: BaseTOVConfig) -> TOVSolverBase:
     """Create TOV solver from configuration."""
-    if config.tov_solver == "gr":
-        # ... existing code ...
-    elif config.tov_solver == "my_new_solver":
+    if isinstance(config, GRTOVConfig):
+        return GRTOVSolver()
+    elif isinstance(config, MyNewTOVConfig):
         from jesterTOV.tov.my_new import MyNewTOVSolver
         return MyNewTOVSolver(coupling_constant=config.my_solver_coupling)
     else:
-        raise ValueError(f"Unknown TOV solver: {config.tov_solver}")
+        raise ValueError(f"Unknown TOV config type: {type(config).__name__}")
 ```
 
 ## Step 4: Create Prior File
@@ -377,12 +388,17 @@ Create an example in `examples/inference/my_new_solver/`:
 # config.yaml
 seed: 42
 
-transform:
+eos:
   type: "metamodel"
-  ndat: 100
-  min_nsat: 0.75
+  ndat_metamodel: 100
+  nmin_MM_nsat: 0.75
+
+tov:
   tov_solver: "my_new_solver"
   my_solver_coupling: 0.1
+  min_nsat_TOV: 0.75
+  ndat_TOV: 100
+  nb_masses: 100
 
 prior: "prior.prior"
 
@@ -471,7 +487,7 @@ Before submitting a PR:
 - [ ] `solve()` returns valid `TOVSolution` (M, R, k2)
 - [ ] `construct_family()` returns valid `FamilyData`
 - [ ] `get_required_parameters()` lists additional parameters
-- [ ] Added to `TransformConfig` in `schema.py`
+- [ ] Added `MyNewTOVConfig` to `schemas/tov.py` and included in `TOVConfig` union
 - [ ] Regenerated YAML reference
 - [ ] Registered in `_create_tov_solver()` factory
 - [ ] Comprehensive tests written and passing

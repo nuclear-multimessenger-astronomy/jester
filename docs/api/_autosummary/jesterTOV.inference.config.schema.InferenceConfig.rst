@@ -54,7 +54,8 @@
       ~InferenceConfig.model_fields
       ~InferenceConfig.model_fields_set
       ~InferenceConfig.seed
-      ~InferenceConfig.transform
+      ~InferenceConfig.eos
+      ~InferenceConfig.tov
       ~InferenceConfig.prior
       ~InferenceConfig.likelihoods
       ~InferenceConfig.sampler

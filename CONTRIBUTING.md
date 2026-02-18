@@ -23,8 +23,11 @@ uv sync --extra cuda12
 ### Running Tests
 
 ```bash
-# Run all tests (excluding slow tests)
+# Run all tests (excluding slow tests, while developing)
 uv run pytest tests/ -m "not slow"
+
+# Run all tests (if ready to merge the changes -- verifies if end-to-end inference still works)
+uv run pytest tests/
 
 # Run specific test file
 uv run pytest tests/test_eos/test_metamodel.py -v

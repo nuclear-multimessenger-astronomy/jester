@@ -13,7 +13,12 @@ Schema Classes
    :toctree: _autosummary
 
    schema.InferenceConfig
-   schema.TransformConfig
+   schema.BaseEOSConfig
+   schema.MetamodelEOSConfig
+   schema.MetamodelCSEEOSConfig
+   schema.SpectralEOSConfig
+   schema.BaseTOVConfig
+   schema.GRTOVConfig
    schema.PriorConfig
    schema.LikelihoodConfig
    schema.BaseSamplerConfig

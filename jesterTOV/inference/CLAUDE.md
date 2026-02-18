@@ -62,7 +62,12 @@ The example in `examples/inference/smc_random_walk/chiEFT` finishes in less than
 ```
 jesterTOV/inference/
 ├── config/              # YAML parsing and Pydantic validation
-│   ├── schema.py        # Configuration data models
+│   ├── schema.py        # Thin aggregator: InferenceConfig + re-exports
+│   └── schemas/         # Domain-specific config sub-modules
+│       ├── eos.py       #   BaseEOSConfig + concrete EOS configs
+│       ├── tov.py       #   BaseTOVConfig + GRTOVConfig
+│       ├── likelihoods.py #  All likelihood configs
+│       └── samplers.py  #   All sampler configs
 │   ├── parser.py        # YAML loading
 │   └── generate_yaml_reference.py  # Auto-generate docs
 ├── priors/              # Prior specification system
@@ -110,7 +115,7 @@ parse_config() → InferenceConfig (Pydantic validated)
     ↓
 parse_prior_file() → CombinePrior object
     ↓
-JesterTransform.from_config(config.transform)
+JesterTransform.from_config(config.eos, config.tov)
   ├─ Instantiate EOS (MetaModel/MetaModelCSE/Spectral)
   └─ Instantiate TOV solver (GR/Post/ScalarTensor)
     ↓
@@ -216,7 +221,7 @@ Save to outdir/{result_id}.h5
 After creating `JesterTransform`, the code validates that all required parameters are present in the prior:
 
 ```python
-transform = JesterTransform.from_config(config.transform, ...)
+transform = JesterTransform.from_config(config.eos, config.tov, ...)
 required_params = set(transform.get_parameter_names())
 prior_params = set(prior.parameter_names)
 
@@ -313,7 +318,7 @@ Configuration files use YAML with Pydantic validation. See `examples/inference/*
 - `data_paths`: Override default data file locations (optional)
 - `outdir`: Output directory for results (default: "outdir")
 
-**Likelihood Types** (all in `config/schema.py`):
+**Likelihood Types** (defined in `config/schemas/likelihoods.py`, re-exported from `config/schema.py`):
 1. `GWLikelihoodConfig` - Gravitational wave events (pre-sampled)
    - events: list of event names (e.g., ["GW170817"])
 2. `GWResampledLikelihoodConfig` - GW with resampling during MCMC
@@ -329,7 +334,7 @@ Configuration files use YAML with Pydantic validation. See `examples/inference/*
 9. `GammaConstraintsLikelihoodConfig` - Spectral gamma bounds
 10. `ZeroLikelihoodConfig` - Prior-only sampling (no data)
 
-**IMPORTANT**: When modifying `config/schema.py`, regenerate YAML documentation:
+**IMPORTANT**: When modifying any file under `config/schemas/`, regenerate YAML documentation:
 ```bash
 uv run python -m jesterTOV.inference.config.generate_yaml_reference
 ```
@@ -454,19 +459,31 @@ Transforms convert between parameter spaces. Two types:
            return ["param1", "param2", ...]
    ```
 
-2. **Add to JesterTransform factory** in `transforms/transform.py`:
+2. **Add to JesterTransform factory** in `transforms/transform.py` with an `isinstance` check:
    ```python
-   def _create_eos(config: TransformConfig) -> Interpolate_EOS_model:
-       if config.type == "my_new_eos":
+   from jesterTOV.inference.config.schema import ..., MyNewEOSConfig
+
+   def _create_eos(config: BaseEOSConfig, ...) -> Interpolate_EOS_model:
+       ...
+       elif isinstance(config, MyNewEOSConfig):
            from jesterTOV.eos.my_new import MyNewEOS
            return MyNewEOS(...)
+       else:
+           raise ValueError(f"Unknown EOS config type: {type(config).__name__}")
    ```
 
-3. **Update TransformConfig** in `config/schema.py`:
+3. **Add config class** to `config/schemas/eos.py` and extend the `EOSConfig` union.
+   Inherit from `BaseEOSConfig` (any EOS, has `crust_name`) or `BaseMetamodelEOSConfig`
+   (metamodel-based, also has `ndat_metamodel`, `nmax_nsat`, `nmin_MM_nsat`):
    ```python
-   class TransformConfig(BaseModel):
-       type: Literal["metamodel", "metamodel_cse", "spectral", "my_new_eos"]
-       # Add any EOS-specific config fields
+   class MyNewEOSConfig(BaseEOSConfig):
+       type: Literal["my_new_eos"] = "my_new_eos"
+       # EOS-specific fields
+
+   EOSConfig = Annotated[
+       Union[MetamodelEOSConfig, MetamodelCSEEOSConfig, SpectralEOSConfig, MyNewEOSConfig],
+       Discriminator("type"),
+   ]
    ```
 
 4. **Regenerate YAML docs** and **add tests**
@@ -498,19 +515,30 @@ Transforms convert between parameter spaces. Two types:
            return ["coupling1", "coupling2", ...]
    ```
 
-2. **Add to JesterTransform factory** in `transforms/transform.py`:
+2. **Add to JesterTransform factory** in `transforms/transform.py` with an `isinstance` check:
    ```python
-   def _create_tov_solver(config: TransformConfig) -> TOVSolverBase:
-       if config.tov_solver == "my_new_solver":
+   from jesterTOV.inference.config.schema import BaseTOVConfig, GRTOVConfig, MyNewTOVConfig
+
+   def _create_tov_solver(config: BaseTOVConfig) -> TOVSolverBase:
+       if isinstance(config, GRTOVConfig):
+           return GRTOVSolver()
+       elif isinstance(config, MyNewTOVConfig):
            from jesterTOV.tov.my_new import MyNewTOVSolver
            return MyNewTOVSolver(...)
+       else:
+           raise ValueError(f"Unknown TOV config type: {type(config).__name__}")
    ```
 
-3. **Update TransformConfig** in `config/schema.py`:
+3. **Add config class** to `config/schemas/tov.py`, re-export it from `config/schema.py` and `config/__init__.py`, and extend the `TOVConfig` union:
    ```python
-   class TransformConfig(BaseModel):
-       tov_solver: Literal["gr", "post", "scalar_tensor", "my_new_solver"] = "gr"
-       # Add any solver-specific config fields
+   class MyNewTOVConfig(BaseTOVConfig):
+       tov_solver: Literal["my_new_solver"] = "my_new_solver"  # type: ignore[override]
+       # Solver-specific fields
+
+   TOVConfig = Annotated[
+       Union[GRTOVConfig, MyNewTOVConfig],
+       Discriminator("tov_solver"),
+   ]
    ```
 
 4. **Regenerate YAML docs** and **add tests**

@@ -1,13 +1,15 @@
 seed: 45
 dry_run: false
 validate_only: false
-transform:
+eos:
   type: spectral
   crust_name: SLy
   n_points_high: 100
+tov:
   ndat_TOV: 100
   nb_masses: 100
   min_nsat_TOV: 0.75
+  tov_solver: gr
 prior:
   specification_file: prior.prior
 likelihoods:
