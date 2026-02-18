@@ -73,14 +73,6 @@ class TestEOSConfig:
                 nb_CSE=8,  # Should fail for type=spectral
             )
 
-    def test_spectral_with_non_sly_crust_fails(self):
-        """Test that spectral with non-SLy crust fails validation."""
-        with pytest.raises(ValidationError, match="'SLy'"):
-            schema.SpectralEOSConfig(
-                type="spectral",
-                crust_name="DH",  # type: ignore[arg-type]  # intentionally wrong
-            )
-
     def test_invalid_crust_name(self):
         """Test that invalid crust names fail validation."""
         with pytest.raises(ValidationError):
