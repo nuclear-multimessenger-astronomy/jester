@@ -8,6 +8,11 @@ Basic Examples
 
    :doc:`eos_tov/eos_tov`
 
+**Automatic differentiating through TOV solvers**
+   Being written in ``jax``, ``jester`` supports automatic differentiation through the TOV solvers, allowing for gradient-based optimization routines. This example demonstrates how to compute gradients of neutron star properties with respect to EOS parameters.
+
+   :doc:`eos_tov/automatic_differentiation`
+
 **Scalar-tensor theory TOV solver**
    Exploration of modified gravity theories using JESTER's scalar-tensor TOV solver to study deviations from general relativity.
 
@@ -17,4 +22,5 @@ Basic Examples
    :hidden:
 
    eos_tov/eos_tov
+   eos_tov/automatic_differentiation
    eos_tov/eos_STtov
