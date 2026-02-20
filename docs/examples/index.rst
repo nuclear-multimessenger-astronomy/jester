@@ -22,4 +22,5 @@ Basic Examples
    :hidden:
 
    eos_tov/eos_tov
+   eos_tov/automatic_differentiation
    eos_tov/eos_STtov
