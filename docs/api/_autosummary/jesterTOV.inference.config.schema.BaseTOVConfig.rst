@@ -51,7 +51,7 @@
       ~BaseTOVConfig.model_extra
       ~BaseTOVConfig.model_fields
       ~BaseTOVConfig.model_fields_set
-      ~BaseTOVConfig.tov_solver
+      ~BaseTOVConfig.type
       ~BaseTOVConfig.min_nsat_TOV
       ~BaseTOVConfig.ndat_TOV
       ~BaseTOVConfig.nb_masses
