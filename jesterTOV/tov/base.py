@@ -6,6 +6,7 @@ whether for General Relativity, modified gravity, or scalar-tensor theories.
 """
 
 from abc import ABC, abstractmethod
+from typing import Optional
 import jax
 import jax.numpy as jnp
 from jaxtyping import Float, Array
@@ -95,8 +96,13 @@ class TOVSolverBase(ABC):
         radii: Float[Array, "ndat"] = solutions.R  # type: ignore[assignment]
         k2s: Float[Array, "ndat"] = solutions.k2  # type: ignore[assignment]
 
+        # Extract optional extra fields from solver-specific quantities
+        extra_fields: Optional[dict[str, Float[Array, "ndat"]]] = solutions.extra  # type: ignore[assignment]
+
         # Convert to physical units and compute tidal deformability
-        return self._create_family_data(pcs, masses, radii, k2s, ndat)
+        return self._create_family_data(
+            pcs, masses, radii, k2s, ndat, extra=extra_fields
+        )
 
     def _get_pc_min(self, eos_data: EOSData, min_nsat: float) -> Float[Array, ""]:
         """
@@ -145,6 +151,7 @@ class TOVSolverBase(ABC):
         radii: Float[Array, "ndat"],
         k2s: Float[Array, "ndat"],
         ndat: int,
+        extra: Optional[dict[str, Float[Array, "ndat"]]] = None,
     ) -> FamilyData:
         """
         Shared post-processing: unit conversion, compactness limits, interpolation.
@@ -155,6 +162,7 @@ class TOVSolverBase(ABC):
             radii: Radii [geometric units]
             k2s: Love numbers [dimensionless]
             ndat: Number of points for output grid
+            extra: Optional dictionary of solver-specific quantities (e.g., from ScalarTensorTOVSolver)
 
         Returns:
             FamilyData: Processed family curves in physical units
@@ -181,9 +189,22 @@ class TOVSolverBase(ABC):
         pcs_interp = jnp.interp(mass_grid, masses_lim, pcs_lim)
         log10pcs = jnp.log10(pcs_interp)
 
+        # Process extra solver-specific fields if provided
+        extra_processed: Optional[dict[str, Float[Array, "ndat"]]] = None
+        if extra is not None:
+            extra_processed = {}
+            for key, arr in extra.items():
+                # Apply MTOV limiting using same mask
+                pcs_extra, masses_extra, radii_extra, arr_lim = utils.limit_by_MTOV(
+                    pcs, masses_solar, radii_km, arr
+                )
+                # Interpolate to mass grid
+                extra_processed[key] = jnp.interp(mass_grid, masses_extra, arr_lim)
+
         return FamilyData(
             log10pcs=log10pcs,
             masses=mass_grid,
             radii=radii_interp,
             lambdas=lambdas_interp,
+            extra=extra_processed,
         )
