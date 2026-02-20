@@ -1,11 +1,18 @@
 """Pydantic models for likelihood configuration."""
 
+import warnings
 from typing import Literal, Union, Annotated
 from pydantic import BaseModel, Field, field_validator, ConfigDict, Discriminator
+
+from jesterTOV.logging_config import get_logger
+
+logger = get_logger("jester")
 
 
 class BaseLikelihoodConfig(BaseModel):
     """Base configuration for all likelihood types."""
+
+    model_config = ConfigDict(extra="forbid")
 
     enabled: bool = Field(
         default=True, description="Whether this likelihood is enabled in the analysis"
@@ -30,8 +37,6 @@ class GWLikelihoodConfig(BaseLikelihoodConfig):
           penalty_value: -99999.0
           N_masses_evaluation: 2000
     """
-
-    model_config = ConfigDict(extra="forbid")
 
     type: Literal["gw"] = Field(default="gw", description="Likelihood type identifier")
 
@@ -96,8 +101,6 @@ class GWResampledLikelihoodConfig(BaseLikelihoodConfig):
           N_masses_evaluation: 20
     """
 
-    model_config = ConfigDict(extra="forbid")
-
     type: Literal["gw_resampled"] = Field(
         default="gw_resampled", description="Likelihood type identifier"
     )
@@ -152,8 +155,6 @@ class NICERLikelihoodConfig(BaseLikelihoodConfig):
     will raise ``ValueError`` at runtime. Preset model paths are not yet implemented.
     """
 
-    model_config = ConfigDict(extra="forbid")
-
     type: Literal["nicer"] = Field(
         default="nicer", description="Likelihood type identifier"
     )
@@ -190,10 +191,6 @@ class NICERLikelihoodConfig(BaseLikelihoodConfig):
     @classmethod
     def validate_pulsars(cls, v: list[dict[str, str]]) -> list[dict[str, str]]:
         """Validate pulsar structure."""
-        from jesterTOV.logging_config import get_logger
-
-        logger = get_logger("jester")
-
         for i, pulsar in enumerate(v):
             if "name" not in pulsar:
                 raise ValueError(f"Pulsar {i} missing required 'name' field")
@@ -239,8 +236,6 @@ class NICERKDELikelihoodConfig(BaseLikelihoodConfig):
               maryland_samples_file: "./data/J0740_maryland.npz"
           N_masses_evaluation: 100
     """
-
-    model_config = ConfigDict(extra="forbid")
 
     type: Literal["nicer_kde"] = Field(
         default="nicer_kde", description="Likelihood type identifier"
@@ -306,8 +301,6 @@ class RadioLikelihoodConfig(BaseLikelihoodConfig):
           nb_masses: 100
     """
 
-    model_config = ConfigDict(extra="forbid")
-
     type: Literal["radio"] = Field(
         default="radio", description="Likelihood type identifier"
     )
@@ -333,7 +326,9 @@ class RadioLikelihoodConfig(BaseLikelihoodConfig):
 
     @field_validator("pulsars")
     @classmethod
-    def validate_pulsars(cls, v: list[dict]) -> list[dict]:
+    def validate_pulsars(
+        cls, v: list[dict[str, str | float]]
+    ) -> list[dict[str, str | float]]:
         """Validate pulsar structure."""
         for i, pulsar in enumerate(v):
             required = {"name", "mass_mean", "mass_std"}
@@ -366,8 +361,6 @@ class ChiEFTLikelihoodConfig(BaseLikelihoodConfig):
           high_filename: "./data/chiEFT/high.dat"
           nb_n: 100
     """
-
-    model_config = ConfigDict(extra="forbid")
 
     type: Literal["chieft"] = Field(
         default="chieft", description="Likelihood type identifier"
@@ -414,8 +407,6 @@ class EOSConstraintsLikelihoodConfig(BaseLikelihoodConfig):
           penalty_pressure: -1e5
     """
 
-    model_config = ConfigDict(extra="forbid")
-
     type: Literal["constraints_eos"] = Field(
         default="constraints_eos", description="Likelihood type identifier"
     )
@@ -450,8 +441,6 @@ class TOVConstraintsLikelihoodConfig(BaseLikelihoodConfig):
           penalty_tov: -1e10
     """
 
-    model_config = ConfigDict(extra="forbid")
-
     type: Literal["constraints_tov"] = Field(
         default="constraints_tov", description="Likelihood type identifier"
     )
@@ -476,8 +465,6 @@ class GammaConstraintsLikelihoodConfig(BaseLikelihoodConfig):
           enabled: true
           penalty_gamma: -1e10
     """
-
-    model_config = ConfigDict(extra="forbid")
 
     type: Literal["constraints_gamma"] = Field(
         default="constraints_gamma", description="Likelihood type identifier"
@@ -510,8 +497,6 @@ class DeprecatedConstraintsLikelihoodConfig(BaseLikelihoodConfig):
           penalty_pressure: -1e5
     """
 
-    model_config = ConfigDict(extra="forbid")
-
     type: Literal["constraints"] = Field(
         default="constraints", description="Likelihood type identifier"
     )
@@ -536,6 +521,13 @@ class DeprecatedConstraintsLikelihoodConfig(BaseLikelihoodConfig):
         description="Log-likelihood penalty for non-monotonic pressure",
     )
 
+    def model_post_init(self, __context: object) -> None:
+        warnings.warn(
+            "Deprecated: 'constraints' config is removed; use 'constraints_eos' + 'constraints_tov' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
 
 class REXLikelihoodConfig(BaseLikelihoodConfig):
     """REX (PREX/CREX) likelihood configuration.
@@ -551,8 +543,6 @@ class REXLikelihoodConfig(BaseLikelihoodConfig):
           experiment_name: "PREX"
     """
 
-    model_config = ConfigDict(extra="forbid")
-
     type: Literal["rex"] = Field(
         default="rex", description="Likelihood type identifier"
     )
@@ -561,6 +551,9 @@ class REXLikelihoodConfig(BaseLikelihoodConfig):
         default="PREX",
         description="Name of REX experiment (PREX or CREX)",
     )
+
+    def model_post_init(self, __context: object) -> None:
+        raise NotImplementedError("REX likelihood is not implemented")
 
 
 class ZeroLikelihoodConfig(BaseLikelihoodConfig):
@@ -576,8 +569,6 @@ class ZeroLikelihoodConfig(BaseLikelihoodConfig):
         - type: "zero"
           enabled: true
     """
-
-    model_config = ConfigDict(extra="forbid")
 
     type: Literal["zero"] = Field(
         default="zero", description="Likelihood type identifier"

@@ -146,31 +146,6 @@ if __name__ == "__main__":
     test_all_parameters_present_succeeds()
 
     print("\n3. Testing unused parameters warning...")
-    from unittest.mock import MagicMock
-
-    caplog = MagicMock()
-    caplog.at_level = lambda level: caplog
-    caplog.__enter__ = lambda self: self
-    caplog.__exit__ = lambda self, *args: None
-    caplog.records = []
-
-    class LogRecord:
-        def __init__(self, message):
-            self.message = message
-
-    # Capture actual warnings by temporarily modifying logger
-    import jesterTOV.logging_config
-
-    original_logger = jesterTOV.logging_config.get_logger("jester")
-    warnings_logged = []
-
-    def mock_warning(msg):
-        warnings_logged.append(msg)
-        original_logger.warning(msg)
-
-    original_logger.warning = mock_warning
-    caplog.records = [LogRecord(msg) for msg in warnings_logged]
-
-    test_unused_parameters_warns(caplog)
+    test_unused_parameters_succeeds()
 
     print("\n✅ All validation tests passed!")

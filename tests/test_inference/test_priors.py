@@ -16,11 +16,12 @@ class TestPriorParser:
         prior = parser.parse_prior_file(sample_prior_file, nb_CSE=0)
 
         assert isinstance(prior, CombinePrior)
-        # Should have 8 NEP parameters (4 _sat + 4 _sym)
-        assert prior.n_dim == 8
+        # Should have 9 NEP parameters (E_sat + 4 _sat + 4 _sym)
+        assert prior.n_dim == 9
 
         # Check parameter names
         param_names = prior.parameter_names
+        assert "E_sat" in param_names
         assert "K_sat" in param_names
         assert "Q_sat" in param_names
         assert "Z_sat" in param_names
@@ -39,9 +40,9 @@ class TestPriorParser:
         prior = parser.parse_prior_file(sample_prior_file_with_cse, nb_CSE=nb_CSE)
 
         assert isinstance(prior, CombinePrior)
-        # Should have 8 NEP + 1 nbreak + 8*2 CSE grid params + 1 final cs2
-        # = 8 + 1 + 16 + 1 = 26
-        expected_dim = 8 + 1 + (nb_CSE * 2) + 1
+        # Should have 9 NEP + 1 nbreak + 8*2 CSE grid params + 1 final cs2
+        # = 9 + 1 + 16 + 1 = 27
+        expected_dim = 9 + 1 + (nb_CSE * 2) + 1
         assert prior.n_dim == expected_dim
 
         # Check parameter names
@@ -59,10 +60,10 @@ class TestPriorParser:
     def test_parse_cse_parameter_count(self, sample_prior_file_with_cse):
         """Test that CSE parameter count is correct for different nb_CSE values."""
         test_cases = [
-            (0, 8),  # No CSE: 8 NEP only
-            (4, 8 + 1 + 4 * 2 + 1),  # 8 NEP + nbreak + 4*2 grid + 1 final = 18
-            (8, 8 + 1 + 8 * 2 + 1),  # 8 NEP + nbreak + 8*2 grid + 1 final = 26
-            (16, 8 + 1 + 16 * 2 + 1),  # 8 NEP + nbreak + 16*2 grid + 1 final = 42
+            (0, 9),  # No CSE: 9 NEP only
+            (4, 9 + 1 + 4 * 2 + 1),  # 9 NEP + nbreak + 4*2 grid + 1 final = 19
+            (8, 9 + 1 + 8 * 2 + 1),  # 9 NEP + nbreak + 8*2 grid + 1 final = 27
+            (16, 9 + 1 + 16 * 2 + 1),  # 9 NEP + nbreak + 16*2 grid + 1 final = 43
         ]
 
         for nb_CSE, expected_dim in test_cases:

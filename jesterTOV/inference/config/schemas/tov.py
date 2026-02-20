@@ -1,15 +1,15 @@
 """Pydantic models for TOV solver configuration."""
 
 from typing import Literal
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
-# TOVConfig is a type alias for the discriminated union of all TOV solver configs.
+# FIXME: TOVConfig is a type alias for the discriminated union of all TOV solver configs.
 # Currently only GRTOVConfig exists; extend the union when adding AnisotropyTOVConfig,
 # ScalarTensorTOVConfig, etc., and switch to:
 #
 #   TOVConfig = Annotated[
 #       Union[GRTOVConfig, AnisotropyTOVConfig, ScalarTensorTOVConfig, ...],
-#       Discriminator("tov_solver"),
+#       Discriminator("type"),
 #   ]
 
 
@@ -18,7 +18,7 @@ class BaseTOVConfig(BaseModel):
 
     Attributes
     ----------
-    tov_solver : str
+    type : str
         TOV solver type identifier (discriminator field)
     min_nsat_TOV : float
         Minimum central density for TOV integration (units of nsat, default: 0.75)
@@ -30,10 +30,22 @@ class BaseTOVConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    tov_solver: str
-    min_nsat_TOV: float = 0.75
-    ndat_TOV: int = 100
-    nb_masses: int = 100
+    type: str
+    min_nsat_TOV: float = Field(
+        default=0.75,
+        gt=0.0,
+        description="Minimum central density for TOV integration in units of nsat",
+    )
+    ndat_TOV: int = Field(
+        default=100,
+        gt=0,
+        description="Number of data points for TOV integration",
+    )
+    nb_masses: int = Field(
+        default=100,
+        gt=0,
+        description="Number of masses to sample when constructing the M-R-Λ family",
+    )
 
 
 class GRTOVConfig(BaseTOVConfig):
@@ -44,11 +56,11 @@ class GRTOVConfig(BaseTOVConfig):
 
     Attributes
     ----------
-    tov_solver : Literal["gr"]
+    type : Literal["gr"]
         TOV solver type identifier
     """
 
-    tov_solver: Literal["gr"] = "gr"  # type: ignore[override]  # Literal["gr"] ⊂ str
+    type: Literal["gr"] = "gr"  # type: ignore[override]  # Literal["gr"] ⊂ str
 
 
 # TOVConfig is currently just GRTOVConfig since it is the only solver with a config.

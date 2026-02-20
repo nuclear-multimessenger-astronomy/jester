@@ -988,7 +988,7 @@ class TestSamplerFactory:
         config = InferenceConfig(
             seed=42,
             eos={"type": "metamodel", "nb_CSE": 0},
-            tov={"tov_solver": "gr"},
+            tov={"type": "gr"},
             prior={"specification_file": "test.prior"},
             likelihoods=[{"type": "zero", "enabled": True}],
             sampler=FlowMCSamplerConfig(

@@ -127,7 +127,7 @@ The `tov` section configures the Tolman-Oppenheimer-Volkoff equation solver used
 
 ```yaml
 tov:
-  tov_solver: "gr"  # TOV solver: "gr", "post", or "scalar_tensor"
+  type: "gr"  # TOV solver: currently only "gr" is implemented
   min_nsat_TOV: 0.75  # Minimum density for TOV solver (in units of n_sat)
   ndat_TOV: 100  # Number of points for TOV integration
   nb_masses: 100  # Number of masses for family construction
@@ -135,7 +135,7 @@ tov:
 
 **Field Details:**
 
-- **`tov_solver`** (`str`, default: `"gr"`) - TOV solver type: 'gr' (General Relativity), 'post' (Beyond-GR modifications), or 'scalar_tensor' (Scalar-tensor gravity)
+- **`type`** (`str`, default: `"gr"`) - TOV solver type. Currently only 'gr' (General Relativity) is implemented. 'anisotropy' and 'scalar_tensor' are planned but not yet available.
 - **`min_nsat_TOV`** (`float`, default: `0.75`) - Minimum central density for TOV integration in units of saturation density
 - **`ndat_TOV`** (`int`, default: `100`) - Number of data points for TOV integration
 - **`nb_masses`** (`int`, default: `100`) - Number of masses to sample when constructing the M-R-Λ family
@@ -723,7 +723,7 @@ eos:
   type: "metamodel"
 
 tov:
-  tov_solver: "gr"
+  type: "gr"
 
 prior:
   specification_file: "prior.prior"
@@ -756,7 +756,7 @@ eos:
   nmax_nsat: 25.0
 
 tov:
-  tov_solver: "gr"
+  type: "gr"
   min_nsat_TOV: 0.75
   ndat_TOV: 100
   nb_masses: 100
@@ -816,7 +816,7 @@ eos:
   n_points_high: 500
 
 tov:
-  tov_solver: "gr"
+  type: "gr"
   min_nsat_TOV: 0.75
   ndat_TOV: 100
   nb_masses: 100
@@ -861,7 +861,7 @@ The configuration is validated using Pydantic. Common validation errors:
 -   - Recommended: Include `constraints_gamma` likelihood
 
 **TOV Configuration:**
-- `tov_solver` must be one of: `"gr"`, `"post"`, or `"scalar_tensor"`
+- `type` must be `"gr"` (the only currently implemented option; `"post"` and `"scalar_tensor"` are planned)
 - `min_nsat_TOV`, `ndat_TOV`, and `nb_masses` must be positive
 
 **Prior File:**

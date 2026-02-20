@@ -194,7 +194,7 @@ Add a concrete config class for your solver to `jesterTOV/inference/config/schem
 class MyNewTOVConfig(BaseTOVConfig):
     """Configuration for MyNewTOVSolver."""
 
-    tov_solver: Literal["my_new_solver"] = "my_new_solver"  # type: ignore[override]
+    type: Literal["my_new_solver"] = "my_new_solver"  # type: ignore[override]
 
     # Solver-specific fields
     my_solver_coupling: float = Field(
@@ -206,7 +206,7 @@ class MyNewTOVConfig(BaseTOVConfig):
 # Switch TOVConfig to a discriminated union
 TOVConfig = Annotated[
     Union[GRTOVConfig, MyNewTOVConfig],
-    Discriminator("tov_solver"),
+    Discriminator("type"),
 ]
 ```
 
@@ -394,7 +394,7 @@ eos:
   nmin_MM_nsat: 0.75
 
 tov:
-  tov_solver: "my_new_solver"
+  type: "my_new_solver"
   my_solver_coupling: 0.1
   min_nsat_TOV: 0.75
   ndat_TOV: 100

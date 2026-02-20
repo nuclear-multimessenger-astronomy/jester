@@ -165,7 +165,7 @@ class InferenceConfig(BaseModel):
     eos : EOSConfig
         EOS configuration (discriminated union by type)
     tov : TOVConfig
-        TOV solver configuration (discriminated union by tov_solver)
+        TOV solver configuration (discriminated union by type)
     prior : PriorConfig
         Prior configuration
     likelihoods : list[LikelihoodConfig]
