@@ -8,7 +8,7 @@ JESTER's modular design separates EOS models from TOV solvers and inference. All
 
 **Key files:**
 - EOS implementation: `jesterTOV/eos/your_eos.py`
-- Configuration schema: `jesterTOV/inference/config/schema.py`
+- Configuration schema: `jesterTOV/inference/config/schemas/eos.py`
 - Transform factory: `jesterTOV/inference/transforms/transform.py`
 - Tests: `tests/test_eos/test_your_eos.py`
 
@@ -95,22 +95,35 @@ class MyNewEOS(Interpolate_EOS_model):
 
 ## Step 2: Update Configuration Schema
 
-Add your EOS type to `jesterTOV/inference/config/schema.py`:
+Add a concrete config class for your EOS to `jesterTOV/inference/config/schemas/eos.py` and include it in the `EOSConfig` discriminated union.
+
+Inherit from the appropriate base class:
+- `BaseEOSConfig` — for any EOS type (provides only `crust_name`)
+- `BaseMetamodelEOSConfig` — for metamodel-based EOS types (adds `ndat_metamodel`, `nmax_nsat`, `nmin_MM_nsat`)
 
 ```python
-class TransformConfig(BaseModel):
-    """Transform configuration for EOS and TOV solver."""
+# In jesterTOV/inference/config/schemas/eos.py
 
-    type: Literal["metamodel", "metamodel_cse", "spectral", "my_new_eos"]
+class MyNewEOSConfig(BaseEOSConfig):
+    """Configuration for MyNewEOS."""
 
-    # Add any EOS-specific configuration fields
-    my_eos_config: float = Field(
+    type: Literal["my_new_eos"] = "my_new_eos"
+
+    # EOS-specific fields
+    my_eos_param: float = Field(
         default=1.0,
         description="Configuration parameter for my new EOS"
     )
 
-    # ... rest of configuration ...
+
+# Extend the discriminated union
+EOSConfig = Annotated[
+    Union[MetamodelEOSConfig, MetamodelCSEEOSConfig, SpectralEOSConfig, MyNewEOSConfig],
+    Discriminator("type"),
+]
 ```
+
+Also import and re-export `MyNewEOSConfig` in `schema.py` (both in the import block and in `__all__`), and in `config/__init__.py`, so it is accessible as `jesterTOV.inference.config.MyNewEOSConfig`.
 
 **Regenerate YAML documentation:**
 
@@ -122,18 +135,23 @@ This updates `docs/inference/yaml_reference.md` with your new EOS type.
 
 ## Step 3: Register in Transform Factory
 
-Add your EOS to `jesterTOV/inference/transforms/transform.py`:
+Add your EOS to `jesterTOV/inference/transforms/transform.py` using an `isinstance` check (so pyright can narrow types correctly):
 
 ```python
-def _create_eos(config: TransformConfig) -> Interpolate_EOS_model:
+from jesterTOV.inference.config.schema import (
+    ...,
+    MyNewEOSConfig,
+)
+
+def _create_eos(config: BaseEOSConfig, ...) -> Interpolate_EOS_model:
     """Create EOS model from configuration."""
-    if config.type == "metamodel":
+    if isinstance(config, MetamodelEOSConfig):
         # ... existing code ...
-    elif config.type == "my_new_eos":
+    elif isinstance(config, MyNewEOSConfig):
         from jesterTOV.eos.my_new import MyNewEOS
         return MyNewEOS(config_param=config.my_eos_config)
     else:
-        raise ValueError(f"Unknown EOS type: {config.type}")
+        raise ValueError(f"Unknown EOS config type: {type(config).__name__}")
 ```
 
 No need to create new transform classes—`JesterTransform` handles all EOS × TOV combinations automatically.
@@ -253,14 +271,18 @@ Create an example in `examples/inference/my_new_eos/`:
 # config.yaml
 seed: 42
 
-transform:
+eos:
   type: "my_new_eos"
   my_eos_config: 1.0
-  ndat: 100
-  min_nsat: 0.75
-  tov_solver: "gr"
 
-prior: "prior.prior"
+tov:
+  type: "gr"
+  min_nsat_TOV: 0.75
+  ndat_TOV: 100
+  nb_masses: 100
+
+prior:
+  specification_file: "prior.prior"
 
 likelihoods:
   - type: "eos_constraints"
@@ -327,7 +349,7 @@ Before submitting a PR:
 - [ ] EOS class inherits from `Interpolate_EOS_model`
 - [ ] `construct_eos()` returns valid `EOSData` NamedTuple
 - [ ] `get_required_parameters()` lists all required parameters
-- [ ] Added to `TransformConfig` in `schema.py`
+- [ ] Added `MyNewEOSConfig` to `schemas/eos.py` and included in `EOSConfig` union
 - [ ] Regenerated YAML reference
 - [ ] Registered in `_create_eos()` factory
 - [ ] Comprehensive tests written and passing
