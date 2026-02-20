@@ -2,8 +2,10 @@
 
 import pytest
 import jax.numpy as jnp
-from jesterTOV import eos, utils
-from jesterTOV.tov import GRTOVSolver
+from jesterTOV import utils
+from jesterTOV.eos.crust import Crust
+from jesterTOV.eos.metamodel import MetaModel_EOS_model, MetaModel_with_CSE_EOS_model
+from jesterTOV.tov.gr import GRTOVSolver
 from jesterTOV.tov.data_classes import EOSData
 
 
@@ -42,7 +44,7 @@ class TestMetaModelEOSIntegration:
         }
 
         # Initialize MetaModel
-        model = eos.MetaModel_EOS_model(**metamodel_params)
+        model = MetaModel_EOS_model(**metamodel_params)
 
         # Construct EOS
         eos_data = model.construct_eos(nep_dict)
@@ -87,7 +89,7 @@ class TestMetaModelEOSIntegration:
         """Test MetaModel with CSE extension workflow."""
         # Initialize MetaModel with CSE
         nb_CSE = 4
-        model = eos.MetaModel_with_CSE_EOS_model(
+        model = MetaModel_with_CSE_EOS_model(
             nsat=0.16,
             nmin_MM_nsat=0.75,
             nmax_nsat=6.0,
@@ -222,8 +224,7 @@ class TestTOVIntegration:
     @pytest.mark.integration
     def test_tov_post_comparison(self):
         """Test comparison between GR TOV and post-TOV solvers."""
-        from jesterTOV.tov import GRTOVSolver, PostTOVSolver
-        from jesterTOV.tov.data_classes import EOSData
+        from jesterTOV.tov.anisotropy import PostTOVSolver
 
         # Create simple EOS
         n = jnp.linspace(0.1, 1.0, 80)
@@ -286,11 +287,11 @@ class TestCrustIntegration:
     def test_crust_metamodel_connection(self):
         """Test smooth connection between crust and MetaModel."""
         # Load crust data
-        crust = eos.Crust("DH")
+        crust = Crust("DH")
         n_crust, p_crust, e_crust = crust.n, crust.p, crust.e
 
         # Create MetaModel that should connect to crust
-        model = eos.MetaModel_EOS_model(
+        model = MetaModel_EOS_model(
             nsat=0.16,
             nmin_MM_nsat=0.75,  # Should be above crust
             nmax_nsat=2.0,
@@ -348,7 +349,7 @@ class TestCrustIntegration:
     def test_different_crusts_consistency(self, crust_name):
         """Test that different crusts give consistent results."""
         # Test with different crust models
-        model = eos.MetaModel_EOS_model(
+        model = MetaModel_EOS_model(
             nsat=0.16,
             nmax_nsat=2.0,
             ndat=80,
@@ -422,7 +423,7 @@ class TestNumericalStability:
         }
 
         for nep_dict, eos_type in [(stiff_nep, "stiff"), (soft_nep, "soft")]:
-            model = eos.MetaModel_EOS_model(
+            model = MetaModel_EOS_model(
                 nsat=0.16, nmax_nsat=2.0, ndat=100, crust_name="DH"
             )
 
@@ -485,7 +486,7 @@ def test_full_pipeline_reproducibility():
     results = []
 
     for _ in range(3):
-        model = eos.MetaModel_EOS_model(**metamodel_params)
+        model = MetaModel_EOS_model(**metamodel_params)
         eos_data = model.construct_eos(nep_dict)
 
         # Use GRTOVSolver to construct family

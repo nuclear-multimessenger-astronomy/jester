@@ -1,23 +1,30 @@
 {
   "n_samples_total": 25715,
   "n_samples_used": 25715,
+  "parameter_names": [
+    "mass_1_source",
+    "mass_2_source",
+    "lambda_1",
+    "lambda_2"
+  ],
   "filepath": "../../../../../data/gw190425/gw190425_xp_nrtv3.npz",
   "flow_type": "masked_autoregressive_flow",
-  "num_epochs": 3000,
+  "num_epochs": 2569,
   "learning_rate": 0.0001,
   "max_patience": 500,
   "val_prop": 0.2,
   "standardize": true,
-  "data_bounds_min": [
-    1.6198432498759214,
-    1.2974954930783467,
-    0.002246117323367186,
-    0.010686413248843767
+  "standardization_method": "zscore",
+  "data_mean": [
+    1.7606709814841042,
+    1.5532102080543708,
+    393.86427176047835,
+    535.2025985724849
   ],
-  "data_bounds_max": [
-    2.13988527109633,
-    1.687358328958486,
-    4687.241996598579,
-    4995.31058329728
+  "data_std": [
+    0.07833865168598751,
+    0.06494364662947522,
+    383.6254319784994,
+    481.1072487624117
   ]
 }

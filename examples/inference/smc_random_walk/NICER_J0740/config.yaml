@@ -1,54 +1,38 @@
-# NICER PSR J0740+6620-only inference configuration
-# SMC with Random Walk kernel for constraining EOS using NICER X-ray timing
-
 seed: 45
-
-# Execution options
 dry_run: false
 validate_only: false
-
-# Transform configuration: MetaModel + CSE for high-density region
-transform:
-  type: "metamodel_cse"
+eos:
+  type: metamodel_cse
   ndat_metamodel: 100
   nmax_nsat: 25.0
   nb_CSE: 8
+  crust_name: DH
+tov:
   min_nsat_TOV: 0.75
   ndat_TOV: 100
   nb_masses: 100
-  crust_name: "DH"
-
-# Prior specification file
+  type: gr
 prior:
-  specification_file: "prior.prior"
-
-# Likelihood constraints
+  specification_file: prior.prior
 likelihoods:
-  - type: "constraints_eos"
-    enabled: true
-
-  # NICER X-ray timing constraint (PSR J0740+6620)
-  - type: "nicer"
-    enabled: true
-    parameters:
-      pulsars:
-        - name: "J0740"
-          amsterdam_samples_file: "../../../../jesterTOV/inference/data/NICER/J07406620_amsterdam_gamma_NICERXMM_equal_weights_recent.npz"
-          maryland_samples_file: "../../../../jesterTOV/inference/data/NICER/J07406620_maryland_unknown_NICERXMM_RM.npz"
-      N_masses_evaluation: 20
-      N_masses_batch_size: 20
-
-# SMC configuration with Random Walk kernel
+- type: constraints_eos
+  enabled: true
+- type: nicer
+  enabled: true
+  pulsars:
+  - name: J0740
+    amsterdam_model_dir: ../../../../jesterTOV/inference/flows/models/nicer_maf/J07406620/amsterdam_gamma_nicerxmm
+    maryland_model_dir: ../../../../jesterTOV/inference/flows/models/nicer_maf/J07406620/maryland_unknown_nicerxmm_rm
+  N_masses_evaluation: 20
+  N_masses_batch_size: 20
 sampler:
-  type: "smc-rw"
-  n_particles: 5000         # Number of particles evolved at each inference step
-  n_mcmc_steps: 10          # MCMC steps per tempering level
-  target_ess: 0.9           # Target effective sample size (90%)
-  random_walk_sigma: 0.05   # Gaussian random walk step size scale
-  n_eos_samples: 5000       # Number of EOS samples to generate after inference
-  output_dir: "./outdir/"
-
-# Postprocessing configuration
+  type: smc-rw
+  n_particles: 5000
+  n_mcmc_steps: 10
+  target_ess: 0.9
+  random_walk_sigma: 0.05
+  n_eos_samples: 5000
+  output_dir: ./outdir/
 postprocessing:
   enabled: true
   make_cornerplot: false
