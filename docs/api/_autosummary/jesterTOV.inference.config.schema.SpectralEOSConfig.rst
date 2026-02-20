@@ -53,8 +53,8 @@
       ~SpectralEOSConfig.model_fields
       ~SpectralEOSConfig.model_fields_set
       ~SpectralEOSConfig.type
-      ~SpectralEOSConfig.crust_name
       ~SpectralEOSConfig.n_points_high
       ~SpectralEOSConfig.nb_CSE
+      ~SpectralEOSConfig.crust_name
    
    

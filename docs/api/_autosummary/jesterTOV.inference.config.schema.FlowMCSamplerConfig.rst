@@ -39,6 +39,7 @@
       ~FlowMCSamplerConfig.validate
       ~FlowMCSamplerConfig.validate_base_positive
       ~FlowMCSamplerConfig.validate_positive
+      ~FlowMCSamplerConfig.validate_positive_float
    
    
 
