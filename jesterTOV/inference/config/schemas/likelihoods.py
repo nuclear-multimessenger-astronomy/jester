@@ -2,7 +2,14 @@
 
 import warnings
 from typing import Literal, Union, Annotated
-from pydantic import BaseModel, Field, field_validator, ConfigDict, Discriminator
+from pydantic import (
+    BaseModel,
+    Field,
+    field_validator,
+    model_validator,
+    ConfigDict,
+    Discriminator,
+)
 
 from jesterTOV.logging_config import get_logger
 
@@ -19,11 +26,112 @@ class BaseLikelihoodConfig(BaseModel):
     )
 
 
+class GWEventConfig(BaseModel):
+    r"""Configuration for a single GW event in the likelihood.
+
+    Two modes are supported:
+
+    **Mode 1 — pre-trained flow** (default):
+      Provide ``nf_model_dir`` or omit it to use a built-in preset.
+
+    **Mode 2 — from bilby result**:
+      Provide ``from_bilby_result`` to extract samples and train the flow
+      automatically when running :func:`~jesterTOV.inference.run_inference.main`.
+
+    The two modes are mutually exclusive: ``nf_model_dir`` and
+    ``from_bilby_result`` cannot both be set.
+
+    Examples
+    --------
+    Pre-trained flow (using preset):
+
+    .. code-block:: yaml
+
+        events:
+          - name: GW170817
+
+    Pre-trained flow (custom path):
+
+    .. code-block:: yaml
+
+        events:
+          - name: GW170817
+            nf_model_dir: ./my_flow
+
+    From bilby result:
+
+    .. code-block:: yaml
+
+        events:
+          - name: GW170817
+            from_bilby_result: ./GW170817_result.hdf5
+            flow_config: ./flow_config.yaml    # optional
+            retrain_flow: false                # optional
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(description="GW event name (e.g. 'GW170817')")
+    nf_model_dir: str | None = Field(
+        default=None,
+        description=(
+            "Path to a pre-trained normalizing flow model directory. "
+            "If omitted, uses a built-in preset for known events."
+        ),
+    )
+    from_bilby_result: str | None = Field(
+        default=None,
+        description=(
+            "Path to a bilby result HDF5 file.  When set, jester will extract "
+            "posterior samples and train a normalizing flow automatically before "
+            "running inference."
+        ),
+    )
+    flow_config: str | None = Field(
+        default=None,
+        description=(
+            "Path to a YAML file with FlowTrainingConfig overrides.  "
+            "Only meaningful when 'from_bilby_result' is set."
+        ),
+    )
+    retrain_flow: bool = Field(
+        default=False,
+        description=(
+            "Force retraining even if a cached flow already exists.  "
+            "Only meaningful when 'from_bilby_result' is set."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def validate_mode_consistency(self) -> "GWEventConfig":
+        """Ensure that bilby mode and pre-trained mode are not mixed."""
+        if self.from_bilby_result is not None and self.nf_model_dir is not None:
+            raise ValueError(
+                "Cannot specify both 'from_bilby_result' and 'nf_model_dir'. "
+                "Use 'from_bilby_result' to extract samples and train a flow, "
+                "or 'nf_model_dir' to point to an already-trained flow."
+            )
+        if self.from_bilby_result is None:
+            if self.flow_config is not None:
+                raise ValueError(
+                    "'flow_config' is only valid when 'from_bilby_result' is provided."
+                )
+            if self.retrain_flow:
+                raise ValueError(
+                    "'retrain_flow' is only valid when 'from_bilby_result' is provided."
+                )
+        return self
+
+
 class GWLikelihoodConfig(BaseLikelihoodConfig):
-    """Gravitational wave likelihood configuration (presampled version).
+    r"""Gravitational wave likelihood configuration (presampled version).
 
     This is the default GW likelihood that pre-samples masses from the
     GW posterior for efficient evaluation during MCMC sampling.
+
+    Each entry in ``events`` is a :class:`GWEventConfig` that supports two
+    modes: using a pre-trained normalizing flow (default) or automatically
+    extracting samples from a bilby result file and training the flow.
 
     Examples
     --------
@@ -33,18 +141,19 @@ class GWLikelihoodConfig(BaseLikelihoodConfig):
           enabled: true
           events:
             - name: "GW170817"
-              model_dir: "./NFs/GW170817"
+              nf_model_dir: "./NFs/GW170817"
           penalty_value: -99999.0
           N_masses_evaluation: 2000
     """
 
     type: Literal["gw"] = Field(default="gw", description="Likelihood type identifier")
 
-    events: list[dict[str, str]] = Field(
+    events: list[GWEventConfig] = Field(
         description=(
-            "List of GW events to include. Each event must have 'name' key. "
-            "Optional 'model_dir' key specifies path to normalizing flow model. "
-            "If omitted, uses preset paths based on event name."
+            "List of GW events to include. Each event must have 'name'. "
+            "Optional 'nf_model_dir' specifies path to normalizing flow model; "
+            "if omitted, uses preset paths based on event name. "
+            "Alternatively, set 'from_bilby_result' to train a flow automatically."
         ),
         min_length=1,
     )
@@ -71,17 +180,6 @@ class GWLikelihoodConfig(BaseLikelihoodConfig):
         ge=0,
         description="Random seed for reproducible mass sampling from GW posterior",
     )
-
-    @field_validator("events")
-    @classmethod
-    def validate_events(cls, v: list[dict[str, str]]) -> list[dict[str, str]]:
-        """Validate event structure."""
-        for i, event in enumerate(v):
-            if "name" not in event:
-                raise ValueError(f"Event {i} missing required 'name' field")
-            if not isinstance(event["name"], str):
-                raise ValueError(f"Event {i} 'name' must be a string")
-        return v
 
 
 class GWResampledLikelihoodConfig(BaseLikelihoodConfig):

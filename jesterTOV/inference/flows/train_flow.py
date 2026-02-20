@@ -96,8 +96,11 @@ import numpy as np
 from jax import Array
 from flowjax.train import fit_to_data
 
+from jesterTOV.logging_config import get_logger
 from .config import FlowTrainingConfig
 from .flow import create_flow
+
+logger = get_logger("jester")
 
 
 def load_posterior(
@@ -148,12 +151,12 @@ def load_posterior(
     if n_samples_total > max_samples:
         downsample_factor = int(np.ceil(n_samples_total / max_samples))
         data = data[::downsample_factor]
-        print(
+        logger.info(
             f"Downsampled from {n_samples_total} to {data.shape[0]} samples "
             f"(factor: {downsample_factor})"
         )
     else:
-        print(f"Using all {n_samples_total} samples")
+        logger.info(f"Using all {n_samples_total} samples")
 
     metadata = {
         "n_samples_total": n_samples_total,
@@ -290,9 +293,9 @@ def train_flow(
         trained_flow: Trained flow model
         losses: Dictionary with 'train' and 'val' loss arrays
     """
-    print(f"Training flow for up to {max_epochs} epochs...")
-    print(f"Using {val_prop:.1%} of data for validation")
-    print(f"Batch size: {batch_size}")
+    logger.info(f"Training flow for up to {max_epochs} epochs...")
+    logger.info(f"Using {val_prop:.1%} of data for validation")
+    logger.info(f"Batch size: {batch_size}")
     trained_flow, losses = fit_to_data(
         key=key,
         dist=flow,
@@ -303,7 +306,7 @@ def train_flow(
         val_prop=val_prop,
         batch_size=batch_size,
     )
-    print(f"Training completed after {len(losses['train'])} epochs")
+    logger.info(f"Training completed after {len(losses['train'])} epochs")
     return trained_flow, losses
 
 
@@ -326,18 +329,18 @@ def save_model(
 
     # Save model weights
     weights_path = os.path.join(output_dir, "flow_weights.eqx")
-    print(f"Saving model weights to {weights_path}")
+    logger.info(f"Saving model weights to {weights_path}")
     eqx.tree_serialise_leaves(weights_path, flow)
 
     # Save architecture kwargs
     kwargs_path = os.path.join(output_dir, "flow_kwargs.json")
-    print(f"Saving flow kwargs to {kwargs_path}")
+    logger.info(f"Saving flow kwargs to {kwargs_path}")
     with open(kwargs_path, "w") as f:
         json.dump(flow_kwargs, f, indent=2)
 
     # Save metadata
     metadata_path = os.path.join(output_dir, "metadata.json")
-    print(f"Saving metadata to {metadata_path}")
+    logger.info(f"Saving metadata to {metadata_path}")
     with open(metadata_path, "w") as f:
         json.dump(metadata, f, indent=2)
 
@@ -347,7 +350,7 @@ def plot_losses(losses: Mapping[str, np.ndarray | list], output_path: str) -> No
     try:
         import matplotlib.pyplot as plt
     except ImportError:
-        print("Warning: matplotlib not available, skipping loss plot")
+        logger.warning("matplotlib not available, skipping loss plot")
         return
 
     plt.figure(figsize=(10, 6))
@@ -360,7 +363,7 @@ def plot_losses(losses: Mapping[str, np.ndarray | list], output_path: str) -> No
     plt.tight_layout()
     plt.savefig(output_path, dpi=150)
     plt.close()
-    print(f"Saved loss plot to {output_path}")
+    logger.info(f"Saved loss plot to {output_path}")
 
 
 def plot_corner(
@@ -381,7 +384,7 @@ def plot_corner(
         import corner
         import matplotlib.pyplot as plt
     except ImportError:
-        print("Warning: corner package not available, skipping corner plot")
+        logger.warning("corner package not available, skipping corner plot")
         return
 
     hist_kwargs = {"color": "blue", "density": True}
@@ -427,7 +430,7 @@ def plot_corner(
 
     plt.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close()
-    print(f"Saved corner plot to {output_path}")
+    logger.info(f"Saved corner plot to {output_path}")
 
 
 def train_flow_from_config(config: FlowTrainingConfig) -> None:
@@ -437,49 +440,49 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
     Args:
         config: FlowTrainingConfig with all training parameters
     """
-    # Print configuration
-    print("=" * 60)
-    print("Normalizing Flow Training")
-    print("=" * 60)
-    print(f"Posterior file: {config.posterior_file}")
-    print(f"Output directory: {config.output_dir}")
-    print(f"Parameter names: {config.parameter_names}")
-    print(f"Max samples: {config.max_samples}")
-    print(f"Flow type: {config.flow_type}")
-    print(f"NN depth: {config.nn_depth}")
-    print(f"NN block dim: {config.nn_block_dim}")
-    print(f"NN width: {config.nn_width}")
-    print(f"Flow layers: {config.flow_layers}")
-    print(f"Invert: {config.invert}")
-    print(f"Cond dim: {config.cond_dim}")
-    print(f"Transformer: {config.transformer}")
-    print(f"Transformer knots: {config.transformer_knots}")
-    print(f"Transformer interval: {config.transformer_interval}")
-    print(f"Standardize: {config.standardize}")
-    print(f"Standardization method: {config.standardization_method}")
-    print(f"Max epochs: {config.num_epochs}")
-    print(f"Learning rate: {config.learning_rate}")
-    print(f"Patience: {config.max_patience}")
-    print(f"Val proportion: {config.val_prop}")
-    print(f"Seed: {config.seed}")
-    print("=" * 60)
+    # Log configuration
+    logger.info("=" * 60)
+    logger.info("Normalizing Flow Training")
+    logger.info("=" * 60)
+    logger.info(f"Posterior file: {config.posterior_file}")
+    logger.info(f"Output directory: {config.output_dir}")
+    logger.info(f"Parameter names: {config.parameter_names}")
+    logger.info(f"Max samples: {config.max_samples}")
+    logger.info(f"Flow type: {config.flow_type}")
+    logger.info(f"NN depth: {config.nn_depth}")
+    logger.info(f"NN block dim: {config.nn_block_dim}")
+    logger.info(f"NN width: {config.nn_width}")
+    logger.info(f"Flow layers: {config.flow_layers}")
+    logger.info(f"Invert: {config.invert}")
+    logger.info(f"Cond dim: {config.cond_dim}")
+    logger.info(f"Transformer: {config.transformer}")
+    logger.info(f"Transformer knots: {config.transformer_knots}")
+    logger.info(f"Transformer interval: {config.transformer_interval}")
+    logger.info(f"Standardize: {config.standardize}")
+    logger.info(f"Standardization method: {config.standardization_method}")
+    logger.info(f"Max epochs: {config.num_epochs}")
+    logger.info(f"Learning rate: {config.learning_rate}")
+    logger.info(f"Patience: {config.max_patience}")
+    logger.info(f"Val proportion: {config.val_prop}")
+    logger.info(f"Seed: {config.seed}")
+    logger.info("=" * 60)
 
     # Check for GPU
-    print(f"JAX devices: {jax.devices()}")
+    logger.info(f"JAX devices: {jax.devices()}")
 
     # Load data
-    print("\n[1/5] Loading posterior samples...")
+    logger.info("[1/5] Loading posterior samples...")
     data, load_metadata = load_posterior(
         config.posterior_file,
         parameter_names=config.parameter_names,
         max_samples=config.max_samples,
     )
     parameter_names = load_metadata["parameter_names"]
-    print(f"Data shape: {data.shape}")
-    print(f"Parameters: {parameter_names}")
-    print("Original data ranges:")
+    logger.info(f"Data shape: {data.shape}")
+    logger.info(f"Parameters: {parameter_names}")
+    logger.info("Original data ranges:")
     for i, name in enumerate(parameter_names):
-        print(f"  {name}: [{data[:, i].min():.3f}, {data[:, i].max():.3f}]")
+        logger.info(f"  {name}: [{data[:, i].min():.3f}, {data[:, i].max():.3f}]")
 
     # Keep copy of original data for corner plot
     original_data = data.copy()
@@ -488,27 +491,29 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
     data_statistics = None
     if config.standardize:
         if config.standardization_method == "zscore":
-            print("\nStandardizing data using z-score (mean=0, std=1)...")
+            logger.info("Standardizing data using z-score (mean=0, std=1)...")
             data, data_statistics = standardize_data_zscore(data)
-            print("Standardized data statistics:")
+            logger.info("Standardized data statistics:")
             for i, name in enumerate(parameter_names):
-                print(
+                logger.info(
                     f"  {name}: mean={data[:, i].mean():.3f}, std={data[:, i].std():.3f}"
                 )
-            print("Data mean and std saved for inverse transformation")
+            logger.info("Data mean and std saved for inverse transformation")
         else:  # minmax
-            print("\nStandardizing data using min-max [0, 1] scaling...")
+            logger.info("Standardizing data using min-max [0, 1] scaling...")
             data, data_statistics = standardize_data_minmax(data)
-            print("Standardized data ranges:")
+            logger.info("Standardized data ranges:")
             for i, name in enumerate(parameter_names):
-                print(f"  {name}: [{data[:, i].min():.3f}, {data[:, i].max():.3f}]")
-            print("Data bounds saved for inverse transformation")
+                logger.info(
+                    f"  {name}: [{data[:, i].min():.3f}, {data[:, i].max():.3f}]"
+                )
+            logger.info("Data bounds saved for inverse transformation")
 
     # Create flow
-    print("\n[2/5] Creating flow architecture...")
+    logger.info("[2/5] Creating flow architecture...")
     flow_key, train_key, sample_key = jax.random.split(jax.random.key(config.seed), 3)
     dim = data.shape[1]  # Infer dimensionality from data
-    print(f"Flow dimensionality: {dim}D")
+    logger.info(f"Flow dimensionality: {dim}D")
     flow = create_flow(
         key=flow_key,
         dim=dim,
@@ -525,8 +530,8 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
     )
 
     # Train flow
-    print("\n[3/5] Training flow...")
-    print(f"Training dataset shape: {data.shape}")
+    logger.info("[3/5] Training flow...")
+    logger.info(f"Training dataset shape: {data.shape}")
     trained_flow, losses = train_flow(
         flow,
         data,
@@ -537,11 +542,11 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
         val_prop=config.val_prop,
         batch_size=config.batch_size,
     )
-    print(f"Final train loss: {losses['train'][-1]:.4f}")
-    print(f"Final val loss: {losses['val'][-1]:.4f}")
+    logger.info(f"Final train loss: {losses['train'][-1]:.4f}")
+    logger.info(f"Final val loss: {losses['val'][-1]:.4f}")
 
     # Save model
-    print("\n[4/5] Saving model...")
+    logger.info("[4/5] Saving model...")
     flow_kwargs = {
         "flow_type": config.flow_type,
         "nn_depth": config.nn_depth,
@@ -590,7 +595,7 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
     save_model(trained_flow, config.output_dir, flow_kwargs, metadata)
 
     # Generate plots
-    print("\n[5/5] Generating plots...")
+    logger.info("[5/5] Generating plots...")
 
     # Create figures subdirectory
     figures_dir = os.path.join(config.output_dir, "figures")
@@ -625,28 +630,30 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
                 original_data, flow_samples_np, corner_path, labels=parameter_names
             )
         except Exception as e:
-            print(
-                f"Warning: Corner plot generation failed, skipping. Error: {type(e).__name__}"
+            logger.warning(
+                f"Corner plot generation failed, skipping. Error: {type(e).__name__}"
             )
 
-    print("\n" + "=" * 60)
-    print("Training complete!")
-    print(f"Model saved to: {config.output_dir}")
-    print(f"Figures saved to: {os.path.join(config.output_dir, 'figures')}")
-    print("=" * 60)
-    print("\nTo use the trained flow:")
-    print(">>> from jesterTOV.inference.flows.flow import Flow")
-    print(f">>> flow = Flow.from_directory('{config.output_dir}')")
-    print(">>> samples = flow.sample(jax.random.key(0), (1000,))")
+    logger.info("=" * 60)
+    logger.info("Training complete!")
+    logger.info(f"Model saved to: {config.output_dir}")
+    logger.info(f"Figures saved to: {os.path.join(config.output_dir, 'figures')}")
+    logger.info("=" * 60)
+    logger.info("To use the trained flow:")
+    logger.info(">>> from jesterTOV.inference.flows.flow import Flow")
+    logger.info(f">>> flow = Flow.from_directory('{config.output_dir}')")
+    logger.info(">>> samples = flow.sample(jax.random.key(0), (1000,))")
     if config.standardize:
-        print(">>> # Samples are automatically rescaled to original domain")
-    print("=" * 60)
+        logger.info(">>> # Samples are automatically rescaled to original domain")
+    logger.info("=" * 60)
 
 
 def main():
     """Main entry point for training script."""
     if len(sys.argv) < 2:
-        print("Usage: python -m jesterTOV.inference.flows.train_flow <config.yaml>")
+        logger.error(
+            "Usage: python -m jesterTOV.inference.flows.train_flow <config.yaml>"
+        )
         sys.exit(1)
 
     config_path = Path(sys.argv[1])
