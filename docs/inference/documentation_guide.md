@@ -59,11 +59,11 @@ Add to `.pre-commit-config.yaml`:
       name: Regenerate YAML reference
       entry: uv run python -m jesterTOV.inference.config.generate_yaml_reference
       language: system
-      files: ^jesterTOV/inference/config/schema\.py$
+      files: ^jesterTOV/inference/config/(schema\.py|schemas/.*\.py)$
       pass_filenames: false
 ```
 
-This automatically regenerates the reference when `schema.py` changes.
+This automatically regenerates the reference when `schema.py` or any file under `schemas/` changes.
 
 ---
 
@@ -156,8 +156,8 @@ All available fields:
 - seed: int, default 43
 - eos: EOSConfig (required, discriminated by type)
   - type: "metamodel" | "metamodel_cse" | "spectral" (required)
-- tov: TOVConfig (required, discriminated by tov_solver)
   - ndat_metamodel: int, default 100
+- tov: TOVConfig (required, discriminated by type)
   ... (this will get out of sync!)
 ```
 
@@ -337,7 +337,7 @@ repos:
         name: Regenerate YAML reference
         entry: uv run python -m jesterTOV.inference.config.generate_yaml_reference
         language: system
-        files: ^jesterTOV/inference/config/schema\.py$
+        files: ^jesterTOV/inference/config/(schema\.py|schemas/.*\.py)$
         pass_filenames: false
 
       # Check documentation links
@@ -398,4 +398,4 @@ Merge
 
 **Maintainer Note**: Keep this guide updated as the documentation system evolves!
 
-**Last Updated**: December 2024
+**Last Updated**: February 2026

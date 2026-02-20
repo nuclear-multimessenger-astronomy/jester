@@ -147,7 +147,7 @@ def build_prior_only_config(
             **LIGHTWEIGHT_EOS,
         },
         "tov": {
-            "tov_solver": "gr",
+            "type": "gr",
             **LIGHTWEIGHT_TOV,
         },
         "prior": {"specification_file": str(prior_file)},
@@ -177,10 +177,10 @@ def build_chieft_config(
             "nb_CSE": 8,
             "nmax_nsat": 25.0,
             "crust_name": "DH",
-            "ndat_metamodel": 30,  # From LIGHTWEIGHT_EOS
+            "ndat_metamodel": LIGHTWEIGHT_EOS["ndat_metamodel"],
         },
         "tov": {
-            "tov_solver": "gr",
+            "type": "gr",
             **LIGHTWEIGHT_TOV,
         },
         "prior": {"specification_file": str(prior_file)},

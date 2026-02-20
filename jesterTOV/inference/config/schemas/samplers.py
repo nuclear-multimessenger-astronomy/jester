@@ -85,13 +85,20 @@ class FlowMCSamplerConfig(BaseSamplerConfig):
         "n_local_steps",
         "n_global_steps",
         "n_epochs",
-        "learning_rate",
         "train_thinning",
         "output_thinning",
     )
     @classmethod
     def validate_positive(cls, v: int) -> int:
         """Validate that value is positive."""
+        if v <= 0:
+            raise ValueError(f"Value must be positive, got: {v}")
+        return v
+
+    @field_validator("learning_rate")
+    @classmethod
+    def validate_positive_float(cls, v: float) -> float:
+        """Validate that learning rate is positive."""
         if v <= 0:
             raise ValueError(f"Value must be positive, got: {v}")
         return v

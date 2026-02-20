@@ -25,7 +25,7 @@ class TestJesterTransform:
             crust_name="DH",
         )
         tov_config = TOVConfig(
-            tov_solver="gr",
+            type="gr",
             min_nsat_TOV=0.75,
             ndat_TOV=100,
         )
@@ -47,7 +47,7 @@ class TestJesterTransform:
             crust_name="DH",
         )
         tov_config = TOVConfig(
-            tov_solver="gr",
+            type="gr",
             min_nsat_TOV=0.75,
             ndat_TOV=100,
         )
@@ -65,7 +65,7 @@ class TestJesterTransform:
             crust_name="SLy",  # Spectral requires SLy for LALSuite compatibility
         )
         tov_config = TOVConfig(
-            tov_solver="gr",
+            type="gr",
             min_nsat_TOV=0.75,
             ndat_TOV=100,
         )
@@ -76,10 +76,14 @@ class TestJesterTransform:
         assert "SpectralDecomposition_EOS_model" in transform.get_eos_type()
 
     def test_invalid_eos_type_fails(self):
-        """Test that invalid EOS type raises error (caught by type checker)."""
-        # Note: This is now caught at the type level by discriminated union
-        # Invalid types won't pass type checking
-        pass
+        """Test that unknown EOS config type raises ValueError at runtime."""
+        from unittest.mock import MagicMock
+
+        # Create a mock config that passes isinstance checks for none of the known types
+        mock_config = MagicMock(spec=[])  # Empty spec so isinstance returns False
+
+        with pytest.raises((ValueError, AttributeError)):
+            JesterTransform._create_eos(mock_config)
 
     def test_invalid_crust_name_fails(self):
         """Test that invalid crust name raises error."""

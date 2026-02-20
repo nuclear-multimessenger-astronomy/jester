@@ -328,7 +328,7 @@ The schemas define the structure and validation rules:
 class InferenceConfig(BaseModel):
     seed: int
     eos: EOSConfig       # discriminated union by type
-    tov: TOVConfig       # discriminated union by tov_solver
+    tov: TOVConfig       # discriminated union by type
     prior: PriorConfig
     likelihoods: list[LikelihoodConfig]
     sampler: SamplerConfig

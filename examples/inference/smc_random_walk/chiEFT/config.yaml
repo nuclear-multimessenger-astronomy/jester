@@ -8,7 +8,7 @@ eos:
   nb_CSE: 8
   crust_name: DH
 tov:
-  tov_solver: gr
+  type: gr
   min_nsat_TOV: 0.75
   ndat_TOV: 100
   nb_masses: 100

@@ -274,16 +274,15 @@ seed: 42
 eos:
   type: "my_new_eos"
   my_eos_config: 1.0
-  ndat_metamodel: 100
-  nmin_MM_nsat: 0.75
 
 tov:
-  tov_solver: "gr"
+  type: "gr"
   min_nsat_TOV: 0.75
   ndat_TOV: 100
   nb_masses: 100
 
-prior: "prior.prior"
+prior:
+  specification_file: "prior.prior"
 
 likelihoods:
   - type: "eos_constraints"

@@ -6,6 +6,7 @@ Modular inference script for jesterTOV
 import os
 import time
 import warnings
+import json
 from pathlib import Path
 import numpy as np
 import jax
@@ -264,7 +265,7 @@ def run_sampling(
     InferenceResult
         Result object containing samples, metadata, and histories
     """
-    logger.info(f"Starting MCMC sampling with seed {seed}...")
+    logger.info(f"Starting sampling with seed {seed}...")
     start = time.time()
     sampler.sample(jax.random.PRNGKey(seed))
     sampler.print_summary()
@@ -409,6 +410,10 @@ def generate_eos_samples(
     logger.info("Derived EOS quantities added to InferenceResult")
 
 
+# TODO: there are some calls that check specific types of samplers/configs/...
+# Ideally we should remove this and just have a small loop that prints over all available
+# attributes of the config/sampler/likelihood/transform/prior objects, so that we don't have to update this function every time we add a new sampler type or likelihood type or EOS type, etc. We can still have some special handling for certain fields (e.g., if chieft enabled then print nbreak bounds, etc.) but in general we should just loop over all fields and print them in a structured way (e.g., using Pydantic's model_dump() with some formatting for logging)
+# This is already done a bit with the likelihoods, so follow that approach in the future
 def main(config_path: str) -> None:
     """Main inference script
 
@@ -491,7 +496,7 @@ def main(config_path: str) -> None:
     if isinstance(config.eos, BaseMetamodelEOSConfig):
         logger.info(f"  ndat_metamodel: {config.eos.ndat_metamodel}")
         logger.info(f"  nmax_nsat: {config.eos.nmax_nsat}")
-    logger.info(f"TOV solver: {config.tov.tov_solver}")
+    logger.info(f"TOV solver: {config.tov.type}")
     logger.info(f"  ndat_TOV: {config.tov.ndat_TOV}")
     if keep_names:
         logger.info(f"  Preserving parameters in output: {keep_names}")
@@ -504,7 +509,6 @@ def main(config_path: str) -> None:
     logger.info(f"Number of enabled likelihoods: {len(enabled_likelihoods)}")
     for lk in enabled_likelihoods:
         # Use Pydantic's model_dump to serialize config for logging
-        import json
 
         lk_dict = lk.model_dump(
             exclude={"enabled"}
@@ -526,7 +530,7 @@ def main(config_path: str) -> None:
     logger.info("Configuration Summary")
     logger.info("=" * 60)
     logger.info(f"EOS type: {config.eos.type}")
-    logger.info(f"TOV solver: {config.tov.tov_solver}")
+    logger.info(f"TOV solver: {config.tov.type}")
     logger.info(f"Random seed: {config.seed}")
     logger.info(f"Sampler type: {config.sampler.type}")
     logger.info("Sampler Configuration:")

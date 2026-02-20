@@ -82,7 +82,7 @@ class JesterTransform(NtoMTransform):
     >>> # From configuration
     >>> from jesterTOV.inference.config.schema import MetamodelCSEEOSConfig, TOVConfig
     >>> eos_config = MetamodelCSEEOSConfig(type="metamodel_cse", nb_CSE=8)
-    >>> tov_config = TOVConfig(tov_solver="gr")
+    >>> tov_config = TOVConfig(type="gr")
     >>> transform = JesterTransform.from_config(eos_config, tov_config)
 
     >>> # Transform parameters to observables
@@ -168,7 +168,13 @@ class JesterTransform(NtoMTransform):
             If EOS or TOV type is unknown
         """
         # Instantiate EOS based on eos_config.type
-        eos = cls._create_eos(eos_config, max_nbreak_nsat)
+        # If max_nbreak_nsat is not passed, fall back to the value from the config
+        effective_max = (
+            max_nbreak_nsat
+            if max_nbreak_nsat is not None
+            else getattr(eos_config, "max_nbreak_nsat", None)
+        )
+        eos = cls._create_eos(eos_config, effective_max)
 
         # Instantiate TOV solver based on tov_config
         tov_solver = cls._create_tov_solver(tov_config)
@@ -260,7 +266,7 @@ class JesterTransform(NtoMTransform):
             return GRTOVSolver()
 
         # String-based dispatch for solvers that do not yet have their own config class
-        tov_type = config.tov_solver
+        tov_type = config.type
         if tov_type == "post":
             raise NotImplementedError("PostTOVSolver config class not implemented yet")
         elif tov_type == "scalar_tensor":

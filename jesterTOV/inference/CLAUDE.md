@@ -304,7 +304,7 @@ Configuration files use YAML with Pydantic validation. See `examples/inference/*
 - `transform`: EOS transform configuration
   - `type`: EOS model (metamodel, metamodel_cse, spectral)
   - `nb_CSE`: Number of CSE parameters (only for metamodel_cse)
-  - `tov_solver`: TOV solver type (gr, post, scalar_tensor)
+  - `type`: TOV solver type (gr, post, scalar_tensor)
   - Grid parameters: ndat, min_nsat, etc.
 - `prior`: Path to `.prior` specification file (bilby-style Python)
 - `likelihoods`: List of observational constraints (discriminated union)
@@ -532,12 +532,12 @@ Transforms convert between parameter spaces. Two types:
 3. **Add config class** to `config/schemas/tov.py`, re-export it from `config/schema.py` and `config/__init__.py`, and extend the `TOVConfig` union:
    ```python
    class MyNewTOVConfig(BaseTOVConfig):
-       tov_solver: Literal["my_new_solver"] = "my_new_solver"  # type: ignore[override]
+       type: Literal["my_new_solver"] = "my_new_solver"  # type: ignore[override]
        # Solver-specific fields
 
    TOVConfig = Annotated[
        Union[GRTOVConfig, MyNewTOVConfig],
-       Discriminator("tov_solver"),
+       Discriminator("type"),
    ]
    ```
 

@@ -148,19 +148,19 @@ class TestTOVConfig:
     def test_valid_tov_config(self):
         """Test valid TOV configuration."""
         config = schema.TOVConfig(
-            tov_solver="gr",
+            type="gr",
             min_nsat_TOV=0.75,
             ndat_TOV=100,
             nb_masses=100,
         )
-        assert config.tov_solver == "gr"
+        assert config.type == "gr"
         assert config.min_nsat_TOV == 0.75
         assert config.ndat_TOV == 100
 
     def test_tov_default_values(self):
         """Test that TOV default values are set correctly."""
         config = schema.TOVConfig()
-        assert config.tov_solver == "gr"
+        assert config.type == "gr"
         assert config.min_nsat_TOV == 0.75
         assert config.ndat_TOV == 100
         assert config.nb_masses == 100
@@ -168,7 +168,7 @@ class TestTOVConfig:
     def test_invalid_solver_type_fails(self):
         """Test that invalid TOV solver type fails validation."""
         with pytest.raises(ValidationError):
-            schema.TOVConfig(tov_solver="invalid_solver")  # type: ignore[arg-type]  # intentionally wrong
+            schema.TOVConfig(type="invalid_solver")  # type: ignore[arg-type]  # intentionally wrong
 
 
 class TestPriorConfig:
@@ -424,7 +424,7 @@ class TestInferenceConfig:
         config = schema.InferenceConfig(**sample_config_dict)
         assert config.seed == 42
         assert config.eos.type == "metamodel"
-        assert config.tov.tov_solver == "gr"
+        assert config.tov.type == "gr"
         assert len(config.likelihoods) == 1
         assert config.sampler.n_chains == 4
 
@@ -573,7 +573,7 @@ class TestExtraFieldValidation:
         """Test that TOV config rejects unknown fields."""
         with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
             schema.TOVConfig(
-                tov_solver="gr",
+                type="gr",
                 wrong_entry=500,  # Should be rejected
             )
 
@@ -630,6 +630,7 @@ class TestExtraFieldValidation:
             schema.InferenceConfig(**config_dict)
 
 
+@pytest.mark.integration
 class TestConfigIntegration:
     """Integration tests for configuration system."""
 
@@ -655,7 +656,7 @@ class TestConfigIntegration:
         # Compare key fields
         assert config1.seed == config2.seed
         assert config1.eos.type == config2.eos.type
-        assert config1.tov.tov_solver == config2.tov.tov_solver
+        assert config1.tov.type == config2.tov.type
         # Type narrowing: we know from sample_config_dict that this is FlowMC
         assert config1.sampler.type == "flowmc"  # type: ignore[attr-defined]
         assert config2.sampler.type == "flowmc"  # type: ignore[attr-defined]

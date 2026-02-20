@@ -56,10 +56,10 @@ class MyNewLikelihood(LikelihoodBase):
                 - EOS parameters (e.g., K_sat, L_sym)
                 - TOV parameters (if any)
                 - Derived quantities from transform:
-                  - masses: Stellar masses (M☉)
-                  - radii: Stellar radii (km)
-                  - lambdas: Tidal deformabilities
-                  - eos_data: Full EOS if needed
+                  - masses_EOS: Stellar masses (M☉)
+                  - radii_EOS: Stellar radii (km)
+                  - Lambdas_EOS: Tidal deformabilities
+                  - logpc_EOS: Log10 central pressures
 
             data: Observational data (passed through from __init__)
 
@@ -67,8 +67,8 @@ class MyNewLikelihood(LikelihoodBase):
             Log probability: log P(data | params)
         """
         # Extract relevant quantities from params
-        masses = params.get("masses")  # From JesterTransform
-        radii = params.get("radii")    # From JesterTransform
+        masses = params.get("masses_EOS")  # From JesterTransform
+        radii = params.get("radii_EOS")    # From JesterTransform
 
         # Your likelihood calculation here
         # Example: Gaussian likelihood for mass-radius constraint
@@ -332,7 +332,7 @@ eos:
   ndat_metamodel: 50
 
 tov:
-  tov_solver: "gr"
+  type: "gr"
 
 prior: "prior.prior"
 
@@ -386,9 +386,10 @@ eos:
   ndat_metamodel: 100
 
 tov:
-  tov_solver: gr
+  type: gr
 
-prior: prior.prior
+prior:
+  specification_file: prior.prior
 
 likelihoods:
   - type: my_new_likelihood

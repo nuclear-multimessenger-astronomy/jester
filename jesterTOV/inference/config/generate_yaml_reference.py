@@ -265,9 +265,9 @@ def extract_tov_config() -> dict[str, Any]:
         "description": "Configuration for the Tolman-Oppenheimer-Volkoff equation solver.",
         "fields": [
             {
-                "name": "tov_solver",
+                "name": "type",
                 "example": '"gr"',
-                "inline_comment": 'TOV solver: "gr", "post", or "scalar_tensor"',
+                "inline_comment": 'TOV solver: currently only "gr" is implemented',
             },
             {
                 "name": "min_nsat_TOV",
@@ -287,10 +287,10 @@ def extract_tov_config() -> dict[str, Any]:
         ],
         "field_details": [
             {
-                "name": "tov_solver",
+                "name": "type",
                 "type": "str",
                 "default": '"gr"',
-                "description": "TOV solver type: 'gr' (General Relativity), 'post' (Beyond-GR modifications), or 'scalar_tensor' (Scalar-tensor gravity)",
+                "description": "TOV solver type. Currently only 'gr' (General Relativity) is implemented. 'anisotropy' and 'scalar_tensor' are planned but not yet available.",
             },
             {
                 "name": "min_nsat_TOV",
@@ -1289,7 +1289,7 @@ eos:
   type: "metamodel"
 
 tov:
-  tov_solver: "gr"
+  type: "gr"
 
 prior:
   specification_file: "prior.prior"
@@ -1315,7 +1315,7 @@ eos:
   nmax_nsat: 25.0
 
 tov:
-  tov_solver: "gr"
+  type: "gr"
   min_nsat_TOV: 0.75
   ndat_TOV: 100
   nb_masses: 100
@@ -1368,7 +1368,7 @@ eos:
   n_points_high: 500
 
 tov:
-  tov_solver: "gr"
+  type: "gr"
   min_nsat_TOV: 0.75
   ndat_TOV: 100
   nb_masses: 100
@@ -1414,7 +1414,7 @@ def extract_validation_rules() -> list[dict[str, Any]]:
         {
             "title": "TOV Configuration",
             "entries": [
-                '`tov_solver` must be one of: `"gr"`, `"post"`, or `"scalar_tensor"`',
+                '`type` must be `"gr"` (the only currently implemented option; `"post"` and `"scalar_tensor"` are planned)',
                 "`min_nsat_TOV`, `ndat_TOV`, and `nb_masses` must be positive",
             ],
         },

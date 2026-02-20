@@ -4,6 +4,8 @@ import pytest
 import jax
 import jax.numpy as jnp
 
+pytestmark = pytest.mark.integration
+
 from jesterTOV.inference.config import parser as config_parser
 from jesterTOV.inference.config import schema
 from jesterTOV.inference.priors import parser as prior_parser
@@ -26,7 +28,7 @@ class TestConfigToComponents:
         prior = prior_parser.parse_prior_file(prior_spec_file, nb_CSE=config.eos.nb_CSE)
 
         # Prior should have correct number of dimensions
-        assert prior.n_dim == 8  # 8 NEP parameters for nb_CSE=0
+        assert prior.n_dim == 9  # 9 NEP parameters for nb_CSE=0 (includes E_sat)
 
         # Can sample from prior
         rng_key = jax.random.PRNGKey(42)
@@ -34,6 +36,7 @@ class TestConfigToComponents:
 
         # Should have all expected parameters
         expected_params = [
+            "E_sat",
             "K_sat",
             "Q_sat",
             "Z_sat",
@@ -107,7 +110,7 @@ Z_sym = UniformPrior(-2000.0, 1500.0, parameter_names=["Z_sym"])
                 "crust_name": "DH",
             },
             "tov": {
-                "tov_solver": "gr",
+                "type": "gr",
                 "min_nsat_TOV": 0.75,
                 "ndat_TOV": 50,
                 "nb_masses": 50,
@@ -468,7 +471,7 @@ class TestEOSSampleGeneration:
         config_dict = {
             "seed": 42,
             "eos": {"type": "metamodel", "nb_CSE": 0},
-            "tov": {"tov_solver": "gr"},
+            "tov": {"type": "gr"},
             "prior": {"specification_file": "dummy.prior"},
             "likelihoods": [{"type": "zero", "enabled": True}],
             "sampler": {
@@ -568,7 +571,7 @@ class TestEOSSampleGeneration:
         config_dict = {
             "seed": 123,
             "eos": {"type": "metamodel", "nb_CSE": 0},
-            "tov": {"tov_solver": "gr"},
+            "tov": {"type": "gr"},
             "prior": {"specification_file": "dummy.prior"},
             "likelihoods": [{"type": "zero", "enabled": True}],
             "sampler": {
