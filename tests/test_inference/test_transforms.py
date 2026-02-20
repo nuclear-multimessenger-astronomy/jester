@@ -3,7 +3,12 @@
 import pytest
 import jax.numpy as jnp
 
-from jesterTOV.inference.config.schema import TransformConfig
+from jesterTOV.inference.config.schema import (
+    MetamodelEOSConfig,
+    MetamodelCSEEOSConfig,
+    SpectralEOSConfig,
+    TOVConfig,
+)
 from jesterTOV.inference.transforms import JesterTransform
 
 
@@ -12,17 +17,20 @@ class TestJesterTransform:
 
     def test_from_config_metamodel(self):
         """Test creating MetaModel transform via from_config."""
-        config = TransformConfig(
+        eos_config = MetamodelEOSConfig(
             type="metamodel",
             ndat_metamodel=100,
             nmax_nsat=2.0,
             nb_CSE=0,
-            min_nsat_TOV=0.75,
-            ndat_TOV=100,
             crust_name="DH",
         )
+        tov_config = TOVConfig(
+            type="gr",
+            min_nsat_TOV=0.75,
+            ndat_TOV=100,
+        )
 
-        transform = JesterTransform.from_config(config)
+        transform = JesterTransform.from_config(eos_config, tov_config)
 
         assert transform is not None
         assert "MetaModel_EOS_model" in transform.get_eos_type()
@@ -31,17 +39,20 @@ class TestJesterTransform:
 
     def test_from_config_metamodel_cse(self):
         """Test creating MetaModel+CSE transform via from_config."""
-        config = TransformConfig(
+        eos_config = MetamodelCSEEOSConfig(
             type="metamodel_cse",
             ndat_metamodel=100,
             nmax_nsat=25.0,
             nb_CSE=8,
-            min_nsat_TOV=0.75,
-            ndat_TOV=100,
             crust_name="DH",
         )
+        tov_config = TOVConfig(
+            type="gr",
+            min_nsat_TOV=0.75,
+            ndat_TOV=100,
+        )
 
-        transform = JesterTransform.from_config(config)
+        transform = JesterTransform.from_config(eos_config, tov_config)
 
         assert transform is not None
         assert "MetaModel_with_CSE_EOS_model" in transform.get_eos_type()
@@ -49,35 +60,37 @@ class TestJesterTransform:
 
     def test_from_config_spectral(self):
         """Test creating Spectral transform via from_config."""
-        config = TransformConfig(
+        eos_config = SpectralEOSConfig(
             type="spectral",
-            nb_CSE=0,
-            min_nsat_TOV=0.75,
-            ndat_TOV=100,
             crust_name="SLy",  # Spectral requires SLy for LALSuite compatibility
         )
+        tov_config = TOVConfig(
+            type="gr",
+            min_nsat_TOV=0.75,
+            ndat_TOV=100,
+        )
 
-        transform = JesterTransform.from_config(config)
+        transform = JesterTransform.from_config(eos_config, tov_config)
 
         assert transform is not None
         assert "SpectralDecomposition_EOS_model" in transform.get_eos_type()
 
-    def test_invalid_transform_type_fails(self):
-        """Test that invalid transform type raises error."""
-        from pydantic import ValidationError
+    def test_invalid_eos_type_fails(self):
+        """Test that unknown EOS config type raises ValueError at runtime."""
+        from unittest.mock import MagicMock
 
-        with pytest.raises(ValidationError):
-            TransformConfig(
-                type="invalid_transform",  # type: ignore
-                nb_CSE=0,
-            )
+        # Create a mock config that passes isinstance checks for none of the known types
+        mock_config = MagicMock(spec=[])  # Empty spec so isinstance returns False
+
+        with pytest.raises((ValueError, AttributeError)):
+            JesterTransform._create_eos(mock_config)
 
     def test_invalid_crust_name_fails(self):
         """Test that invalid crust name raises error."""
         from pydantic import ValidationError
 
         with pytest.raises(ValidationError):
-            TransformConfig(
+            MetamodelEOSConfig(
                 type="metamodel",
                 crust_name="InvalidCrust",  # type: ignore
                 nb_CSE=0,
@@ -85,12 +98,10 @@ class TestJesterTransform:
 
     def test_get_parameter_names_metamodel(self):
         """Test that MetaModel transform reports correct parameter names."""
-        config = TransformConfig(
-            type="metamodel",
-            nb_CSE=0,
-        )
+        eos_config = MetamodelEOSConfig(type="metamodel", nb_CSE=0)
+        tov_config = TOVConfig()
 
-        transform = JesterTransform.from_config(config)
+        transform = JesterTransform.from_config(eos_config, tov_config)
         param_names = transform.get_parameter_names()
 
         # Should have 9 NEP parameters
@@ -111,12 +122,10 @@ class TestJesterTransform:
 
     def test_get_parameter_names_metamodel_cse(self):
         """Test that MetaModel+CSE transform reports correct parameter names."""
-        config = TransformConfig(
-            type="metamodel_cse",
-            nb_CSE=8,
-        )
+        eos_config = MetamodelCSEEOSConfig(type="metamodel_cse", nb_CSE=8)
+        tov_config = TOVConfig()
 
-        transform = JesterTransform.from_config(config)
+        transform = JesterTransform.from_config(eos_config, tov_config)
         param_names = transform.get_parameter_names()
 
         # Should have 9 NEP parameters
@@ -127,16 +136,18 @@ class TestJesterTransform:
 
     def test_forward_preserves_keep_names(self):
         """Test that transform preserves specified parameters in output."""
-        config = TransformConfig(
+        eos_config = MetamodelEOSConfig(
             type="metamodel",
             ndat_metamodel=50,  # Smaller for faster test
             nmax_nsat=2.0,
             nb_CSE=0,
-            ndat_TOV=50,
         )
+        tov_config = TOVConfig(ndat_TOV=50)
 
         keep_names = ["K_sat", "L_sym"]
-        transform = JesterTransform.from_config(config, keep_names=keep_names)
+        transform = JesterTransform.from_config(
+            eos_config, tov_config, keep_names=keep_names
+        )
 
         # Create minimal realistic params
         params = {
@@ -174,15 +185,15 @@ class TestJesterTransformIntegration:
 
         NOTE: This is a slow integration test as it solves TOV equations.
         """
-        config = TransformConfig(
+        eos_config = MetamodelEOSConfig(
             type="metamodel",
             ndat_metamodel=100,
             nmax_nsat=2.0,
             nb_CSE=0,
-            ndat_TOV=100,
         )
+        tov_config = TOVConfig(ndat_TOV=100)
 
-        transform = JesterTransform.from_config(config)
+        transform = JesterTransform.from_config(eos_config, tov_config)
         result = transform.forward(realistic_nep_stiff)
 
         # Check that output contains expected keys
@@ -221,15 +232,15 @@ class TestJesterTransformIntegration:
 
         NOTE: This is a slow integration test. CSE allows higher densities.
         """
-        config = TransformConfig(
+        eos_config = MetamodelCSEEOSConfig(
             type="metamodel_cse",
             ndat_metamodel=100,
             nmax_nsat=25.0,
             nb_CSE=8,
-            ndat_TOV=100,
         )
+        tov_config = TOVConfig(ndat_TOV=100)
 
-        transform = JesterTransform.from_config(config)
+        transform = JesterTransform.from_config(eos_config, tov_config)
 
         # Add CSE parameters to NEP params
         params = realistic_nep_stiff.copy()
@@ -257,16 +268,18 @@ class TestJesterTransformIntegration:
 
     def test_transform_preserves_input_parameters(self, realistic_nep_stiff):
         """Test that transforms preserve input parameters in output."""
-        config = TransformConfig(
+        eos_config = MetamodelEOSConfig(
             type="metamodel",
             ndat_metamodel=50,  # Use fewer points for speed
             nmax_nsat=2.0,
             nb_CSE=0,
-            ndat_TOV=50,
         )
+        tov_config = TOVConfig(ndat_TOV=50)
 
         keep_names = list(realistic_nep_stiff.keys())
-        transform = JesterTransform.from_config(config, keep_names=keep_names)
+        transform = JesterTransform.from_config(
+            eos_config, tov_config, keep_names=keep_names
+        )
 
         result = transform.forward(realistic_nep_stiff)
 

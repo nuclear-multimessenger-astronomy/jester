@@ -13,9 +13,15 @@ from jesterTOV.eos.metamodel import (
 from jesterTOV.eos.spectral import SpectralDecomposition_EOS_model
 from jesterTOV.tov.base import TOVSolverBase
 from jesterTOV.tov.gr import GRTOVSolver
-from jesterTOV.tov.anisotropy import PostTOVSolver
-from jesterTOV.tov.scalar_tensor import ScalarTensorTOVSolver
 from jesterTOV.inference.base import NtoMTransform
+from jesterTOV.inference.config.schema import (
+    BaseEOSConfig,
+    MetamodelEOSConfig,
+    MetamodelCSEEOSConfig,
+    SpectralEOSConfig,
+    BaseTOVConfig,
+    GRTOVConfig,
+)
 from jesterTOV.inference.likelihoods.constraints import check_all_constraints
 from jesterTOV.logging_config import get_logger
 
@@ -74,8 +80,10 @@ class JesterTransform(NtoMTransform):
     >>> transform = JesterTransform(eos=eos, tov_solver=solver)
 
     >>> # From configuration
-    >>> config = TransformConfig(type="metamodel_cse", nb_CSE=8)
-    >>> transform = JesterTransform.from_config(config)
+    >>> from jesterTOV.inference.config.schema import MetamodelCSEEOSConfig, TOVConfig
+    >>> eos_config = MetamodelCSEEOSConfig(type="metamodel_cse", nb_CSE=8)
+    >>> tov_config = TOVConfig(type="gr")
+    >>> transform = JesterTransform.from_config(eos_config, tov_config)
 
     >>> # Transform parameters to observables
     >>> params = {"E_sat": -16.0, "K_sat": 230.0, ...}
@@ -128,19 +136,22 @@ class JesterTransform(NtoMTransform):
     @classmethod
     def from_config(
         cls,
-        config: Any,
+        eos_config: BaseEOSConfig,
+        tov_config: BaseTOVConfig,
         keep_names: list[str] | None = None,
         max_nbreak_nsat: float | None = None,
     ) -> "JesterTransform":
-        """Create transform from configuration object.
+        """Create transform from configuration objects.
 
         This factory method instantiates the appropriate EOS and TOV solver
-        based on the configuration, then creates the transform.
+        based on the separate configurations, then creates the transform.
 
         Parameters
         ----------
-        config : TransformConfig
-            Configuration object with type, parameters, etc.
+        eos_config : EOSConfig
+            EOS configuration (MetamodelEOSConfig, MetamodelCSEEOSConfig, or SpectralEOSConfig)
+        tov_config : TOVConfig
+            TOV solver configuration
         keep_names : list[str] | None
             Parameters to preserve in output
         max_nbreak_nsat : float | None
@@ -156,31 +167,37 @@ class JesterTransform(NtoMTransform):
         ValueError
             If EOS or TOV type is unknown
         """
-        # Instantiate EOS based on config.type
-        eos = cls._create_eos(config, max_nbreak_nsat)
+        # Instantiate EOS based on eos_config.type
+        # If max_nbreak_nsat is not passed, fall back to the value from the config
+        effective_max = (
+            max_nbreak_nsat
+            if max_nbreak_nsat is not None
+            else getattr(eos_config, "max_nbreak_nsat", None)
+        )
+        eos = cls._create_eos(eos_config, effective_max)
 
-        # Instantiate TOV solver based on config (default: GR)
-        tov_solver = cls._create_tov_solver(config)
+        # Instantiate TOV solver based on tov_config
+        tov_solver = cls._create_tov_solver(tov_config)
 
         # Create transform
         return cls(
             eos=eos,
             tov_solver=tov_solver,
             keep_names=keep_names,
-            ndat_TOV=getattr(config, "ndat_TOV", 100),
-            min_nsat_TOV=getattr(config, "min_nsat_TOV", 0.75),
+            ndat_TOV=tov_config.ndat_TOV,
+            min_nsat_TOV=tov_config.min_nsat_TOV,
         )
 
     @staticmethod
     def _create_eos(
-        config: Any, max_nbreak_nsat: float | None = None
+        config: BaseEOSConfig, max_nbreak_nsat: float | None = None
     ) -> Interpolate_EOS_model:
         """Create EOS instance from config.
 
         Parameters
         ----------
-        config : TransformConfig
-            Configuration object
+        config : EOSConfig
+            EOS configuration object (discriminated union)
         max_nbreak_nsat : float | None
             Maximum nbreak value for MetaModelCSE
 
@@ -194,46 +211,44 @@ class JesterTransform(NtoMTransform):
         ValueError
             If config.type is not recognized
         """
-        eos_type = config.type
-
-        if eos_type == "metamodel":
+        if isinstance(config, MetamodelEOSConfig):
             return MetaModel_EOS_model(
                 nsat=0.16,
-                nmin_MM_nsat=getattr(config, "nmin_MM_nsat", 0.75),
-                nmax_nsat=getattr(config, "nmax_nsat", 25.0),
-                ndat=getattr(config, "ndat_metamodel", 100),
-                crust_name=getattr(config, "crust_name", "DH"),
+                nmin_MM_nsat=config.nmin_MM_nsat,
+                nmax_nsat=config.nmax_nsat,
+                ndat=config.ndat_metamodel,
+                crust_name=config.crust_name,
             )
 
-        elif eos_type == "metamodel_cse":
+        elif isinstance(config, MetamodelCSEEOSConfig):
             return MetaModel_with_CSE_EOS_model(
                 nsat=0.16,
-                nmin_MM_nsat=getattr(config, "nmin_MM_nsat", 0.75),
-                nmax_nsat=getattr(config, "nmax_nsat", 25.0),
+                nmin_MM_nsat=config.nmin_MM_nsat,
+                nmax_nsat=config.nmax_nsat,
                 max_nbreak_nsat=max_nbreak_nsat,
-                ndat_metamodel=getattr(config, "ndat_metamodel", 100),
-                ndat_CSE=100,
-                nb_CSE=getattr(config, "nb_CSE", 8),
-                crust_name=getattr(config, "crust_name", "DH"),
+                ndat_metamodel=config.ndat_metamodel,
+                ndat_CSE=config.ndat_CSE,
+                nb_CSE=config.nb_CSE,
+                crust_name=config.crust_name,
             )
 
-        elif eos_type == "spectral":
+        elif isinstance(config, SpectralEOSConfig):
             return SpectralDecomposition_EOS_model(
-                crust_name=getattr(config, "crust_name", "DH"),
-                n_points_high=getattr(config, "n_points_high", 500),
+                crust_name=config.crust_name,
+                n_points_high=config.n_points_high,
             )
 
         else:
-            raise ValueError(f"Unknown EOS type: {eos_type}")
+            raise ValueError(f"Unknown EOS config type: {type(config).__name__}")
 
     @staticmethod
-    def _create_tov_solver(config: Any) -> TOVSolverBase:
+    def _create_tov_solver(config: BaseTOVConfig) -> TOVSolverBase:
         """Create TOV solver instance from config.
 
         Parameters
         ----------
-        config : TransformConfig
-            Configuration object
+        config : TOVConfig
+            TOV configuration object
 
         Returns
         -------
@@ -244,15 +259,20 @@ class JesterTransform(NtoMTransform):
         ------
         ValueError
             If TOV solver type is not recognized
+        NotImplementedError
+            If TOV solver config class is not implemented yet
         """
-        tov_type = config.tov_solver
-
-        if tov_type == "gr":
+        if isinstance(config, GRTOVConfig):
             return GRTOVSolver()
-        elif tov_type == "post":
-            return PostTOVSolver()
+
+        # String-based dispatch for solvers that do not yet have their own config class
+        tov_type = config.type
+        if tov_type == "post":
+            raise NotImplementedError("PostTOVSolver config class not implemented yet")
         elif tov_type == "scalar_tensor":
-            return ScalarTensorTOVSolver()
+            raise NotImplementedError(
+                "ScalarTensorTOVSolver config class not implemented yet"
+            )
         else:
             raise ValueError(f"Unknown TOV solver type: {tov_type}")
 

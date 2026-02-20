@@ -6,6 +6,7 @@ Modular inference script for jesterTOV
 import os
 import time
 import warnings
+import json
 from pathlib import Path
 import numpy as np
 import jax
@@ -15,7 +16,11 @@ import jax.numpy as jnp
 jax.config.update("jax_enable_x64", True)
 
 from .config.parser import load_config
-from .config.schema import InferenceConfig
+from .config.schema import (
+    InferenceConfig,
+    MetamodelCSEEOSConfig,
+    BaseMetamodelEOSConfig,
+)
 from .priors.parser import parse_prior_file
 from .base.prior import CombinePrior
 from .base.likelihood import LikelihoodBase
@@ -59,11 +64,11 @@ def determine_keep_names(
     keep_names = []
 
     # ChiEFT likelihood requires 'nbreak' parameter for CSE grid stitching
-    # Only check if using metamodel_cse transform
+    # Only check if using metamodel_cse EOS
     chieft_enabled = any(
         lk.enabled and lk.type == "chieft" for lk in config.likelihoods
     )
-    if chieft_enabled and config.transform.type == "metamodel_cse":
+    if chieft_enabled and isinstance(config.eos, MetamodelCSEEOSConfig):
         if "nbreak" not in prior.parameter_names:
             raise ValueError(
                 "ChiEFT likelihood is enabled with metamodel_cse but 'nbreak' parameter is not in the prior. "
@@ -95,7 +100,7 @@ def setup_prior(config: InferenceConfig) -> CombinePrior:
     from .base.prior import UniformPrior, CombinePrior
 
     # Determine conditional parameters
-    nb_CSE = config.transform.nb_CSE if config.transform.type == "metamodel_cse" else 0
+    nb_CSE = config.eos.nb_CSE if isinstance(config.eos, MetamodelCSEEOSConfig) else 0
 
     # Check if GW or NICER likelihoods are enabled (both need _random_key)
     # Note: gw_presampled does NOT need _random_key (uses fixed seed at init)
@@ -145,27 +150,48 @@ def setup_transform(
     JesterTransform
         Transform instance
     """
-    # Extract max_nbreak_nsat if using metamodel_cse transform
+    # Determine max_nbreak_nsat for MetamodelCSE: compare config field vs prior bound
+    # TODO: in a future version, need to improve this...
     max_nbreak_nsat = None
-    if config.transform.type == "metamodel_cse" and prior is not None:
-        # Import here to avoid circular import
-        from .base.prior import UniformPrior
+    if isinstance(config.eos, MetamodelCSEEOSConfig):
+        config_value = config.eos.max_nbreak_nsat
+        prior_value = None
 
-        # Find nbreak prior and extract its maximum value
-        for param_prior in prior.base_prior:
-            if "nbreak" in param_prior.parameter_names:
-                if isinstance(param_prior, UniformPrior):
-                    # Convert from physical units (fm^-3) to nsat units
-                    nsat = 0.16  # default saturation density
-                    max_nbreak_nsat = param_prior.xmax / nsat
-                    logger.info(
-                        f"Extracted max_nbreak from prior: {param_prior.xmax:.3f} fm^-3 "
-                        f"({max_nbreak_nsat:.3f} n_sat)"
-                    )
-                break
+        if prior is not None:
+            from .base.prior import UniformPrior
+
+            for param_prior in prior.base_prior:
+                if "nbreak" in param_prior.parameter_names:
+                    if isinstance(param_prior, UniformPrior):
+                        nsat = 0.16  # saturation density in fm^-3
+                        prior_value = param_prior.xmax / nsat
+                    break
+
+        if config_value is not None and prior_value is not None:
+            if not np.isclose(config_value, prior_value, rtol=1e-3):
+                raise ValueError(
+                    f"eos.max_nbreak_nsat in config ({config_value:.4f} n_sat) does not "
+                    f"match the upper bound of the nbreak prior ({prior_value:.4f} n_sat). "
+                    "Either remove max_nbreak_nsat from the eos config to derive it "
+                    "automatically from the nbreak prior, or update the prior bound to match."
+                )
+            max_nbreak_nsat = config_value
+        elif prior_value is not None:
+            max_nbreak_nsat = prior_value
+            logger.info(
+                f"Derived max_nbreak from nbreak prior: {prior_value:.4f} n_sat"
+            )
+        elif config_value is not None:
+            max_nbreak_nsat = config_value
+            logger.info(
+                f"Using max_nbreak_nsat from eos config: {config_value:.4f} n_sat"
+            )
 
     transform = JesterTransform.from_config(
-        config.transform, keep_names=keep_names, max_nbreak_nsat=max_nbreak_nsat
+        eos_config=config.eos,
+        tov_config=config.tov,
+        keep_names=keep_names,
+        max_nbreak_nsat=max_nbreak_nsat,
     )
 
     # Validate that all required parameters are in the prior
@@ -239,7 +265,7 @@ def run_sampling(
     InferenceResult
         Result object containing samples, metadata, and histories
     """
-    logger.info(f"Starting MCMC sampling with seed {seed}...")
+    logger.info(f"Starting sampling with seed {seed}...")
     start = time.time()
     sampler.sample(jax.random.PRNGKey(seed))
     sampler.print_summary()
@@ -384,6 +410,10 @@ def generate_eos_samples(
     logger.info("Derived EOS quantities added to InferenceResult")
 
 
+# TODO: there are some calls that check specific types of samplers/configs/...
+# Ideally we should remove this and just have a small loop that prints over all available
+# attributes of the config/sampler/likelihood/transform/prior objects, so that we don't have to update this function every time we add a new sampler type or likelihood type or EOS type, etc. We can still have some special handling for certain fields (e.g., if chieft enabled then print nbreak bounds, etc.) but in general we should just loop over all fields and print them in a structured way (e.g., using Pydantic's model_dump() with some formatting for logging)
+# This is already done a bit with the likelihoods, so follow that approach in the future
 def main(config_path: str) -> None:
     """Main inference script
 
@@ -458,12 +488,16 @@ def main(config_path: str) -> None:
     transform = setup_transform(config, prior=prior, keep_names=keep_names)
 
     # Log transform details
-    logger.info(f"Transform type: {config.transform.type}")
-    if config.transform.type == "metamodel_cse":
-        logger.info(f"  nb_CSE: {config.transform.nb_CSE}")
-    logger.info(f"  ndat_metamodel: {config.transform.ndat_metamodel}")
-    logger.info(f"  ndat_TOV: {config.transform.ndat_TOV}")
-    logger.info(f"  nmax_nsat: {config.transform.nmax_nsat}")
+    logger.info(f"EOS type: {config.eos.type}")
+    if isinstance(config.eos, MetamodelCSEEOSConfig):
+        logger.info(f"  nb_CSE: {config.eos.nb_CSE}")
+        if config.eos.max_nbreak_nsat is not None:
+            logger.info(f"  max_nbreak_nsat: {config.eos.max_nbreak_nsat:.4f} n_sat")
+    if isinstance(config.eos, BaseMetamodelEOSConfig):
+        logger.info(f"  ndat_metamodel: {config.eos.ndat_metamodel}")
+        logger.info(f"  nmax_nsat: {config.eos.nmax_nsat}")
+    logger.info(f"TOV solver: {config.tov.type}")
+    logger.info(f"  ndat_TOV: {config.tov.ndat_TOV}")
     if keep_names:
         logger.info(f"  Preserving parameters in output: {keep_names}")
 
@@ -475,7 +509,6 @@ def main(config_path: str) -> None:
     logger.info(f"Number of enabled likelihoods: {len(enabled_likelihoods)}")
     for lk in enabled_likelihoods:
         # Use Pydantic's model_dump to serialize config for logging
-        import json
 
         lk_dict = lk.model_dump(
             exclude={"enabled"}
@@ -496,7 +529,8 @@ def main(config_path: str) -> None:
     logger.info("=" * 60)
     logger.info("Configuration Summary")
     logger.info("=" * 60)
-    logger.info(f"Transform: {config.transform.type}")
+    logger.info(f"EOS type: {config.eos.type}")
+    logger.info(f"TOV solver: {config.tov.type}")
     logger.info(f"Random seed: {config.seed}")
     logger.info(f"Sampler type: {config.sampler.type}")
     logger.info("Sampler Configuration:")

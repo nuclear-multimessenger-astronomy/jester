@@ -35,10 +35,10 @@ def load_config(config_path: Union[str, Path]) -> InferenceConfig:
     Examples
     --------
     >>> config = load_config("config.yaml")
-    >>> print(config.transform.type)
-    'metamodel_cse'
-    >>> print(config.sampler.n_chains)
-    20
+    >>> print(config.eos.type)
+    metamodel_cse
+    >>> print(config.tov.type)
+    gr
     """
     config_path = Path(config_path).resolve()
     logger.debug(f"Loading configuration from: {config_path}")
@@ -72,7 +72,8 @@ def load_config(config_path: Union[str, Path]) -> InferenceConfig:
         config = InferenceConfig(**config_dict)
         logger.debug("Configuration validation successful")
         logger.debug(f"  Seed: {config.seed}")
-        logger.debug(f"  Transform type: {config.transform.type}")
+        logger.debug(f"  EOS type: {config.eos.type}")
+        logger.debug(f"  TOV solver: {config.tov.type}")
         logger.debug(f"  Prior file: {config.prior.specification_file}")
         logger.debug(
             f"  Enabled likelihoods: {[lk.type for lk in config.likelihoods if lk.enabled]}"

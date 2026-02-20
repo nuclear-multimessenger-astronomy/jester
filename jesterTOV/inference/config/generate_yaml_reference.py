@@ -140,9 +140,9 @@ def extract_run_options() -> list[dict[str, Any]]:
     return fields
 
 
-def extract_transforms() -> list[dict[str, Any]]:
-    """Extract transform configurations."""
-    transforms = [
+def extract_eos_configs() -> list[dict[str, Any]]:
+    """Extract EOS configuration options."""
+    eos_configs = [
         {
             "title": "Metamodel",
             "description": "Metamodel EOS parametrization",
@@ -169,29 +169,14 @@ def extract_transforms() -> list[dict[str, Any]]:
                     "inline_comment": "Minimum density for metamodel (in units of n_sat)",
                 },
                 {
-                    "name": "min_nsat_TOV",
-                    "example": "0.75",
-                    "inline_comment": "Minimum density for TOV solver",
-                },
-                {
-                    "name": "ndat_TOV",
-                    "example": "100",
-                    "inline_comment": "Number of points for TOV integration",
-                },
-                {
-                    "name": "nb_masses",
-                    "example": "100",
-                    "inline_comment": "Number of masses for family construction",
-                },
-                {
                     "name": "crust_name",
                     "example": '"DH"',
                     "inline_comment": 'Crust model: "DH", "BPS", "DH_fixed", or "SLy"',
                 },
                 {
-                    "name": "tov_solver",
-                    "example": '"gr"',
-                    "inline_comment": 'TOV solver: "gr", "post", or "scalar_tensor"',
+                    "name": "nb_CSE",
+                    "example": "0",
+                    "inline_comment": "Must be 0 for standard metamodel",
                 },
             ],
             "requirements": [
@@ -230,29 +215,9 @@ def extract_transforms() -> list[dict[str, Any]]:
                     "inline_comment": "Minimum density for metamodel (in units of n_sat)",
                 },
                 {
-                    "name": "min_nsat_TOV",
-                    "example": "0.75",
-                    "inline_comment": "Minimum density for TOV solver",
-                },
-                {
-                    "name": "ndat_TOV",
-                    "example": "100",
-                    "inline_comment": "Number of points for TOV integration",
-                },
-                {
-                    "name": "nb_masses",
-                    "example": "100",
-                    "inline_comment": "Number of masses for family construction",
-                },
-                {
                     "name": "crust_name",
                     "example": '"DH"',
                     "inline_comment": 'Crust model: "DH", "BPS", "DH_fixed", or "SLy"',
-                },
-                {
-                    "name": "tov_solver",
-                    "example": '"gr"',
-                    "inline_comment": 'TOV solver: "gr", "post", or "scalar_tensor"',
                 },
             ],
             "requirements": ["`nb_CSE` must be > 0 for this parametrization"],
@@ -274,29 +239,9 @@ def extract_transforms() -> list[dict[str, Any]]:
                     "inline_comment": "Number of points for high-density spectral region",
                 },
                 {
-                    "name": "min_nsat_TOV",
-                    "example": "0.75",
-                    "inline_comment": "Minimum density for TOV solver",
-                },
-                {
-                    "name": "ndat_TOV",
-                    "example": "100",
-                    "inline_comment": "Number of points for TOV integration",
-                },
-                {
-                    "name": "nb_masses",
-                    "example": "100",
-                    "inline_comment": "Number of masses for family construction",
-                },
-                {
                     "name": "crust_name",
                     "example": '"SLy"',
                     "inline_comment": 'Must be "SLy" for LALSuite compatibility',
-                },
-                {
-                    "name": "tov_solver",
-                    "example": '"gr"',
-                    "inline_comment": 'TOV solver: "gr", "post", or "scalar_tensor"',
                 },
             ],
             "requirements": [
@@ -310,7 +255,63 @@ def extract_transforms() -> list[dict[str, Any]]:
         },
     ]
 
-    return transforms
+    return eos_configs
+
+
+def extract_tov_config() -> dict[str, Any]:
+    """Extract TOV solver configuration fields."""
+    return {
+        "title": "TOV Solver Configuration",
+        "description": "Configuration for the Tolman-Oppenheimer-Volkoff equation solver.",
+        "fields": [
+            {
+                "name": "type",
+                "example": '"gr"',
+                "inline_comment": 'TOV solver: currently only "gr" is implemented',
+            },
+            {
+                "name": "min_nsat_TOV",
+                "example": "0.75",
+                "inline_comment": "Minimum density for TOV solver (in units of n_sat)",
+            },
+            {
+                "name": "ndat_TOV",
+                "example": "100",
+                "inline_comment": "Number of points for TOV integration",
+            },
+            {
+                "name": "nb_masses",
+                "example": "100",
+                "inline_comment": "Number of masses for family construction",
+            },
+        ],
+        "field_details": [
+            {
+                "name": "type",
+                "type": "str",
+                "default": '"gr"',
+                "description": "TOV solver type. Currently only 'gr' (General Relativity) is implemented. 'anisotropy' and 'scalar_tensor' are planned but not yet available.",
+            },
+            {
+                "name": "min_nsat_TOV",
+                "type": "float",
+                "default": "0.75",
+                "description": "Minimum central density for TOV integration in units of saturation density",
+            },
+            {
+                "name": "ndat_TOV",
+                "type": "int",
+                "default": "100",
+                "description": "Number of data points for TOV integration",
+            },
+            {
+                "name": "nb_masses",
+                "type": "int",
+                "default": "100",
+                "description": "Number of masses to sample when constructing the M-R-Λ family",
+            },
+        ],
+    }
 
 
 def extract_prior_fields() -> list[dict[str, Any]]:
@@ -1284,8 +1285,11 @@ def extract_examples() -> list[dict[str, Any]]:
             "description": "Sample from the prior distribution without observational constraints.",
             "yaml": """seed: 43
 
-transform:
+eos:
   type: "metamodel"
+
+tov:
+  type: "gr"
 
 prior:
   specification_file: "prior.prior"
@@ -1304,11 +1308,17 @@ sampler:
             "description": "Combine gravitational wave, X-ray, radio, and nuclear theory constraints.",
             "yaml": """seed: 43
 
-transform:
+eos:
   type: "metamodel_cse"
   nb_CSE: 8
   ndat_metamodel: 100
   nmax_nsat: 25.0
+
+tov:
+  type: "gr"
+  min_nsat_TOV: 0.75
+  ndat_TOV: 100
+  nb_masses: 100
 
 prior:
   specification_file: "prior.prior"
@@ -1352,10 +1362,16 @@ postprocessing:
             "description": "Configuration using spectral decomposition for GW analysis workflows.",
             "yaml": """seed: 43
 
-transform:
+eos:
   type: "spectral"
   crust_name: "SLy"               # Required for spectral
   n_points_high: 500
+
+tov:
+  type: "gr"
+  min_nsat_TOV: 0.75
+  ndat_TOV: 100
+  nb_masses: 100
 
 prior:
   specification_file: "spectral_prior.prior"
@@ -1385,7 +1401,7 @@ def extract_validation_rules() -> list[dict[str, Any]]:
     """Extract validation rules."""
     rules = [
         {
-            "title": "Transform Type Consistency",
+            "title": "EOS Type Consistency",
             "entries": [
                 '`type: "metamodel"` requires `nb_CSE: 0` (or omit the field entirely)',
                 '`type: "metamodel_cse"` requires `nb_CSE > 0`',
@@ -1393,6 +1409,13 @@ def extract_validation_rules() -> list[dict[str, Any]]:
                 '  - `crust_name: "SLy"` (LALSuite compatibility)',
                 "  - `nb_CSE: 0` (or omit the field)",
                 "  - Recommended: Include `constraints_gamma` likelihood",
+            ],
+        },
+        {
+            "title": "TOV Configuration",
+            "entries": [
+                '`type` must be `"gr"` (the only currently implemented option; `"post"` and `"scalar_tensor"` are planned)',
+                "`min_nsat_TOV`, `ndat_TOV`, and `nb_masses` must be positive",
             ],
         },
         {
@@ -1419,7 +1442,7 @@ def extract_validation_rules() -> list[dict[str, Any]]:
             "title": "Crust Models",
             "entries": [
                 '`crust_name` must be one of: `"DH"`, `"BPS"`, `"DH_fixed"`, or `"SLy"`',
-                'Spectral transform specifically requires `"SLy"`',
+                'Spectral EOS specifically requires `"SLy"`',
             ],
         },
     ]
@@ -1447,7 +1470,8 @@ def generate_documentation() -> str:
     # Extract all data
     data = {
         "run_options": extract_run_options(),
-        "transforms": extract_transforms(),
+        "eos_configs": extract_eos_configs(),
+        "tov_config": extract_tov_config(),
         "prior_fields": extract_prior_fields(),
         "likelihood_categories": extract_likelihoods(),
         "samplers": extract_samplers(),

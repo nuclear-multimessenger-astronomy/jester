@@ -327,14 +327,15 @@ The schemas define the structure and validation rules:
 ```python
 class InferenceConfig(BaseModel):
     seed: int
-    transform: TransformConfig
+    eos: EOSConfig       # discriminated union by type
+    tov: TOVConfig       # discriminated union by type
     prior: PriorConfig
     likelihoods: list[LikelihoodConfig]
     sampler: SamplerConfig
     data_paths: dict[str, str] = {}
 ```
 
-Each of these has its own schema with validation. For example, `TransformConfig` ensures that `nb_CSE == 0` when using standard MetaModel.
+Each section has its own schema with validation. For example, `MetamodelEOSConfig` ensures that `nb_CSE == 0` when using standard MetaModel, and `MetamodelCSEEOSConfig` requires `nb_CSE > 0`. Config classes are defined in `config/schemas/` and re-exported from `config/schema.py`.
 
 ### Prior System
 
@@ -485,17 +486,14 @@ Let's walk through what happens when you run `run_jester_inference config.yaml`.
 
 2. **Parse prior specification** (`priors/parser.py`)
    ```python
-   prior = parse_prior_file(
-       config.prior.specification_file,
-       nb_CSE=config.transform.nb_CSE
-   )
+   prior = parse_prior_file(config.prior.specification_file)
    # Returns CombinePrior with appropriate parameters
    ```
 
-3. **Create transform** (`transforms/factory.py`)
+3. **Create transform** (`transforms/transform.py`)
    ```python
-   transform = create_transform(config.transform)
-   # Returns MetaModelTransform or MetaModelCSETransform
+   transform = JesterTransform.from_config(config.eos, config.tov)
+   # Instantiates the correct EOS model and TOV solver based on config
    ```
 
 4. **Create likelihood** (`likelihoods/factory.py`)

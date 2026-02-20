@@ -344,7 +344,8 @@ ParameterDict: TypeAlias = dict[str, float]
 ```
 jesterTOV/inference/
 ├── config/                      # YAML parsing, Pydantic validation
-│   ├── schema.py                # Configuration data models (InferenceConfig, etc.)
+│   ├── schema.py                # Thin aggregator: InferenceConfig + re-exports
+│   ├── schemas/                 # Domain-specific config sub-modules (eos, tov, likelihoods, samplers)
 │   ├── parser.py                # YAML loading functions
 │   └── generate_yaml_reference.py  # Auto-generate documentation
 ├── priors/                      # Prior specification system
@@ -392,7 +393,7 @@ parse_config() → InferenceConfig (Pydantic validated)
     ↓
 parse_prior_file() → CombinePrior object
     ↓
-JesterTransform.from_config(config.transform)
+JesterTransform.from_config(config.eos, config.tov)
   ├─ Instantiate EOS (MetaModel/MetaModelCSE/Spectral)
   └─ Instantiate TOV solver (GR/Post/ScalarTensor)
     ↓
