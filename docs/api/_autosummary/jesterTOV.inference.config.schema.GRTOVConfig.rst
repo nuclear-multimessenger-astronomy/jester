@@ -51,7 +51,7 @@
       ~GRTOVConfig.model_extra
       ~GRTOVConfig.model_fields
       ~GRTOVConfig.model_fields_set
-      ~GRTOVConfig.tov_solver
+      ~GRTOVConfig.type
       ~GRTOVConfig.min_nsat_TOV
       ~GRTOVConfig.ndat_TOV
       ~GRTOVConfig.nb_masses
