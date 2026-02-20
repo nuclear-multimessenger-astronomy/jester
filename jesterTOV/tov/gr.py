@@ -245,14 +245,6 @@ class GRTOVSolver(TOVSolverBase):
 
         k2 = _calc_k2(R, M, H, b)
 
-        # # FIXME: might remove this
-        # # Use jnp.where for JAX-compatible conditional
-        # # If solver failed (result != 0), return NaN
-        # success = sol.result == 0
-        # M_out = jnp.where(success, M, jnp.nan)
-        # R_out = jnp.where(success, R, jnp.nan)
-        # k2_out = jnp.where(success, k2, jnp.nan)
-
         return TOVSolution(M=M, R=R, k2=k2)
 
     def get_required_parameters(self) -> list[str]:
