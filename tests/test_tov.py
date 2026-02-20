@@ -3,8 +3,7 @@
 import pytest
 import jax.numpy as jnp
 from jesterTOV import utils
-from jesterTOV.tov.gr import _tov_ode, _calc_k2
-from jesterTOV.tov import GRTOVSolver
+from jesterTOV.tov.gr import _tov_ode, _calc_k2, GRTOVSolver
 
 
 class TestTOVODE:

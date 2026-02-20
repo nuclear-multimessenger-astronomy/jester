@@ -3,13 +3,16 @@
 import pytest
 import jax.numpy as jnp
 import os
-from jesterTOV import eos, utils
-from jesterTOV.tov import GRTOVSolver
+from jesterTOV import utils
+from jesterTOV.eos.base import Interpolate_EOS_model
+from jesterTOV.eos.crust import Crust, CRUST_DIR
+from jesterTOV.eos.metamodel import MetaModel_EOS_model, MetaModel_with_CSE_EOS_model
+from jesterTOV.tov.gr import GRTOVSolver
 from jesterTOV.tov.data_classes import EOSData
 
 
 # Minimal concrete implementation for testing base interpolation
-class _TestInterpolateEOS(eos.Interpolate_EOS_model):
+class _TestInterpolateEOS(Interpolate_EOS_model):
     """Minimal concrete EOS for testing interpolate_eos method."""
 
     def construct_eos(self, params: dict[str, float]) -> EOSData:
@@ -26,7 +29,7 @@ class TestCrust:
 
     def test_crust_list_available(self) -> None:
         """Test listing available crusts."""
-        available = eos.Crust.list_available()
+        available = Crust.list_available()
         assert isinstance(available, list)
         assert "DH" in available
         assert "BPS" in available
@@ -35,20 +38,20 @@ class TestCrust:
 
     def test_crust_validate(self) -> None:
         """Test crust validation."""
-        assert eos.Crust.validate("DH") is True
-        assert eos.Crust.validate("BPS") is True
-        assert eos.Crust.validate("invalid_crust") is False
+        assert Crust.validate("DH") is True
+        assert Crust.validate("BPS") is True
+        assert Crust.validate("invalid_crust") is False
 
     def test_crust_get_crust_dir(self) -> None:
         """Test getting crust directory path."""
-        crust_dir = eos.Crust.get_crust_dir()
+        crust_dir = Crust.get_crust_dir()
         assert os.path.exists(crust_dir)
         assert os.path.isdir(crust_dir)
-        assert crust_dir == eos.CRUST_DIR
+        assert crust_dir == CRUST_DIR
 
     def test_crust_initialization(self) -> None:
         """Test basic crust initialization."""
-        crust = eos.Crust("DH")
+        crust = Crust("DH")
         assert len(crust) > 0
         assert jnp.all(crust.n > 0)
         assert jnp.all(crust.p > 0)
@@ -56,7 +59,7 @@ class TestCrust:
 
     def test_crust_properties(self) -> None:
         """Test crust property access."""
-        crust = eos.Crust("DH")
+        crust = Crust("DH")
 
         # Test properties return arrays
         assert isinstance(crust.n, jnp.ndarray) or hasattr(crust.n, "shape")
@@ -76,8 +79,8 @@ class TestCrust:
 
     def test_crust_density_masking(self) -> None:
         """Test density range masking."""
-        crust_full = eos.Crust("DH")
-        crust_masked = eos.Crust("DH", min_density=0.001, max_density=0.1)
+        crust_full = Crust("DH")
+        crust_masked = Crust("DH", min_density=0.001, max_density=0.1)
 
         # Masked crust should have fewer points
         assert len(crust_masked) < len(crust_full)
@@ -92,17 +95,17 @@ class TestCrust:
 
     def test_crust_zero_pressure_filtering(self) -> None:
         """Test zero pressure filtering."""
-        crust = eos.Crust("DH", filter_zero_pressure=True)
+        crust = Crust("DH", filter_zero_pressure=True)
         assert jnp.all(crust.p > 0)
 
         # Test that disabling filter might include zero pressure points
         # (depends on crust data - some crusts may not have zero pressure points)
-        crust_unfiltered = eos.Crust("DH", filter_zero_pressure=False)
+        crust_unfiltered = Crust("DH", filter_zero_pressure=False)
         assert len(crust_unfiltered) >= len(crust)
 
     def test_crust_mu_lowest(self) -> None:
         """Test chemical potential calculation."""
-        crust = eos.Crust("DH")
+        crust = Crust("DH")
         expected_mu = (crust.e[0] + crust.p[0]) / crust.n[0]
         assert jnp.isclose(crust.mu_lowest, expected_mu)
 
@@ -111,7 +114,7 @@ class TestCrust:
 
     def test_crust_cs2(self) -> None:
         """Test speed of sound squared."""
-        crust = eos.Crust("DH")
+        crust = Crust("DH")
 
         # Should have same length as other arrays
         assert len(crust.cs2) == len(crust.n)
@@ -124,7 +127,7 @@ class TestCrust:
 
     def test_crust_get_data(self) -> None:
         """Test get_data() convenience method."""
-        crust = eos.Crust("DH")
+        crust = Crust("DH")
         n, p, e = crust.get_data()
 
         assert jnp.array_equal(n, crust.n)
@@ -134,20 +137,20 @@ class TestCrust:
     def test_crust_invalid_name(self) -> None:
         """Test invalid crust name raises error."""
         with pytest.raises(ValueError, match="not found"):
-            eos.Crust("invalid_crust")
+            Crust("invalid_crust")
 
     def test_crust_with_npz_path(self) -> None:
         """Test loading with full .npz path."""
-        crust_dir = eos.Crust.get_crust_dir()
+        crust_dir = Crust.get_crust_dir()
         full_path = os.path.join(crust_dir, "DH.npz")
-        crust = eos.Crust(full_path)
+        crust = Crust(full_path)
 
         assert len(crust) > 0
         assert jnp.all(crust.n > 0)
 
     def test_crust_repr(self) -> None:
         """Test string representation."""
-        crust = eos.Crust("DH")
+        crust = Crust("DH")
         repr_str = repr(crust)
 
         assert "Crust" in repr_str
@@ -157,13 +160,13 @@ class TestCrust:
 
     def test_crust_len(self) -> None:
         """Test __len__ method."""
-        crust = eos.Crust("DH")
+        crust = Crust("DH")
         assert len(crust) == len(crust.n)
         assert isinstance(len(crust), int)
 
     def test_crust_bps(self) -> None:
         """Test loading BPS crust specifically."""
-        crust = eos.Crust("BPS")
+        crust = Crust("BPS")
 
         assert len(crust) > 10
         assert jnp.all(crust.n > 0)
@@ -174,7 +177,7 @@ class TestCrust:
         """Test that appropriate error is raised if filtering removes all points."""
         # Try to create a crust with impossible density range
         with pytest.raises(ValueError, match="No crust points remain"):
-            eos.Crust("DH", min_density=10.0, max_density=20.0)
+            Crust("DH", min_density=10.0, max_density=20.0)
 
 
 class TestInterpolateEOSModel:
@@ -216,7 +219,7 @@ class TestMetaModelEOSModel:
 
     def test_metamodel_initialization(self, metamodel_params):
         """Test MetaModel initialization with default parameters."""
-        model = eos.MetaModel_EOS_model(**metamodel_params)
+        model = MetaModel_EOS_model(**metamodel_params)
 
         # Check that attributes are set correctly
         assert model.nsat == metamodel_params["nsat"]
@@ -233,7 +236,7 @@ class TestMetaModelEOSModel:
     def test_metamodel_kappa_assignment(self):
         """Test that kappa parameters are assigned correctly."""
         kappas = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6)
-        model = eos.MetaModel_EOS_model(kappas=kappas)
+        model = MetaModel_EOS_model(kappas=kappas)
 
         assert model.kappa_sat == 0.1
         assert model.kappa_sat2 == 0.2
@@ -249,7 +252,7 @@ class TestMetaModelEOSModel:
 
     def test_metamodel_construct_eos(self, metamodel_params, nep_dict):
         """Test EOS construction with MetaModel."""
-        model = eos.MetaModel_EOS_model(**metamodel_params)
+        model = MetaModel_EOS_model(**metamodel_params)
 
         eos_data = model.construct_eos(nep_dict)
 
@@ -272,7 +275,7 @@ class TestMetaModelEOSModel:
 
     def test_metamodel_auxiliary_functions(self, metamodel_params):
         """Test auxiliary functions in MetaModel."""
-        model = eos.MetaModel_EOS_model(**metamodel_params)
+        model = MetaModel_EOS_model(**metamodel_params)
 
         # Test compute_x function
         n_test = jnp.array([0.16, 0.32, 0.48])  # Test around nsat
@@ -293,7 +296,7 @@ class TestMetaModelEOSModel:
 
     def test_metamodel_proton_fraction_bounds(self, metamodel_params, nep_dict):
         """Test that proton fraction stays within physical bounds."""
-        model = eos.MetaModel_EOS_model(**metamodel_params)
+        model = MetaModel_EOS_model(**metamodel_params)
 
         # Create coefficient array for symmetry energy
         coefficient_sym = jnp.array(
@@ -319,7 +322,7 @@ class TestMetaModelWithCSEEOSModel:
 
     def test_metamodel_cse_initialization(self):
         """Test MetaModel with CSE initialization."""
-        model = eos.MetaModel_with_CSE_EOS_model(
+        model = MetaModel_with_CSE_EOS_model(
             nsat=0.16, nmin_MM_nsat=0.75, nmax_nsat=6.0, ndat_metamodel=50, ndat_CSE=50
         )
 
@@ -332,7 +335,7 @@ class TestMetaModelWithCSEEOSModel:
         """Test EOS construction with CSE extension."""
         # CSE model requires nb_CSE parameter
         nb_CSE = 3
-        model = eos.MetaModel_with_CSE_EOS_model(
+        model = MetaModel_with_CSE_EOS_model(
             nsat=0.16, ndat_metamodel=30, ndat_CSE=30, nb_CSE=nb_CSE
         )
 
@@ -422,7 +425,7 @@ class TestMetaModelIntegration:
     def test_full_metamodel_pipeline(self, metamodel_params, nep_dict):
         """Test complete MetaModel pipeline from initialization to family construction."""
         # Create model
-        model = eos.MetaModel_EOS_model(**metamodel_params)
+        model = MetaModel_EOS_model(**metamodel_params)
 
         # Construct EOS
         eos_data = model.construct_eos(nep_dict)
@@ -444,7 +447,7 @@ class TestMetaModelIntegration:
 @pytest.mark.parametrize("crust_name", ["DH", "BPS"])
 def test_all_available_crusts(crust_name):
     """Test that all available crust files can be loaded."""
-    crust = eos.Crust(crust_name)
+    crust = Crust(crust_name)
 
     assert len(crust) > 10
     assert jnp.all(crust.n > 0)
@@ -459,7 +462,7 @@ def test_all_available_crusts(crust_name):
 @pytest.mark.parametrize("nmax_nsat", [1.5, 2.0, 2.5])
 def test_metamodel_parameter_variations(nsat, nmax_nsat, nep_dict):
     """Test MetaModel with different parameter choices."""
-    model = eos.MetaModel_EOS_model(
+    model = MetaModel_EOS_model(
         nsat=nsat, nmax_nsat=nmax_nsat, ndat=50  # Reduced for faster testing
     )
 

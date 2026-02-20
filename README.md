@@ -30,7 +30,7 @@ pip install jesterTOV
 
 To run Bayesian inference, make sure to install support for CUDA or upgrade `jax` according to [the `jax` documentation page](https://docs.jax.dev/en/latest/installation.html):
 ```bash
-pip install -U "jax[cuda12]"
+pip install "jax[cuda12]"
 ```
 
 For developers, we recommend installing locally with `uv`:
@@ -42,9 +42,9 @@ uv sync
 
 Extra dependencies can be installed as follows:
 ```bash
-uv sync --extra cuda12 # For GPU support
+uv sync --extra cuda12 # For GPU support (fast sampling)
 uv sync --extra docs   # To work on documentation locally
-uv sync --extra tests  # To run tests locally 
+uv sync --extra dev    # To run tests locally 
 ```
 
 ## Examples
@@ -63,49 +63,45 @@ Take a look at the `config.yaml` files, which contain all details for `jester` t
 
 ## Notes for developers
 
-Building documentation locally:
-```bash
-# Install documentation dependencies
-uv pip install -e ".[docs]"
+### Writing source code
 
-# Build the documentation
-uv run sphinx-build docs docs/_build/html
-
-# Open in your browser
-open docs/_build/html/index.html  # macOS
-xdg-open docs/_build/html/index.html  # Linux
-```
+A `CLAUDE.md` file already exists in the repo for developers that want to use Claude Code. 
 
 Running tests:
 ```bash
 uv run pytest tests/
 
 uv run pytest tests/ -v -m "not slow" # avoid slower tests
+uv run pytest tests/ -v -m "not e2e"  # avoid e2e tests
 ```
 
 Code quality checks:
 ```bash
 # Pre-commit checks (black, ruff, nbqa)
 uv run pre-commit run --all-files
-
-# Format and lint
-uv run black .
-uv run ruff check --fix .
-
-# Type checking (run separately, not via pre-commit)
-uv pip install pyright
-uv run pyright                 # All files
-uv run pyright jesterTOV/      # Specific directory
 ```
 
-To run with Jupyter notebooks:
+### Writing documentation 
+
+Make sure to install the documentation dependencies
 ```bash
-uv run ipython kernel install --user --name=jester
+uv synx --extra docs
 ```
 
-A CLAUDE.md file already exists in the repo for developers that want to use Claude Code. 
+Building documentation locally:
+```bash
+# Build the documentation
+uv run sphinx-build docs docs/_build/html
 
-## Acknowledgements
+# Or start up autobuild so the page refreshes automatically
+sphinx-autobuild docs docs/_build/html
+
+# Open in your browser
+open docs/_build/html/index.html      # macOS
+xdg-open docs/_build/html/index.html  # Linux
+```
+
+## Citing
 
 If you use `jester` in your work, please cite our paper!
 ```

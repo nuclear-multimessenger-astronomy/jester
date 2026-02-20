@@ -13,7 +13,7 @@ jobs:
 
     strategy:
       matrix:
-        python-version: ["3.11"]  # Run on single Python version for nightly
+        python-version: ["3.12"]  # Run on same Python version as devs for nightly
 
     steps:
     - uses: actions/checkout@v4

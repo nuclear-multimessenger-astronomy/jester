@@ -24,8 +24,14 @@ jax.config.update("jax_enable_x64", True)
 # ============================================================================
 
 # Transform parameters (reduced for speed)
-LIGHTWEIGHT_TRANSFORM = {
+LIGHTWEIGHT_EOS = {
     "ndat_metamodel": 30,  # 100 -> 30
+    "nmax_nsat": 2.0,
+    "crust_name": "DH",
+}
+
+LIGHTWEIGHT_TOV = {
+    "min_nsat_TOV": 0.75,
     "ndat_TOV": 30,  # 100 -> 30
     "nb_masses": 20,  # 100 -> 20
 }
@@ -135,18 +141,19 @@ def build_prior_only_config(
         "seed": 42,
         "dry_run": False,
         "validate_only": False,
-        "transform": {
+        "eos": {
             "type": "metamodel",
             "nb_CSE": 0,
-            "nmax_nsat": 2.0,
-            "min_nsat_TOV": 0.75,
-            "crust_name": "DH",
-            **LIGHTWEIGHT_TRANSFORM,
+            **LIGHTWEIGHT_EOS,
+        },
+        "tov": {
+            "type": "gr",
+            **LIGHTWEIGHT_TOV,
         },
         "prior": {"specification_file": str(prior_file)},
         "likelihoods": [
-            {"type": "constraints_eos", "enabled": True, "parameters": {}},
-            {"type": "zero", "enabled": True, "parameters": {}},
+            {"type": "constraints_eos", "enabled": True},
+            {"type": "zero", "enabled": True},
         ],
         "sampler": {
             **sampler_config,
@@ -165,23 +172,24 @@ def build_chieft_config(
         "seed": 42,
         "dry_run": False,
         "validate_only": False,
-        "transform": {
+        "eos": {
             "type": "metamodel_cse",
             "nb_CSE": 8,
             "nmax_nsat": 25.0,
-            "min_nsat_TOV": 0.75,
             "crust_name": "DH",
-            **LIGHTWEIGHT_TRANSFORM,
+            "ndat_metamodel": LIGHTWEIGHT_EOS["ndat_metamodel"],
+        },
+        "tov": {
+            "type": "gr",
+            **LIGHTWEIGHT_TOV,
         },
         "prior": {"specification_file": str(prior_file)},
         "likelihoods": [
-            {"type": "constraints_eos", "enabled": True, "parameters": {}},
+            {"type": "constraints_eos", "enabled": True},
             {
                 "type": "chieft",
                 "enabled": True,
-                "parameters": {
-                    "nb_n": 30,  # 100 -> 30 for speed
-                },
+                "nb_n": 30,  # 100 -> 30 for speed
             },
         ],
         "sampler": {

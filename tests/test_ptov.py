@@ -2,7 +2,8 @@
 
 import pytest
 import jax.numpy as jnp
-from jesterTOV.tov import GRTOVSolver, PostTOVSolver
+from jesterTOV.tov.gr import GRTOVSolver
+from jesterTOV.tov.anisotropy import PostTOVSolver
 from jesterTOV.tov.data_classes import EOSData
 
 

@@ -1,84 +1,119 @@
 JESTER Documentation
 ====================
 
-**J**\ ax-based **E**\ o**S** and **T**\ ov solv\ **ER**
+JAX-accelerated equation of state inference and TOV solvers
 
-JESTER is a scientific computing library for solving the Tolman-Oppenheimer-Volkoff (TOV) equations for neutron star physics. It provides hardware-accelerated computations via JAX with automatic differentiation capabilities.
+``jester`` performs Bayesian inference on neutron star equations of state using GPU-accelerated TOV solvers through ``jax``.
 
-.. image:: https://img.shields.io/badge/arXiv-2024.12345-b31b1b.svg
-   :target: https://arxiv.org/abs/2024.12345
-   :alt: arXiv Paper
+.. note::
 
-.. image:: https://codecov.io/gh/your-username/jester/branch/main/graph/badge.svg
-   :target: https://codecov.io/gh/your-username/jester
-   :alt: Code Coverage
+   **Documentation is work in progress!** Some sections may be incomplete or under active development. We appreciate your patience as we improve the documentation.
 
-Key Features
-============
+What's in JESTER?
+-----------------
 
-* **JAX-Accelerated**: Hardware acceleration with GPU/TPU support
-* **Automatic Differentiation**: Built-in gradients for parameter studies
-* **Neutron Star Physics**: Complete TOV equation solver with realistic equations of state
-* **Extensible**: Modular design for custom equation of state models
-* **Well-Tested**: Comprehensive test suite with 95+ tests
+JESTER combines flexible EOS parametrizations with GPU-accelerated TOV solvers and modern Bayesian samplers.
+See the :doc:`overview` guide for detailed explanations.
 
-Quick Start
-===========
+.. grid:: 2
+    :class-container: component-grid
 
-Install JESTER:
+    .. grid-item:: 🧮 :doc:`EOS Models <overview/eos>`
 
-.. code-block:: bash
+       Parametrize the equation of state of nuclear matter
 
-   pip install jester-tov
-   
-   # For GPU support
-   pip install "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+       - :doc:`Metamodel <overview/eos/metamodel>`
+       - :doc:`Metamodel + CSE <overview/eos/metamodel_cse>`
+       - :doc:`Spectral expansion <overview/eos/spectral>`
 
-Basic usage:
+    .. grid-item:: ⚙️ :doc:`TOV Solvers <overview/tov_solvers>`
 
-.. code-block:: python
+       Integrate neutron star structure equations
 
-   import jesterTOV as jtov
-   
-   # Create equation of state
-   eos = jtov.eos.MetaModel_EOS_model()
-   
-   # Solve TOV equations
-   masses, radii = eos.M_R_curve()
-   
-   print(f"Maximum mass: {max(masses):.2f} solar masses")
+       - :doc:`General Relativity <overview/tov/gr>`
+       - :doc:`Modified gravity theories <overview/tov/scalar_tensor>`
+       - :doc:`Pressure anisotropy <overview/tov/anisotropy>`
+
+    .. grid-item:: 🔭 :doc:`Likelihood Constraints <overview/likelihoods>`
+
+       Multi-messenger astronomical observations
+
+       - :doc:`Gravitational waves <overview/likelihoods/gw>`
+       - :doc:`NICER mass-radius <overview/likelihoods/nicer>`
+       - :doc:`Radio timing (mass measurements) <overview/likelihoods/radio>`
+       - :doc:`Nuclear experiments (chiEFT) <overview/likelihoods/chieft>`
+
+    .. grid-item:: 📊 :doc:`Samplers <overview/samplers>`
+
+       GPU-accelerated Bayesian inference
+
+       - :doc:`Sequential Monte Carlo <overview/samplers/smc>`
+       - :doc:`Nested Sampling <overview/samplers/nested_sampling>`
+       - :doc:`FlowMC (normalizing flows) <overview/samplers/flowmc>` 
+
+
+Installation
+=============
+
+The latest stable release version can be installed with ``pip``::
+
+    pip install jesterTOV
+
+To run Bayesian inference, make sure to install support for CUDA or upgrade ``jax`` according to the
+`jax documentation page <https://docs.jax.dev/en/latest/installation.html>`_::
+
+    pip install "jax[cuda12]"
+
+For developers, we recommend installing locally with ``uv``::
+
+    git clone https://github.com/nuclear-multimessenger-astronomy/jester
+    cd jester
+    uv sync
+
+Extra dependencies can be installed as follows::
+
+    uv sync --extra cuda12   # For GPU support (fast sampling)
+    uv sync --extra dev      # For developers (work on documentation, run tests,...)
+
 
 Contents
 ========
 
 .. toctree::
    :maxdepth: 2
-   :caption: User Guide
+   :caption: Overview
 
-   inference_index
-   inference_quickstart
-   inference
+   overview
 
 .. toctree::
    :maxdepth: 2
-   :caption: Reference
+   :caption: Examples
 
-   inference_yaml_reference
+   examples/index
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Inference Guide
+
+   inference/quickstart
+   inference/yaml_reference
+   inference/workflow
 
 .. toctree::
    :maxdepth: 2
    :caption: API Reference
 
    api/jesterTOV
-   api/inference
 
 .. toctree::
    :maxdepth: 2
    :caption: Developer Guide
 
-   inference_workflow
-   inference_architecture
-   inference_documentation_guide
+   developer_guide/adding_new_eos
+   developer_guide/adding_new_tov
+   developer_guide/adding_new_likelihood
+   inference/documentation_guide
+   citing
 
 Indices and tables
 ==================
