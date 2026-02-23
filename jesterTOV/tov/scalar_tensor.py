@@ -476,14 +476,24 @@ class ScalarTensorTOVSolver(TOVSolverBase):
                 # Choose step type based on iteration count
                 def damped_step():
                     step = -damping * F_curr
-                    return x_curr + step, x_curr, F_curr
+                    x_proposed = x_curr + step
+                    
+                    # Prevent crossing zero. If it crosses, halve the current value.
+                    x_next = jnp.where(x_proposed * x_curr <= 0.0, x_curr * 0.5, x_proposed)
+                    
+                    return x_next, x_curr, F_curr
 
                 def linearized_step():
                     dx = x_curr - prev_x
                     dF = F_curr - prev_F
                     J = dF / (dx + 1e-12)
                     step = -0.8 * F_curr / (J + 1e-12)
-                    return x_curr + jnp.clip(step, -1e6, 1e6), x_curr, F_curr
+                    x_proposed = x_curr + jnp.clip(step, -1e6, 1e6)
+                    
+                    # Prevent crossing zero. If it crosses, halve the current value.
+                    x_next = jnp.where(x_proposed * x_curr <= 0.0, x_curr * 0.5, x_proposed)
+                    
+                    return x_next, x_curr, F_curr
 
                 x_next, new_prev_x, new_prev_F = lax.cond(
                     i < 10, lambda _: damped_step(), lambda _: linearized_step(), None
