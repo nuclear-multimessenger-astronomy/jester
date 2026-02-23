@@ -205,19 +205,20 @@ class TestLikelihoodConfig:
         """Test GW likelihood configuration."""
         config = schema.GWLikelihoodConfig(
             enabled=True,
-            events=[{"name": "GW170817", "model_dir": "/path/to/data"}],
+            events=[{"name": "GW170817", "nf_model_dir": "/path/to/data"}],
             penalty_value=-99999.0,
             N_masses_evaluation=20,
         )
         assert config.type == "gw"
         assert len(config.events) == 1
+        assert config.events[0].nf_model_dir == "/path/to/data"
         assert config.penalty_value == -99999.0
 
     def test_gw_likelihood_missing_event_name_fails(self):
         """Test that GW likelihood without event name fails."""
-        with pytest.raises(ValidationError, match="missing required 'name' field"):
+        with pytest.raises(ValidationError):
             schema.GWLikelihoodConfig(
-                events=[{"model_dir": "/path/to/data"}],  # Missing 'name'
+                events=[{"nf_model_dir": "/path/to/data"}],  # Missing 'name'
             )
 
     def test_gw_likelihood_empty_events_fails(self):
@@ -333,7 +334,7 @@ class TestLikelihoodConfig:
         # Create type adapter for LikelihoodConfig union
         adapter = TypeAdapter(schema.LikelihoodConfig)
 
-        # Test GW likelihood
+        # Test GW likelihood with just a name (uses preset)
         gw_dict = {
             "type": "gw",
             "enabled": True,
@@ -435,7 +436,7 @@ class TestInferenceConfig:
             {
                 "type": "gw",
                 "enabled": True,
-                "events": [{"name": "GW170817", "model_dir": "/path/to/data"}],
+                "events": [{"name": "GW170817", "nf_model_dir": "/path/to/data"}],
             },
             {
                 "type": "nicer",
@@ -628,6 +629,108 @@ class TestExtraFieldValidation:
 
         with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
             schema.InferenceConfig(**config_dict)
+
+
+class TestGWEventConfig:
+    """Tests for the GWEventConfig Pydantic model."""
+
+    def test_gw_event_nf_model_dir_mode(self):
+        """Valid config with only name and nf_model_dir."""
+        event = schema.GWEventConfig(name="GW170817", nf_model_dir="./my_flow")
+        assert event.name == "GW170817"
+        assert event.nf_model_dir == "./my_flow"
+        assert event.from_bilby_result is None
+        assert event.flow_config is None
+        assert event.retrain_flow is False
+
+    def test_gw_event_name_only(self):
+        """Valid config with just name (uses preset)."""
+        event = schema.GWEventConfig(name="GW170817")
+        assert event.name == "GW170817"
+        assert event.nf_model_dir is None
+        assert event.from_bilby_result is None
+
+    def test_gw_event_bilby_mode_minimal(self):
+        """Valid config with just from_bilby_result (no flow_config, no nf_model_dir)."""
+        event = schema.GWEventConfig(
+            name="GW170817",
+            from_bilby_result="./GW170817_result.hdf5",
+        )
+        assert event.from_bilby_result == "./GW170817_result.hdf5"
+        assert event.nf_model_dir is None
+        assert event.flow_config is None
+        assert event.retrain_flow is False
+
+    def test_gw_event_bilby_mode_full(self):
+        """Valid bilby config with from_bilby_result, flow_config, and retrain_flow."""
+        event = schema.GWEventConfig(
+            name="GW170817",
+            from_bilby_result="./GW170817_result.hdf5",
+            flow_config="./flow_config.yaml",
+            retrain_flow=True,
+        )
+        assert event.from_bilby_result == "./GW170817_result.hdf5"
+        assert event.flow_config == "./flow_config.yaml"
+        assert event.retrain_flow is True
+
+    def test_gw_event_flow_config_without_bilby_raises(self):
+        """flow_config without from_bilby_result raises ValidationError."""
+        with pytest.raises(ValidationError, match="'flow_config' is only valid"):
+            schema.GWEventConfig(
+                name="GW170817",
+                flow_config="./flow_config.yaml",
+            )
+
+    def test_gw_event_retrain_flow_without_bilby_raises(self):
+        """retrain_flow=True without from_bilby_result raises ValidationError."""
+        with pytest.raises(ValidationError, match="'retrain_flow' is only valid"):
+            schema.GWEventConfig(
+                name="GW170817",
+                retrain_flow=True,
+            )
+
+    def test_gw_event_extra_field_rejected(self):
+        """Unknown field raises ValidationError (extra='forbid')."""
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            schema.GWEventConfig(  # type: ignore[call-arg]
+                name="GW170817",
+                unknown_field="bad",
+            )
+
+    def test_gw_event_both_modes_raises(self):
+        """Specifying both nf_model_dir and from_bilby_result raises ValidationError."""
+        with pytest.raises(ValidationError, match="Cannot specify both"):
+            schema.GWEventConfig(
+                name="GW170817",
+                nf_model_dir="./my_flow",
+                from_bilby_result="./result.hdf5",
+            )
+
+    def test_gw_likelihood_config_with_event_objects(self):
+        """GWLikelihoodConfig accepts a list of GWEventConfig objects."""
+        events = [
+            schema.GWEventConfig(name="GW170817"),
+            schema.GWEventConfig(name="GW190425", nf_model_dir="./my_flow"),
+        ]
+        config = schema.GWLikelihoodConfig(events=events)
+        assert len(config.events) == 2
+        assert config.events[0].name == "GW170817"
+        assert config.events[1].nf_model_dir == "./my_flow"
+
+    def test_gw_likelihood_config_from_dict_with_nf_model_dir(self):
+        """GWLikelihoodConfig constructed from YAML-style dict with nf_model_dir."""
+        config = schema.GWLikelihoodConfig(
+            events=[{"name": "GW170817", "nf_model_dir": "./flows/GW170817"}],  # type: ignore[arg-type]
+        )
+        assert config.events[0].name == "GW170817"
+        assert config.events[0].nf_model_dir == "./flows/GW170817"
+
+    def test_gw_likelihood_old_model_dir_rejected(self):
+        """Using the old 'model_dir' key (instead of 'nf_model_dir') raises ValidationError."""
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            schema.GWLikelihoodConfig(
+                events=[{"name": "GW170817", "model_dir": "./my_flow"}],  # type: ignore[arg-type]
+            )
 
 
 @pytest.mark.integration

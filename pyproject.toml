@@ -72,6 +72,7 @@ classifiers = [
 run_jester_inference = "jesterTOV.inference.run_inference:cli_entry_point"
 run_jester_postprocessing = "jesterTOV.inference.postprocessing.postprocessing:main"
 train_jester_flow = "jesterTOV.inference.flows.train_flow:main"
+jester_extract_gw_posterior_bilby = "jesterTOV.inference.flows.bilby_extract:main"
 
 [project.optional-dependencies]
 cuda12 = ["jax[cuda12]"]
