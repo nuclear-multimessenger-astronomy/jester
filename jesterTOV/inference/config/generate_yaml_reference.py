@@ -354,8 +354,8 @@ def extract_likelihoods() -> list[dict[str, Any]]:
                     "parameters": [
                         {
                             "name": "events",
-                            "example": '[{"name": "GW170817", "model_dir": "./NFs/GW170817"}]',
-                            "inline_comment": "List of GW events",
+                            "example": '[{"name": "GW170817", "nf_model_dir": "./NFs/GW170817"}]',
+                            "inline_comment": "List of GW events (see GWEventConfig below)",
                         },
                         {
                             "name": "penalty_value",
@@ -381,9 +381,17 @@ def extract_likelihoods() -> list[dict[str, Any]]:
                     "field_details": [
                         {
                             "name": "events",
-                            "type": "list[dict]",
+                            "type": "list[GWEventConfig]",
                             "default": None,
-                            "description": "List of GW events with `name` and optional `model_dir` keys. If `model_dir` is omitted, uses preset paths.",
+                            "description": (
+                                "List of GW event configs (see **GWEventConfig** below). "
+                                "Each entry must have `name`. Two modes are supported:\n"
+                                "  - **Pre-trained flow**: set `nf_model_dir` to point to a trained flow, "
+                                "or omit it to use a built-in preset.\n"
+                                "  - **From bilby result**: set `from_bilby_result` to the path of a bilby "
+                                "HDF5 result file; jester will extract posterior samples and train a flow "
+                                "automatically before inference."
+                            ),
                         },
                         {
                             "name": "penalty_value",
@@ -410,7 +418,32 @@ def extract_likelihoods() -> list[dict[str, Any]]:
                             "description": "Random seed for mass pre-sampling from GW posterior",
                         },
                     ],
-                    "description_text": "**Default GW likelihood** (presampled version): Pre-samples masses from GW posterior for efficient evaluation. Recommended for production use.",
+                    "description_text": (
+                        "**Default GW likelihood** (presampled version): pre-samples masses from "
+                        "the GW posterior for efficient evaluation. Recommended for production use.\n\n"
+                        "**GWEventConfig fields** (each entry in `events`):\n\n"
+                        "| Field | Type | Default | Description |\n"
+                        "|-------|------|---------|-------------|\n"
+                        "| `name` | str | required | Event name, e.g. `GW170817` |\n"
+                        "| `nf_model_dir` | str\\|null | null | Path to a pre-trained normalizing flow directory. Mutually exclusive with `from_bilby_result`. |\n"
+                        "| `from_bilby_result` | str\\|null | null | Path to a bilby result `.hdf5` file. jester will extract posterior samples and train a flow automatically. |\n"
+                        "| `flow_config` | str\\|null | null | Path to a `FlowTrainingConfig` YAML file for custom flow training (only valid with `from_bilby_result`). |\n"
+                        "| `retrain_flow` | bool | false | Force re-training even if a cached flow exists (only valid with `from_bilby_result`). |\n\n"
+                        "**Examples**:\n\n"
+                        "```yaml\n"
+                        "# Pre-trained flow (preset):\n"
+                        "events:\n"
+                        "  - name: GW170817\n\n"
+                        "# Pre-trained flow (custom path):\n"
+                        "events:\n"
+                        "  - name: GW170817\n"
+                        "    nf_model_dir: ./my_flow\n\n"
+                        "# From bilby result (auto-train):\n"
+                        "events:\n"
+                        "  - name: GW170817\n"
+                        "    from_bilby_result: ./GW170817_result.hdf5\n"
+                        "```"
+                    ),
                 },
                 {
                     "title": "Resampled GW Likelihood (Legacy)",
@@ -418,7 +451,7 @@ def extract_likelihoods() -> list[dict[str, Any]]:
                     "parameters": [
                         {
                             "name": "events",
-                            "example": '[{"name": "GW170817", "model_dir": "./NFs/GW170817"}]',
+                            "example": '[{"name": "GW170817", "nf_model_dir": "./NFs/GW170817"}]',
                             "inline_comment": "List of GW events",
                         },
                         {
@@ -442,7 +475,7 @@ def extract_likelihoods() -> list[dict[str, Any]]:
                             "name": "events",
                             "type": "list[dict]",
                             "default": None,
-                            "description": "List of GW events with `name` and optional `model_dir` keys",
+                            "description": "List of GW events with `name` and optional `nf_model_dir` keys",
                         },
                         {
                             "name": "penalty_value",

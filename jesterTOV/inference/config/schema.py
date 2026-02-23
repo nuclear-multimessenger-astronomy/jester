@@ -43,6 +43,7 @@ from .schemas.tov import (
 # Likelihood schemas
 from .schemas.likelihoods import (
     BaseLikelihoodConfig,
+    GWEventConfig,
     GWLikelihoodConfig,
     GWResampledLikelihoodConfig,
     NICERLikelihoodConfig,
@@ -232,6 +233,7 @@ __all__ = [
     "TOVConfig",
     # Likelihoods
     "BaseLikelihoodConfig",
+    "GWEventConfig",
     "GWLikelihoodConfig",
     "GWResampledLikelihoodConfig",
     "NICERLikelihoodConfig",

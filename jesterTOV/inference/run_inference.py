@@ -20,6 +20,8 @@ from .config.schema import (
     InferenceConfig,
     MetamodelCSEEOSConfig,
     BaseMetamodelEOSConfig,
+    GWLikelihoodConfig,
+    GWEventConfig,
 )
 from .priors.parser import parse_prior_file
 from .base.prior import CombinePrior
@@ -218,6 +220,156 @@ def setup_transform(
             )
 
     return transform
+
+
+def prepare_gw_flows(config: InferenceConfig, outdir: Path) -> InferenceConfig:
+    """Prepare normalizing flows for GW events that use ``from_bilby_result`` mode.
+
+    For each enabled :class:`~jesterTOV.inference.config.schema.GWLikelihoodConfig`
+    with events in bilby mode, this function:
+
+    1. Resolves the ``nf_model_dir`` to ``{outdir}/gw_flow_cache/{event.name}``.
+    2. Extracts posterior samples from the bilby HDF5 result file (cached).
+    3. Trains a normalizing flow (with config-hash-based cache invalidation).
+    4. Replaces the bilby-mode event with a pre-trained-flow-mode event.
+
+    This is a no-op if no ``GWLikelihoodConfig`` events use ``from_bilby_result``.
+
+    Parameters
+    ----------
+    config : InferenceConfig
+        Current inference configuration.
+    outdir : Path
+        Run output directory (flows are cached under ``{outdir}/gw_flow_cache/``).
+
+    Returns
+    -------
+    InferenceConfig
+        Updated config where all GW events point to a pre-trained flow directory.
+    """
+    import hashlib
+    import shutil
+
+    from .flows.bilby_extract import extract_gw_posterior_from_bilby
+    from .flows.train_flow import train_flow_from_config
+    from .flows.config import FlowTrainingConfig
+
+    logger.info("Checking to prepare GW normalizing flows...")
+    updated_likelihoods = list(config.likelihoods)
+    any_changes = False
+
+    for lk_idx, lk_config in enumerate(config.likelihoods):
+        if not isinstance(lk_config, GWLikelihoodConfig) or not lk_config.enabled:
+            continue
+
+        bilby_events = [e for e in lk_config.events if e.from_bilby_result is not None]
+        if not bilby_events:
+            continue
+
+        updated_events = list(lk_config.events)
+        for ev_idx, event in enumerate(lk_config.events):
+            if event.from_bilby_result is None:
+                continue
+
+            # 1. Resolve nf_model_dir
+            nf_model_dir = outdir / "gw_flow_cache" / event.name
+            nf_model_dir.mkdir(parents=True, exist_ok=True)
+
+            # 2. Extract NPZ from bilby HDF5
+            npz_path = nf_model_dir / "posterior_samples.npz"
+            if not npz_path.exists():
+                logger.info(
+                    f"Extracting GW posterior for '{event.name}' from "
+                    f"{event.from_bilby_result}"
+                )
+                extract_gw_posterior_from_bilby(
+                    bilby_result_file=event.from_bilby_result,
+                    output_file=str(npz_path),
+                )
+            else:
+                logger.info(
+                    f"Using cached posterior samples for '{event.name}' at {npz_path}"
+                )
+
+            # 3. Build FlowTrainingConfig
+            fixed_fields = {
+                "posterior_file": str(npz_path),
+                "parameter_names": [
+                    "mass_1_source",
+                    "mass_2_source",
+                    "lambda_1",
+                    "lambda_2",
+                ],
+                "output_dir": str(nf_model_dir),
+            }
+            if event.flow_config:
+                # If there is a flow_config, use it as a base and override the fixed fields (e.g., to allow custom training settings like n_epochs or batch_size)
+                ft_config = FlowTrainingConfig.from_yaml(event.flow_config)
+                ft_config = ft_config.model_copy(update=fixed_fields)
+            else:
+                # No flow_config provided, use defaults for everything except the fixed fields
+                ft_config = FlowTrainingConfig(**fixed_fields)
+
+            # 4. Check cache
+            flow_weights = nf_model_dir / "flow_weights.eqx"
+            config_hash_file = nf_model_dir / "flow_config_hash.json"
+            current_hash = hashlib.sha256(
+                ft_config.model_dump_json().encode()
+            ).hexdigest()
+
+            should_train = True
+            if flow_weights.exists() and not event.retrain_flow:
+                stored_hash: str | None = None
+                if config_hash_file.exists():
+                    stored_hash = json.loads(config_hash_file.read_text()).get("hash")
+                if stored_hash == current_hash:
+                    logger.info(
+                        f"Reusing cached flow for '{event.name}' at {nf_model_dir}"
+                    )
+                    should_train = False
+                else:
+                    logger.warning(
+                        f"Flow config changed for '{event.name}' → retraining"
+                    )
+                    shutil.rmtree(nf_model_dir)
+                    nf_model_dir.mkdir(parents=True, exist_ok=True)
+                    # Re-extract NPZ after clearing the directory
+                    if not npz_path.exists():
+                        extract_gw_posterior_from_bilby(
+                            bilby_result_file=event.from_bilby_result,
+                            output_file=str(npz_path),
+                        )
+            elif event.retrain_flow and flow_weights.exists():
+                logger.info(f"retrain_flow=True for '{event.name}' → retraining")
+                shutil.rmtree(nf_model_dir)
+                nf_model_dir.mkdir(parents=True, exist_ok=True)
+                if not npz_path.exists():
+                    extract_gw_posterior_from_bilby(
+                        bilby_result_file=event.from_bilby_result,
+                        output_file=str(npz_path),
+                    )
+
+            # 5. Train flow if needed
+            if should_train:
+                logger.info(f"Training normalizing flow for '{event.name}'...")
+                train_flow_from_config(ft_config)
+                config_hash_file.write_text(json.dumps({"hash": current_hash}))
+
+            # 6. Replace event with resolved pre-trained-flow event
+            updated_events[ev_idx] = GWEventConfig(
+                name=event.name,
+                nf_model_dir=str(nf_model_dir),
+            )
+
+        updated_likelihoods[lk_idx] = lk_config.model_copy(
+            update={"events": updated_events}
+        )
+        any_changes = True
+
+    if not any_changes:
+        return config
+
+    return config.model_copy(update={"likelihoods": updated_likelihoods})
 
 
 # TODO: remove transform second argument, as it is unused
@@ -500,6 +652,8 @@ def main(config_path: str) -> None:
     logger.info(f"  ndat_TOV: {config.tov.ndat_TOV}")
     if keep_names:
         logger.info(f"  Preserving parameters in output: {keep_names}")
+
+    config = prepare_gw_flows(config, Path(outdir))
 
     logger.info("Setting up likelihood...")
     likelihood = setup_likelihood(config, transform)
