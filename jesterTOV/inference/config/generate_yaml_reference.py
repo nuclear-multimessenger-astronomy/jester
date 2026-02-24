@@ -358,11 +358,6 @@ def extract_likelihoods() -> list[dict[str, Any]]:
                             "inline_comment": "List of GW events (see GWEventConfig below)",
                         },
                         {
-                            "name": "penalty_value",
-                            "example": "-99999.0",
-                            "inline_comment": "Penalty for M > M_TOV (optional, default: -99999.0)",
-                        },
-                        {
                             "name": "N_masses_evaluation",
                             "example": "2000",
                             "inline_comment": "Number of mass samples to pre-sample (optional, default: 2000)",
@@ -396,8 +391,8 @@ def extract_likelihoods() -> list[dict[str, Any]]:
                         {
                             "name": "penalty_value",
                             "type": "float",
-                            "default": "-99999.0",
-                            "description": "Log-likelihood penalty for masses exceeding TOV maximum mass",
+                            "default": "0.0",
+                            "description": "Log-likelihood penalty for masses exceeding TOV maximum mass (default: 0.0, i.e. no penalty)",
                         },
                         {
                             "name": "N_masses_evaluation",
@@ -455,11 +450,6 @@ def extract_likelihoods() -> list[dict[str, Any]]:
                             "inline_comment": "List of GW events",
                         },
                         {
-                            "name": "penalty_value",
-                            "example": "-99999.0",
-                            "inline_comment": "Penalty for M > M_TOV (optional, default: -99999.0)",
-                        },
-                        {
                             "name": "N_masses_evaluation",
                             "example": "20",
                             "inline_comment": "Number of masses per evaluation (optional, default: 20)",
@@ -480,8 +470,8 @@ def extract_likelihoods() -> list[dict[str, Any]]:
                         {
                             "name": "penalty_value",
                             "type": "float",
-                            "default": "-99999.0",
-                            "description": "Log-likelihood penalty for masses exceeding TOV maximum mass",
+                            "default": "0.0",
+                            "description": "Log-likelihood penalty for masses exceeding TOV maximum mass (default: 0.0, i.e. no penalty)",
                         },
                         {
                             "name": "N_masses_evaluation",
