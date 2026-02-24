@@ -206,13 +206,12 @@ class TestLikelihoodConfig:
         config = schema.GWLikelihoodConfig(
             enabled=True,
             events=[{"name": "GW170817", "nf_model_dir": "/path/to/data"}],
-            penalty_value=-99999.0,
             N_masses_evaluation=20,
         )
         assert config.type == "gw"
         assert len(config.events) == 1
         assert config.events[0].nf_model_dir == "/path/to/data"
-        assert config.penalty_value == -99999.0
+        assert config.penalty_value == 0.0
 
     def test_gw_likelihood_missing_event_name_fails(self):
         """Test that GW likelihood without event name fails."""

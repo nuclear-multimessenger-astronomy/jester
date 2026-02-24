@@ -41,6 +41,19 @@ L_sym = UniformPrior(10.0, 200.0, parameter_names=["L_sym"])
   - For model comparison and evidence estimation
   - Needs additional testing/fixes
 
+### Changing Default Values for Likelihood Parameters
+
+When a user asks to change a default value (e.g. `penalty_value`), update **all** of the following:
+
+1. **`likelihoods/<name>.py`** — `__init__` signature default(s) and docstring(s)
+2. **`config/schemas/likelihoods.py`** — `Field(default=...)` and any docstring YAML example
+3. **`config/generate_yaml_reference.py`** — hardcoded `"example"` and `"default"` strings for the affected likelihood type(s); the generator does **not** read Pydantic defaults automatically
+4. **`docs/inference/yaml_reference.md`** — regenerate: `uv run python -m jesterTOV.inference.config.generate_yaml_reference`
+5. **`examples/inference/**/config.yaml`** — remove or update the now-redundant explicit value
+6. **`tests/test_inference/test_config.py`** — update any assertion on the old default
+
+The factory (`likelihoods/factory.py`) passes `config.<field>` through, so no change needed there.
+
 ### Inference Documentation
 - `docs/inference_index.md` - Navigation hub
 - `docs/inference_quickstart.md` - Quick start guide
