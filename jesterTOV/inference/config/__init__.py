@@ -2,20 +2,82 @@
 
 from .parser import load_config
 from .schema import (
-    InferenceConfig,
-    TransformConfig,
-    PriorConfig,
+    # EOS
+    BaseEOSConfig,
+    BaseMetamodelEOSConfig,
+    MetamodelEOSConfig,
+    MetamodelCSEEOSConfig,
+    SpectralEOSConfig,
+    EOSConfig,
+    # TOV
+    BaseTOVConfig,
+    GRTOVConfig,
+    TOVConfig,
+    # Likelihoods
+    BaseLikelihoodConfig,
+    GWLikelihoodConfig,
+    GWResampledLikelihoodConfig,
+    NICERLikelihoodConfig,
+    NICERKDELikelihoodConfig,
+    RadioLikelihoodConfig,
+    ChiEFTLikelihoodConfig,
+    EOSConstraintsLikelihoodConfig,
+    TOVConstraintsLikelihoodConfig,
+    GammaConstraintsLikelihoodConfig,
+    DeprecatedConstraintsLikelihoodConfig,
+    REXLikelihoodConfig,
+    ZeroLikelihoodConfig,
     LikelihoodConfig,
+    # Samplers
     BaseSamplerConfig,
+    FlowMCSamplerConfig,
+    BlackJAXNSAWConfig,
+    SMCRandomWalkSamplerConfig,
+    SMCNUTSSamplerConfig,
     SamplerConfig,
+    # Other
+    PriorConfig,
+    PostprocessingConfig,
+    InferenceConfig,
 )
 
 __all__ = [
     "load_config",
-    "InferenceConfig",
-    "TransformConfig",
-    "PriorConfig",
+    # EOS
+    "BaseEOSConfig",
+    "BaseMetamodelEOSConfig",
+    "MetamodelEOSConfig",
+    "MetamodelCSEEOSConfig",
+    "SpectralEOSConfig",
+    "EOSConfig",
+    # TOV
+    "BaseTOVConfig",
+    "GRTOVConfig",
+    "TOVConfig",
+    # Likelihoods
+    "BaseLikelihoodConfig",
+    "GWLikelihoodConfig",
+    "GWResampledLikelihoodConfig",
+    "NICERLikelihoodConfig",
+    "NICERKDELikelihoodConfig",
+    "RadioLikelihoodConfig",
+    "ChiEFTLikelihoodConfig",
+    "EOSConstraintsLikelihoodConfig",
+    "TOVConstraintsLikelihoodConfig",
+    "GammaConstraintsLikelihoodConfig",
+    "DeprecatedConstraintsLikelihoodConfig",
+    "REXLikelihoodConfig",
+    "ZeroLikelihoodConfig",
     "LikelihoodConfig",
+    # Samplers
     "BaseSamplerConfig",
+    "FlowMCSamplerConfig",
+    "BlackJAXNSAWConfig",
+    "SMCRandomWalkSamplerConfig",
+    "SMCNUTSSamplerConfig",
     "SamplerConfig",
+    # Other
+    "PriorConfig",
+    "PostprocessingConfig",
+    "InferenceConfig",
 ]

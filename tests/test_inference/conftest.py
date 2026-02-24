@@ -17,7 +17,8 @@ def temp_dir():
 @pytest.fixture
 def sample_prior_file(temp_dir):
     """Create a sample .prior file for testing."""
-    prior_content = """K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
+    prior_content = """E_sat = UniformPrior(-16.1, -15.9, parameter_names=["E_sat"])
+K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
 Q_sat = UniformPrior(-500.0, 1100.0, parameter_names=["Q_sat"])
 Z_sat = UniformPrior(-2500.0, 1500.0, parameter_names=["Z_sat"])
 E_sym = UniformPrior(28.0, 45.0, parameter_names=["E_sym"])
@@ -34,7 +35,8 @@ Z_sym = UniformPrior(-2000.0, 1500.0, parameter_names=["Z_sym"])
 @pytest.fixture
 def sample_prior_file_with_cse(temp_dir):
     """Create a sample .prior file with CSE parameters for testing."""
-    prior_content = """K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
+    prior_content = """E_sat = UniformPrior(-16.1, -15.9, parameter_names=["E_sat"])
+K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
 Q_sat = UniformPrior(-500.0, 1100.0, parameter_names=["Q_sat"])
 Z_sat = UniformPrior(-2500.0, 1500.0, parameter_names=["Z_sat"])
 E_sym = UniformPrior(28.0, 45.0, parameter_names=["E_sym"])
@@ -56,15 +58,18 @@ def sample_config_dict():
         "seed": 42,
         "dry_run": False,
         "validate_only": False,
-        "transform": {
+        "eos": {
             "type": "metamodel",
             "ndat_metamodel": 100,
             "nmax_nsat": 2.0,
             "nb_CSE": 0,
+            "crust_name": "DH",
+        },
+        "tov": {
+            "type": "gr",
             "min_nsat_TOV": 0.75,
             "ndat_TOV": 100,
             "nb_masses": 100,
-            "crust_name": "DH",
         },
         "prior": {"specification_file": "test.prior"},
         "likelihoods": [{"type": "zero", "enabled": True}],
@@ -188,3 +193,44 @@ def mock_nicer_data():
         "radius_samples": jnp.linspace(11.0, 13.0, 100),
         "weights": jnp.ones(100) / 100.0,
     }
+
+
+@pytest.fixture
+def sample_eos_config():
+    """Sample EOS configuration for testing (metamodel)."""
+    from jesterTOV.inference.config.schema import MetamodelEOSConfig
+
+    return MetamodelEOSConfig(
+        type="metamodel",
+        ndat_metamodel=100,
+        nmax_nsat=2.0,
+        nb_CSE=0,
+        crust_name="DH",
+    )
+
+
+@pytest.fixture
+def sample_eos_config_cse():
+    """Sample EOS configuration for testing (metamodel_cse)."""
+    from jesterTOV.inference.config.schema import MetamodelCSEEOSConfig
+
+    return MetamodelCSEEOSConfig(
+        type="metamodel_cse",
+        ndat_metamodel=100,
+        nmax_nsat=2.0,
+        nb_CSE=8,
+        crust_name="DH",
+    )
+
+
+@pytest.fixture
+def sample_tov_config():
+    """Sample TOV configuration for testing."""
+    from jesterTOV.inference.config.schema import TOVConfig
+
+    return TOVConfig(
+        type="gr",
+        min_nsat_TOV=0.75,
+        ndat_TOV=100,
+        nb_masses=100,
+    )

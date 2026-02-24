@@ -6,6 +6,7 @@ Modular inference script for jesterTOV
 import os
 import time
 import warnings
+import json
 from pathlib import Path
 import numpy as np
 import jax
@@ -15,7 +16,13 @@ import jax.numpy as jnp
 jax.config.update("jax_enable_x64", True)
 
 from .config.parser import load_config
-from .config.schema import InferenceConfig
+from .config.schema import (
+    InferenceConfig,
+    MetamodelCSEEOSConfig,
+    BaseMetamodelEOSConfig,
+    GWLikelihoodConfig,
+    GWEventConfig,
+)
 from .priors.parser import parse_prior_file
 from .base.prior import CombinePrior
 from .base.likelihood import LikelihoodBase
@@ -59,11 +66,11 @@ def determine_keep_names(
     keep_names = []
 
     # ChiEFT likelihood requires 'nbreak' parameter for CSE grid stitching
-    # Only check if using metamodel_cse transform
+    # Only check if using metamodel_cse EOS
     chieft_enabled = any(
         lk.enabled and lk.type == "chieft" for lk in config.likelihoods
     )
-    if chieft_enabled and config.transform.type == "metamodel_cse":
+    if chieft_enabled and isinstance(config.eos, MetamodelCSEEOSConfig):
         if "nbreak" not in prior.parameter_names:
             raise ValueError(
                 "ChiEFT likelihood is enabled with metamodel_cse but 'nbreak' parameter is not in the prior. "
@@ -95,7 +102,7 @@ def setup_prior(config: InferenceConfig) -> CombinePrior:
     from .base.prior import UniformPrior, CombinePrior
 
     # Determine conditional parameters
-    nb_CSE = config.transform.nb_CSE if config.transform.type == "metamodel_cse" else 0
+    nb_CSE = config.eos.nb_CSE if isinstance(config.eos, MetamodelCSEEOSConfig) else 0
 
     # Check if GW or NICER likelihoods are enabled (both need _random_key)
     # Note: gw_presampled does NOT need _random_key (uses fixed seed at init)
@@ -145,27 +152,48 @@ def setup_transform(
     JesterTransform
         Transform instance
     """
-    # Extract max_nbreak_nsat if using metamodel_cse transform
+    # Determine max_nbreak_nsat for MetamodelCSE: compare config field vs prior bound
+    # TODO: in a future version, need to improve this...
     max_nbreak_nsat = None
-    if config.transform.type == "metamodel_cse" and prior is not None:
-        # Import here to avoid circular import
-        from .base.prior import UniformPrior
+    if isinstance(config.eos, MetamodelCSEEOSConfig):
+        config_value = config.eos.max_nbreak_nsat
+        prior_value = None
 
-        # Find nbreak prior and extract its maximum value
-        for param_prior in prior.base_prior:
-            if "nbreak" in param_prior.parameter_names:
-                if isinstance(param_prior, UniformPrior):
-                    # Convert from physical units (fm^-3) to nsat units
-                    nsat = 0.16  # default saturation density
-                    max_nbreak_nsat = param_prior.xmax / nsat
-                    logger.info(
-                        f"Extracted max_nbreak from prior: {param_prior.xmax:.3f} fm^-3 "
-                        f"({max_nbreak_nsat:.3f} n_sat)"
-                    )
-                break
+        if prior is not None:
+            from .base.prior import UniformPrior
+
+            for param_prior in prior.base_prior:
+                if "nbreak" in param_prior.parameter_names:
+                    if isinstance(param_prior, UniformPrior):
+                        nsat = 0.16  # saturation density in fm^-3
+                        prior_value = param_prior.xmax / nsat
+                    break
+
+        if config_value is not None and prior_value is not None:
+            if not np.isclose(config_value, prior_value, rtol=1e-3):
+                raise ValueError(
+                    f"eos.max_nbreak_nsat in config ({config_value:.4f} n_sat) does not "
+                    f"match the upper bound of the nbreak prior ({prior_value:.4f} n_sat). "
+                    "Either remove max_nbreak_nsat from the eos config to derive it "
+                    "automatically from the nbreak prior, or update the prior bound to match."
+                )
+            max_nbreak_nsat = config_value
+        elif prior_value is not None:
+            max_nbreak_nsat = prior_value
+            logger.info(
+                f"Derived max_nbreak from nbreak prior: {prior_value:.4f} n_sat"
+            )
+        elif config_value is not None:
+            max_nbreak_nsat = config_value
+            logger.info(
+                f"Using max_nbreak_nsat from eos config: {config_value:.4f} n_sat"
+            )
 
     transform = JesterTransform.from_config(
-        config.transform, keep_names=keep_names, max_nbreak_nsat=max_nbreak_nsat
+        eos_config=config.eos,
+        tov_config=config.tov,
+        keep_names=keep_names,
+        max_nbreak_nsat=max_nbreak_nsat,
     )
 
     # Validate that all required parameters are in the prior
@@ -192,6 +220,156 @@ def setup_transform(
             )
 
     return transform
+
+
+def prepare_gw_flows(config: InferenceConfig, outdir: Path) -> InferenceConfig:
+    """Prepare normalizing flows for GW events that use ``from_bilby_result`` mode.
+
+    For each enabled :class:`~jesterTOV.inference.config.schema.GWLikelihoodConfig`
+    with events in bilby mode, this function:
+
+    1. Resolves the ``nf_model_dir`` to ``{outdir}/gw_flow_cache/{event.name}``.
+    2. Extracts posterior samples from the bilby HDF5 result file (cached).
+    3. Trains a normalizing flow (with config-hash-based cache invalidation).
+    4. Replaces the bilby-mode event with a pre-trained-flow-mode event.
+
+    This is a no-op if no ``GWLikelihoodConfig`` events use ``from_bilby_result``.
+
+    Parameters
+    ----------
+    config : InferenceConfig
+        Current inference configuration.
+    outdir : Path
+        Run output directory (flows are cached under ``{outdir}/gw_flow_cache/``).
+
+    Returns
+    -------
+    InferenceConfig
+        Updated config where all GW events point to a pre-trained flow directory.
+    """
+    import hashlib
+    import shutil
+
+    from .flows.bilby_extract import extract_gw_posterior_from_bilby
+    from .flows.train_flow import train_flow_from_config
+    from .flows.config import FlowTrainingConfig
+
+    logger.info("Checking to prepare GW normalizing flows...")
+    updated_likelihoods = list(config.likelihoods)
+    any_changes = False
+
+    for lk_idx, lk_config in enumerate(config.likelihoods):
+        if not isinstance(lk_config, GWLikelihoodConfig) or not lk_config.enabled:
+            continue
+
+        bilby_events = [e for e in lk_config.events if e.from_bilby_result is not None]
+        if not bilby_events:
+            continue
+
+        updated_events = list(lk_config.events)
+        for ev_idx, event in enumerate(lk_config.events):
+            if event.from_bilby_result is None:
+                continue
+
+            # 1. Resolve nf_model_dir
+            nf_model_dir = outdir / "gw_flow_cache" / event.name
+            nf_model_dir.mkdir(parents=True, exist_ok=True)
+
+            # 2. Extract NPZ from bilby HDF5
+            npz_path = nf_model_dir / "posterior_samples.npz"
+            if not npz_path.exists():
+                logger.info(
+                    f"Extracting GW posterior for '{event.name}' from "
+                    f"{event.from_bilby_result}"
+                )
+                extract_gw_posterior_from_bilby(
+                    bilby_result_file=event.from_bilby_result,
+                    output_file=str(npz_path),
+                )
+            else:
+                logger.info(
+                    f"Using cached posterior samples for '{event.name}' at {npz_path}"
+                )
+
+            # 3. Build FlowTrainingConfig
+            fixed_fields = {
+                "posterior_file": str(npz_path),
+                "parameter_names": [
+                    "mass_1_source",
+                    "mass_2_source",
+                    "lambda_1",
+                    "lambda_2",
+                ],
+                "output_dir": str(nf_model_dir),
+            }
+            if event.flow_config:
+                # If there is a flow_config, use it as a base and override the fixed fields (e.g., to allow custom training settings like n_epochs or batch_size)
+                ft_config = FlowTrainingConfig.from_yaml(event.flow_config)
+                ft_config = ft_config.model_copy(update=fixed_fields)
+            else:
+                # No flow_config provided, use defaults for everything except the fixed fields
+                ft_config = FlowTrainingConfig(**fixed_fields)
+
+            # 4. Check cache
+            flow_weights = nf_model_dir / "flow_weights.eqx"
+            config_hash_file = nf_model_dir / "flow_config_hash.json"
+            current_hash = hashlib.sha256(
+                ft_config.model_dump_json().encode()
+            ).hexdigest()
+
+            should_train = True
+            if flow_weights.exists() and not event.retrain_flow:
+                stored_hash: str | None = None
+                if config_hash_file.exists():
+                    stored_hash = json.loads(config_hash_file.read_text()).get("hash")
+                if stored_hash == current_hash:
+                    logger.info(
+                        f"Reusing cached flow for '{event.name}' at {nf_model_dir}"
+                    )
+                    should_train = False
+                else:
+                    logger.warning(
+                        f"Flow config changed for '{event.name}' → retraining"
+                    )
+                    shutil.rmtree(nf_model_dir)
+                    nf_model_dir.mkdir(parents=True, exist_ok=True)
+                    # Re-extract NPZ after clearing the directory
+                    if not npz_path.exists():
+                        extract_gw_posterior_from_bilby(
+                            bilby_result_file=event.from_bilby_result,
+                            output_file=str(npz_path),
+                        )
+            elif event.retrain_flow and flow_weights.exists():
+                logger.info(f"retrain_flow=True for '{event.name}' → retraining")
+                shutil.rmtree(nf_model_dir)
+                nf_model_dir.mkdir(parents=True, exist_ok=True)
+                if not npz_path.exists():
+                    extract_gw_posterior_from_bilby(
+                        bilby_result_file=event.from_bilby_result,
+                        output_file=str(npz_path),
+                    )
+
+            # 5. Train flow if needed
+            if should_train:
+                logger.info(f"Training normalizing flow for '{event.name}'...")
+                train_flow_from_config(ft_config)
+                config_hash_file.write_text(json.dumps({"hash": current_hash}))
+
+            # 6. Replace event with resolved pre-trained-flow event
+            updated_events[ev_idx] = GWEventConfig(
+                name=event.name,
+                nf_model_dir=str(nf_model_dir),
+            )
+
+        updated_likelihoods[lk_idx] = lk_config.model_copy(
+            update={"events": updated_events}
+        )
+        any_changes = True
+
+    if not any_changes:
+        return config
+
+    return config.model_copy(update={"likelihoods": updated_likelihoods})
 
 
 # TODO: remove transform second argument, as it is unused
@@ -239,7 +417,7 @@ def run_sampling(
     InferenceResult
         Result object containing samples, metadata, and histories
     """
-    logger.info(f"Starting MCMC sampling with seed {seed}...")
+    logger.info(f"Starting sampling with seed {seed}...")
     start = time.time()
     sampler.sample(jax.random.PRNGKey(seed))
     sampler.print_summary()
@@ -384,6 +562,10 @@ def generate_eos_samples(
     logger.info("Derived EOS quantities added to InferenceResult")
 
 
+# TODO: there are some calls that check specific types of samplers/configs/...
+# Ideally we should remove this and just have a small loop that prints over all available
+# attributes of the config/sampler/likelihood/transform/prior objects, so that we don't have to update this function every time we add a new sampler type or likelihood type or EOS type, etc. We can still have some special handling for certain fields (e.g., if chieft enabled then print nbreak bounds, etc.) but in general we should just loop over all fields and print them in a structured way (e.g., using Pydantic's model_dump() with some formatting for logging)
+# This is already done a bit with the likelihoods, so follow that approach in the future
 def main(config_path: str) -> None:
     """Main inference script
 
@@ -458,14 +640,20 @@ def main(config_path: str) -> None:
     transform = setup_transform(config, prior=prior, keep_names=keep_names)
 
     # Log transform details
-    logger.info(f"Transform type: {config.transform.type}")
-    if config.transform.type == "metamodel_cse":
-        logger.info(f"  nb_CSE: {config.transform.nb_CSE}")
-    logger.info(f"  ndat_metamodel: {config.transform.ndat_metamodel}")
-    logger.info(f"  ndat_TOV: {config.transform.ndat_TOV}")
-    logger.info(f"  nmax_nsat: {config.transform.nmax_nsat}")
+    logger.info(f"EOS type: {config.eos.type}")
+    if isinstance(config.eos, MetamodelCSEEOSConfig):
+        logger.info(f"  nb_CSE: {config.eos.nb_CSE}")
+        if config.eos.max_nbreak_nsat is not None:
+            logger.info(f"  max_nbreak_nsat: {config.eos.max_nbreak_nsat:.4f} n_sat")
+    if isinstance(config.eos, BaseMetamodelEOSConfig):
+        logger.info(f"  ndat_metamodel: {config.eos.ndat_metamodel}")
+        logger.info(f"  nmax_nsat: {config.eos.nmax_nsat}")
+    logger.info(f"TOV solver: {config.tov.type}")
+    logger.info(f"  ndat_TOV: {config.tov.ndat_TOV}")
     if keep_names:
         logger.info(f"  Preserving parameters in output: {keep_names}")
+
+    config = prepare_gw_flows(config, Path(outdir))
 
     logger.info("Setting up likelihood...")
     likelihood = setup_likelihood(config, transform)
@@ -475,7 +663,6 @@ def main(config_path: str) -> None:
     logger.info(f"Number of enabled likelihoods: {len(enabled_likelihoods)}")
     for lk in enabled_likelihoods:
         # Use Pydantic's model_dump to serialize config for logging
-        import json
 
         lk_dict = lk.model_dump(
             exclude={"enabled"}
@@ -496,7 +683,8 @@ def main(config_path: str) -> None:
     logger.info("=" * 60)
     logger.info("Configuration Summary")
     logger.info("=" * 60)
-    logger.info(f"Transform: {config.transform.type}")
+    logger.info(f"EOS type: {config.eos.type}")
+    logger.info(f"TOV solver: {config.tov.type}")
     logger.info(f"Random seed: {config.seed}")
     logger.info(f"Sampler type: {config.sampler.type}")
     logger.info("Sampler Configuration:")

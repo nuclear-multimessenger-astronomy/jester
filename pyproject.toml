@@ -18,7 +18,7 @@ version = "0.1.1"
 description = "JAX-accelerated nuclear equation of state code and TOV solver with automatic differentiation"
 keywords = ["neutron-stars", "eos", "tov", "jax", "physics", "astronomy", "automatic-differentiation"]
 readme = "README.md"
-requires-python = ">=3.10, <3.13"
+requires-python = ">=3.11, <3.14"
 license = {file = "LICENSE"}
 urls = {repository = "https://github.com/nuclear-multimessenger-astronomy/jester"}
 dependencies = [
@@ -35,7 +35,7 @@ dependencies = [
     "numpy>=1.24.0",
     "pandas>=2.0.0",
     "equinox>=0.11.0",
-    "flowmc==0.3.4",
+    "flowmc==0.4.5",
     "blackjax @ git+https://github.com/handley-lab/blackjax@nested_sampling",
     "h5py>=3.0",
     "anesthetic>=2.0.0",
@@ -52,9 +52,9 @@ dependencies = [
 
 classifiers = [
     "Programming Language :: Python :: 3",
-    'Programming Language :: Python :: 3.10',
     'Programming Language :: Python :: 3.11',
     'Programming Language :: Python :: 3.12',
+    'Programming Language :: Python :: 3.13',
     'License :: OSI Approved :: MIT License',
     'Intended Audience :: Science/Research',
     'Intended Audience :: End Users/Desktop',
@@ -71,7 +71,8 @@ classifiers = [
 [project.scripts]
 run_jester_inference = "jesterTOV.inference.run_inference:cli_entry_point"
 run_jester_postprocessing = "jesterTOV.inference.postprocessing.postprocessing:main"
-train_jester_gw_flow = "jesterTOV.inference.flows.train_flow:main"
+train_jester_flow = "jesterTOV.inference.flows.train_flow:main"
+jester_extract_gw_posterior_bilby = "jesterTOV.inference.flows.bilby_extract:main"
 
 [project.optional-dependencies]
 cuda12 = ["jax[cuda12]"]

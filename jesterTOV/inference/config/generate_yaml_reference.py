@@ -140,9 +140,9 @@ def extract_run_options() -> list[dict[str, Any]]:
     return fields
 
 
-def extract_transforms() -> list[dict[str, Any]]:
-    """Extract transform configurations."""
-    transforms = [
+def extract_eos_configs() -> list[dict[str, Any]]:
+    """Extract EOS configuration options."""
+    eos_configs = [
         {
             "title": "Metamodel",
             "description": "Metamodel EOS parametrization",
@@ -169,29 +169,14 @@ def extract_transforms() -> list[dict[str, Any]]:
                     "inline_comment": "Minimum density for metamodel (in units of n_sat)",
                 },
                 {
-                    "name": "min_nsat_TOV",
-                    "example": "0.75",
-                    "inline_comment": "Minimum density for TOV solver",
-                },
-                {
-                    "name": "ndat_TOV",
-                    "example": "100",
-                    "inline_comment": "Number of points for TOV integration",
-                },
-                {
-                    "name": "nb_masses",
-                    "example": "100",
-                    "inline_comment": "Number of masses for family construction",
-                },
-                {
                     "name": "crust_name",
                     "example": '"DH"',
                     "inline_comment": 'Crust model: "DH", "BPS", "DH_fixed", or "SLy"',
                 },
                 {
-                    "name": "tov_solver",
-                    "example": '"gr"',
-                    "inline_comment": 'TOV solver: "gr", "post", or "scalar_tensor"',
+                    "name": "nb_CSE",
+                    "example": "0",
+                    "inline_comment": "Must be 0 for standard metamodel",
                 },
             ],
             "requirements": [
@@ -230,29 +215,9 @@ def extract_transforms() -> list[dict[str, Any]]:
                     "inline_comment": "Minimum density for metamodel (in units of n_sat)",
                 },
                 {
-                    "name": "min_nsat_TOV",
-                    "example": "0.75",
-                    "inline_comment": "Minimum density for TOV solver",
-                },
-                {
-                    "name": "ndat_TOV",
-                    "example": "100",
-                    "inline_comment": "Number of points for TOV integration",
-                },
-                {
-                    "name": "nb_masses",
-                    "example": "100",
-                    "inline_comment": "Number of masses for family construction",
-                },
-                {
                     "name": "crust_name",
                     "example": '"DH"',
                     "inline_comment": 'Crust model: "DH", "BPS", "DH_fixed", or "SLy"',
-                },
-                {
-                    "name": "tov_solver",
-                    "example": '"gr"',
-                    "inline_comment": 'TOV solver: "gr", "post", or "scalar_tensor"',
                 },
             ],
             "requirements": ["`nb_CSE` must be > 0 for this parametrization"],
@@ -274,29 +239,9 @@ def extract_transforms() -> list[dict[str, Any]]:
                     "inline_comment": "Number of points for high-density spectral region",
                 },
                 {
-                    "name": "min_nsat_TOV",
-                    "example": "0.75",
-                    "inline_comment": "Minimum density for TOV solver",
-                },
-                {
-                    "name": "ndat_TOV",
-                    "example": "100",
-                    "inline_comment": "Number of points for TOV integration",
-                },
-                {
-                    "name": "nb_masses",
-                    "example": "100",
-                    "inline_comment": "Number of masses for family construction",
-                },
-                {
                     "name": "crust_name",
                     "example": '"SLy"',
                     "inline_comment": 'Must be "SLy" for LALSuite compatibility',
-                },
-                {
-                    "name": "tov_solver",
-                    "example": '"gr"',
-                    "inline_comment": 'TOV solver: "gr", "post", or "scalar_tensor"',
                 },
             ],
             "requirements": [
@@ -310,7 +255,63 @@ def extract_transforms() -> list[dict[str, Any]]:
         },
     ]
 
-    return transforms
+    return eos_configs
+
+
+def extract_tov_config() -> dict[str, Any]:
+    """Extract TOV solver configuration fields."""
+    return {
+        "title": "TOV Solver Configuration",
+        "description": "Configuration for the Tolman-Oppenheimer-Volkoff equation solver.",
+        "fields": [
+            {
+                "name": "type",
+                "example": '"gr"',
+                "inline_comment": 'TOV solver: currently only "gr" is implemented',
+            },
+            {
+                "name": "min_nsat_TOV",
+                "example": "0.75",
+                "inline_comment": "Minimum density for TOV solver (in units of n_sat)",
+            },
+            {
+                "name": "ndat_TOV",
+                "example": "100",
+                "inline_comment": "Number of points for TOV integration",
+            },
+            {
+                "name": "nb_masses",
+                "example": "100",
+                "inline_comment": "Number of masses for family construction",
+            },
+        ],
+        "field_details": [
+            {
+                "name": "type",
+                "type": "str",
+                "default": '"gr"',
+                "description": "TOV solver type. Currently only 'gr' (General Relativity) is implemented. 'anisotropy' and 'scalar_tensor' are planned but not yet available.",
+            },
+            {
+                "name": "min_nsat_TOV",
+                "type": "float",
+                "default": "0.75",
+                "description": "Minimum central density for TOV integration in units of saturation density",
+            },
+            {
+                "name": "ndat_TOV",
+                "type": "int",
+                "default": "100",
+                "description": "Number of data points for TOV integration",
+            },
+            {
+                "name": "nb_masses",
+                "type": "int",
+                "default": "100",
+                "description": "Number of masses to sample when constructing the M-R-Λ family",
+            },
+        ],
+    }
 
 
 def extract_prior_fields() -> list[dict[str, Any]]:
@@ -353,13 +354,8 @@ def extract_likelihoods() -> list[dict[str, Any]]:
                     "parameters": [
                         {
                             "name": "events",
-                            "example": '[{"name": "GW170817", "model_dir": "./NFs/GW170817"}]',
-                            "inline_comment": "List of GW events",
-                        },
-                        {
-                            "name": "penalty_value",
-                            "example": "-99999.0",
-                            "inline_comment": "Penalty for M > M_TOV (optional, default: -99999.0)",
+                            "example": '[{"name": "GW170817", "nf_model_dir": "./NFs/GW170817"}]',
+                            "inline_comment": "List of GW events (see GWEventConfig below)",
                         },
                         {
                             "name": "N_masses_evaluation",
@@ -380,15 +376,23 @@ def extract_likelihoods() -> list[dict[str, Any]]:
                     "field_details": [
                         {
                             "name": "events",
-                            "type": "list[dict]",
+                            "type": "list[GWEventConfig]",
                             "default": None,
-                            "description": "List of GW events with `name` and optional `model_dir` keys. If `model_dir` is omitted, uses preset paths.",
+                            "description": (
+                                "List of GW event configs (see **GWEventConfig** below). "
+                                "Each entry must have `name`. Two modes are supported:\n"
+                                "  - **Pre-trained flow**: set `nf_model_dir` to point to a trained flow, "
+                                "or omit it to use a built-in preset.\n"
+                                "  - **From bilby result**: set `from_bilby_result` to the path of a bilby "
+                                "HDF5 result file; jester will extract posterior samples and train a flow "
+                                "automatically before inference."
+                            ),
                         },
                         {
                             "name": "penalty_value",
                             "type": "float",
-                            "default": "-99999.0",
-                            "description": "Log-likelihood penalty for masses exceeding TOV maximum mass",
+                            "default": "0.0",
+                            "description": "Log-likelihood penalty for masses exceeding TOV maximum mass (default: 0.0, i.e. no penalty)",
                         },
                         {
                             "name": "N_masses_evaluation",
@@ -409,7 +413,32 @@ def extract_likelihoods() -> list[dict[str, Any]]:
                             "description": "Random seed for mass pre-sampling from GW posterior",
                         },
                     ],
-                    "description_text": "**Default GW likelihood** (presampled version): Pre-samples masses from GW posterior for efficient evaluation. Recommended for production use.",
+                    "description_text": (
+                        "**Default GW likelihood** (presampled version): pre-samples masses from "
+                        "the GW posterior for efficient evaluation. Recommended for production use.\n\n"
+                        "**GWEventConfig fields** (each entry in `events`):\n\n"
+                        "| Field | Type | Default | Description |\n"
+                        "|-------|------|---------|-------------|\n"
+                        "| `name` | str | required | Event name, e.g. `GW170817` |\n"
+                        "| `nf_model_dir` | str\\|null | null | Path to a pre-trained normalizing flow directory. Mutually exclusive with `from_bilby_result`. |\n"
+                        "| `from_bilby_result` | str\\|null | null | Path to a bilby result `.hdf5` file. jester will extract posterior samples and train a flow automatically. |\n"
+                        "| `flow_config` | str\\|null | null | Path to a `FlowTrainingConfig` YAML file for custom flow training (only valid with `from_bilby_result`). |\n"
+                        "| `retrain_flow` | bool | false | Force re-training even if a cached flow exists (only valid with `from_bilby_result`). |\n\n"
+                        "**Examples**:\n\n"
+                        "```yaml\n"
+                        "# Pre-trained flow (preset):\n"
+                        "events:\n"
+                        "  - name: GW170817\n\n"
+                        "# Pre-trained flow (custom path):\n"
+                        "events:\n"
+                        "  - name: GW170817\n"
+                        "    nf_model_dir: ./my_flow\n\n"
+                        "# From bilby result (auto-train):\n"
+                        "events:\n"
+                        "  - name: GW170817\n"
+                        "    from_bilby_result: ./GW170817_result.hdf5\n"
+                        "```"
+                    ),
                 },
                 {
                     "title": "Resampled GW Likelihood (Legacy)",
@@ -417,13 +446,8 @@ def extract_likelihoods() -> list[dict[str, Any]]:
                     "parameters": [
                         {
                             "name": "events",
-                            "example": '[{"name": "GW170817", "model_dir": "./NFs/GW170817"}]',
+                            "example": '[{"name": "GW170817", "nf_model_dir": "./NFs/GW170817"}]',
                             "inline_comment": "List of GW events",
-                        },
-                        {
-                            "name": "penalty_value",
-                            "example": "-99999.0",
-                            "inline_comment": "Penalty for M > M_TOV (optional, default: -99999.0)",
                         },
                         {
                             "name": "N_masses_evaluation",
@@ -441,13 +465,13 @@ def extract_likelihoods() -> list[dict[str, Any]]:
                             "name": "events",
                             "type": "list[dict]",
                             "default": None,
-                            "description": "List of GW events with `name` and optional `model_dir` keys",
+                            "description": "List of GW events with `name` and optional `nf_model_dir` keys",
                         },
                         {
                             "name": "penalty_value",
                             "type": "float",
-                            "default": "-99999.0",
-                            "description": "Log-likelihood penalty for masses exceeding TOV maximum mass",
+                            "default": "0.0",
+                            "description": "Log-likelihood penalty for masses exceeding TOV maximum mass (default: 0.0, i.e. no penalty)",
                         },
                         {
                             "name": "N_masses_evaluation",
@@ -471,23 +495,28 @@ def extract_likelihoods() -> list[dict[str, Any]]:
             "description": "Constrain the mass-radius relation using NICER X-ray timing observations of millisecond pulsars.",
             "likelihoods": [
                 {
-                    "title": "NICER Likelihood",
+                    "title": "NICER Flow Likelihood (DEFAULT)",
                     "type": "nicer",
                     "parameters": [
                         {
                             "name": "pulsars",
-                            "example": '[{"name": "J0030", "amsterdam_samples_file": "...", "maryland_samples_file": "..."}]',
-                            "inline_comment": "List of pulsars",
+                            "example": '[{"name": "J0030", "amsterdam_model_dir": "./flows/models/nicer_maf/J0030/amsterdam", "maryland_model_dir": "./flows/models/nicer_maf/J0030/maryland"}]',
+                            "inline_comment": "List of pulsars with flow model directories",
                         },
                         {
                             "name": "N_masses_evaluation",
                             "example": "100",
-                            "inline_comment": "Number of mass grid points (optional, default: 100)",
+                            "inline_comment": "Number of mass samples (optional, default: 100)",
                         },
                         {
                             "name": "N_masses_batch_size",
                             "example": "20",
                             "inline_comment": "Batch size for processing (optional, default: 20)",
+                        },
+                        {
+                            "name": "seed",
+                            "example": "42",
+                            "inline_comment": "Random seed for mass pre-sampling (optional, default: 42)",
                         },
                     ],
                     "field_details": [
@@ -495,22 +524,70 @@ def extract_likelihoods() -> list[dict[str, Any]]:
                             "name": "pulsars",
                             "type": "list[dict]",
                             "default": None,
-                            "description": "List of pulsars with `name`, `amsterdam_samples_file`, and `maryland_samples_file` keys. If sample files are omitted, uses preset paths.",
+                            "description": "List of pulsars with `name`, `amsterdam_model_dir`, and `maryland_model_dir` keys. Model directories must point to trained normalizing flow models.",
                         },
                         {
                             "name": "N_masses_evaluation",
                             "type": "int",
                             "default": "100",
-                            "description": "Number of mass grid points for marginalization over pulsar mass",
+                            "description": "Number of mass samples to pre-sample from flow for deterministic evaluation",
                         },
                         {
                             "name": "N_masses_batch_size",
                             "type": "int",
                             "default": "20",
-                            "description": "Batch size for processing mass grid points",
+                            "description": "Batch size for processing mass samples with jax.lax.map",
+                        },
+                        {
+                            "name": "seed",
+                            "type": "int",
+                            "default": "42",
+                            "description": "Random seed for reproducible mass pre-sampling from flow",
                         },
                     ],
-                    "description_text": "Marginalizes over pulsar mass using M-R posterior samples from NICER analysis teams (Amsterdam and Maryland).",
+                    "description_text": "**Default NICER likelihood** using pre-trained normalizing flows on M-R posteriors. Pre-samples masses once at initialization for efficient, deterministic evaluation. Recommended for production use.",
+                },
+                {
+                    "title": "NICER KDE Likelihood (LEGACY)",
+                    "type": "nicer_kde",
+                    "parameters": [
+                        {
+                            "name": "pulsars",
+                            "example": '[{"name": "J0030", "amsterdam_samples_file": "./data/NICER/J0030/amsterdam.npz", "maryland_samples_file": "./data/NICER/J0030/maryland.npz"}]',
+                            "inline_comment": "List of pulsars with sample files",
+                        },
+                        {
+                            "name": "N_masses_evaluation",
+                            "example": "100",
+                            "inline_comment": "Number of masses per evaluation (optional, default: 100)",
+                        },
+                        {
+                            "name": "N_masses_batch_size",
+                            "example": "20",
+                            "inline_comment": "Batch size for sampling (optional, default: 20)",
+                        },
+                    ],
+                    "field_details": [
+                        {
+                            "name": "pulsars",
+                            "type": "list[dict]",
+                            "default": None,
+                            "description": "List of pulsars with `name`, `amsterdam_samples_file`, and `maryland_samples_file` keys pointing to M-R posterior samples (npz format).",
+                        },
+                        {
+                            "name": "N_masses_evaluation",
+                            "type": "int",
+                            "default": "100",
+                            "description": "Number of mass samples to draw on-the-fly from posterior samples per evaluation",
+                        },
+                        {
+                            "name": "N_masses_batch_size",
+                            "type": "int",
+                            "default": "20",
+                            "description": "Batch size for mass sampling and KDE evaluation",
+                        },
+                    ],
+                    "description_text": "**Legacy NICER likelihood** using kernel density estimation on M-R posterior samples. Resamples masses during each evaluation (slower, non-deterministic). For backward compatibility only - use flow-based version for new analyses.",
                 },
             ],
         },
@@ -1231,8 +1308,11 @@ def extract_examples() -> list[dict[str, Any]]:
             "description": "Sample from the prior distribution without observational constraints.",
             "yaml": """seed: 43
 
-transform:
+eos:
   type: "metamodel"
+
+tov:
+  type: "gr"
 
 prior:
   specification_file: "prior.prior"
@@ -1251,11 +1331,17 @@ sampler:
             "description": "Combine gravitational wave, X-ray, radio, and nuclear theory constraints.",
             "yaml": """seed: 43
 
-transform:
+eos:
   type: "metamodel_cse"
   nb_CSE: 8
   ndat_metamodel: 100
   nmax_nsat: 25.0
+
+tov:
+  type: "gr"
+  min_nsat_TOV: 0.75
+  ndat_TOV: 100
+  nb_masses: 100
 
 prior:
   specification_file: "prior.prior"
@@ -1299,10 +1385,16 @@ postprocessing:
             "description": "Configuration using spectral decomposition for GW analysis workflows.",
             "yaml": """seed: 43
 
-transform:
+eos:
   type: "spectral"
   crust_name: "SLy"               # Required for spectral
   n_points_high: 500
+
+tov:
+  type: "gr"
+  min_nsat_TOV: 0.75
+  ndat_TOV: 100
+  nb_masses: 100
 
 prior:
   specification_file: "spectral_prior.prior"
@@ -1332,7 +1424,7 @@ def extract_validation_rules() -> list[dict[str, Any]]:
     """Extract validation rules."""
     rules = [
         {
-            "title": "Transform Type Consistency",
+            "title": "EOS Type Consistency",
             "entries": [
                 '`type: "metamodel"` requires `nb_CSE: 0` (or omit the field entirely)',
                 '`type: "metamodel_cse"` requires `nb_CSE > 0`',
@@ -1340,6 +1432,13 @@ def extract_validation_rules() -> list[dict[str, Any]]:
                 '  - `crust_name: "SLy"` (LALSuite compatibility)',
                 "  - `nb_CSE: 0` (or omit the field)",
                 "  - Recommended: Include `constraints_gamma` likelihood",
+            ],
+        },
+        {
+            "title": "TOV Configuration",
+            "entries": [
+                '`type` must be `"gr"` (the only currently implemented option; `"post"` and `"scalar_tensor"` are planned)',
+                "`min_nsat_TOV`, `ndat_TOV`, and `nb_masses` must be positive",
             ],
         },
         {
@@ -1366,7 +1465,7 @@ def extract_validation_rules() -> list[dict[str, Any]]:
             "title": "Crust Models",
             "entries": [
                 '`crust_name` must be one of: `"DH"`, `"BPS"`, `"DH_fixed"`, or `"SLy"`',
-                'Spectral transform specifically requires `"SLy"`',
+                'Spectral EOS specifically requires `"SLy"`',
             ],
         },
     ]
@@ -1394,7 +1493,8 @@ def generate_documentation() -> str:
     # Extract all data
     data = {
         "run_options": extract_run_options(),
-        "transforms": extract_transforms(),
+        "eos_configs": extract_eos_configs(),
+        "tov_config": extract_tov_config(),
         "prior_fields": extract_prior_fields(),
         "likelihood_categories": extract_likelihoods(),
         "samplers": extract_samplers(),

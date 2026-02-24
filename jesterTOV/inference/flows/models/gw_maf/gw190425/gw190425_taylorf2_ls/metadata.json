@@ -1,23 +1,30 @@
 {
   "n_samples_total": 23364,
   "n_samples_used": 23364,
+  "parameter_names": [
+    "mass_1_source",
+    "mass_2_source",
+    "lambda_1",
+    "lambda_2"
+  ],
   "filepath": "../../../../../data/gw190425/gw190425_taylorf2-ls_posterior.npz",
   "flow_type": "masked_autoregressive_flow",
-  "num_epochs": 2809,
+  "num_epochs": 1570,
   "learning_rate": 0.0001,
   "max_patience": 500,
   "val_prop": 0.2,
   "standardize": true,
-  "data_bounds_min": [
-    1.6106533038018471,
-    1.2769406580710023,
-    0.0027564342314630955,
-    0.0544472124416667
+  "standardization_method": "zscore",
+  "data_mean": [
+    1.763052948617155,
+    1.5468197845808294,
+    458.92771288782995,
+    661.5907954912466
   ],
-  "data_bounds_max": [
-    2.1249425571040415,
-    1.6950231482187168,
-    4942.667543462624,
-    4995.198046594999
+  "data_std": [
+    0.08419334671370349,
+    0.06951564232105857,
+    487.995898933767,
+    666.8725701720059
   ]
 }

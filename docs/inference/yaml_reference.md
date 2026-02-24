@@ -44,9 +44,9 @@ debug_nans: false  # Enable JAX NaN debugging for numerical issues
 
 ---
 
-## EOS Transform Configuration
+## EOS Configuration
 
-The `transform` section specifies which equation of state (EOS) parametrization to use and how to transform EOS parameters to observables (mass, radius, tidal deformability).
+The `eos` section specifies which equation of state (EOS) parametrization to use.
 
 ### Metamodel
 
@@ -55,16 +55,13 @@ Metamodel EOS parametrization
 ::::{dropdown} **Metamodel Configuration**
 
 ```yaml
-transform:
+eos:
   type: "metamodel"  # Required: EOS parametrization type
   ndat_metamodel: 100  # Number of points for EOS table
   nmax_nsat: 25.0  # Maximum density (in units of saturation density)
   nmin_MM_nsat: 0.75  # Minimum density for metamodel (in units of n_sat)
-  min_nsat_TOV: 0.75  # Minimum density for TOV solver
-  ndat_TOV: 100  # Number of points for TOV integration
-  nb_masses: 100  # Number of masses for family construction
   crust_name: "DH"  # Crust model: "DH", "BPS", "DH_fixed", or "SLy"
-  tov_solver: "gr"  # TOV solver: "gr", "post", or "scalar_tensor"
+  nb_CSE: 0  # Must be 0 for standard metamodel
 ```
 
 **Requirements:**
@@ -80,17 +77,13 @@ Metamodel EOS parametrization with speed-of-sound extension above a breakdown de
 ::::{dropdown} **Metamodel CSE Configuration**
 
 ```yaml
-transform:
+eos:
   type: "metamodel_cse"  # Required: EOS parametrization type
   nb_CSE: 8  # Number of CSE enforcement points (must be > 0)
   ndat_metamodel: 100  # Number of points for EOS table
   nmax_nsat: 25.0  # Maximum density (in units of saturation density)
   nmin_MM_nsat: 0.75  # Minimum density for metamodel (in units of n_sat)
-  min_nsat_TOV: 0.75  # Minimum density for TOV solver
-  ndat_TOV: 100  # Number of points for TOV integration
-  nb_masses: 100  # Number of masses for family construction
   crust_name: "DH"  # Crust model: "DH", "BPS", "DH_fixed", or "SLy"
-  tov_solver: "gr"  # TOV solver: "gr", "post", or "scalar_tensor"
 ```
 
 **Requirements:**
@@ -106,14 +99,10 @@ Spectral decomposition parametrization compatible with LALSimulation for GW anal
 ::::{dropdown} **Spectral (LALSuite-Compatible) Configuration**
 
 ```yaml
-transform:
+eos:
   type: "spectral"  # Required: EOS parametrization type
   n_points_high: 500  # Number of points for high-density spectral region
-  min_nsat_TOV: 0.75  # Minimum density for TOV solver
-  ndat_TOV: 100  # Number of points for TOV integration
-  nb_masses: 100  # Number of masses for family construction
   crust_name: "SLy"  # Must be "SLy" for LALSuite compatibility
-  tov_solver: "gr"  # TOV solver: "gr", "post", or "scalar_tensor"
 ```
 
 **Requirements:**
@@ -126,6 +115,32 @@ transform:
 
 ::::
 
+
+---
+
+## TOV Configuration
+
+The `tov` section configures the Tolman-Oppenheimer-Volkoff equation solver used to compute neutron star structure (mass-radius-tidal deformability).
+
+::::{dropdown} **TOV Solver Configuration**
+:open:
+
+```yaml
+tov:
+  type: "gr"  # TOV solver: currently only "gr" is implemented
+  min_nsat_TOV: 0.75  # Minimum density for TOV solver (in units of n_sat)
+  ndat_TOV: 100  # Number of points for TOV integration
+  nb_masses: 100  # Number of masses for family construction
+```
+
+**Field Details:**
+
+- **`type`** (`str`, default: `"gr"`) - TOV solver type. Currently only 'gr' (General Relativity) is implemented. 'anisotropy' and 'scalar_tensor' are planned but not yet available.
+- **`min_nsat_TOV`** (`float`, default: `0.75`) - Minimum central density for TOV integration in units of saturation density
+- **`ndat_TOV`** (`int`, default: `100`) - Number of data points for TOV integration
+- **`nb_masses`** (`int`, default: `100`) - Number of masses to sample when constructing the M-R-Λ family
+
+::::
 
 ---
 
@@ -164,8 +179,7 @@ Constrain the EOS using gravitational wave observations of binary neutron star m
 - type: "gw"
   enabled: true
   parameters:
-    events: [{"name": "GW170817", "model_dir": "./NFs/GW170817"}]  # List of GW events
-    penalty_value: -99999.0  # Penalty for M > M_TOV (optional, default: -99999.0)
+    events: [{"name": "GW170817", "nf_model_dir": "./NFs/GW170817"}]  # List of GW events (see GWEventConfig below)
     N_masses_evaluation: 2000  # Number of mass samples to pre-sample (optional, default: 2000)
     N_masses_batch_size: 1000  # Batch size for processing (optional, default: 1000)
     seed: 42  # Random seed for mass sampling (optional, default: 42)
@@ -173,8 +187,10 @@ Constrain the EOS using gravitational wave observations of binary neutron star m
 
 **Field Details:**
 
-- **`events`** (`list[dict]`) - List of GW events with `name` and optional `model_dir` keys. If `model_dir` is omitted, uses preset paths.
-- **`penalty_value`** (`float`, default: `-99999.0`) - Log-likelihood penalty for masses exceeding TOV maximum mass
+- **`events`** (`list[GWEventConfig]`) - List of GW event configs (see **GWEventConfig** below). Each entry must have `name`. Two modes are supported:
+  - **Pre-trained flow**: set `nf_model_dir` to point to a trained flow, or omit it to use a built-in preset.
+  - **From bilby result**: set `from_bilby_result` to the path of a bilby HDF5 result file; jester will extract posterior samples and train a flow automatically before inference.
+- **`penalty_value`** (`float`, default: `0.0`) - Log-likelihood penalty for masses exceeding TOV maximum mass (default: 0.0, i.e. no penalty)
 - **`N_masses_evaluation`** (`int`, default: `2000`) - Number of mass samples to pre-sample from the GW posterior
 - **`N_masses_batch_size`** (`int`, default: `1000`) - Batch size for jax.lax.map processing of mass grid
 - **`seed`** (`int`, default: `42`) - Random seed for mass pre-sampling from GW posterior
@@ -183,7 +199,35 @@ Constrain the EOS using gravitational wave observations of binary neutron star m
 
 **Description:**
 
-**Default GW likelihood** (presampled version): Pre-samples masses from GW posterior for efficient evaluation. Recommended for production use.
+**Default GW likelihood** (presampled version): pre-samples masses from the GW posterior for efficient evaluation. Recommended for production use.
+
+**GWEventConfig fields** (each entry in `events`):
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | str | required | Event name, e.g. `GW170817` |
+| `nf_model_dir` | str\|null | null | Path to a pre-trained normalizing flow directory. Mutually exclusive with `from_bilby_result`. |
+| `from_bilby_result` | str\|null | null | Path to a bilby result `.hdf5` file. jester will extract posterior samples and train a flow automatically. |
+| `flow_config` | str\|null | null | Path to a `FlowTrainingConfig` YAML file for custom flow training (only valid with `from_bilby_result`). |
+| `retrain_flow` | bool | false | Force re-training even if a cached flow exists (only valid with `from_bilby_result`). |
+
+**Examples**:
+
+```yaml
+# Pre-trained flow (preset):
+events:
+  - name: GW170817
+
+# Pre-trained flow (custom path):
+events:
+  - name: GW170817
+    nf_model_dir: ./my_flow
+
+# From bilby result (auto-train):
+events:
+  - name: GW170817
+    from_bilby_result: ./GW170817_result.hdf5
+```
 
 ::::
 
@@ -195,16 +239,15 @@ Constrain the EOS using gravitational wave observations of binary neutron star m
 - type: "gw_resampled"
   enabled: true
   parameters:
-    events: [{"name": "GW170817", "model_dir": "./NFs/GW170817"}]  # List of GW events
-    penalty_value: -99999.0  # Penalty for M > M_TOV (optional, default: -99999.0)
+    events: [{"name": "GW170817", "nf_model_dir": "./NFs/GW170817"}]  # List of GW events
     N_masses_evaluation: 20  # Number of masses per evaluation (optional, default: 20)
     N_masses_batch_size: 10  # Batch size for sampling (optional, default: 10)
 ```
 
 **Field Details:**
 
-- **`events`** (`list[dict]`) - List of GW events with `name` and optional `model_dir` keys
-- **`penalty_value`** (`float`, default: `-99999.0`) - Log-likelihood penalty for masses exceeding TOV maximum mass
+- **`events`** (`list[dict]`) - List of GW events with `name` and optional `nf_model_dir` keys
+- **`penalty_value`** (`float`, default: `0.0`) - Log-likelihood penalty for masses exceeding TOV maximum mass (default: 0.0, i.e. no penalty)
 - **`N_masses_evaluation`** (`int`, default: `20`) - Number of mass samples to draw on-the-fly per likelihood evaluation
 - **`N_masses_batch_size`** (`int`, default: `10`) - Batch size for mass sampling and processing
 
@@ -220,29 +263,59 @@ Constrain the EOS using gravitational wave observations of binary neutron star m
 
 Constrain the mass-radius relation using NICER X-ray timing observations of millisecond pulsars.
 
+#### NICER Flow Likelihood (DEFAULT)
 
-::::{dropdown} **NICER Likelihood (type: "nicer")**
+::::{dropdown} **NICER Flow Likelihood (DEFAULT) (type: "nicer")**
 
 ```yaml
 - type: "nicer"
   enabled: true
   parameters:
-    pulsars: [{"name": "J0030", "amsterdam_samples_file": "...", "maryland_samples_file": "..."}]  # List of pulsars
-    N_masses_evaluation: 100  # Number of mass grid points (optional, default: 100)
+    pulsars: [{"name": "J0030", "amsterdam_model_dir": "./flows/models/nicer_maf/J0030/amsterdam", "maryland_model_dir": "./flows/models/nicer_maf/J0030/maryland"}]  # List of pulsars with flow model directories
+    N_masses_evaluation: 100  # Number of mass samples (optional, default: 100)
     N_masses_batch_size: 20  # Batch size for processing (optional, default: 20)
+    seed: 42  # Random seed for mass pre-sampling (optional, default: 42)
 ```
 
 **Field Details:**
 
-- **`pulsars`** (`list[dict]`) - List of pulsars with `name`, `amsterdam_samples_file`, and `maryland_samples_file` keys. If sample files are omitted, uses preset paths.
-- **`N_masses_evaluation`** (`int`, default: `100`) - Number of mass grid points for marginalization over pulsar mass
-- **`N_masses_batch_size`** (`int`, default: `20`) - Batch size for processing mass grid points
+- **`pulsars`** (`list[dict]`) - List of pulsars with `name`, `amsterdam_model_dir`, and `maryland_model_dir` keys. Model directories must point to trained normalizing flow models.
+- **`N_masses_evaluation`** (`int`, default: `100`) - Number of mass samples to pre-sample from flow for deterministic evaluation
+- **`N_masses_batch_size`** (`int`, default: `20`) - Batch size for processing mass samples with jax.lax.map
+- **`seed`** (`int`, default: `42`) - Random seed for reproducible mass pre-sampling from flow
 
 
 
 **Description:**
 
-Marginalizes over pulsar mass using M-R posterior samples from NICER analysis teams (Amsterdam and Maryland).
+**Default NICER likelihood** using pre-trained normalizing flows on M-R posteriors. Pre-samples masses once at initialization for efficient, deterministic evaluation. Recommended for production use.
+
+::::
+
+#### NICER KDE Likelihood (LEGACY)
+
+::::{dropdown} **NICER KDE Likelihood (LEGACY) (type: "nicer_kde")**
+
+```yaml
+- type: "nicer_kde"
+  enabled: true
+  parameters:
+    pulsars: [{"name": "J0030", "amsterdam_samples_file": "./data/NICER/J0030/amsterdam.npz", "maryland_samples_file": "./data/NICER/J0030/maryland.npz"}]  # List of pulsars with sample files
+    N_masses_evaluation: 100  # Number of masses per evaluation (optional, default: 100)
+    N_masses_batch_size: 20  # Batch size for sampling (optional, default: 20)
+```
+
+**Field Details:**
+
+- **`pulsars`** (`list[dict]`) - List of pulsars with `name`, `amsterdam_samples_file`, and `maryland_samples_file` keys pointing to M-R posterior samples (npz format).
+- **`N_masses_evaluation`** (`int`, default: `100`) - Number of mass samples to draw on-the-fly from posterior samples per evaluation
+- **`N_masses_batch_size`** (`int`, default: `20`) - Batch size for mass sampling and KDE evaluation
+
+
+
+**Description:**
+
+**Legacy NICER likelihood** using kernel density estimation on M-R posterior samples. Resamples masses during each evaluation (slower, non-deterministic). For backward compatibility only - use flow-based version for new analyses.
 
 ::::
 
@@ -674,8 +747,11 @@ Sample from the prior distribution without observational constraints.
 ```yaml
 seed: 43
 
-transform:
+eos:
   type: "metamodel"
+
+tov:
+  type: "gr"
 
 prior:
   specification_file: "prior.prior"
@@ -701,11 +777,17 @@ Combine gravitational wave, X-ray, radio, and nuclear theory constraints.
 ```yaml
 seed: 43
 
-transform:
+eos:
   type: "metamodel_cse"
   nb_CSE: 8
   ndat_metamodel: 100
   nmax_nsat: 25.0
+
+tov:
+  type: "gr"
+  min_nsat_TOV: 0.75
+  ndat_TOV: 100
+  nb_masses: 100
 
 prior:
   specification_file: "prior.prior"
@@ -756,10 +838,16 @@ Configuration using spectral decomposition for GW analysis workflows.
 ```yaml
 seed: 43
 
-transform:
+eos:
   type: "spectral"
   crust_name: "SLy"               # Required for spectral
   n_points_high: 500
+
+tov:
+  type: "gr"
+  min_nsat_TOV: 0.75
+  ndat_TOV: 100
+  nb_masses: 100
 
 prior:
   specification_file: "spectral_prior.prior"
@@ -792,13 +880,17 @@ The configuration is validated using Pydantic. Common validation errors:
 
 ::::{dropdown} **Validation Rules Details**
 
-**Transform Type Consistency:**
+**EOS Type Consistency:**
 - `type: "metamodel"` requires `nb_CSE: 0` (or omit the field entirely)
 - `type: "metamodel_cse"` requires `nb_CSE > 0`
 - `type: "spectral"` requires:
 -   - `crust_name: "SLy"` (LALSuite compatibility)
 -   - `nb_CSE: 0` (or omit the field)
 -   - Recommended: Include `constraints_gamma` likelihood
+
+**TOV Configuration:**
+- `type` must be `"gr"` (the only currently implemented option; `"post"` and `"scalar_tensor"` are planned)
+- `min_nsat_TOV`, `ndat_TOV`, and `nb_masses` must be positive
 
 **Prior File:**
 - `specification_file` must end with `.prior` extension
@@ -813,7 +905,7 @@ The configuration is validated using Pydantic. Common validation errors:
 
 **Crust Models:**
 - `crust_name` must be one of: `"DH"`, `"BPS"`, `"DH_fixed"`, or `"SLy"`
-- Spectral transform specifically requires `"SLy"`
+- Spectral EOS specifically requires `"SLy"`
 
 ::::
 

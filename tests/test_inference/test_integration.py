@@ -4,6 +4,8 @@ import pytest
 import jax
 import jax.numpy as jnp
 
+pytestmark = pytest.mark.integration
+
 from jesterTOV.inference.config import parser as config_parser
 from jesterTOV.inference.config import schema
 from jesterTOV.inference.priors import parser as prior_parser
@@ -23,12 +25,10 @@ class TestConfigToComponents:
         prior_spec_file = config.prior.specification_file
 
         # Create prior
-        prior = prior_parser.parse_prior_file(
-            prior_spec_file, nb_CSE=config.transform.nb_CSE
-        )
+        prior = prior_parser.parse_prior_file(prior_spec_file, nb_CSE=config.eos.nb_CSE)
 
         # Prior should have correct number of dimensions
-        assert prior.n_dim == 8  # 8 NEP parameters for nb_CSE=0
+        assert prior.n_dim == 9  # 9 NEP parameters for nb_CSE=0 (includes E_sat)
 
         # Can sample from prior
         rng_key = jax.random.PRNGKey(42)
@@ -36,6 +36,7 @@ class TestConfigToComponents:
 
         # Should have all expected parameters
         expected_params = [
+            "E_sat",
             "K_sat",
             "Q_sat",
             "Z_sat",
@@ -53,7 +54,7 @@ class TestConfigToComponents:
         config = schema.InferenceConfig(**sample_config_dict)
 
         # Create transform using from_config (no need for manual name_mapping)
-        transform = JesterTransform.from_config(config.transform)
+        transform = JesterTransform.from_config(config.eos, config.tov)
 
         # Transform should have correct type
         assert (
@@ -101,15 +102,18 @@ Z_sym = UniformPrior(-2000.0, 1500.0, parameter_names=["Z_sym"])
             "seed": 42,
             "dry_run": False,
             "validate_only": False,
-            "transform": {
+            "eos": {
                 "type": "metamodel",
                 "ndat_metamodel": 50,  # Smaller for faster tests
                 "nmax_nsat": 2.0,
                 "nb_CSE": 0,
+                "crust_name": "DH",
+            },
+            "tov": {
+                "type": "gr",
                 "min_nsat_TOV": 0.75,
                 "ndat_TOV": 50,
                 "nb_masses": 50,
-                "crust_name": "DH",
             },
             "prior": {"specification_file": str(prior_file)},
             "likelihoods": [
@@ -145,7 +149,7 @@ Z_sym = UniformPrior(-2000.0, 1500.0, parameter_names=["Z_sym"])
         """
         # Create prior
         prior = prior_parser.parse_prior_file(
-            full_config.prior.specification_file, nb_CSE=full_config.transform.nb_CSE
+            full_config.prior.specification_file, nb_CSE=full_config.eos.nb_CSE
         )
 
         # Sample from prior
@@ -175,7 +179,7 @@ Z_sym = UniformPrior(-2000.0, 1500.0, parameter_names=["Z_sym"])
         """Test evaluating prior log probability and likelihood together."""
         # Create prior
         prior = prior_parser.parse_prior_file(
-            full_config.prior.specification_file, nb_CSE=full_config.transform.nb_CSE
+            full_config.prior.specification_file, nb_CSE=full_config.eos.nb_CSE
         )
 
         # Sample from prior
@@ -392,12 +396,12 @@ class TestConfigValidationIntegration:
     """Test that invalid configurations are caught early."""
 
     def test_invalid_config_type_raises_validation_error(self):
-        """Test that invalid transform type is caught by Pydantic."""
+        """Test that invalid EOS type is caught by Pydantic."""
         from pydantic import ValidationError
 
         with pytest.raises(ValidationError):
-            schema.TransformConfig(
-                type="invalid_transform",  # Should fail
+            schema.MetamodelEOSConfig(
+                type="invalid_eos",  # Should fail
                 nb_CSE=0,
             )
 
@@ -406,7 +410,7 @@ class TestConfigValidationIntegration:
         from pydantic import ValidationError
 
         with pytest.raises(ValidationError, match="nb_CSE must be 0"):
-            schema.TransformConfig(
+            schema.MetamodelEOSConfig(
                 type="metamodel",
                 nb_CSE=8,  # Should fail for type=metamodel
             )
@@ -466,7 +470,8 @@ class TestEOSSampleGeneration:
         # Create minimal config for generate_eos_samples
         config_dict = {
             "seed": 42,
-            "transform": {"type": "metamodel", "nb_CSE": 0},
+            "eos": {"type": "metamodel", "nb_CSE": 0},
+            "tov": {"type": "gr"},
             "prior": {"specification_file": "dummy.prior"},
             "likelihoods": [{"type": "zero", "enabled": True}],
             "sampler": {
@@ -486,7 +491,7 @@ class TestEOSSampleGeneration:
         config = InferenceConfig(**config_dict)
 
         # Create transform using from_config
-        transform = JesterTransform.from_config(config.transform)
+        transform = JesterTransform.from_config(config.eos, config.tov)
 
         # Store original log_prob length
         original_log_prob_len = len(result.posterior["log_prob"])
@@ -565,7 +570,8 @@ class TestEOSSampleGeneration:
         # Create minimal config
         config_dict = {
             "seed": 123,
-            "transform": {"type": "metamodel", "nb_CSE": 0},
+            "eos": {"type": "metamodel", "nb_CSE": 0},
+            "tov": {"type": "gr"},
             "prior": {"specification_file": "dummy.prior"},
             "likelihoods": [{"type": "zero", "enabled": True}],
             "sampler": {
@@ -581,7 +587,7 @@ class TestEOSSampleGeneration:
         config = InferenceConfig(**config_dict)
 
         # Create transform using from_config
-        transform = JesterTransform.from_config(config.transform)
+        transform = JesterTransform.from_config(config.eos, config.tov)
 
         # Generate 40 EOS samples from 100 posterior samples using new method
         n_eos_samples = 40

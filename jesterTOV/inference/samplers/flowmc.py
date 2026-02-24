@@ -4,10 +4,22 @@ from typing import Any
 
 import jax
 import jax.numpy as jnp
-from jaxtyping import Array
-from flowMC.nfmodel.rqSpline import MaskedCouplingRQSpline
-from flowMC.proposal.MALA import MALA
-from flowMC.proposal.Gaussian_random_walk import GaussianRandomWalk
+from jaxtyping import Array, Float, PRNGKeyArray
+import equinox as eqx
+
+from flowMC.resource.base import Resource
+from flowMC.resource.buffers import Buffer
+from flowMC.resource.states import State
+from flowMC.resource.logPDF import LogPDF
+from flowMC.resource.local_kernel.MALA import MALA
+from flowMC.resource.local_kernel.Gaussian_random_walk import GaussianRandomWalk
+from flowMC.resource.nf_model.NF_proposal import NFProposal
+from flowMC.resource.nf_model.rqSpline import MaskedCouplingRQSpline
+from flowMC.resource.optimizer import Optimizer
+from flowMC.strategy.lambda_function import Lambda
+from flowMC.strategy.take_steps import TakeSerialSteps, TakeGroupSteps
+from flowMC.strategy.train_model import TrainModel
+from flowMC.strategy.update_state import UpdateState
 from flowMC.Sampler import Sampler
 
 from .jester_sampler import JesterSampler, SamplerOutput
@@ -71,7 +83,7 @@ class FlowMCSampler(JesterSampler):
         sample_transforms: list[BijectiveTransform] | None = None,
         likelihood_transforms: list[NtoMTransform] | None = None,
         seed: int = 0,
-        local_sampler_name: str = "GaussianRandomWalk",  # TODO: use literal here, MALA and GaussianRandomWalk for now
+        local_sampler_name: str = "GaussianRandomWalk",
         local_sampler_arg: dict[str, Any] | None = None,
         num_layers: int = 10,
         hidden_size: list[int] | None = None,
@@ -96,34 +108,107 @@ class FlowMCSampler(JesterSampler):
         # FlowMC-specific initialization
         rng_key = jax.random.PRNGKey(seed)
 
-        # Select local sampler based on name
-        if local_sampler_name == "MALA":
-            # MALA uses matrix-vector multiplication, so it can handle full matrices
-            # Provide default step_size if not given
-            if "step_size" not in local_sampler_arg:
-                local_sampler_arg = {
-                    **local_sampler_arg,
-                    "step_size": jnp.ones((self.prior.n_dim, self.prior.n_dim)) * 1e-3,
-                }
-            local_sampler = MALA(self.posterior, True, **local_sampler_arg)
-        elif local_sampler_name == "GaussianRandomWalk":
-            # GaussianRandomWalk uses element-wise multiplication, so convert matrix to diagonal
-            step_size: Array | None = local_sampler_arg.get(
-                "step_size"
-            )  # Can be 1D or 2D array
-            if step_size is None:
-                # Provide default step_size if not given
-                step_size = jnp.ones(self.prior.n_dim) * 1e-3
-                local_sampler_arg = {**local_sampler_arg, "step_size": step_size}
-            elif step_size.ndim == 2:
-                # Extract diagonal from DxD matrix
-                local_sampler_arg = {
-                    **local_sampler_arg,
-                    "step_size": jnp.diag(step_size),
-                }
-            local_sampler = GaussianRandomWalk(
-                self.posterior, True, **local_sampler_arg
+        # Create logpdf wrapper that matches new flowMC API
+        def logpdf_func(x: Float[Array, " n_dim"], data: dict) -> Float:
+            """Log PDF function for flowMC 0.4.5 API."""
+            # Convert array to dict with parameter names
+            # NOTE: Do NOT use float() on JAX traced values - causes ConcretizationTypeError
+            params_dict = {name: x[i] for i, name in enumerate(self.parameter_names)}
+            return self.posterior_from_dict(params_dict, data)
+
+        # Build the custom bundle for JESTER
+        n_dims = self.prior.n_dim
+        n_chains = config.n_chains
+        n_local_steps = config.n_local_steps
+        n_global_steps = config.n_global_steps
+        n_training_loops = config.n_loop_training
+        n_production_loops = config.n_loop_production
+        n_epochs = config.n_epochs
+        learning_rate = config.learning_rate
+        local_thinning = config.train_thinning
+        global_thinning = config.train_thinning
+        output_local_thinning = config.output_thinning
+        output_global_thinning = config.output_thinning
+
+        # Validate thinning values to prevent zero-length buffers
+        thinning_errors = []
+        if local_thinning > n_local_steps:
+            thinning_errors.append(
+                f"train_thinning ({local_thinning}) exceeds n_local_steps ({n_local_steps})"
             )
+        if global_thinning > n_global_steps:
+            thinning_errors.append(
+                f"train_thinning ({global_thinning}) exceeds n_global_steps ({n_global_steps})"
+            )
+        if output_local_thinning > n_local_steps:
+            thinning_errors.append(
+                f"output_thinning ({output_local_thinning}) exceeds n_local_steps ({n_local_steps})"
+            )
+        if output_global_thinning > n_global_steps:
+            thinning_errors.append(
+                f"output_thinning ({output_global_thinning}) exceeds n_global_steps ({n_global_steps})"
+            )
+        if thinning_errors:
+            error_msg = (
+                "Thinning values exceed step counts, which would produce zero-length buffers:\n  "
+                + "\n  ".join(thinning_errors)
+                + "\nPlease reduce thinning values or increase step counts in your config."
+            )
+            raise ValueError(error_msg)
+
+        # Calculate buffer sizes (guaranteed non-zero after validation)
+        n_training_steps = (
+            n_local_steps // local_thinning * n_training_loops
+            + n_global_steps // global_thinning * n_training_loops
+        )
+        n_production_steps = (
+            n_local_steps // output_local_thinning * n_production_loops
+            + n_global_steps // output_global_thinning * n_production_loops
+        )
+        n_total_epochs = n_training_loops * n_epochs
+
+        # Create buffers
+        positions_training = Buffer(
+            "positions_training", (n_chains, n_training_steps, n_dims), 1
+        )
+        log_prob_training = Buffer("log_prob_training", (n_chains, n_training_steps), 1)
+        local_accs_training = Buffer(
+            "local_accs_training", (n_chains, n_training_steps), 1
+        )
+        global_accs_training = Buffer(
+            "global_accs_training", (n_chains, n_training_steps), 1
+        )
+        loss_buffer = Buffer("loss_buffer", (n_total_epochs,), 0)
+
+        position_production = Buffer(
+            "positions_production", (n_chains, n_production_steps, n_dims), 1
+        )
+        log_prob_production = Buffer(
+            "log_prob_production", (n_chains, n_production_steps), 1
+        )
+        local_accs_production = Buffer(
+            "local_accs_production", (n_chains, n_production_steps), 1
+        )
+        global_accs_production = Buffer(
+            "global_accs_production", (n_chains, n_production_steps), 1
+        )
+
+        # Select and create local sampler
+        step_size = local_sampler_arg.get("step_size")
+        if step_size is None:
+            # Provide default step_size
+            if local_sampler_name == "MALA":
+                step_size = 1e-1
+            else:  # GaussianRandomWalk
+                step_size = jnp.ones(n_dims) * 1e-3
+        elif isinstance(step_size, jnp.ndarray) and step_size.ndim == 2:
+            # Extract diagonal from DxD matrix for GaussianRandomWalk
+            step_size = jnp.diag(step_size)
+
+        if local_sampler_name == "MALA":
+            local_sampler = MALA(step_size=step_size)
+        elif local_sampler_name == "GaussianRandomWalk":
+            local_sampler = GaussianRandomWalk(step_size=step_size)
         else:
             raise ValueError(
                 f"Unknown local_sampler_name: {local_sampler_name}. "
@@ -133,26 +218,219 @@ class FlowMCSampler(JesterSampler):
         # Create normalizing flow model
         rng_key, subkey = jax.random.split(rng_key)
         model = MaskedCouplingRQSpline(
-            self.prior.n_dim, num_layers, hidden_size, num_bins, subkey
+            n_dims, num_layers, hidden_size, num_bins, subkey
+        )
+        global_sampler = NFProposal(model, n_NFproposal_batch_size=10000)
+        optimizer = Optimizer(model=model, learning_rate=learning_rate)
+        logpdf_resource = LogPDF(logpdf_func, n_dims=n_dims)
+
+        # Create sampler state
+        sampler_state = State(
+            {
+                "target_positions": "positions_training",
+                "target_log_prob": "log_prob_training",
+                "target_local_accs": "local_accs_training",
+                "target_global_accs": "global_accs_training",
+                "training": True,
+            },
+            name="sampler_state",
         )
 
-        # Create flowMC sampler with config parameters, we do not use data dict (therefore, None)
-        # TODO: in the future, we need to pass along all kwargs and ensure the kwarg names are correct, etc.
+        # Build resources dict
+        resources = {
+            "logpdf": logpdf_resource,
+            "positions_training": positions_training,
+            "log_prob_training": log_prob_training,
+            "local_accs_training": local_accs_training,
+            "global_accs_training": global_accs_training,
+            "loss_buffer": loss_buffer,
+            "positions_production": position_production,
+            "log_prob_production": log_prob_production,
+            "local_accs_production": local_accs_production,
+            "global_accs_production": global_accs_production,
+            "local_sampler": local_sampler,
+            "global_sampler": global_sampler,
+            "model": model,
+            "optimizer": optimizer,
+            "sampler_state": sampler_state,
+        }
+
+        # Create strategies
+        local_stepper = TakeSerialSteps(
+            "logpdf",
+            "local_sampler",
+            "sampler_state",
+            ["target_positions", "target_log_prob", "target_local_accs"],
+            n_local_steps,
+            thinning=local_thinning,
+            chain_batch_size=0,
+            verbose=False,
+        )
+
+        global_stepper = TakeGroupSteps(
+            "logpdf",
+            "global_sampler",
+            "sampler_state",
+            ["target_positions", "target_log_prob", "target_global_accs"],
+            n_global_steps,
+            thinning=global_thinning,
+            chain_batch_size=0,
+            verbose=False,
+        )
+
+        model_trainer = TrainModel(
+            "model",
+            "positions_training",
+            "optimizer",
+            loss_buffer_name="loss_buffer",
+            n_epochs=n_epochs,
+            batch_size=10000,
+            n_max_examples=10000,
+            verbose=False,
+        )
+
+        update_state = UpdateState(
+            "sampler_state",
+            [
+                "target_positions",
+                "target_log_prob",
+                "target_local_accs",
+                "target_global_accs",
+                "training",
+            ],
+            [
+                "positions_production",
+                "log_prob_production",
+                "local_accs_production",
+                "global_accs_production",
+                False,
+            ],
+        )
+
+        # Update production phase thinning
+        def update_production_thinning(
+            rng_key: PRNGKeyArray,
+            resources: dict[str, Resource],
+            initial_position: Float[Array, "n_chains n_dim"],
+            data: dict,
+        ) -> tuple[
+            PRNGKeyArray,
+            dict[str, Resource],
+            Float[Array, "n_chains n_dim"],
+        ]:
+            """Update thinning for production phase."""
+            local_stepper.thinning = output_local_thinning
+            global_stepper.thinning = output_global_thinning
+            return rng_key, resources, initial_position
+
+        update_production_thinning_lambda = Lambda(
+            lambda rng_key, resources, initial_position, data: update_production_thinning(
+                rng_key, resources, initial_position, data
+            )
+        )
+
+        def reset_steppers(
+            rng_key: PRNGKeyArray,
+            resources: dict[str, Resource],
+            initial_position: Float[Array, "n_chains n_dim"],
+            data: dict,
+        ) -> tuple[
+            PRNGKeyArray,
+            dict[str, Resource],
+            Float[Array, "n_chains n_dim"],
+        ]:
+            """Reset the steppers to the initial position."""
+            local_stepper.set_current_position(0)
+            global_stepper.set_current_position(0)
+            return rng_key, resources, initial_position
+
+        reset_steppers_lambda = Lambda(
+            lambda rng_key, resources, initial_position, data: reset_steppers(
+                rng_key, resources, initial_position, data
+            )
+        )
+
+        update_global_step = Lambda(
+            lambda rng_key, resources, initial_position, data: global_stepper.set_current_position(
+                local_stepper.current_position
+            )
+        )
+        update_local_step = Lambda(
+            lambda rng_key, resources, initial_position, data: local_stepper.set_current_position(
+                global_stepper.current_position
+            )
+        )
+
+        def update_model(
+            rng_key: PRNGKeyArray,
+            resources: dict[str, Resource],
+            initial_position: Float[Array, "n_chains n_dim"],
+            data: dict,
+        ) -> tuple[
+            PRNGKeyArray,
+            dict[str, Resource],
+            Float[Array, "n_chains n_dim"],
+        ]:
+            """Update the model."""
+            model = resources["model"]
+            resources["global_sampler"] = eqx.tree_at(
+                lambda x: x.model,
+                resources["global_sampler"],
+                model,
+            )
+            return rng_key, resources, initial_position
+
+        update_model_lambda = Lambda(
+            lambda rng_key, resources, initial_position, data: update_model(
+                rng_key, resources, initial_position, data
+            )
+        )
+
+        strategies = {
+            "local_stepper": local_stepper,
+            "global_stepper": global_stepper,
+            "model_trainer": model_trainer,
+            "update_state": update_state,
+            "update_global_step": update_global_step,
+            "update_local_step": update_local_step,
+            "reset_steppers": reset_steppers_lambda,
+            "update_model": update_model_lambda,
+            "update_production_thinning": update_production_thinning_lambda,
+        }
+
+        # Build strategy order
+        training_phase = [
+            "local_stepper",
+            "update_global_step",
+            "model_trainer",
+            "update_model",
+            "global_stepper",
+            "update_local_step",
+        ]
+        production_phase = [
+            "local_stepper",
+            "update_global_step",
+            "global_stepper",
+            "update_local_step",
+        ]
+        strategy_order = []
+        for _ in range(n_training_loops):
+            strategy_order.extend(training_phase)
+
+        strategy_order.append("reset_steppers")
+        strategy_order.append("update_state")
+        strategy_order.append("update_production_thinning")
+        for _ in range(n_production_loops):
+            strategy_order.extend(production_phase)
+
+        # Create flowMC sampler
         self.sampler = Sampler(
-            self.prior.n_dim,
-            rng_key,
-            None,  # type: ignore
-            local_sampler,
-            model,
-            n_loop_training=config.n_loop_training,
-            n_loop_production=config.n_loop_production,
-            n_chains=config.n_chains,
-            n_local_steps=config.n_local_steps,
-            n_global_steps=config.n_global_steps,
-            n_epochs=config.n_epochs,
-            learning_rate=config.learning_rate,
-            train_thinning=config.train_thinning,
-            output_thinning=config.output_thinning,
+            n_dim=n_dims,
+            n_chains=n_chains,
+            rng_key=rng_key,
+            resources=resources,
+            strategies=strategies,
+            strategy_order=strategy_order,
         )
 
     def sample(self, key):
@@ -208,69 +486,7 @@ class FlowMCSampler(JesterSampler):
             initial_position = initial_position.at[
                 non_finite_index[:common_length]
             ].set(guess[:common_length])
-        self.sampler.sample(initial_position, None)  # type: ignore
-
-    def print_summary(self, transform: bool = True):
-        """
-        Generate summary of the flowMC run.
-
-        Parameters
-        ----------
-        transform : bool, optional
-            Whether to apply inverse sample transforms to results (default: True)
-        """
-        train_summary = self.sampler.get_sampler_state(training=True)
-        production_summary = self.sampler.get_sampler_state(training=False)
-
-        training_chain = train_summary["chains"].reshape(-1, self.prior.n_dim).T
-        training_chain = self.add_name(training_chain)
-        if transform:
-            for sample_transform in reversed(self.sample_transforms):
-                training_chain = jax.vmap(sample_transform.backward)(training_chain)
-        training_log_prob = train_summary["log_prob"]
-        training_local_acceptance = train_summary["local_accs"]
-        training_global_acceptance = train_summary["global_accs"]
-        training_loss = train_summary["loss_vals"]
-
-        production_chain = production_summary["chains"].reshape(-1, self.prior.n_dim).T
-        production_chain = self.add_name(production_chain)
-        if transform:
-            for sample_transform in reversed(self.sample_transforms):
-                production_chain = jax.vmap(sample_transform.backward)(production_chain)
-        production_log_prob = production_summary["log_prob"]
-        production_local_acceptance = production_summary["local_accs"]
-        production_global_acceptance = production_summary["global_accs"]
-
-        logger.info("Training summary")
-        logger.info("=" * 10)
-        for key, value in training_chain.items():
-            logger.info(f"{key}: {value.mean():.3f} +/- {value.std():.3f}")
-        logger.info(
-            f"Log probability: {training_log_prob.mean():.3f} +/- {training_log_prob.std():.3f}"
-        )
-        logger.info(
-            f"Local acceptance: {training_local_acceptance.mean():.3f} +/- {training_local_acceptance.std():.3f}"
-        )
-        logger.info(
-            f"Global acceptance: {training_global_acceptance.mean():.3f} +/- {training_global_acceptance.std():.3f}"
-        )
-        logger.info(
-            f"Max loss: {training_loss.max():.3f}, Min loss: {training_loss.min():.3f}"
-        )
-
-        logger.info("Production summary")
-        logger.info("=" * 10)
-        for key, value in production_chain.items():
-            logger.info(f"{key}: {value.mean():.3f} +/- {value.std():.3f}")
-        logger.info(
-            f"Log probability: {production_log_prob.mean():.3f} +/- {production_log_prob.std():.3f}"
-        )
-        logger.info(
-            f"Local acceptance: {production_local_acceptance.mean():.3f} +/- {production_local_acceptance.std():.3f}"
-        )
-        logger.info(
-            f"Global acceptance: {production_global_acceptance.mean():.3f} +/- {production_global_acceptance.std():.3f}"
-        )
+        self.sampler.sample(initial_position, {})  # Empty data dict
 
     def get_samples(self) -> dict:
         """
@@ -281,7 +497,12 @@ class FlowMCSampler(JesterSampler):
         dict
             Dictionary of production samples
         """
-        chains = self.sampler.get_sampler_state(training=False)["chains"]
+        # Access production buffer
+        from flowMC.resource.buffers import Buffer
+
+        positions_buffer = self.sampler.resources["positions_production"]
+        assert isinstance(positions_buffer, Buffer)
+        chains = positions_buffer.data  # Access the actual buffer data
         chains = chains.reshape(-1, self.prior.n_dim)
         chains = jax.vmap(self.add_name)(chains)
         for sample_transform in reversed(self.sample_transforms):
@@ -297,8 +518,11 @@ class FlowMCSampler(JesterSampler):
         Array
             Log posterior probability values (1D array, flattened across chains)
         """
-        sampler_state = self.sampler.get_sampler_state(training=False)
-        return sampler_state["log_prob"].flatten()
+        from flowMC.resource.buffers import Buffer
+
+        log_prob_buffer = self.sampler.resources["log_prob_production"]
+        assert isinstance(log_prob_buffer, Buffer)
+        return log_prob_buffer.data.flatten()
 
     def get_n_samples(self) -> int:
         """
@@ -323,8 +547,11 @@ class FlowMCSampler(JesterSampler):
         int
             Number of training samples (total across all chains)
         """
-        sampler_state = self.sampler.get_sampler_state(training=True)
-        return len(sampler_state["log_prob"].flatten())
+        from flowMC.resource.buffers import Buffer
+
+        log_prob_buffer = self.sampler.resources["log_prob_training"]
+        assert isinstance(log_prob_buffer, Buffer)
+        return len(log_prob_buffer.data.flatten())
 
     def get_sampler_output(self) -> SamplerOutput:
         """
@@ -363,8 +590,12 @@ class FlowMCSampler(JesterSampler):
             - log_prob: Log posterior probability from training phase
             - metadata: {} (empty, MCMC has equal weights)
         """
-        # Get training samples directly from sampler state
-        chains = self.sampler.get_sampler_state(training=True)["chains"]
+        # Get training samples directly from buffer
+        from flowMC.resource.buffers import Buffer
+
+        positions_buffer = self.sampler.resources["positions_training"]
+        assert isinstance(positions_buffer, Buffer)
+        chains = positions_buffer.data
         chains = chains.reshape(-1, self.prior.n_dim)
         chains = jax.vmap(self.add_name)(chains)
         for sample_transform in reversed(self.sample_transforms):
@@ -372,8 +603,11 @@ class FlowMCSampler(JesterSampler):
         samples = chains
 
         # Get training log_prob
-        sampler_state = self.sampler.get_sampler_state(training=True)
-        log_prob = sampler_state["log_prob"].flatten()
+        from flowMC.resource.buffers import Buffer
+
+        log_prob_buffer = self.sampler.resources["log_prob_training"]
+        assert isinstance(log_prob_buffer, Buffer)
+        log_prob = log_prob_buffer.data.flatten()
 
         # FlowMC has no metadata (equal weights)
         metadata: dict[str, Any] = {}
@@ -382,4 +616,93 @@ class FlowMCSampler(JesterSampler):
             samples=samples,
             log_prob=log_prob,
             metadata=metadata,
+        )
+
+    def print_summary(self, transform: bool = True):
+        """
+        Generate summary of the flowMC run.
+
+        Parameters
+        ----------
+        transform : bool, optional
+            Whether to apply inverse sample transforms to results (default: True)
+        """
+        # Access training data
+        from flowMC.resource.buffers import Buffer
+
+        positions_training_buf = self.sampler.resources["positions_training"]
+        log_prob_training_buf = self.sampler.resources["log_prob_training"]
+        local_accs_training_buf = self.sampler.resources["local_accs_training"]
+        global_accs_training_buf = self.sampler.resources["global_accs_training"]
+        loss_buf = self.sampler.resources["loss_buffer"]
+        assert isinstance(positions_training_buf, Buffer)
+        assert isinstance(log_prob_training_buf, Buffer)
+        assert isinstance(local_accs_training_buf, Buffer)
+        assert isinstance(global_accs_training_buf, Buffer)
+        assert isinstance(loss_buf, Buffer)
+        positions_training = positions_training_buf.data
+        log_prob_training = log_prob_training_buf.data
+        local_accs_training = local_accs_training_buf.data
+        global_accs_training = global_accs_training_buf.data
+        loss_vals = loss_buf.data
+
+        training_chain = positions_training.reshape(-1, self.prior.n_dim).T
+        training_chain = self.add_name(training_chain)
+        if transform:
+            for sample_transform in reversed(self.sample_transforms):
+                training_chain = jax.vmap(sample_transform.backward)(training_chain)
+        training_log_prob = log_prob_training.flatten()
+        training_local_acceptance = local_accs_training.flatten()
+        training_global_acceptance = global_accs_training.flatten()
+
+        # Access production data
+        positions_production_buf = self.sampler.resources["positions_production"]
+        log_prob_production_buf = self.sampler.resources["log_prob_production"]
+        local_accs_production_buf = self.sampler.resources["local_accs_production"]
+        global_accs_production_buf = self.sampler.resources["global_accs_production"]
+        assert isinstance(positions_production_buf, Buffer)
+        assert isinstance(log_prob_production_buf, Buffer)
+        assert isinstance(local_accs_production_buf, Buffer)
+        assert isinstance(global_accs_production_buf, Buffer)
+        positions_production = positions_production_buf.data
+        log_prob_production = log_prob_production_buf.data
+        local_accs_production = local_accs_production_buf.data
+        global_accs_production = global_accs_production_buf.data
+
+        production_chain = positions_production.reshape(-1, self.prior.n_dim).T
+        production_chain = self.add_name(production_chain)
+        if transform:
+            for sample_transform in reversed(self.sample_transforms):
+                production_chain = jax.vmap(sample_transform.backward)(production_chain)
+        production_log_prob = log_prob_production.flatten()
+        production_local_acceptance = local_accs_production.flatten()
+        production_global_acceptance = global_accs_production.flatten()
+
+        logger.info("Training summary")
+        logger.info("=" * 10)
+        for key, value in training_chain.items():
+            logger.info(f"{key}: {value.mean():.3f} +/- {value.std():.3f}")
+        logger.info(
+            f"Log probability: {training_log_prob.mean():.3f} +/- {training_log_prob.std():.3f}"
+        )
+        logger.info(
+            f"Local acceptance: {training_local_acceptance.mean():.3f} +/- {training_local_acceptance.std():.3f}"
+        )
+        logger.info(
+            f"Global acceptance: {training_global_acceptance.mean():.3f} +/- {training_global_acceptance.std():.3f}"
+        )
+        logger.info(f"Max loss: {loss_vals.max():.3f}, Min loss: {loss_vals.min():.3f}")
+
+        logger.info("Production summary")
+        logger.info("=" * 10)
+        for key, value in production_chain.items():
+            logger.info(f"{key}: {value.mean():.3f} +/- {value.std():.3f}")
+        logger.info(
+            f"Log probability: {production_log_prob.mean():.3f} +/- {production_log_prob.std():.3f}"
+        )
+        logger.info(
+            f"Local acceptance: {production_local_acceptance.mean():.3f} +/- {production_local_acceptance.std():.3f}"
+        )
+        logger.info(
+            f"Global acceptance: {production_global_acceptance.mean():.3f} +/- {production_global_acceptance.std():.3f}"
         )
