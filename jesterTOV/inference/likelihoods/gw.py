@@ -28,7 +28,7 @@ class GWLikelihoodResampled(LikelihoodBase):
     model_dir : str
         Path to directory containing the trained normalizing flow model
     penalty_value : float, optional
-        Penalty value for samples where masses exceed Mtov (default: -99999.0)
+        Penalty value for samples where masses exceed Mtov (default: 0.0, i.e. no penalty)
     N_masses_evaluation : int, optional
         Number of mass samples per likelihood evaluation (default: 20)
     N_masses_batch_size : int, optional
@@ -61,7 +61,7 @@ class GWLikelihoodResampled(LikelihoodBase):
         self,
         event_name: str,
         model_dir: str,
-        penalty_value: float = -99999.0,
+        penalty_value: float = 0.0,
         N_masses_evaluation: int = 20,
         N_masses_batch_size: int = 10,
     ) -> None:
@@ -183,7 +183,7 @@ class GWLikelihood(LikelihoodBase):
     model_dir : str
         Path to directory containing the trained normalizing flow model
     penalty_value : float, optional
-        Penalty value for samples where masses exceed Mtov (default: -99999.0)
+        Penalty value for samples where masses exceed Mtov (default: 0.0, i.e. no penalty)
     N_masses_evaluation : int, optional
         Number of mass samples to pre-sample (default: 2000)
         Large values recommended - GPU parallelization makes this cheap!
@@ -248,7 +248,7 @@ class GWLikelihood(LikelihoodBase):
         self,
         event_name: str,
         model_dir: str,
-        penalty_value: float = -99999.0,
+        penalty_value: float = 0.0,
         N_masses_evaluation: int = 2000,
         N_masses_batch_size: int = 1000,
         seed: int = 42,
@@ -346,6 +346,6 @@ class GWLikelihood(LikelihoodBase):
         )
 
         # Take logsumexp over all pre-sampled mass pairs
-        log_likelihood = logsumexp(all_logprobs)
+        log_likelihood = logsumexp(all_logprobs) - jnp.log(self.N_masses_evaluation)
 
         return log_likelihood

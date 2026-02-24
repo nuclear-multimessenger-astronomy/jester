@@ -142,7 +142,6 @@ class GWLikelihoodConfig(BaseLikelihoodConfig):
           events:
             - name: "GW170817"
               nf_model_dir: "./NFs/GW170817"
-          penalty_value: -99999.0
           N_masses_evaluation: 2000
     """
 
@@ -159,8 +158,8 @@ class GWLikelihoodConfig(BaseLikelihoodConfig):
     )
 
     penalty_value: float = Field(
-        default=-99999.0,
-        description="Log-likelihood penalty returned when M > M_TOV",
+        default=0.0,
+        description="Log-likelihood penalty returned when M > M_TOV (default: 0.0, i.e. no penalty)",
     )
 
     N_masses_evaluation: int = Field(
@@ -208,7 +207,7 @@ class GWResampledLikelihoodConfig(BaseLikelihoodConfig):
         min_length=1,
     )
 
-    penalty_value: float = Field(default=-99999.0)
+    penalty_value: float = Field(default=0.0)
     N_masses_evaluation: int = Field(default=20, gt=0)
     N_masses_batch_size: int = Field(default=10, gt=0)
 
