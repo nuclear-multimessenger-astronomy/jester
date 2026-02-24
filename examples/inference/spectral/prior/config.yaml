@@ -17,7 +17,7 @@ likelihoods:
   enabled: true
 - type: constraints_gamma
   enabled: true
-  penalty_gamma: -1e3
+  penalty_gamma: -1.0e10
 sampler:
   type: smc-rw
   n_particles: 1000
