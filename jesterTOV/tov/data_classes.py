@@ -5,7 +5,7 @@ Uses NamedTuple for immutability and automatic JAX pytree compatibility.
 No additional dependencies required beyond JAX and jaxtyping.
 """
 
-from typing import NamedTuple, Optional
+from typing import Any, NamedTuple, Optional
 from jaxtyping import Float, Array
 
 
@@ -24,10 +24,11 @@ class EOSData(NamedTuple):
     dloge_dlogps: Float[Array, "n_points"]  # d(ln eps)/d(ln p)
     cs2: Float[Array, "n_points"]  # Speed of sound squared
     mu: Optional[Float[Array, "n_points"]] = None  # Chemical potential
-    extra_constraints: Optional[dict[str, float]] = None
-    # EOS-specific constraint violation counts
-    # Convention: Keys use "n_*_violations" or "n_*" format
-    # Examples: {"n_gamma_violations": 5.0} for spectral EOS
+    extra_constraints: Optional[dict[str, Any]] = None
+    # EOS-specific constraint violation magnitudes or counts.
+    # Values must be JAX arrays (not Python float()) when constructed inside jax.vmap.
+    # Convention: Keys use "n_*_violations" or "n_*" format.
+    # Examples: {"n_gamma_violations": jnp.maximum(0.0, 0.1 - gamma_min)} for spectral EOS
 
 
 class TOVSolution(NamedTuple):

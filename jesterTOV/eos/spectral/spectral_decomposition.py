@@ -335,8 +335,9 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         gamma_min = jnp.min(gamma_samples)
         gamma_violation = jnp.maximum(0.0, 0.1 - gamma_min)
 
-        # Always construct extra_constraints to avoid Python branching on JAX traced values
-        extra_constraints = {"gamma_bound_violation": float(gamma_violation)}
+        # Always construct extra_constraints to avoid Python branching on JAX traced values.
+        # Do NOT call float() here: gamma_violation is a JAX traced array inside jax.vmap.
+        extra_constraints = {"n_gamma_violations": gamma_violation}
 
         # Generate high-density spectral region
         n_high, p_high, e_high = self._generate_spectral_region(gamma)
