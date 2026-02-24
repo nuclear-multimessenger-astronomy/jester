@@ -180,7 +180,6 @@ Constrain the EOS using gravitational wave observations of binary neutron star m
   enabled: true
   parameters:
     events: [{"name": "GW170817", "nf_model_dir": "./NFs/GW170817"}]  # List of GW events (see GWEventConfig below)
-    penalty_value: -99999.0  # Penalty for M > M_TOV (optional, default: -99999.0)
     N_masses_evaluation: 2000  # Number of mass samples to pre-sample (optional, default: 2000)
     N_masses_batch_size: 1000  # Batch size for processing (optional, default: 1000)
     seed: 42  # Random seed for mass sampling (optional, default: 42)
@@ -191,7 +190,7 @@ Constrain the EOS using gravitational wave observations of binary neutron star m
 - **`events`** (`list[GWEventConfig]`) - List of GW event configs (see **GWEventConfig** below). Each entry must have `name`. Two modes are supported:
   - **Pre-trained flow**: set `nf_model_dir` to point to a trained flow, or omit it to use a built-in preset.
   - **From bilby result**: set `from_bilby_result` to the path of a bilby HDF5 result file; jester will extract posterior samples and train a flow automatically before inference.
-- **`penalty_value`** (`float`, default: `-99999.0`) - Log-likelihood penalty for masses exceeding TOV maximum mass
+- **`penalty_value`** (`float`, default: `0.0`) - Log-likelihood penalty for masses exceeding TOV maximum mass (default: 0.0, i.e. no penalty)
 - **`N_masses_evaluation`** (`int`, default: `2000`) - Number of mass samples to pre-sample from the GW posterior
 - **`N_masses_batch_size`** (`int`, default: `1000`) - Batch size for jax.lax.map processing of mass grid
 - **`seed`** (`int`, default: `42`) - Random seed for mass pre-sampling from GW posterior
@@ -241,7 +240,6 @@ events:
   enabled: true
   parameters:
     events: [{"name": "GW170817", "nf_model_dir": "./NFs/GW170817"}]  # List of GW events
-    penalty_value: -99999.0  # Penalty for M > M_TOV (optional, default: -99999.0)
     N_masses_evaluation: 20  # Number of masses per evaluation (optional, default: 20)
     N_masses_batch_size: 10  # Batch size for sampling (optional, default: 10)
 ```
@@ -249,7 +247,7 @@ events:
 **Field Details:**
 
 - **`events`** (`list[dict]`) - List of GW events with `name` and optional `nf_model_dir` keys
-- **`penalty_value`** (`float`, default: `-99999.0`) - Log-likelihood penalty for masses exceeding TOV maximum mass
+- **`penalty_value`** (`float`, default: `0.0`) - Log-likelihood penalty for masses exceeding TOV maximum mass (default: 0.0, i.e. no penalty)
 - **`N_masses_evaluation`** (`int`, default: `20`) - Number of mass samples to draw on-the-fly per likelihood evaluation
 - **`N_masses_batch_size`** (`int`, default: `10`) - Batch size for mass sampling and processing
 
