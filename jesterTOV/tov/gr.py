@@ -56,9 +56,19 @@ def _tov_ode(h, y, eos):
     dloge_dlogps = eos["dloge_dlogp"]
     # Extract current state variables
     r, m, H, b = y
-    e = utils.interp_in_logspace(h, hs, es)
-    p = utils.interp_in_logspace(h, hs, ps)
-    dedp = e / p * jnp.interp(h, hs, dloge_dlogps)
+
+    # Guard h against non-positive values.  Diffrax's adaptive step controller
+    # evaluates the ODE at tentative points that can overshoot t1=0 into h <= 0.
+    # interp_in_logspace computes jnp.log(h), which is NaN for h < 0, producing
+    # a NaN that propagates into the adjoint backward pass and corrupts gradients.
+    # Clamping h to the bottom of the EOS table freezes the ODE derivatives at
+    # their surface value for out-of-range enthalpies, which is physically correct
+    # and leaves all forward-pass outputs (M, R, k2) bit-for-bit unchanged.
+    h_safe = jnp.maximum(h, hs[0])
+
+    e = utils.interp_in_logspace(h_safe, hs, es)
+    p = utils.interp_in_logspace(h_safe, hs, ps)
+    dedp = e / p * jnp.interp(h_safe, hs, dloge_dlogps)
 
     # Metric coefficient A = 1/(1-2m/r)
     A = 1.0 / (1.0 - 2.0 * m / r)
@@ -234,14 +244,6 @@ class GRTOVSolver(TOVSolverBase):
         b = sol.ys[3][-1]  # type: ignore[index]
 
         k2 = _calc_k2(R, M, H, b)
-
-        # # FIXME: might remove this
-        # # Use jnp.where for JAX-compatible conditional
-        # # If solver failed (result != 0), return NaN
-        # success = sol.result == 0
-        # M_out = jnp.where(success, M, jnp.nan)
-        # R_out = jnp.where(success, R, jnp.nan)
-        # k2_out = jnp.where(success, k2, jnp.nan)
 
         return TOVSolution(M=M, R=R, k2=k2)
 

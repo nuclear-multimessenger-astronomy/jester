@@ -9,19 +9,16 @@ from pydantic import ValidationError
 from jesterTOV.inference.config import schema, parser
 
 
-class TestTransformConfig:
-    """Test TransformConfig validation."""
+class TestEOSConfig:
+    """Test EOS configuration validation."""
 
     def test_valid_metamodel_config(self):
         """Test valid metamodel configuration."""
-        config = schema.TransformConfig(
+        config = schema.MetamodelEOSConfig(
             type="metamodel",
             ndat_metamodel=100,
             nmax_nsat=2.0,
             nb_CSE=0,
-            min_nsat_TOV=0.75,
-            ndat_TOV=100,
-            nb_masses=100,
             crust_name="DH",
         )
         assert config.type == "metamodel"
@@ -30,43 +27,148 @@ class TestTransformConfig:
 
     def test_valid_metamodel_cse_config(self):
         """Test valid metamodel_cse configuration."""
-        config = schema.TransformConfig(
+        config = schema.MetamodelCSEEOSConfig(
             type="metamodel_cse",
             ndat_metamodel=100,
             nmax_nsat=25.0,
             nb_CSE=8,
-            min_nsat_TOV=0.75,
-            ndat_TOV=100,
-            nb_masses=100,
             crust_name="DH",
         )
         assert config.type == "metamodel_cse"
         assert config.nb_CSE == 8
         assert config.nmax_nsat == 25.0
 
+    def test_valid_spectral_config(self):
+        """Test valid spectral configuration."""
+        config = schema.SpectralEOSConfig(
+            type="spectral",
+            n_points_high=500,
+            crust_name="SLy",
+        )
+        assert config.type == "spectral"
+        assert config.n_points_high == 500
+        assert config.crust_name == "SLy"
+
     def test_metamodel_with_nonzero_cse_fails(self):
         """Test that metamodel with nb_CSE != 0 fails validation."""
         with pytest.raises(ValidationError, match="nb_CSE must be 0"):
-            schema.TransformConfig(
+            schema.MetamodelEOSConfig(
                 type="metamodel",
                 nb_CSE=8,  # Should fail for type=metamodel
+            )
+
+    def test_metamodel_cse_with_zero_cse_fails(self):
+        """Test that metamodel_cse with nb_CSE = 0 fails validation."""
+        with pytest.raises(ValidationError, match="nb_CSE must be > 0"):
+            schema.MetamodelCSEEOSConfig(
+                type="metamodel_cse",
+                nb_CSE=0,  # Should fail for type=metamodel_cse
+            )
+
+    def test_spectral_with_nonzero_cse_fails(self):
+        """Test that spectral with nb_CSE != 0 fails validation."""
+        with pytest.raises(ValidationError, match="nb_CSE must be 0"):
+            schema.SpectralEOSConfig(
+                type="spectral",
+                nb_CSE=8,  # Should fail for type=spectral
             )
 
     def test_invalid_crust_name(self):
         """Test that invalid crust names fail validation."""
         with pytest.raises(ValidationError):
-            schema.TransformConfig(
+            schema.MetamodelEOSConfig(
                 type="metamodel",
-                crust_name="InvalidCrust",
+                crust_name="InvalidCrust",  # type: ignore[arg-type]  # intentionally wrong
             )
 
     def test_default_values(self):
         """Test that default values are set correctly."""
-        config = schema.TransformConfig(type="metamodel", nb_CSE=0)
+        config = schema.MetamodelEOSConfig(type="metamodel", nb_CSE=0)
         assert config.ndat_metamodel == 100
+        assert config.nmax_nsat == 25.0
+        assert config.crust_name == "DH"
+
+    def test_base_metamodel_eos_config_hierarchy(self):
+        """Test that MetamodelEOSConfig and MetamodelCSEEOSConfig share BaseMetamodelEOSConfig."""
+        mm = schema.MetamodelEOSConfig(type="metamodel", nb_CSE=0)
+        cse = schema.MetamodelCSEEOSConfig(type="metamodel_cse", nb_CSE=8)
+        spectral = schema.SpectralEOSConfig(type="spectral", crust_name="SLy")
+
+        assert isinstance(mm, schema.BaseMetamodelEOSConfig)
+        assert isinstance(cse, schema.BaseMetamodelEOSConfig)
+        assert not isinstance(spectral, schema.BaseMetamodelEOSConfig)
+
+    def test_metamodel_cse_ndat_cse_default(self):
+        """Test that ndat_CSE defaults to 100 for MetamodelCSEEOSConfig."""
+        config = schema.MetamodelCSEEOSConfig(type="metamodel_cse", nb_CSE=8)
+        assert config.ndat_CSE == 100
+
+    def test_metamodel_cse_ndat_cse_custom(self):
+        """Test that ndat_CSE can be overridden for MetamodelCSEEOSConfig."""
+        config = schema.MetamodelCSEEOSConfig(
+            type="metamodel_cse", nb_CSE=8, ndat_CSE=50
+        )
+        assert config.ndat_CSE == 50
+
+    def test_metamodel_cse_max_nbreak_nsat(self):
+        """Test that max_nbreak_nsat can be set optionally on MetamodelCSEEOSConfig."""
+        config_without = schema.MetamodelCSEEOSConfig(type="metamodel_cse", nb_CSE=8)
+        assert config_without.max_nbreak_nsat is None
+
+        config_with = schema.MetamodelCSEEOSConfig(
+            type="metamodel_cse", nb_CSE=8, max_nbreak_nsat=2.0
+        )
+        assert config_with.max_nbreak_nsat == 2.0
+
+    def test_eos_discriminated_union(self):
+        """Test that EOSConfig discriminated union works correctly."""
+        from pydantic import TypeAdapter
+
+        adapter = TypeAdapter(schema.EOSConfig)
+
+        # Test metamodel
+        metamodel_dict = {"type": "metamodel", "nb_CSE": 0}
+        config = adapter.validate_python(metamodel_dict)
+        assert isinstance(config, schema.MetamodelEOSConfig)
+
+        # Test metamodel_cse
+        cse_dict = {"type": "metamodel_cse", "nb_CSE": 8}
+        config = adapter.validate_python(cse_dict)
+        assert isinstance(config, schema.MetamodelCSEEOSConfig)
+
+        # Test spectral
+        spectral_dict = {"type": "spectral", "crust_name": "SLy"}
+        config = adapter.validate_python(spectral_dict)
+        assert isinstance(config, schema.SpectralEOSConfig)
+
+
+class TestTOVConfig:
+    """Test TOV configuration validation."""
+
+    def test_valid_tov_config(self):
+        """Test valid TOV configuration."""
+        config = schema.TOVConfig(
+            type="gr",
+            min_nsat_TOV=0.75,
+            ndat_TOV=100,
+            nb_masses=100,
+        )
+        assert config.type == "gr"
+        assert config.min_nsat_TOV == 0.75
+        assert config.ndat_TOV == 100
+
+    def test_tov_default_values(self):
+        """Test that TOV default values are set correctly."""
+        config = schema.TOVConfig()
+        assert config.type == "gr"
+        assert config.min_nsat_TOV == 0.75
         assert config.ndat_TOV == 100
         assert config.nb_masses == 100
-        assert config.crust_name == "DH"
+
+    def test_invalid_solver_type_fails(self):
+        """Test that invalid TOV solver type fails validation."""
+        with pytest.raises(ValidationError):
+            schema.TOVConfig(type="invalid_solver")  # type: ignore[arg-type]  # intentionally wrong
 
 
 class TestPriorConfig:
@@ -103,19 +205,19 @@ class TestLikelihoodConfig:
         """Test GW likelihood configuration."""
         config = schema.GWLikelihoodConfig(
             enabled=True,
-            events=[{"name": "GW170817", "model_dir": "/path/to/data"}],
-            penalty_value=-99999.0,
+            events=[{"name": "GW170817", "nf_model_dir": "/path/to/data"}],
             N_masses_evaluation=20,
         )
         assert config.type == "gw"
         assert len(config.events) == 1
-        assert config.penalty_value == -99999.0
+        assert config.events[0].nf_model_dir == "/path/to/data"
+        assert config.penalty_value == 0.0
 
     def test_gw_likelihood_missing_event_name_fails(self):
         """Test that GW likelihood without event name fails."""
-        with pytest.raises(ValidationError, match="missing required 'name' field"):
+        with pytest.raises(ValidationError):
             schema.GWLikelihoodConfig(
-                events=[{"model_dir": "/path/to/data"}],  # Missing 'name'
+                events=[{"nf_model_dir": "/path/to/data"}],  # Missing 'name'
             )
 
     def test_gw_likelihood_empty_events_fails(self):
@@ -126,8 +228,24 @@ class TestLikelihoodConfig:
             )
 
     def test_nicer_likelihood_config(self):
-        """Test NICER likelihood configuration."""
+        """Test NICER flow-based likelihood configuration."""
         config = schema.NICERLikelihoodConfig(
+            enabled=True,
+            pulsars=[
+                {
+                    "name": "J0030",
+                    "amsterdam_model_dir": "/path/to/amsterdam_flow",
+                    "maryland_model_dir": "/path/to/maryland_flow",
+                }
+            ],
+            N_masses_evaluation=100,
+        )
+        assert config.type == "nicer"
+        assert len(config.pulsars) == 1
+
+    def test_nicer_kde_likelihood_config(self):
+        """Test NICER KDE-based likelihood configuration."""
+        config = schema.NICERKDELikelihoodConfig(
             enabled=True,
             pulsars=[
                 {
@@ -138,15 +256,15 @@ class TestLikelihoodConfig:
             ],
             N_masses_evaluation=100,
         )
-        assert config.type == "nicer"
+        assert config.type == "nicer_kde"
         assert len(config.pulsars) == 1
 
-    def test_nicer_likelihood_missing_files_fails(self):
-        """Test that NICER likelihood without sample files fails."""
+    def test_nicer_kde_likelihood_missing_files_fails(self):
+        """Test that NICER KDE likelihood without sample files fails."""
         with pytest.raises(
             ValidationError, match="missing required 'amsterdam_samples_file' field"
         ):
-            schema.NICERLikelihoodConfig(
+            schema.NICERKDELikelihoodConfig(
                 pulsars=[
                     {
                         "name": "J0030",
@@ -215,7 +333,7 @@ class TestLikelihoodConfig:
         # Create type adapter for LikelihoodConfig union
         adapter = TypeAdapter(schema.LikelihoodConfig)
 
-        # Test GW likelihood
+        # Test GW likelihood with just a name (uses preset)
         gw_dict = {
             "type": "gw",
             "enabled": True,
@@ -224,15 +342,15 @@ class TestLikelihoodConfig:
         gw_config = adapter.validate_python(gw_dict)
         assert isinstance(gw_config, schema.GWLikelihoodConfig)
 
-        # Test NICER likelihood
+        # Test NICER flow-based likelihood
         nicer_dict = {
             "type": "nicer",
             "enabled": True,
             "pulsars": [
                 {
                     "name": "J0030",
-                    "amsterdam_samples_file": "/path/to/amsterdam.txt",
-                    "maryland_samples_file": "/path/to/maryland.txt",
+                    "amsterdam_model_dir": "/path/to/amsterdam_flow",
+                    "maryland_model_dir": "/path/to/maryland_flow",
                 }
             ],
         }
@@ -305,7 +423,8 @@ class TestInferenceConfig:
         """Test valid full configuration."""
         config = schema.InferenceConfig(**sample_config_dict)
         assert config.seed == 42
-        assert config.transform.type == "metamodel"
+        assert config.eos.type == "metamodel"
+        assert config.tov.type == "gr"
         assert len(config.likelihoods) == 1
         assert config.sampler.n_chains == 4
 
@@ -316,7 +435,7 @@ class TestInferenceConfig:
             {
                 "type": "gw",
                 "enabled": True,
-                "events": [{"name": "GW170817", "model_dir": "/path/to/data"}],
+                "events": [{"name": "GW170817", "nf_model_dir": "/path/to/data"}],
             },
             {
                 "type": "nicer",
@@ -324,8 +443,8 @@ class TestInferenceConfig:
                 "pulsars": [
                     {
                         "name": "J0030",
-                        "amsterdam_samples_file": "/path/to/amsterdam.txt",
-                        "maryland_samples_file": "/path/to/maryland.txt",
+                        "amsterdam_model_dir": "/path/to/amsterdam_flow",
+                        "maryland_model_dir": "/path/to/maryland_flow",
                     }
                 ],
             },
@@ -347,18 +466,18 @@ class TestInferenceConfig:
     def test_config_with_cse(self, sample_config_dict):
         """Test configuration with CSE enabled."""
         config_dict = sample_config_dict.copy()
-        config_dict["transform"]["type"] = "metamodel_cse"
-        config_dict["transform"]["nb_CSE"] = 8
+        config_dict["eos"]["type"] = "metamodel_cse"
+        config_dict["eos"]["nb_CSE"] = 8
         config = schema.InferenceConfig(**config_dict)
-        assert config.transform.type == "metamodel_cse"
-        assert config.transform.nb_CSE == 8
+        assert config.eos.type == "metamodel_cse"
+        assert config.eos.nb_CSE == 8
 
     def test_missing_required_field_fails(self):
         """Test that missing required fields fail validation."""
         with pytest.raises(ValidationError):
             schema.InferenceConfig(
-                # Missing transform, prior, etc.
-                sampler={"n_chains": 4},
+                # Missing eos, tov, prior, etc.
+                sampler={"type": "flowmc", "n_chains": 4},
             )
 
     def test_debug_nans_default_false(self, sample_config_dict):
@@ -382,7 +501,7 @@ class TestConfigParser:
         config = parser.load_config(sample_config_file)
         assert isinstance(config, schema.InferenceConfig)
         assert config.seed == 42
-        assert config.transform.type == "metamodel"
+        assert config.eos.type == "metamodel"
 
     def test_load_config_with_relative_paths(self, temp_dir, sample_config_dict):
         """Test that relative paths in config are resolved correctly."""
@@ -441,12 +560,20 @@ seed: 42
 class TestExtraFieldValidation:
     """Test that config models reject extra/unknown fields."""
 
-    def test_transform_config_rejects_extra_fields(self):
-        """Test that TransformConfig rejects unknown fields."""
+    def test_eos_config_rejects_extra_fields(self):
+        """Test that EOS config rejects unknown fields."""
         with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-            schema.TransformConfig(
+            schema.MetamodelEOSConfig(
                 type="metamodel",
                 nb_CSE=0,
+                wrong_entry=500,  # Should be rejected
+            )
+
+    def test_tov_config_rejects_extra_fields(self):
+        """Test that TOV config rejects unknown fields."""
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            schema.TOVConfig(
+                type="gr",
                 wrong_entry=500,  # Should be rejected
             )
 
@@ -497,12 +624,115 @@ class TestExtraFieldValidation:
     def test_nested_extra_fields_rejected(self, sample_config_dict):
         """Test that extra fields in nested config sections are rejected."""
         config_dict = sample_config_dict.copy()
-        config_dict["transform"]["wrong_entry"] = 500  # Should be rejected
+        config_dict["eos"]["wrong_entry"] = 500  # Should be rejected
 
         with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
             schema.InferenceConfig(**config_dict)
 
 
+class TestGWEventConfig:
+    """Tests for the GWEventConfig Pydantic model."""
+
+    def test_gw_event_nf_model_dir_mode(self):
+        """Valid config with only name and nf_model_dir."""
+        event = schema.GWEventConfig(name="GW170817", nf_model_dir="./my_flow")
+        assert event.name == "GW170817"
+        assert event.nf_model_dir == "./my_flow"
+        assert event.from_bilby_result is None
+        assert event.flow_config is None
+        assert event.retrain_flow is False
+
+    def test_gw_event_name_only(self):
+        """Valid config with just name (uses preset)."""
+        event = schema.GWEventConfig(name="GW170817")
+        assert event.name == "GW170817"
+        assert event.nf_model_dir is None
+        assert event.from_bilby_result is None
+
+    def test_gw_event_bilby_mode_minimal(self):
+        """Valid config with just from_bilby_result (no flow_config, no nf_model_dir)."""
+        event = schema.GWEventConfig(
+            name="GW170817",
+            from_bilby_result="./GW170817_result.hdf5",
+        )
+        assert event.from_bilby_result == "./GW170817_result.hdf5"
+        assert event.nf_model_dir is None
+        assert event.flow_config is None
+        assert event.retrain_flow is False
+
+    def test_gw_event_bilby_mode_full(self):
+        """Valid bilby config with from_bilby_result, flow_config, and retrain_flow."""
+        event = schema.GWEventConfig(
+            name="GW170817",
+            from_bilby_result="./GW170817_result.hdf5",
+            flow_config="./flow_config.yaml",
+            retrain_flow=True,
+        )
+        assert event.from_bilby_result == "./GW170817_result.hdf5"
+        assert event.flow_config == "./flow_config.yaml"
+        assert event.retrain_flow is True
+
+    def test_gw_event_flow_config_without_bilby_raises(self):
+        """flow_config without from_bilby_result raises ValidationError."""
+        with pytest.raises(ValidationError, match="'flow_config' is only valid"):
+            schema.GWEventConfig(
+                name="GW170817",
+                flow_config="./flow_config.yaml",
+            )
+
+    def test_gw_event_retrain_flow_without_bilby_raises(self):
+        """retrain_flow=True without from_bilby_result raises ValidationError."""
+        with pytest.raises(ValidationError, match="'retrain_flow' is only valid"):
+            schema.GWEventConfig(
+                name="GW170817",
+                retrain_flow=True,
+            )
+
+    def test_gw_event_extra_field_rejected(self):
+        """Unknown field raises ValidationError (extra='forbid')."""
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            schema.GWEventConfig(  # type: ignore[call-arg]
+                name="GW170817",
+                unknown_field="bad",
+            )
+
+    def test_gw_event_both_modes_raises(self):
+        """Specifying both nf_model_dir and from_bilby_result raises ValidationError."""
+        with pytest.raises(ValidationError, match="Cannot specify both"):
+            schema.GWEventConfig(
+                name="GW170817",
+                nf_model_dir="./my_flow",
+                from_bilby_result="./result.hdf5",
+            )
+
+    def test_gw_likelihood_config_with_event_objects(self):
+        """GWLikelihoodConfig accepts a list of GWEventConfig objects."""
+        events = [
+            schema.GWEventConfig(name="GW170817"),
+            schema.GWEventConfig(name="GW190425", nf_model_dir="./my_flow"),
+        ]
+        config = schema.GWLikelihoodConfig(events=events)
+        assert len(config.events) == 2
+        assert config.events[0].name == "GW170817"
+        assert config.events[1].nf_model_dir == "./my_flow"
+
+    def test_gw_likelihood_config_from_dict_with_nf_model_dir(self):
+        """GWLikelihoodConfig constructed from YAML-style dict with nf_model_dir."""
+        config = schema.GWLikelihoodConfig(
+            events=[{"name": "GW170817", "nf_model_dir": "./flows/GW170817"}],  # type: ignore[arg-type]
+        )
+        assert config.events[0].name == "GW170817"
+        assert config.events[0].nf_model_dir == "./flows/GW170817"
+
+    def test_gw_likelihood_old_model_dir_rejected(self):
+        """Using the old 'model_dir' key (instead of 'nf_model_dir') raises ValidationError."""
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            schema.GWLikelihoodConfig(
+                events=[{"name": "GW170817", "model_dir": "./my_flow"}],  # type: ignore[arg-type]
+            )
+
+
+@pytest.mark.integration
 class TestConfigIntegration:
     """Integration tests for configuration system."""
 
@@ -527,8 +757,11 @@ class TestConfigIntegration:
 
         # Compare key fields
         assert config1.seed == config2.seed
-        assert config1.transform.type == config2.transform.type
-        assert config1.sampler.n_chains == config2.sampler.n_chains
+        assert config1.eos.type == config2.eos.type
+        assert config1.tov.type == config2.tov.type
+        # Type narrowing: we know from sample_config_dict that this is FlowMC
+        assert config1.sampler.type == "flowmc"  # type: ignore[attr-defined]
+        assert config2.sampler.type == "flowmc"  # type: ignore[attr-defined]
 
     def test_example_configs_are_valid(self):
         """Test that all example config files are valid.

@@ -10,7 +10,7 @@ import jax.numpy as jnp
 from jesterTOV.inference.flows.flow import Flow, load_model, create_flow
 from jesterTOV.inference.flows.train_flow import (
     save_model,
-    standardize_data,
+    standardize_data_minmax,
 )
 
 
@@ -128,7 +128,7 @@ class TestModelSerialization:
         output_dir.mkdir()
 
         # Create standardization bounds
-        standardized_data, bounds = standardize_data(sample_training_data)
+        standardized_data, bounds = standardize_data_minmax(sample_training_data)
 
         metadata = {
             "n_samples_total": len(sample_training_data),
@@ -222,7 +222,7 @@ class TestFlowWrapper:
         output_dir.mkdir()
 
         # Create standardization bounds
-        standardized_data, bounds = standardize_data(sample_training_data)
+        standardized_data, bounds = standardize_data_minmax(sample_training_data)
 
         metadata = {
             "n_samples_total": len(sample_training_data),
@@ -311,7 +311,7 @@ class TestFlowWrapper:
         output_dir.mkdir()
 
         # Create standardization bounds
-        standardized_data, bounds = standardize_data(sample_training_data)
+        standardized_data, bounds = standardize_data_minmax(sample_training_data)
 
         metadata = {
             "n_samples_total": len(sample_training_data),
@@ -339,7 +339,7 @@ class TestFlowWrapper:
         output_dir.mkdir()
 
         # Create standardization bounds from data in range [0.1, 1.0]
-        standardized_data, bounds = standardize_data(sample_training_data)
+        standardized_data, bounds = standardize_data_minmax(sample_training_data)
 
         metadata = {
             "n_samples_total": len(sample_training_data),

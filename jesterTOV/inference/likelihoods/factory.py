@@ -4,9 +4,11 @@ from pathlib import Path
 
 from ..config.schema import (
     LikelihoodConfig,
+    GWEventConfig,
     GWLikelihoodConfig,
     GWResampledLikelihoodConfig,
     NICERLikelihoodConfig,
+    NICERKDELikelihoodConfig,
     RadioLikelihoodConfig,
     ChiEFTLikelihoodConfig,
     EOSConstraintsLikelihoodConfig,
@@ -18,7 +20,7 @@ from ..config.schema import (
 )
 from .combined import CombinedLikelihood, ZeroLikelihood
 from .gw import GWLikelihood, GWLikelihoodResampled
-from .nicer import NICERLikelihood
+from .nicer import NICERLikelihood, NICERKDELikelihood
 from .radio import RadioTimingLikelihood
 from .chieft import ChiEFTLikelihood
 from .constraints import (
@@ -38,40 +40,39 @@ GW_EVENT_PRESETS = {
 }
 
 
-def get_gw_model_dir(event_name: str, model_dir: str | None) -> str:
+def get_gw_model_dir(event: GWEventConfig) -> str:
     """
-    Get model directory for GW event, using presets if path is not provided.
+    Get model directory for a GW event config, using presets if no path is provided.
 
     Parameters
     ----------
-    event_name : str
-        Name of the GW event (case-insensitive)
-    model_dir : str | None
-        User-provided model directory, or None/empty string to use preset
+    event : GWEventConfig
+        Typed GW event configuration.
 
     Returns
     -------
     str
-        Absolute path to model directory
+        Absolute path to model directory.
 
     Raises
     ------
     ValueError
-        If model_dir is not provided and event is not in presets
+        If ``nf_model_dir`` is not provided and the event is not in presets.
     """
+    event_name = event.name
     # Normalize event name to uppercase for preset lookup
     event_name_upper = event_name.upper()
 
-    # If model_dir is provided and not empty, use it directly
-    if model_dir:
-        return str(Path(model_dir).resolve())
+    # If nf_model_dir is provided and not empty, use it directly
+    if event.nf_model_dir:
+        return str(Path(event.nf_model_dir).resolve())
 
     # Check if event is in presets
     if event_name_upper not in GW_EVENT_PRESETS:
         raise ValueError(
-            f"No model_dir provided for event '{event_name}' and event is not in presets. "
+            f"No nf_model_dir provided for event '{event_name}' and event is not in presets. "
             f"Available presets: {list(GW_EVENT_PRESETS.keys())}. "
-            f"Please provide model_dir explicitly in the configuration."
+            f"Please provide nf_model_dir explicitly in the configuration."
         )
 
     # Get preset path and convert to absolute
@@ -82,7 +83,7 @@ def get_gw_model_dir(event_name: str, model_dir: str | None) -> str:
 
     # Log warning that we're using default path
     logger.warning(
-        f"No model_dir provided for event '{event_name}'. "
+        f"No nf_model_dir provided for event '{event_name}'. "
         f"Using default preset path: {model_dir_abs}"
     )
 
@@ -118,9 +119,9 @@ def create_likelihood(
                 "not create_likelihood directly"
             )
 
-        case NICERLikelihoodConfig():
+        case NICERLikelihoodConfig() | NICERKDELikelihoodConfig():
             # NICER likelihoods are handled specially in create_combined_likelihood
-            # This function should not be called directly for NICER type
+            # This function should not be called directly for NICER types
             raise RuntimeError(
                 "NICER likelihoods should be created via create_combined_likelihood, "
                 "not create_likelihood directly"
@@ -225,12 +226,10 @@ def create_combined_likelihood(
                 # Create one GWLikelihood (presampled) per event
                 for event in config.events:
                     # Get model directory (use preset if not provided)
-                    model_dir = get_gw_model_dir(
-                        event_name=event["name"], model_dir=event.get("model_dir")
-                    )
+                    model_dir = get_gw_model_dir(event)
 
                     gw_likelihood = GWLikelihood(
-                        event_name=event["name"],
+                        event_name=event.name,
                         model_dir=model_dir,
                         penalty_value=config.penalty_value,
                         N_masses_evaluation=config.N_masses_evaluation,
@@ -244,8 +243,12 @@ def create_combined_likelihood(
                 # Create one GWLikelihoodResampled per event
                 for event in config.events:
                     # Get model directory (use preset if not provided)
+                    # GWResampledLikelihoodConfig still uses dict[str, str] events
                     model_dir = get_gw_model_dir(
-                        event_name=event["name"], model_dir=event.get("model_dir")
+                        GWEventConfig(
+                            name=event["name"],
+                            nf_model_dir=event.get("model_dir"),
+                        )
                     )
 
                     gw_likelihood = GWLikelihoodResampled(
@@ -257,18 +260,32 @@ def create_combined_likelihood(
                     )
                     likelihoods.append(gw_likelihood)
 
-            # Special handling for NICER likelihoods: create one likelihood per pulsar
+            # Special handling for NICER likelihoods (flow-based): create one likelihood per pulsar
             case NICERLikelihoodConfig():
-                # Create one NICERLikelihood per pulsar
+                # Create one NICERLikelihood (flow-based) per pulsar
                 for pulsar in config.pulsars:
                     nicer_likelihood = NICERLikelihood(
+                        psr_name=pulsar["name"],
+                        amsterdam_model_dir=pulsar.get("amsterdam_model_dir"),
+                        maryland_model_dir=pulsar.get("maryland_model_dir"),
+                        N_masses_evaluation=config.N_masses_evaluation,
+                        N_masses_batch_size=config.N_masses_batch_size,
+                        seed=config.seed,
+                    )
+                    likelihoods.append(nicer_likelihood)
+
+            # Special handling for NICER KDE likelihoods (legacy): create one likelihood per pulsar
+            case NICERKDELikelihoodConfig():
+                # Create one NICERKDELikelihood (KDE-based) per pulsar
+                for pulsar in config.pulsars:
+                    nicer_kde_likelihood = NICERKDELikelihood(
                         psr_name=pulsar["name"],
                         amsterdam_samples_file=pulsar["amsterdam_samples_file"],
                         maryland_samples_file=pulsar["maryland_samples_file"],
                         N_masses_evaluation=config.N_masses_evaluation,
                         N_masses_batch_size=config.N_masses_batch_size,
                     )
-                    likelihoods.append(nicer_likelihood)
+                    likelihoods.append(nicer_kde_likelihood)
 
             # Special handling for radio timing likelihoods: create one likelihood per pulsar
             case RadioLikelihoodConfig():

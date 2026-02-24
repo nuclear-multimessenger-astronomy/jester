@@ -41,6 +41,19 @@ L_sym = UniformPrior(10.0, 200.0, parameter_names=["L_sym"])
   - For model comparison and evidence estimation
   - Needs additional testing/fixes
 
+### Changing Default Values for Likelihood Parameters
+
+When a user asks to change a default value (e.g. `penalty_value`), update **all** of the following:
+
+1. **`likelihoods/<name>.py`** — `__init__` signature default(s) and docstring(s)
+2. **`config/schemas/likelihoods.py`** — `Field(default=...)` and any docstring YAML example
+3. **`config/generate_yaml_reference.py`** — hardcoded `"example"` and `"default"` strings for the affected likelihood type(s); the generator does **not** read Pydantic defaults automatically
+4. **`docs/inference/yaml_reference.md`** — regenerate: `uv run python -m jesterTOV.inference.config.generate_yaml_reference`
+5. **`examples/inference/**/config.yaml`** — remove or update the now-redundant explicit value
+6. **`tests/test_inference/test_config.py`** — update any assertion on the old default
+
+The factory (`likelihoods/factory.py`) passes `config.<field>` through, so no change needed there.
+
 ### Inference Documentation
 - `docs/inference_index.md` - Navigation hub
 - `docs/inference_quickstart.md` - Quick start guide
@@ -62,11 +75,22 @@ The example in `examples/inference/smc_random_walk/chiEFT` finishes in less than
 ```
 jesterTOV/inference/
 ├── config/              # YAML parsing and Pydantic validation
-│   ├── schema.py        # Configuration data models
+│   ├── schema.py        # Thin aggregator: InferenceConfig + re-exports
+│   └── schemas/         # Domain-specific config sub-modules
+│       ├── eos.py       #   BaseEOSConfig + concrete EOS configs
+│       ├── tov.py       #   BaseTOVConfig + GRTOVConfig
+│       ├── likelihoods.py #  All likelihood configs (incl. GWEventConfig)
+│       └── samplers.py  #   All sampler configs
 │   ├── parser.py        # YAML loading
 │   └── generate_yaml_reference.py  # Auto-generate docs
 ├── priors/              # Prior specification system
 │   └── parser.py        # Parse .prior files (bilby-style Python format)
+├── flows/               # Normalizing flow utilities for GW likelihoods
+│   ├── bilby_extract.py # Extract GW posteriors from bilby HDF5 results (+ CLI)
+│   ├── config.py        # FlowTrainingConfig Pydantic model
+│   ├── train_flow.py    # Flow training entry point
+│   ├── flow.py          # Flow model definition
+│   └── __init__.py      # Exports Flow, load_model, extract_gw_posterior_from_bilby
 ├── transforms/          # Unified transform system
 │   ├── transform.py     # JesterTransform - single class for all EOS+TOV combinations
 │   └── __init__.py      # Exports JesterTransform
@@ -110,13 +134,19 @@ parse_config() → InferenceConfig (Pydantic validated)
     ↓
 parse_prior_file() → CombinePrior object
     ↓
-JesterTransform.from_config(config.transform)
+JesterTransform.from_config(config.eos, config.tov)
   ├─ Instantiate EOS (MetaModel/MetaModelCSE/Spectral)
   └─ Instantiate TOV solver (GR/Post/ScalarTensor)
     ↓
 Validate parameters
   ├─ Check all required EOS params in prior → raise error if missing
   └─ Check all required TOV params in prior → warn if unused
+    ↓
+prepare_gw_flows(config, outdir)   # no-op unless from_bilby_result events exist
+  ├─ Extract NPZ from bilby HDF5 (jester_extract_gw_posterior_bilby)
+  ├─ Train normalizing flow (FlowTrainingConfig + train_flow_from_config)
+  ├─ Hash-based cache: skip training if flow unchanged (flow_config_hash.json)
+  └─ Return updated config with resolved nf_model_dir for each event
     ↓
 Load data (NICER, GW posteriors, ChiEFT, etc.)
   ├─ Cache downloads from Zenodo
@@ -216,7 +246,7 @@ Save to outdir/{result_id}.h5
 After creating `JesterTransform`, the code validates that all required parameters are present in the prior:
 
 ```python
-transform = JesterTransform.from_config(config.transform, ...)
+transform = JesterTransform.from_config(config.eos, config.tov, ...)
 required_params = set(transform.get_parameter_names())
 prior_params = set(prior.parameter_names)
 
@@ -299,7 +329,7 @@ Configuration files use YAML with Pydantic validation. See `examples/inference/*
 - `transform`: EOS transform configuration
   - `type`: EOS model (metamodel, metamodel_cse, spectral)
   - `nb_CSE`: Number of CSE parameters (only for metamodel_cse)
-  - `tov_solver`: TOV solver type (gr, post, scalar_tensor)
+  - `type`: TOV solver type (gr, post, scalar_tensor)
   - Grid parameters: ndat, min_nsat, etc.
 - `prior`: Path to `.prior` specification file (bilby-style Python)
 - `likelihoods`: List of observational constraints (discriminated union)
@@ -313,9 +343,13 @@ Configuration files use YAML with Pydantic validation. See `examples/inference/*
 - `data_paths`: Override default data file locations (optional)
 - `outdir`: Output directory for results (default: "outdir")
 
-**Likelihood Types** (all in `config/schema.py`):
+**Likelihood Types** (defined in `config/schemas/likelihoods.py`, re-exported from `config/schema.py`):
 1. `GWLikelihoodConfig` - Gravitational wave events (pre-sampled)
-   - events: list of event names (e.g., ["GW170817"])
+   - `events`: list of `GWEventConfig` objects — two modes per event:
+     - **Pre-trained flow** (default): set `nf_model_dir` to a trained flow directory, or omit to use a built-in preset
+     - **From bilby result**: set `from_bilby_result` to a bilby HDF5 path; jester extracts posterior samples and trains a flow automatically via `prepare_gw_flows()` in `run_inference.py`
+   - `GWEventConfig` fields: `name` (required), `nf_model_dir`, `from_bilby_result`, `flow_config`, `retrain_flow`
+   - `from_bilby_result` and `nf_model_dir` are mutually exclusive; `flow_config`/`retrain_flow` only valid with `from_bilby_result`
 2. `GWResampledLikelihoodConfig` - GW with resampling during MCMC
 3. `NICERLikelihoodConfig` - X-ray timing
    - sources: list of sources (e.g., ["J0030", "J0740"])
@@ -329,7 +363,7 @@ Configuration files use YAML with Pydantic validation. See `examples/inference/*
 9. `GammaConstraintsLikelihoodConfig` - Spectral gamma bounds
 10. `ZeroLikelihoodConfig` - Prior-only sampling (no data)
 
-**IMPORTANT**: When modifying `config/schema.py`, regenerate YAML documentation:
+**IMPORTANT**: When modifying any file under `config/schemas/`, regenerate YAML documentation:
 ```bash
 uv run python -m jesterTOV.inference.config.generate_yaml_reference
 ```
@@ -454,19 +488,31 @@ Transforms convert between parameter spaces. Two types:
            return ["param1", "param2", ...]
    ```
 
-2. **Add to JesterTransform factory** in `transforms/transform.py`:
+2. **Add to JesterTransform factory** in `transforms/transform.py` with an `isinstance` check:
    ```python
-   def _create_eos(config: TransformConfig) -> Interpolate_EOS_model:
-       if config.type == "my_new_eos":
+   from jesterTOV.inference.config.schema import ..., MyNewEOSConfig
+
+   def _create_eos(config: BaseEOSConfig, ...) -> Interpolate_EOS_model:
+       ...
+       elif isinstance(config, MyNewEOSConfig):
            from jesterTOV.eos.my_new import MyNewEOS
            return MyNewEOS(...)
+       else:
+           raise ValueError(f"Unknown EOS config type: {type(config).__name__}")
    ```
 
-3. **Update TransformConfig** in `config/schema.py`:
+3. **Add config class** to `config/schemas/eos.py` and extend the `EOSConfig` union.
+   Inherit from `BaseEOSConfig` (any EOS, has `crust_name`) or `BaseMetamodelEOSConfig`
+   (metamodel-based, also has `ndat_metamodel`, `nmax_nsat`, `nmin_MM_nsat`):
    ```python
-   class TransformConfig(BaseModel):
-       type: Literal["metamodel", "metamodel_cse", "spectral", "my_new_eos"]
-       # Add any EOS-specific config fields
+   class MyNewEOSConfig(BaseEOSConfig):
+       type: Literal["my_new_eos"] = "my_new_eos"
+       # EOS-specific fields
+
+   EOSConfig = Annotated[
+       Union[MetamodelEOSConfig, MetamodelCSEEOSConfig, SpectralEOSConfig, MyNewEOSConfig],
+       Discriminator("type"),
+   ]
    ```
 
 4. **Regenerate YAML docs** and **add tests**
@@ -498,19 +544,30 @@ Transforms convert between parameter spaces. Two types:
            return ["coupling1", "coupling2", ...]
    ```
 
-2. **Add to JesterTransform factory** in `transforms/transform.py`:
+2. **Add to JesterTransform factory** in `transforms/transform.py` with an `isinstance` check:
    ```python
-   def _create_tov_solver(config: TransformConfig) -> TOVSolverBase:
-       if config.tov_solver == "my_new_solver":
+   from jesterTOV.inference.config.schema import BaseTOVConfig, GRTOVConfig, MyNewTOVConfig
+
+   def _create_tov_solver(config: BaseTOVConfig) -> TOVSolverBase:
+       if isinstance(config, GRTOVConfig):
+           return GRTOVSolver()
+       elif isinstance(config, MyNewTOVConfig):
            from jesterTOV.tov.my_new import MyNewTOVSolver
            return MyNewTOVSolver(...)
+       else:
+           raise ValueError(f"Unknown TOV config type: {type(config).__name__}")
    ```
 
-3. **Update TransformConfig** in `config/schema.py`:
+3. **Add config class** to `config/schemas/tov.py`, re-export it from `config/schema.py` and `config/__init__.py`, and extend the `TOVConfig` union:
    ```python
-   class TransformConfig(BaseModel):
-       tov_solver: Literal["gr", "post", "scalar_tensor", "my_new_solver"] = "gr"
-       # Add any solver-specific config fields
+   class MyNewTOVConfig(BaseTOVConfig):
+       type: Literal["my_new_solver"] = "my_new_solver"  # type: ignore[override]
+       # Solver-specific fields
+
+   TOVConfig = Annotated[
+       Union[GRTOVConfig, MyNewTOVConfig],
+       Discriminator("type"),
+   ]
    ```
 
 4. **Regenerate YAML docs** and **add tests**

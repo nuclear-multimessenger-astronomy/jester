@@ -192,6 +192,7 @@ value = array.item()  # type: ignore[union-attr]
   - `priors/` - Bilby-style prior specification
   - `transforms/` - Unified JesterTransform for EOS → M-R-Λ
   - `likelihoods/` - Observational constraints (GW, NICER, Radio, ChiEFT, REX, etc.)
+  - `flows/` - Normalizing flow utilities for GW likelihoods; includes `bilby_extract.py` for extracting posteriors from bilby HDF5 results
   - `data/` - Data loading and caching
   - `samplers/` - FlowMC, SMC (RW/NUTS), Nested Sampling backends
   - `run_inference.py` - Main orchestration
@@ -233,6 +234,16 @@ uv run <command>
 
 # Install dependencies
 uv pip install <package>
+```
+
+### CLI Tools
+
+```bash
+# Run inference
+uv run run_jester_inference config.yaml
+
+# Extract GW posterior samples from a bilby result file (no bilby install needed)
+uv run jester_extract_gw_posterior_bilby result.hdf5 --output posterior.npz
 ```
 
 ### Check PR Status
@@ -344,11 +355,17 @@ ParameterDict: TypeAlias = dict[str, float]
 ```
 jesterTOV/inference/
 ├── config/                      # YAML parsing, Pydantic validation
-│   ├── schema.py                # Configuration data models (InferenceConfig, etc.)
+│   ├── schema.py                # Thin aggregator: InferenceConfig + re-exports
+│   ├── schemas/                 # Domain-specific config sub-modules (eos, tov, likelihoods, samplers)
 │   ├── parser.py                # YAML loading functions
 │   └── generate_yaml_reference.py  # Auto-generate documentation
 ├── priors/                      # Prior specification system
 │   └── parser.py                # Parse .prior files (bilby-style Python)
+├── flows/                       # Normalizing flow utilities for GW likelihoods
+│   ├── bilby_extract.py         # Extract GW posteriors from bilby HDF5 (+ CLI entry point)
+│   ├── config.py                # FlowTrainingConfig Pydantic model
+│   ├── train_flow.py            # Flow training entry point
+│   └── flow.py                  # Flow model definition
 ├── transforms/                  # EOS → M-R-Λ transformation
 │   ├── transform.py             # JesterTransform (unified for all EOS×TOV)
 │   └── __init__.py              # Exports
@@ -392,13 +409,16 @@ parse_config() → InferenceConfig (Pydantic validated)
     ↓
 parse_prior_file() → CombinePrior object
     ↓
-JesterTransform.from_config(config.transform)
+JesterTransform.from_config(config.eos, config.tov)
   ├─ Instantiate EOS (MetaModel/MetaModelCSE/Spectral)
   └─ Instantiate TOV solver (GR/Post/ScalarTensor)
     ↓
 Validate parameters
   ├─ Check all required EOS params in prior → raise error if missing
   └─ Check all required TOV params in prior → warn if unused
+    ↓
+prepare_gw_flows(config, outdir)
+  └─ For any GW event with from_bilby_result: extract NPZ + train/cache flow
     ↓
 Load data (NICER, GW posteriors, ChiEFT, etc.)
     ↓

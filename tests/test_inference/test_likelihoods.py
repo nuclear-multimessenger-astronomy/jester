@@ -533,7 +533,7 @@ class TestLikelihoodFactory:
         """Test that GW likelihoods must be created via create_combined_likelihood."""
         config = schema.GWLikelihoodConfig(
             enabled=True,
-            events=[{"name": "GW170817", "model_dir": "/path/to/data"}],
+            events=[{"name": "GW170817", "nf_model_dir": "/path/to/data"}],  # type: ignore[arg-type]
         )
 
         with pytest.raises(
@@ -651,16 +651,16 @@ class TestGWEventPresets:
     """Test GW event preset path functionality."""
 
     def test_get_gw_model_dir_gw170817_preset(self):
-        """Test that GW170817 uses preset path when model_dir not provided."""
-        result = factory.get_gw_model_dir("GW170817", None)
+        """Test that GW170817 uses preset path when nf_model_dir not provided."""
+        result = factory.get_gw_model_dir(schema.GWEventConfig(name="GW170817"))
 
         # Should contain the expected path components
         assert "gw170817_xp_nrtv3" in result
         assert result.endswith("gw170817_xp_nrtv3")
 
     def test_get_gw_model_dir_gw190425_preset(self):
-        """Test that GW190425 uses preset path when model_dir not provided."""
-        result = factory.get_gw_model_dir("GW190425", None)
+        """Test that GW190425 uses preset path when nf_model_dir not provided."""
+        result = factory.get_gw_model_dir(schema.GWEventConfig(name="GW190425"))
 
         # Should contain the expected path components
         assert "gw190425_xp_nrtv3" in result
@@ -669,45 +669,47 @@ class TestGWEventPresets:
     def test_get_gw_model_dir_case_insensitive(self):
         """Test that event name matching is case-insensitive."""
         # Lowercase should work
-        result_lower = factory.get_gw_model_dir("gw170817", None)
+        result_lower = factory.get_gw_model_dir(schema.GWEventConfig(name="gw170817"))
         assert "gw170817_xp_nrtv3" in result_lower
 
         # Mixed case should work
-        result_mixed = factory.get_gw_model_dir("Gw170817", None)
+        result_mixed = factory.get_gw_model_dir(schema.GWEventConfig(name="Gw170817"))
         assert "gw170817_xp_nrtv3" in result_mixed
 
         # Uppercase should work
-        result_upper = factory.get_gw_model_dir("GW170817", None)
+        result_upper = factory.get_gw_model_dir(schema.GWEventConfig(name="GW170817"))
         assert "gw170817_xp_nrtv3" in result_upper
 
     def test_get_gw_model_dir_custom_path(self):
-        """Test that custom model_dir takes precedence over preset."""
+        """Test that custom nf_model_dir takes precedence over preset."""
         custom_path = "/custom/path/to/model"
-        result = factory.get_gw_model_dir("GW170817", custom_path)
+        result = factory.get_gw_model_dir(
+            schema.GWEventConfig(name="GW170817", nf_model_dir=custom_path)
+        )
 
         # Should use the custom path, not preset
         assert "custom/path/to/model" in result
         assert "gw170817_xp_nrtv3" not in result
 
-    def test_get_gw_model_dir_empty_string_uses_preset(self):
-        """Test that empty string for model_dir triggers preset."""
-        result = factory.get_gw_model_dir("GW170817", "")
+    def test_get_gw_model_dir_no_nf_model_dir_uses_preset(self):
+        """Test that omitting nf_model_dir triggers preset lookup."""
+        result = factory.get_gw_model_dir(schema.GWEventConfig(name="GW170817"))
 
-        # Empty string should trigger preset
+        # No nf_model_dir should trigger preset
         assert "gw170817_xp_nrtv3" in result
 
     def test_get_gw_model_dir_unknown_event_raises_error(self):
-        """Test that unknown event without model_dir raises ValueError."""
+        """Test that unknown event without nf_model_dir raises ValueError."""
         with pytest.raises(ValueError, match="not in presets"):
-            factory.get_gw_model_dir("GW999999", None)
+            factory.get_gw_model_dir(schema.GWEventConfig(name="GW999999"))
 
         # Error message should list available presets
         with pytest.raises(ValueError, match="GW170817.*GW190425"):
-            factory.get_gw_model_dir("GW999999", None)
+            factory.get_gw_model_dir(schema.GWEventConfig(name="GW999999"))
 
     def test_get_gw_model_dir_returns_absolute_path(self):
         """Test that preset paths are resolved to absolute paths."""
-        result = factory.get_gw_model_dir("GW170817", None)
+        result = factory.get_gw_model_dir(schema.GWEventConfig(name="GW170817"))
 
         # Should be an absolute path
         from pathlib import Path
@@ -719,7 +721,7 @@ class TestGWEventPresets:
         from pathlib import Path
 
         for event_name in ["GW170817", "GW190425"]:
-            model_dir = factory.get_gw_model_dir(event_name, None)
+            model_dir = factory.get_gw_model_dir(schema.GWEventConfig(name=event_name))
             model_path = Path(model_dir)
 
             # Directory should exist
@@ -736,7 +738,7 @@ class TestGWEventPresets:
         """Test that Flow can actually be loaded from GW170817 preset path."""
         from jesterTOV.inference.flows.flow import Flow
 
-        model_dir = factory.get_gw_model_dir("GW170817", None)
+        model_dir = factory.get_gw_model_dir(schema.GWEventConfig(name="GW170817"))
 
         # Should load without errors
         flow = Flow.from_directory(model_dir)
@@ -751,7 +753,7 @@ class TestGWEventPresets:
         """Test that Flow can actually be loaded from GW190425 preset path."""
         from jesterTOV.inference.flows.flow import Flow
 
-        model_dir = factory.get_gw_model_dir("GW190425", None)
+        model_dir = factory.get_gw_model_dir(schema.GWEventConfig(name="GW190425"))
 
         # Should load without errors
         flow = Flow.from_directory(model_dir)

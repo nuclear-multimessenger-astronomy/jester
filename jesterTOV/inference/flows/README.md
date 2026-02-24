@@ -11,7 +11,7 @@ This directory contains tools for training normalizing flows on gravitational wa
 Train a flow on your local machine:
 
 ```bash
-uv run train_jester_gw_flow ./configs/gw170817/low_spin.yaml
+uv run train_jester_flow ./configs/gw170817/low_spin.yaml
 ```
 
 ### SLURM Submission (Single Flow)
@@ -61,18 +61,18 @@ flows/
 
 ## Scripts
 
-### `train_jester_gw_flow` (CLI command)
+### `train_jester_flow` (CLI command)
 
 Command-line tool for training a single flow.
 
 **Usage:**
 ```bash
-train_jester_gw_flow <config.yaml>
+train_jester_flow <config.yaml>
 ```
 
 **Example:**
 ```bash
-train_jester_gw_flow ./configs/gw170817/low_spin.yaml
+train_jester_flow ./configs/gw170817/low_spin.yaml
 ```
 
 ### `submit.sh` (SLURM script)

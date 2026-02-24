@@ -56,10 +56,10 @@ class MyNewLikelihood(LikelihoodBase):
                 - EOS parameters (e.g., K_sat, L_sym)
                 - TOV parameters (if any)
                 - Derived quantities from transform:
-                  - masses: Stellar masses (M☉)
-                  - radii: Stellar radii (km)
-                  - lambdas: Tidal deformabilities
-                  - eos_data: Full EOS if needed
+                  - masses_EOS: Stellar masses (M☉)
+                  - radii_EOS: Stellar radii (km)
+                  - Lambdas_EOS: Tidal deformabilities
+                  - logpc_EOS: Log10 central pressures
 
             data: Observational data (passed through from __init__)
 
@@ -67,8 +67,8 @@ class MyNewLikelihood(LikelihoodBase):
             Log probability: log P(data | params)
         """
         # Extract relevant quantities from params
-        masses = params.get("masses")  # From JesterTransform
-        radii = params.get("radii")    # From JesterTransform
+        masses = params.get("masses_EOS")  # From JesterTransform
+        radii = params.get("radii_EOS")    # From JesterTransform
 
         # Your likelihood calculation here
         # Example: Gaussian likelihood for mass-radius constraint
@@ -155,14 +155,15 @@ def load_my_observation_data() -> dict[str, Any]:
 
 ## Step 3: Update Configuration Schema
 
-Add your likelihood to `jesterTOV/inference/config/schema.py`:
+Add your likelihood config class to `jesterTOV/inference/config/schemas/likelihoods.py` and extend the `LikelihoodConfig` discriminated union there:
 
 ```python
-class MyNewLikelihoodConfig(BaseModel):
+# In jesterTOV/inference/config/schemas/likelihoods.py
+
+class MyNewLikelihoodConfig(BaseLikelihoodConfig):
     """Configuration for MyNewLikelihood."""
 
-    type: Literal["my_new_likelihood"]
-    enabled: bool = True
+    type: Literal["my_new_likelihood"] = "my_new_likelihood"
 
     # Add likelihood-specific parameters
     observation_set: str = Field(
@@ -174,7 +175,8 @@ class MyNewLikelihoodConfig(BaseModel):
         description="Additional systematic uncertainty (km)"
     )
 
-# Update the discriminated union
+
+# Extend the discriminated union at the bottom of the file
 LikelihoodConfig = Annotated[
     Union[
         GWLikelihoodConfig,
@@ -182,9 +184,11 @@ LikelihoodConfig = Annotated[
         # ... existing configs ...
         MyNewLikelihoodConfig,
     ],
-    Field(discriminator="type"),
+    Discriminator("type"),
 ]
 ```
+
+Then re-export `MyNewLikelihoodConfig` from both `config/schema.py` (in the import block and `__all__`) and `config/__init__.py` so it is accessible as `jesterTOV.inference.config.MyNewLikelihoodConfig`.
 
 **Regenerate YAML documentation:**
 
@@ -323,10 +327,12 @@ class TestMyNewLikelihood:
         config_yaml = """
 seed: 42
 
-transform:
+eos:
   type: "metamodel"
-  ndat: 50
-  min_nsat: 0.75
+  ndat_metamodel: 50
+
+tov:
+  type: "gr"
 
 prior: "prior.prior"
 
@@ -375,31 +381,33 @@ Create an example in `examples/inference/my_new_likelihood/`:
 # config.yaml
 seed: 42
 
-transform:
-  type: "metamodel"
-  ndat: 100
-  min_nsat: 0.75
-  tov_solver: "gr"
+eos:
+  type: metamodel
+  ndat_metamodel: 100
 
-prior: "prior.prior"
+tov:
+  type: gr
+
+prior:
+  specification_file: prior.prior
 
 likelihoods:
-  - type: "my_new_likelihood"
+  - type: my_new_likelihood
     enabled: true
-    observation_set: "default"
+    observation_set: default
     systematic_error: 0.1
 
   # Can combine with other likelihoods
-  - type: "eos_constraints"
+  - type: constraints_eos
     enabled: true
 
 sampler:
-  type: "smc-rw"
+  type: smc-rw
   n_particles: 2000
   n_mcmc_steps: 20
   target_ess: 0.9
 
-outdir: "outdir"
+outdir: outdir
 ```
 
 Test the example runs successfully:
@@ -501,11 +509,20 @@ return log_prob
 **Transform output not used**: The `params` dict contains outputs from `JesterTransform`. Know what's available:
 
 ```python
-# Available from JesterTransform
-masses = params["masses"]        # Stellar masses (M☉)
-radii = params["radii"]          # Stellar radii (km)
-lambdas = params["lambdas"]      # Tidal deformabilities
-eos_data = params.get("eos_data")  # Full EOS (if needed)
+# Available from JesterTransform (note the _EOS suffix)
+masses = params["masses_EOS"]      # Stellar masses (M☉)
+radii = params["radii_EOS"]        # Stellar radii (km)
+lambdas = params["Lambdas_EOS"]    # Tidal deformabilities
+logpc = params["logpc_EOS"]        # Log10 central pressures
+
+# EOS quantities (on the density grid)
+n   = params["n"]    # Number density
+p   = params["p"]    # Pressure
+cs2 = params["cs2"]  # Sound speed squared
+
+# Constraint violation counts (for physical validity checks)
+n_tov_failures         = params["n_tov_failures"]
+n_causality_violations = params["n_causality_violations"]
 
 # Original EOS parameters also present
 K_sat = params["K_sat"]

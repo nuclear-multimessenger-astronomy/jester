@@ -351,6 +351,102 @@ class TestFlowMCSampler:
         assert sampler.sampler is not None
         assert len(sampler.likelihood_transforms) == 1
 
+    def test_flowmc_sampler_thinning_exceeds_local_steps_raises_error(self):
+        """Test FlowMC raises error when train_thinning exceeds n_local_steps."""
+        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
+        likelihood = MockLikelihood()
+
+        config = FlowMCSamplerConfig(
+            type="flowmc",
+            n_chains=2,
+            n_loop_training=1,
+            n_loop_production=1,
+            n_local_steps=10,
+            n_global_steps=10,
+            train_thinning=20,  # Exceeds n_local_steps
+            output_thinning=5,
+            output_dir="./test_output/",
+        )
+
+        with pytest.raises(
+            ValueError,
+            match="train_thinning.*exceeds n_local_steps",
+        ):
+            FlowMCSampler(likelihood, prior, config)
+
+    def test_flowmc_sampler_thinning_exceeds_global_steps_raises_error(self):
+        """Test FlowMC raises error when train_thinning exceeds n_global_steps."""
+        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
+        likelihood = MockLikelihood()
+
+        config = FlowMCSamplerConfig(
+            type="flowmc",
+            n_chains=2,
+            n_loop_training=1,
+            n_loop_production=1,
+            n_local_steps=10,
+            n_global_steps=5,
+            train_thinning=10,  # Exceeds n_global_steps
+            output_thinning=5,
+            output_dir="./test_output/",
+        )
+
+        with pytest.raises(
+            ValueError,
+            match="train_thinning.*exceeds n_global_steps",
+        ):
+            FlowMCSampler(likelihood, prior, config)
+
+    def test_flowmc_sampler_output_thinning_exceeds_steps_raises_error(self):
+        """Test FlowMC raises error when output_thinning exceeds step counts."""
+        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
+        likelihood = MockLikelihood()
+
+        config = FlowMCSamplerConfig(
+            type="flowmc",
+            n_chains=2,
+            n_loop_training=1,
+            n_loop_production=1,
+            n_local_steps=10,
+            n_global_steps=10,
+            train_thinning=5,
+            output_thinning=20,  # Exceeds n_local_steps
+            output_dir="./test_output/",
+        )
+
+        with pytest.raises(
+            ValueError,
+            match="output_thinning.*exceeds n_local_steps",
+        ):
+            FlowMCSampler(likelihood, prior, config)
+
+    def test_flowmc_sampler_multiple_thinning_errors_reported(self):
+        """Test FlowMC reports multiple thinning validation errors together."""
+        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
+        likelihood = MockLikelihood()
+
+        config = FlowMCSamplerConfig(
+            type="flowmc",
+            n_chains=2,
+            n_loop_training=1,
+            n_loop_production=1,
+            n_local_steps=5,
+            n_global_steps=5,
+            train_thinning=10,  # Exceeds both local and global steps
+            output_thinning=10,  # Exceeds both local and global steps
+            output_dir="./test_output/",
+        )
+
+        # Should report all four errors
+        with pytest.raises(ValueError) as exc_info:
+            FlowMCSampler(likelihood, prior, config)
+
+        error_msg = str(exc_info.value)
+        assert "train_thinning" in error_msg
+        assert "n_local_steps" in error_msg
+        assert "n_global_steps" in error_msg
+        assert "output_thinning" in error_msg
+
 
 class TestFlowMCSamplerParameterOrdering:
     """Test critical bug fix: parameter ordering preservation."""
@@ -380,6 +476,8 @@ class TestFlowMCSamplerParameterOrdering:
             n_local_steps=1,
             n_global_steps=1,
             n_epochs=1,
+            train_thinning=1,  # Must not exceed n_local_steps/n_global_steps
+            output_thinning=1,  # Must not exceed n_local_steps/n_global_steps
             output_dir="./test_output/",
         )
 
@@ -426,6 +524,8 @@ class TestSamplerIntegration:
             n_global_steps=2,
             n_epochs=2,
             learning_rate=0.001,
+            train_thinning=1,  # No thinning for minimal test
+            output_thinning=1,  # No thinning for minimal test
             output_dir="./test_output/",
         )
 
@@ -887,7 +987,8 @@ class TestSamplerFactory:
         # Create full inference config
         config = InferenceConfig(
             seed=42,
-            transform={"type": "metamodel", "nb_CSE": 0},
+            eos={"type": "metamodel", "nb_CSE": 0},
+            tov={"type": "gr"},
             prior={"specification_file": "test.prior"},
             likelihoods=[{"type": "zero", "enabled": True}],
             sampler=FlowMCSamplerConfig(
@@ -1066,6 +1167,8 @@ class TestSamplerOutputInterface:
             n_local_steps=2,
             n_global_steps=2,
             n_epochs=2,
+            train_thinning=1,  # No thinning for minimal test
+            output_thinning=1,  # No thinning for minimal test
             output_dir="./test_output/",
         )
 
