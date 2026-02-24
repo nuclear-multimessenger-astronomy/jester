@@ -312,7 +312,7 @@ class TestLikelihoodConfig:
         config = schema.EOSConstraintsLikelihoodConfig(
             enabled=True,
             penalty_causality=-1e10,
-            penalty_stability=-1e5,
+            penalty_stability=-1e10,
         )
         assert config.type == "constraints_eos"
         assert config.penalty_causality == -1e10
