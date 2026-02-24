@@ -200,9 +200,9 @@ class ConstraintEOSLikelihood(LikelihoodBase):
     penalty_causality : float, optional
         Log likelihood penalty for causality violation (default: -1e10)
     penalty_stability : float, optional
-        Log likelihood penalty for thermodynamic instability (default: -1e5)
+        Log likelihood penalty for thermodynamic instability (default: -1e10)
     penalty_pressure : float, optional
-        Log likelihood penalty for non-monotonic pressure (default: -1e5)
+        Log likelihood penalty for non-monotonic pressure (default: -1e10)
 
     Examples
     --------
@@ -212,7 +212,7 @@ class ConstraintEOSLikelihood(LikelihoodBase):
     >>>     enabled: true
     >>>     parameters:
     >>>       penalty_causality: -1.0e10
-    >>>       penalty_stability: -1.0e5
+    >>>       penalty_stability: -1.0e10
     """
 
     penalty_causality: float
@@ -222,8 +222,8 @@ class ConstraintEOSLikelihood(LikelihoodBase):
     def __init__(
         self,
         penalty_causality: float = -1e10,
-        penalty_stability: float = -1e5,
-        penalty_pressure: float = -1e5,
+        penalty_stability: float = -1e10,
+        penalty_pressure: float = -1e10,
     ) -> None:
         super().__init__()
         self.penalty_causality = float(penalty_causality)
