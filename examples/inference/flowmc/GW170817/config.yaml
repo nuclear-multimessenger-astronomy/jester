@@ -26,12 +26,12 @@ likelihoods:
   seed: 42
 sampler:
   type: flowmc
-  n_chains: 1000
-  n_loop_training: 30
-  n_loop_production: 30
-  n_local_steps: 100
-  n_global_steps: 100
-  n_epochs: 30
+  n_chains: 500
+  n_loop_training: 5
+  n_loop_production: 5
+  n_local_steps: 10
+  n_global_steps: 10
+  n_epochs: 25
   learning_rate: 0.001
   output_dir: ./outdir/
 postprocessing:
