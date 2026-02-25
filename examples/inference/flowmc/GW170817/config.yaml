@@ -27,10 +27,10 @@ likelihoods:
 sampler:
   type: flowmc
   n_chains: 500
-  n_loop_training: 5
-  n_loop_production: 5
-  n_local_steps: 10
-  n_global_steps: 10
+  n_loop_training: 30
+  n_loop_production: 10
+  n_local_steps: 20
+  n_global_steps: 50
   n_epochs: 25
   learning_rate: 0.001
   output_dir: ./outdir/
