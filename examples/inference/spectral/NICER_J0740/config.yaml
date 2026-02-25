@@ -22,8 +22,8 @@ likelihoods:
   enabled: true
   pulsars:
   - name: J0740
-    amsterdam_samples_file: ../../../../jesterTOV/inference/data/NICER/J07406620_amsterdam_gamma_NICERXMM_equal_weights_recent.npz
-    maryland_samples_file: ../../../../jesterTOV/inference/data/NICER/J07406620_maryland_unknown_NICERXMM_RM.npz
+    amsterdam_model_dir: ../../../../jesterTOV/inference/flows/models/nicer_maf/J07406620/amsterdam_gamma_nicerxmm
+    maryland_model_dir: ../../../../jesterTOV/inference/flows/models/nicer_maf/J07406620/maryland_unknown_nicerxmm_rm
   N_masses_evaluation: 20
   N_masses_batch_size: 20
 sampler:
