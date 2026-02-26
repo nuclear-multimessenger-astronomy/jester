@@ -12,4 +12,4 @@ This page will cover:
 * Anisotropy models and parametrizations
 * Impact on neutron star observables
 * Usage examples
-* API reference: :class:`jesterTOV.tov.anisotropy.PostTOVSolver`
+* API reference: :class:`jesterTOV.tov.anisotropy.AnisotropyTOVSolver`
