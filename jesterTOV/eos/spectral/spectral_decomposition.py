@@ -132,13 +132,14 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         \boldsymbol{\gamma} = \boldsymbol{\mu}_\text{radio} + L_\text{wide}\,\tilde{\boldsymbol{\gamma}}
 
     where :math:`\boldsymbol{\mu}_\text{radio}` is the posterior mean from a radio-timing
-    inference run and :math:`L_\text{wide} = 1.5\,L` is a conservatively widened Cholesky
-    factor (:math:`L` being the Cholesky factor of the radio posterior covariance).
+    inference run and :math:`L_\text{wide} = \sigma_\text{scale}\,L` is the Cholesky factor
+    of the radio posterior covariance scaled by ``sigma_scale`` (default 1.0).
+    Increasing ``sigma_scale`` broadens the reparametrized prior around the radio posterior.
     This concentrates the sampler around physically reasonable EOS.
     """
 
     # ---------------------------------------------------------------------------
-    # Reparametrization constants (radio-timing posterior, sigma_scale = 1.5)
+    # Reparametrization constants (radio-timing posterior, sigma_scale = 1.0)
     # ---------------------------------------------------------------------------
     # Fitted from a BlackJAX SMC run with radio constraints only.
     # See internal-jester-review/spectral_reparametrization/04_fit_gaussian_prior.py
@@ -154,14 +155,16 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         ]
     )
 
-    #: Lower-triangular Cholesky factor :math:`L_\text{wide}` with ``sigma_scale = 1.5``
-    #: (:math:`\Sigma_\text{wide} = L_\text{wide} L_\text{wide}^\top = 2.25\,\Sigma_\text{radio}`).
-    REPARAM_L_WIDE: Float[Array, "4 4"] = jnp.array(
+    #: Lower-triangular Cholesky factor :math:`L` of the radio posterior covariance
+    #: (:math:`\Sigma_\text{radio} = L\,L^\top`).  The effective transform uses
+    #: :math:`L_\text{wide} = \sigma_\text{scale}\,L` where ``sigma_scale`` is set at
+    #: initialisation time.
+    REPARAM_L_BASE: Float[Array, "4 4"] = jnp.array(
         [
-            [+5.11761400e-01, 0.00000000e00, 0.00000000e00, 0.00000000e00],
-            [-3.18044825e-01, +1.72907326e-01, 0.00000000e00, 0.00000000e00],
-            [+4.78045260e-02, -5.60692353e-02, +1.24129782e-02, 0.00000000e00],
-            [-2.07905910e-03, +3.58911027e-03, -1.16489039e-03, +2.79637982e-04],
+            [+3.41174267e-01, 0.00000000e00, 0.00000000e00, 0.00000000e00],
+            [-2.12029883e-01, +1.15271551e-01, 0.00000000e00, 0.00000000e00],
+            [+3.18696840e-02, -3.73794902e-02, +8.27531880e-03, 0.00000000e00],
+            [-1.38603940e-03, +2.39274018e-03, -7.76593593e-04, +1.86425321e-04],
         ]
     )
 
@@ -177,6 +180,7 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         crust_name: str = "SLy",
         n_points_high: int = 500,
         reparametrized: bool = False,
+        sigma_scale: float = 1.0,
     ):
         r"""
         Initialize spectral decomposition EOS model.
@@ -192,11 +196,17 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
                 inside :meth:`construct_eos`.  The ``_tilde`` suffix in the parameter
                 names signals to the inference system that the whitened parametrization
                 is active.  Default False (original parametrization).
+            sigma_scale: Multiplicative factor applied to the base Cholesky factor
+                :math:`L` to form :math:`L_\text{wide} = \sigma_\text{scale}\,L`.
+                Only used when ``reparametrized=True``.  Values greater than 1 broaden
+                the reparametrized prior around the radio posterior; the default 1.0
+                uses the posterior covariance exactly.
         """
         super().__init__()
         self.crust_name = crust_name
         self.n_points_high = n_points_high
         self.reparametrized = reparametrized
+        self.reparam_l_wide: Float[Array, "4 4"] = sigma_scale * self.REPARAM_L_BASE
 
         # Load and preprocess low-density crust data
         # TODO: lalsuite loads the SLY crust, but then filters out the first 69 points
@@ -397,7 +407,7 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
                     params["gamma_3_tilde"],
                 ]
             )
-            gamma = self.REPARAM_MEAN + jnp.dot(self.REPARAM_L_WIDE, z)
+            gamma = self.REPARAM_MEAN + jnp.dot(self.reparam_l_wide, z)
         else:
             gamma = jnp.array(
                 [

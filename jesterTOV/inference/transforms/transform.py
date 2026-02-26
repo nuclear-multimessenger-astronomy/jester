@@ -237,6 +237,7 @@ class JesterTransform(NtoMTransform):
                 crust_name=config.crust_name,
                 n_points_high=config.n_points_high,
                 reparametrized=config.reparametrized,
+                sigma_scale=config.sigma_scale,
             )
 
         else:
