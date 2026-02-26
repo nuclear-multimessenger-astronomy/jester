@@ -21,17 +21,17 @@ likelihoods:
   enabled: true
   events:
   - name: GW170817
-  N_masses_evaluation: 2000
-  N_masses_batch_size: 1000
+  N_masses_evaluation: 200
+  N_masses_batch_size: 100
   seed: 42
 sampler:
   type: flowmc
-  n_chains: 500
-  n_loop_training: 30
-  n_loop_production: 10
-  n_local_steps: 20
-  n_global_steps: 50
-  n_epochs: 25
+  n_chains: 1000
+  n_loop_training: 40
+  n_loop_production: 20
+  n_local_steps: 10
+  n_global_steps: 100
+  n_epochs: 20
   learning_rate: 0.001
   output_dir: ./outdir/
 postprocessing:
