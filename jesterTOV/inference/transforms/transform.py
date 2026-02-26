@@ -236,6 +236,7 @@ class JesterTransform(NtoMTransform):
             return SpectralDecomposition_EOS_model(
                 crust_name=config.crust_name,
                 n_points_high=config.n_points_high,
+                reparametrized=config.reparametrized,
             )
 
         else:
