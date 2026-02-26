@@ -396,7 +396,11 @@ def make_cornerplot(
                 sub_escaped = sub.replace("_", r"\_")
 
                 # Greek letters
-                if base == "gamma":
+                if base == "gamma" and key.endswith("_tilde"):
+                    # Reparametrized spectral: "gamma_0_tilde" -> "$\tilde{\gamma}_{0}$"
+                    idx = key.split("_")[1]
+                    labels.append(f"$\\tilde{{\\gamma}}_{{{idx}}}$")
+                elif base == "gamma":
                     labels.append(f"$\\gamma_{{{sub_escaped}}}$")
                 elif base == "nbreak":
                     labels.append(r"$n_{\rm{break}}$")

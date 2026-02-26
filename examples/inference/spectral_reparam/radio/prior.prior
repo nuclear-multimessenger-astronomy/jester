@@ -1,0 +1,14 @@
+# Reparametrized spectral EOS prior.
+#
+# The sampler works in the whitened z-space where each tilde parameter is an
+# independent standard normal.  The EOS model maps these back to physical
+# gamma coefficients via  gamma = mu_radio + L_wide @ z,  where mu_radio is
+# the posterior mean from a radio-timing inference run and L_wide is a
+# conservatively widened (sigma_scale = 1.5) Cholesky factor.
+#
+# This prior concentrates sampling around physically reasonable EOS,
+# dramatically reducing the NaN rate compared to the flat prior.
+
+spectral_reparam = MultivariateGaussianPrior(
+    parameter_names=["gamma_0_tilde", "gamma_1_tilde", "gamma_2_tilde", "gamma_3_tilde"],
+)
