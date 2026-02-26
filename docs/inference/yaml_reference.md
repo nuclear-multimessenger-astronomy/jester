@@ -135,7 +135,7 @@ tov:
 
 **Field Details:**
 
-- **`type`** (`str`, default: `"gr"`) - TOV solver type. Currently only 'gr' (General Relativity) is implemented. 'anisotropy' and 'scalar_tensor' are planned but not yet available.
+- **`type`** (`str`, default: `"gr"`) - TOV solver type. Supported values: 'gr' (General Relativity) and 'anisotropy' (post-TOV with beyond-GR corrections). 'scalar_tensor' is planned.
 - **`min_nsat_TOV`** (`float`, default: `0.75`) - Minimum central density for TOV integration in units of saturation density
 - **`ndat_TOV`** (`int`, default: `100`) - Number of data points for TOV integration
 - **`nb_masses`** (`int`, default: `100`) - Number of masses to sample when constructing the M-R-Λ family
@@ -889,7 +889,7 @@ The configuration is validated using Pydantic. Common validation errors:
 -   - Recommended: Include `constraints_gamma` likelihood
 
 **TOV Configuration:**
-- `type` must be `"gr"` (the only currently implemented option; `"post"` and `"scalar_tensor"` are planned)
+- `type` must be `"gr"` or `"anisotropy"`; `"scalar_tensor"` is planned but not yet available
 - `min_nsat_TOV`, `ndat_TOV`, and `nb_masses` must be positive
 
 **Prior File:**

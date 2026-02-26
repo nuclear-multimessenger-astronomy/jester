@@ -1,0 +1,14 @@
+# Nuclear Empirical Parameters for metamodel EOS
+E_sat = UniformPrior(-16.1, -15.9, parameter_names=["E_sat"])
+K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
+Q_sat = UniformPrior(-500.0, 1100.0, parameter_names=["Q_sat"])
+Z_sat = UniformPrior(-2500.0, 1500.0, parameter_names=["Z_sat"])
+E_sym = UniformPrior(28.0, 45.0, parameter_names=["E_sym"])
+L_sym = UniformPrior(10.0, 200.0, parameter_names=["L_sym"])
+K_sym = UniformPrior(-400.0, 200.0, parameter_names=["K_sym"])
+Q_sym = UniformPrior(-1000.0, 1500.0, parameter_names=["Q_sym"])
+Z_sym = UniformPrior(-2000.0, 1500.0, parameter_names=["Z_sym"])
+
+# Post-TOV correction: post-Newtonian amplitude parameter.
+# All other post-TOV parameters default to their GR values (0 or 1 for lambda_HB).
+gamma = UniformPrior(-0.1, 0.1, parameter_names=["gamma"])

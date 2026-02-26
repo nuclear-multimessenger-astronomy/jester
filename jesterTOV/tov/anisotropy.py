@@ -222,7 +222,7 @@ def _calc_k2(R, M, H, b):
     return num / den
 
 
-class PostTOVSolver(TOVSolverBase):
+class AnisotropyTOVSolver(TOVSolverBase):
     """
     Post-TOV solver with phenomenological beyond-GR corrections.
 
@@ -344,9 +344,15 @@ class PostTOVSolver(TOVSolverBase):
 
     def get_required_parameters(self) -> list[str]:
         """
-        Post-TOV requires 6 additional theory parameters.
+        Post-TOV has no strictly required parameters beyond EOS.
+
+        All six theory parameters have physical defaults (GR limit):
+        ``lambda_BL=0``, ``lambda_DY=0``, ``lambda_HB=1``,
+        ``gamma=0``, ``alpha=0``, ``beta=0``.  Any subset may be included
+        in the prior file and will be picked up automatically by the
+        inference transform.
 
         Returns:
-            list[str]: ["lambda_BL", "lambda_DY", "lambda_HB", "gamma", "alpha", "beta"]
+            list[str]: empty list — all parameters are optional.
         """
-        return ["lambda_BL", "lambda_DY", "lambda_HB", "gamma", "alpha", "beta"]
+        return []

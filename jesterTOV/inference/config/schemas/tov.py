@@ -1,16 +1,7 @@
 """Pydantic models for TOV solver configuration."""
 
-from typing import Literal
-from pydantic import BaseModel, ConfigDict, Field
-
-# FIXME: TOVConfig is a type alias for the discriminated union of all TOV solver configs.
-# Currently only GRTOVConfig exists; extend the union when adding AnisotropyTOVConfig,
-# ScalarTensorTOVConfig, etc., and switch to:
-#
-#   TOVConfig = Annotated[
-#       Union[GRTOVConfig, AnisotropyTOVConfig, ScalarTensorTOVConfig, ...],
-#       Discriminator("type"),
-#   ]
+from typing import Annotated, Literal, Union
+from pydantic import BaseModel, ConfigDict, Discriminator, Field
 
 
 class BaseTOVConfig(BaseModel):
@@ -63,7 +54,23 @@ class GRTOVConfig(BaseTOVConfig):
     type: Literal["gr"] = "gr"  # type: ignore[override]  # Literal["gr"] ⊂ str
 
 
-# TOVConfig is currently just GRTOVConfig since it is the only solver with a config.
-# Replace this alias with the Annotated discriminated union (see comment at top of file)
-# once AnisotropyTOVConfig / ScalarTensorTOVConfig are added.
-TOVConfig = GRTOVConfig
+class AnisotropyTOVConfig(BaseTOVConfig):
+    """Configuration for the post-TOV solver with beyond-GR corrections.
+
+    The six theory parameters (``lambda_BL``, ``lambda_DY``, ``lambda_HB``,
+    ``gamma``, ``alpha``, ``beta``) are specified in the prior file, not here.
+    Any subset of them may be sampled; the rest default to the GR limit.
+
+    Attributes
+    ----------
+    type : Literal["anisotropy"]
+        TOV solver type identifier
+    """
+
+    type: Literal["anisotropy"] = "anisotropy"  # type: ignore[override]  # Literal["anisotropy"] ⊂ str
+
+
+TOVConfig = Annotated[
+    Union[GRTOVConfig, AnisotropyTOVConfig],
+    Discriminator("type"),
+]

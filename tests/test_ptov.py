@@ -3,7 +3,7 @@
 import pytest
 import jax.numpy as jnp
 from jesterTOV.tov.gr import GRTOVSolver
-from jesterTOV.tov.anisotropy import PostTOVSolver
+from jesterTOV.tov.anisotropy import AnisotropyTOVSolver
 from jesterTOV.tov.data_classes import EOSData
 
 
@@ -29,7 +29,7 @@ def sample_eos_data_post(sample_eos_dict):
     )
 
 
-class TestPostTOVSolver:
+class TestAnisotropyTOVSolver:
     """Test complete post-TOV solver."""
 
     def test_post_solver_gr_limit(self, sample_eos_data_post):
@@ -41,7 +41,7 @@ class TestPostTOVSolver:
         gr_solution = gr_solver.solve(sample_eos_data_post, pc)
 
         # Post-TOV solver with GR parameters (all MG terms zero)
-        post_solver = PostTOVSolver()
+        post_solver = AnisotropyTOVSolver()
         post_params = {
             "lambda_BL": 0.0,
             "lambda_DY": 0.0,
@@ -61,7 +61,7 @@ class TestPostTOVSolver:
         """Test basic post-TOV solver functionality with MG parameters."""
         pc = sample_eos_data_post.ps[25]
 
-        post_solver = PostTOVSolver()
+        post_solver = AnisotropyTOVSolver()
         mg_params = {
             "lambda_BL": 0.1,
             "lambda_DY": 0.05,
@@ -89,7 +89,7 @@ class TestPostTOVSolver:
     def test_post_solver_different_mg_params(self, sample_eos_data_post):
         """Test post-TOV solver with different modified gravity parameters."""
         pc = sample_eos_data_post.ps[25]
-        post_solver = PostTOVSolver()
+        post_solver = AnisotropyTOVSolver()
 
         mg_param_sets = [
             {
@@ -154,7 +154,7 @@ class TestPostTOVSolver:
     def test_post_solver_convergence(self, sample_eos_data_post):
         """Test that post-TOV solver gives consistent results."""
         pc = sample_eos_data_post.ps[25]
-        post_solver = PostTOVSolver()
+        post_solver = AnisotropyTOVSolver()
 
         mg_params = {
             "lambda_BL": 0.1,
@@ -178,13 +178,13 @@ class TestPostTOVSolver:
             assert abs(results[i][2] - results[0][2]) < 1e-8  # k2
 
 
-class TestPostTOVPhysicalConsistency:
+class TestAnisotropyTOVPhysicalConsistency:
     """Test physical consistency of post-TOV solutions."""
 
     @pytest.mark.slow
     def test_post_mass_radius_relationship(self, sample_eos_data_post):
         """Test mass-radius relationship for post-TOV solutions."""
-        post_solver = PostTOVSolver()
+        post_solver = AnisotropyTOVSolver()
         mg_params = {
             "lambda_BL": 0.1,
             "lambda_DY": 0.05,
@@ -228,7 +228,7 @@ class TestPostTOVPhysicalConsistency:
     def test_post_modified_gravity_effects(self, sample_eos_data_post):
         """Test that modified gravity parameters actually affect results."""
         pc = sample_eos_data_post.ps[25]
-        post_solver = PostTOVSolver()
+        post_solver = AnisotropyTOVSolver()
 
         # GR case
         gr_params = {
@@ -272,7 +272,7 @@ def test_post_solver_parameter_sweep(sample_eos_data_post, lambda_BL, lambda_DY)
     """Test post-TOV solver across parameter space."""
     pc = sample_eos_data_post.ps[25]
 
-    post_solver = PostTOVSolver()
+    post_solver = AnisotropyTOVSolver()
     mg_params = {
         "lambda_BL": lambda_BL,
         "lambda_DY": lambda_DY,
@@ -308,7 +308,7 @@ def test_post_solver_parameter_sweep(sample_eos_data_post, lambda_BL, lambda_DY)
 def test_post_solver_individual_mg_params(sample_eos_data_post, mg_param, value):
     """Test post-TOV solver with individual modified gravity parameters."""
     pc = sample_eos_data_post.ps[25]
-    post_solver = PostTOVSolver()
+    post_solver = AnisotropyTOVSolver()
 
     # Start with GR and modify one parameter
     mg_params = {
