@@ -21,17 +21,16 @@ likelihoods:
   enabled: true
   pulsars:
   - name: J0030
-    amsterdam_samples_file: ../../../../jesterTOV/inference/data/NICER/J00300451_amsterdam_ST_PST_NICER_only_Riley2019.npz
-    maryland_samples_file: ../../../../jesterTOV/inference/data/NICER/J00300451_maryland_2spot_NICER_only_RM.npz
+    amsterdam_model_dir: ../../../../jesterTOV/inference/flows/models/nicer_maf/J00300451/amsterdam_st_pst
+    maryland_model_dir: ../../../../jesterTOV/inference/flows/models/nicer_maf/J00300451/maryland_2spot_rm
   N_masses_evaluation: 20
   N_masses_batch_size: 10
 sampler:
   type: flowmc
-  n_chains: 1000
   n_loop_training: 30
-  n_loop_production: 30
-  n_local_steps: 100
-  n_global_steps: 100
+  n_loop_production: 10
+  n_local_steps: 20
+  n_global_steps: 50
   n_epochs: 30
   learning_rate: 0.001
   output_dir: ./outdir/

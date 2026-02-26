@@ -164,10 +164,7 @@ class InferenceResult:
             # TODO: need to make diagnosis plots from training and production separately for sampler performance
             # still need to decide where to do this, and if to save in metadata the history/final summary for training and production
 
-            # FlowMC: Get metadata from sampler state
-            state = sampler.sampler.get_sampler_state(training=False)  # type: ignore[union-attr]
-
-            # Add FlowMC-specific metadata
+            # Add FlowMC-specific metadata (from config; get_sampler_state removed in flowMC 0.4.5)
             flowmc_config = config.sampler  # type: ignore[attr-defined]
             metadata.update(
                 {
@@ -183,12 +180,24 @@ class InferenceResult:
                 }
             )
 
-            # Extract histories
-            if "local_accs" in state:
+            # Extract acceptance histories from production buffers.
+            # flowMC 0.4.5: Buffer is initialized with -inf; acceptance buffers are
+            # only half-filled (local and global steppers share current_position but
+            # write to separate buffers). Filter out -inf to get only filled slots.
+            from flowMC.resource.buffers import Buffer
+
+            resources = sampler.sampler.resources  # type: ignore[union-attr]
+            local_accs_buf = resources.get("local_accs_production")
+            global_accs_buf = resources.get("global_accs_production")
+            if isinstance(local_accs_buf, Buffer) and isinstance(
+                global_accs_buf, Buffer
+            ):
+                local_data = np.array(local_accs_buf.data)
+                global_data = np.array(global_accs_buf.data)
+                # Filter out -inf (uninitialized buffer slots)
                 histories = {
-                    "local_accs": np.array(state["local_accs"]),
-                    "global_accs": np.array(state["global_accs"]),
-                    # "loss_vals": np.array(state["loss_vals"]),
+                    "local_accs": local_data[local_data > -np.inf],
+                    "global_accs": global_data[global_data > -np.inf],
                 }
 
         elif sampler_type in ["blackjax_smc_rw", "blackjax_smc_nuts"]:
