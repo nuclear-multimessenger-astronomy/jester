@@ -28,11 +28,11 @@ likelihoods:
   seed: 42
 sampler:
   type: smc-rw
-  n_particles: 1000
+  n_particles: 5000
   n_mcmc_steps: 10
   target_ess: 0.9
-  random_walk_sigma: 0.05
-  n_eos_samples: 1000
+  random_walk_sigma: 0.50
+  n_eos_samples: 5000
   output_dir: ./outdir/
 postprocessing:
   enabled: true
