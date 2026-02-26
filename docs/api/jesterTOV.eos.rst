@@ -14,4 +14,5 @@ Submodules
    jesterTOV.eos.base
    jesterTOV.eos.crust
    jesterTOV.eos.metamodel
+   jesterTOV.eos.piecewise_polytrope
    jesterTOV.eos.spectral

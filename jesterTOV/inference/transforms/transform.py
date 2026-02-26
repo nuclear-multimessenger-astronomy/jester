@@ -11,6 +11,7 @@ from jesterTOV.eos.metamodel import (
     MetaModel_with_CSE_EOS_model,
 )
 from jesterTOV.eos.spectral import SpectralDecomposition_EOS_model
+from jesterTOV.eos.piecewise_polytrope import PiecewisePolytrope_EOS_model
 from jesterTOV.tov.base import TOVSolverBase
 from jesterTOV.tov.gr import GRTOVSolver
 from jesterTOV.inference.base import NtoMTransform
@@ -19,6 +20,7 @@ from jesterTOV.inference.config.schema import (
     MetamodelEOSConfig,
     MetamodelCSEEOSConfig,
     SpectralEOSConfig,
+    PiecewisePolytropeEOSConfig,
     BaseTOVConfig,
     GRTOVConfig,
 )
@@ -236,6 +238,11 @@ class JesterTransform(NtoMTransform):
             return SpectralDecomposition_EOS_model(
                 crust_name=config.crust_name,
                 n_points_high=config.n_points_high,
+            )
+
+        elif isinstance(config, PiecewisePolytropeEOSConfig):
+            return PiecewisePolytrope_EOS_model(
+                n_points=config.n_points,
             )
 
         else:

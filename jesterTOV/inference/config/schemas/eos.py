@@ -131,8 +131,51 @@ class SpectralEOSConfig(BaseEOSConfig):
         return v
 
 
+class PiecewisePolytropeEOSConfig(BaseEOSConfig):
+    """Configuration for the piecewise polytrope EOS (Read et al. 2009).
+
+    The EOS is parametrised by four parameters: the log₁₀ of the pressure (in
+    Pa) at the reference density 10^17.7 kg/m³, and three adiabatic indices
+    for the high-density core.  The low-density crust uses the analytical SLy4
+    4-piece fit from the LALSuite implementation.
+
+    Attributes
+    ----------
+    type : Literal["piecewise_polytrope"]
+        EOS type identifier.
+    n_points : int
+        Number of log-spaced pressure grid points (default: 500).
+    nb_CSE : int
+        Must be 0; CSE extension is not supported for this parametrisation.
+    crust_name : str
+        Ignored for this EOS (the SLy4 crust is built in analytically).
+        Kept for interface compatibility; default ``"SLy"``.
+    """
+
+    type: Literal["piecewise_polytrope"] = "piecewise_polytrope"
+    n_points: int = 500
+    nb_CSE: int = 0
+    crust_name: Literal["DH", "BPS", "DH_fixed", "SLy"] = "SLy"
+
+    @field_validator("nb_CSE")
+    @classmethod
+    def validate_nb_cse(cls, v: int) -> int:
+        """Validate that nb_CSE is 0 for piecewise polytrope."""
+        if v != 0:
+            raise ValueError(
+                "nb_CSE must be 0 for type='piecewise_polytrope'. "
+                "CSE extension not supported for piecewise polytrope EOS."
+            )
+        return v
+
+
 # Discriminated union of all EOS types
 EOSConfig = Annotated[
-    Union[MetamodelEOSConfig, MetamodelCSEEOSConfig, SpectralEOSConfig],
+    Union[
+        MetamodelEOSConfig,
+        MetamodelCSEEOSConfig,
+        SpectralEOSConfig,
+        PiecewisePolytropeEOSConfig,
+    ],
     Discriminator("type"),
 ]

@@ -1,0 +1,10 @@
+# Piecewise polytrope prior (Read et al. 2009)
+# logp1_si: log10(pressure in Pa) at rho = 10^17.7 kg/m^3
+# Typical range: 33.5 to 34.5 (covers soft to stiff EOS)
+logp1_si = UniformPrior(33.5, 34.5, parameter_names=["logp1_si"])
+
+# Adiabatic indices for the three high-density core pieces
+# All must be > 1 for physical EOS; values in [1.2, 4.5] cover relevant range
+gamma1 = UniformPrior(1.2, 4.5, parameter_names=["gamma1"])
+gamma2 = UniformPrior(1.2, 4.5, parameter_names=["gamma2"])
+gamma3 = UniformPrior(1.2, 4.5, parameter_names=["gamma3"])

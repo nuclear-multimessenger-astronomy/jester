@@ -18,6 +18,11 @@ Available Parametrizations
 
    :doc:`eos/metamodel_cse`
 
+**Piecewise Polytrope**
+   4-parameter piecewise power-law EOS (Read et al. 2009).
+
+   :doc:`eos/piecewise_polytrope`
+
 **Spectral Decomposition**
    4-parameter spectral expansion of the EOS.
 
@@ -28,4 +33,5 @@ Available Parametrizations
 
    eos/metamodel
    eos/metamodel_cse
+   eos/piecewise_polytrope
    eos/spectral
