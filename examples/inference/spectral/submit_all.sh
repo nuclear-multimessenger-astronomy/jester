@@ -1,7 +1,7 @@
 #!/bin/bash
 # Submit all SMC-RandomWalk inference jobs
 
-SKIP_DIRS=("prior" "radio")
+SKIP_DIRS=("prior")
 
 echo "Submitting all SMC-RW inference jobs..."
 echo "   (But skipping: ${SKIP_DIRS[*]})"

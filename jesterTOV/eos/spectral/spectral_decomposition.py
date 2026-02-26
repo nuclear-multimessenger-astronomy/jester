@@ -296,6 +296,25 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         eps = e0 / mu + (p0 / mu) * integral
         return eps.astype(float)
 
+    @staticmethod
+    def _compute_gamma_violation(gamma_samples: Float[Array, "100"]) -> Float:
+        r"""
+        Count violations of the LALSuite adiabatic index bounds.
+
+        LALSuite requires :math:`\Gamma(x) \in [0.6, 4.5]` for all dimensionless
+        log-pressures :math:`x \in [0, x_{\max}]` to ensure physical validity and
+        numerical stability of the spectral decomposition EOS.
+
+        Args:
+            gamma_samples: Adiabatic index values :math:`\Gamma(x)` sampled across
+                the pressure range.
+
+        Returns:
+            Number of sampled points where :math:`\Gamma(x)` violates the bounds
+            (0 = valid, >0 = violation). Returns a scalar JAX array.
+        """
+        return jnp.sum((gamma_samples < 0.6) | (gamma_samples > 4.5))
+
     def construct_eos(self, params: dict[str, float]) -> EOSData:
         r"""
         Construct full EOS from spectral parameters.
@@ -314,7 +333,7 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         Returns:
             EOSData: Complete EOS with all required arrays in geometric units.
                     If gamma bounds are violated, extra_constraints contains
-                    the violation penalty.
+                    the violation count.
         """
         # Extract gamma parameters
         gamma = jnp.array(
@@ -326,17 +345,14 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
             ]
         )
 
-        # Check for gamma bound violations (Γ must be positive)
-        # Sample the adiabatic index across the valid x range
+        # Sample the adiabatic index across the valid x range and count bound violations
         x_samples = jnp.linspace(0.0, self.xmax, 100)
         gamma_samples = vmap(lambda x: self._adiabatic_index(x, gamma))(x_samples)
+        gamma_violation = self._compute_gamma_violation(gamma_samples)
 
-        # Count violations (Γ < 0.1 is considered unphysical)
-        gamma_min = jnp.min(gamma_samples)
-        gamma_violation = jnp.maximum(0.0, 0.1 - gamma_min)
-
-        # Always construct extra_constraints to avoid Python branching on JAX traced values
-        extra_constraints = {"gamma_bound_violation": float(gamma_violation)}
+        # Always construct extra_constraints to avoid Python branching on JAX traced values.
+        # Do NOT call float() here: gamma_violation is a JAX traced array inside jax.vmap.
+        extra_constraints = {"n_gamma_violations": gamma_violation}
 
         # Generate high-density spectral region
         n_high, p_high, e_high = self._generate_spectral_region(gamma)

@@ -678,6 +678,16 @@ class FlowMCSampler(JesterSampler):
         production_local_acceptance = local_accs_production.flatten()
         production_global_acceptance = global_accs_production.flatten()
 
+        # flowMC 0.4.5: Buffer is initialized with -inf; local and global acceptance
+        # buffers are only half-filled (local/global steppers share current_position
+        # but write to separate buffers). Filter -inf slots before computing stats.
+        valid_training_local = training_local_acceptance[
+            training_local_acceptance > -jnp.inf
+        ]
+        valid_training_global = training_global_acceptance[
+            training_global_acceptance > -jnp.inf
+        ]
+
         logger.info("Training summary")
         logger.info("=" * 10)
         for key, value in training_chain.items():
@@ -686,12 +696,19 @@ class FlowMCSampler(JesterSampler):
             f"Log probability: {training_log_prob.mean():.3f} +/- {training_log_prob.std():.3f}"
         )
         logger.info(
-            f"Local acceptance: {training_local_acceptance.mean():.3f} +/- {training_local_acceptance.std():.3f}"
+            f"Local acceptance: {valid_training_local.mean():.3f} +/- {valid_training_local.std():.3f}"
         )
         logger.info(
-            f"Global acceptance: {training_global_acceptance.mean():.3f} +/- {training_global_acceptance.std():.3f}"
+            f"Global acceptance: {valid_training_global.mean():.3f} +/- {valid_training_global.std():.3f}"
         )
         logger.info(f"Max loss: {loss_vals.max():.3f}, Min loss: {loss_vals.min():.3f}")
+
+        valid_production_local = production_local_acceptance[
+            production_local_acceptance > -jnp.inf
+        ]
+        valid_production_global = production_global_acceptance[
+            production_global_acceptance > -jnp.inf
+        ]
 
         logger.info("Production summary")
         logger.info("=" * 10)
@@ -701,8 +718,8 @@ class FlowMCSampler(JesterSampler):
             f"Log probability: {production_log_prob.mean():.3f} +/- {production_log_prob.std():.3f}"
         )
         logger.info(
-            f"Local acceptance: {production_local_acceptance.mean():.3f} +/- {production_local_acceptance.std():.3f}"
+            f"Local acceptance: {valid_production_local.mean():.3f} +/- {valid_production_local.std():.3f}"
         )
         logger.info(
-            f"Global acceptance: {production_global_acceptance.mean():.3f} +/- {production_global_acceptance.std():.3f}"
+            f"Global acceptance: {valid_production_global.mean():.3f} +/- {valid_production_global.std():.3f}"
         )

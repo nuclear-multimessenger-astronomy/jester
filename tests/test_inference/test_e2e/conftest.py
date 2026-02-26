@@ -110,6 +110,19 @@ Z_sym = UniformPrior(-2000.0, 1500.0, parameter_names=["Z_sym"])
 
 
 @pytest.fixture
+def spectral_prior_file(e2e_temp_dir: Path) -> Path:
+    """Create a prior file for spectral decomposition tests."""
+    prior_content = """gamma_0 = UniformPrior(0.2, 2.0, parameter_names=["gamma_0"])
+gamma_1 = UniformPrior(-1.6, 1.7, parameter_names=["gamma_1"])
+gamma_2 = UniformPrior(-0.6, 0.6, parameter_names=["gamma_2"])
+gamma_3 = UniformPrior(-0.02, 0.02, parameter_names=["gamma_3"])
+"""
+    prior_file = e2e_temp_dir / "spectral.prior"
+    prior_file.write_text(prior_content)
+    return prior_file
+
+
+@pytest.fixture
 def chieft_prior_file(e2e_temp_dir: Path) -> Path:
     """Create a prior file with nbreak for chiEFT tests (requires CSE)."""
     prior_content = """E_sat = UniformPrior(-16.1, -15.9, parameter_names=["E_sat"])
@@ -201,6 +214,44 @@ def build_chieft_config(
     }
 
 
+def build_spectral_prior_only_config(
+    sampler_config: dict[str, Any], prior_file: Path, output_dir: Path
+) -> dict[str, Any]:
+    """Build a spectral EOS prior-only config (cheapest spectral test).
+
+    Uses constraints_gamma which is spectral-specific and exercises the
+    n_gamma_violations key written by construct_eos inside jax.vmap.
+    """
+    return {
+        "seed": 42,
+        "dry_run": False,
+        "validate_only": False,
+        "eos": {
+            "type": "spectral",
+            "crust_name": "SLy",
+            "n_points_high": 30,  # 500 -> 30 for speed
+        },
+        "tov": {
+            "type": "gr",
+            "min_nsat_TOV": 0.75,
+            "ndat_TOV": 30,  # 100 -> 30
+            "nb_masses": 20,  # 100 -> 20
+        },
+        "prior": {"specification_file": str(prior_file)},
+        "likelihoods": [
+            {"type": "constraints_eos", "enabled": True},
+            {"type": "constraints_gamma", "enabled": True},
+            {"type": "zero", "enabled": True},
+        ],
+        "sampler": {
+            **sampler_config,
+            "output_dir": str(output_dir),
+            "n_eos_samples": 50,
+        },
+        "postprocessing": {"enabled": False},
+    }
+
+
 # ============================================================================
 # SAMPLER CONFIG FIXTURES
 # ============================================================================
@@ -232,6 +283,39 @@ def smc_rw_chieft_config(chieft_prior_file: Path, e2e_temp_dir: Path) -> dict[st
     """SMC-RW config with chiEFT likelihood."""
     sampler_config = {"type": "smc-rw", **SMC_RW_LIGHTWEIGHT}
     return build_chieft_config(sampler_config, chieft_prior_file, e2e_temp_dir)
+
+
+@pytest.fixture
+def smc_rw_spectral_config(
+    spectral_prior_file: Path, e2e_temp_dir: Path
+) -> dict[str, Any]:
+    """SMC-RW config with spectral EOS and prior-only likelihood."""
+    sampler_config = {"type": "smc-rw", **SMC_RW_LIGHTWEIGHT}
+    return build_spectral_prior_only_config(
+        sampler_config, spectral_prior_file, e2e_temp_dir
+    )
+
+
+@pytest.fixture
+def flowmc_spectral_config(
+    spectral_prior_file: Path, e2e_temp_dir: Path
+) -> dict[str, Any]:
+    """FlowMC config with spectral EOS and prior-only likelihood."""
+    sampler_config = {"type": "flowmc", **FLOWMC_LIGHTWEIGHT}
+    return build_spectral_prior_only_config(
+        sampler_config, spectral_prior_file, e2e_temp_dir
+    )
+
+
+@pytest.fixture
+def blackjax_ns_aw_spectral_config(
+    spectral_prior_file: Path, e2e_temp_dir: Path
+) -> dict[str, Any]:
+    """BlackJAX NS-AW config with spectral EOS and prior-only likelihood."""
+    sampler_config = {"type": "blackjax-ns-aw", **BLACKJAX_NS_AW_LIGHTWEIGHT}
+    return build_spectral_prior_only_config(
+        sampler_config, spectral_prior_file, e2e_temp_dir
+    )
 
 
 @pytest.fixture

@@ -500,8 +500,8 @@ class EOSConstraintsLikelihoodConfig(BaseLikelihoodConfig):
         - type: "constraints_eos"
           enabled: true
           penalty_causality: -1e10
-          penalty_stability: -1e5
-          penalty_pressure: -1e5
+          penalty_stability: -1e10
+          penalty_pressure: -1e10
     """
 
     type: Literal["constraints_eos"] = Field(
@@ -514,12 +514,12 @@ class EOSConstraintsLikelihoodConfig(BaseLikelihoodConfig):
     )
 
     penalty_stability: float = Field(
-        default=-1e5,
+        default=-1e10,
         description="Log-likelihood penalty for thermodynamic instability (cs² < 0)",
     )
 
     penalty_pressure: float = Field(
-        default=-1e5,
+        default=-1e10,
         description="Log-likelihood penalty for non-monotonic pressure",
     )
 
@@ -590,8 +590,8 @@ class DeprecatedConstraintsLikelihoodConfig(BaseLikelihoodConfig):
           enabled: true
           penalty_tov: -1e10
           penalty_causality: -1e10
-          penalty_stability: -1e5
-          penalty_pressure: -1e5
+          penalty_stability: -1e10
+          penalty_pressure: -1e10
     """
 
     type: Literal["constraints"] = Field(
@@ -609,12 +609,12 @@ class DeprecatedConstraintsLikelihoodConfig(BaseLikelihoodConfig):
     )
 
     penalty_stability: float = Field(
-        default=-1e5,
+        default=-1e10,
         description="Log-likelihood penalty for thermodynamic instability (cs² < 0)",
     )
 
     penalty_pressure: float = Field(
-        default=-1e5,
+        default=-1e10,
         description="Log-likelihood penalty for non-monotonic pressure",
     )
 

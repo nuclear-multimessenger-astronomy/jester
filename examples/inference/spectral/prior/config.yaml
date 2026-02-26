@@ -15,12 +15,9 @@ prior:
 likelihoods:
 - type: constraints_eos
   enabled: true
-  penalty_causality: -1.0e10
-  penalty_stability: -1.0e5
-  penalty_pressure: -1.0e5
 - type: constraints_gamma
   enabled: true
-  penalty_gamma: -1e3
+  penalty_gamma: -1.0e10
 sampler:
   type: smc-rw
   n_particles: 1000
