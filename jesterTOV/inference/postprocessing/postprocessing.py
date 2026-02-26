@@ -12,6 +12,7 @@ Example:
     run_jester_postprocessing --outdir ./results --make-all
 """
 
+import re
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
@@ -359,6 +360,16 @@ def report_credible_interval(
     return low_err, med, high_err
 
 
+# Regex matching MetaModel+CSE parameters that clutter the cornerplot when nb_CSE is large.
+# Covers: nbreak, n_CSE_0_u, n_CSE_1_u, ..., cs2_CSE_0, cs2_CSE_1, ...
+_CSE_PARAM_RE = re.compile(r"^(nbreak|n_CSE_\d+_u|cs2_CSE_\d+)$")
+
+
+def _is_cse_param(key: str) -> bool:
+    """Return True if *key* is a MetaModel+CSE grid parameter."""
+    return bool(_CSE_PARAM_RE.match(key))
+
+
 def make_cornerplot(
     data: Dict[str, Any], outdir: str, max_params: Optional[int] = None
 ):
@@ -380,7 +391,18 @@ def make_cornerplot(
     labels = []
 
     prior_params = data.get("prior_params", {})
+
+    # Exclude MetaModel+CSE grid parameters (nbreak, n_CSE_i_u, cs2_CSE_i).
+    # These can be numerous (2*nb_CSE + 1 params) and make the cornerplot unreadable.
+    cse_keys = [k for k in prior_params if _is_cse_param(k)]
+    if cse_keys:
+        logger.info(
+            f"Excluding {len(cse_keys)} CSE parameters from cornerplot: {sorted(cse_keys)}"
+        )
+
     for key in prior_params.keys():
+        if _is_cse_param(key):
+            continue
         samples_dict[key] = prior_params[key]
 
         # Format labels based on parameter name
