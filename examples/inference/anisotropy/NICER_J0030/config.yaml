@@ -8,22 +8,15 @@ eos:
   nb_CSE: 8
   crust_name: DH
 tov:
+  type: anisotropy
   min_nsat_TOV: 0.75
   ndat_TOV: 100
   nb_masses: 100
-  type: gr
 prior:
   specification_file: prior.prior
 likelihoods:
 - type: constraints_eos
   enabled: true
-- type: gw
-  enabled: true
-  events:
-  - name: GW170817
-  N_masses_evaluation: 2000
-  N_masses_batch_size: 1000
-  seed: 42
 - type: radio
   enabled: true
   pulsars:
@@ -33,6 +26,14 @@ likelihoods:
   - name: J0740
     mass_mean: 2.08
     mass_std: 0.14
+- type: nicer
+  enabled: true
+  pulsars:
+  - name: J0030
+    amsterdam_model_dir: ../../../../jesterTOV/inference/flows/models/nicer_maf/J00300451/amsterdam_st_pst
+    maryland_model_dir: ../../../../jesterTOV/inference/flows/models/nicer_maf/J00300451/maryland_2spot_rm
+  N_masses_evaluation: 20
+  N_masses_batch_size: 20
 sampler:
   type: smc-rw
   n_particles: 5000
