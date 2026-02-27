@@ -471,7 +471,7 @@ When we are ready to make a new release, here are some steps:
 # 1. Feature branch for version bump
 git checkout -b release/v0.x.x
 
-# 2. Update version in pyproject.toml
+# 2. Update version in pyproject.toml and docs/conf.py
 # 3. Build and verify
 uv build
 

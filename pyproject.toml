@@ -14,7 +14,7 @@ authors = [
   {name = "Thibeau Wouters", email = "thibeauwouters@gmail.com"},
   {name = "Peter T. H. Pang", email = "tsunhopang@gmail.com"}
 ]
-version = "0.1.1"
+version = "0.2.0"
 description = "JAX-accelerated nuclear equation of state code and TOV solver with automatic differentiation"
 keywords = ["neutron-stars", "eos", "tov", "jax", "physics", "astronomy", "automatic-differentiation"]
 readme = "README.md"
