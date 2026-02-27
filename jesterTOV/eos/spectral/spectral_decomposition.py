@@ -132,9 +132,8 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         \boldsymbol{\gamma} = \boldsymbol{\mu}_\text{radio} + L_\text{wide}\,\tilde{\boldsymbol{\gamma}}
 
     where :math:`\boldsymbol{\mu}_\text{radio}` is the posterior mean from a radio-timing
-    inference run and :math:`L_\text{wide} = \sqrt{\sigma_\text{scale}}\,L` is the Cholesky
-    factor of the widened covariance :math:`\Sigma' = \sigma_\text{scale}\,\Sigma`, applied
-    via its square root (default ``sigma_scale=1.0``).
+    inference run and :math:`L_\text{wide} = \sigma_\text{scale}\,L` is the Cholesky factor
+    of the radio posterior covariance scaled by ``sigma_scale`` (default 1.0).
     Increasing ``sigma_scale`` broadens the reparametrized prior around the radio posterior.
     This concentrates the sampler around physically reasonable EOS.
     """
@@ -158,9 +157,8 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
 
     #: Lower-triangular Cholesky factor :math:`L` of the radio posterior covariance
     #: (:math:`\Sigma_\text{radio} = L\,L^\top`).  The effective transform uses
-    #: :math:`L_\text{wide} = \sqrt{\sigma_\text{scale}}\,L`, so that the widened covariance
-    #: is :math:`\Sigma' = \sigma_\text{scale}\,\Sigma`.  The factor is applied via its
-    #: square root at initialisation time.
+    #: :math:`L_\text{wide} = \sigma_\text{scale}\,L` where ``sigma_scale`` is set at
+    #: initialisation time.
     REPARAM_L_BASE: Float[Array, "4 4"] = jnp.array(
         [
             [+3.41174267e-01, 0.00000000e00, 0.00000000e00, 0.00000000e00],
@@ -198,13 +196,12 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
                 inside :meth:`construct_eos`.  The ``_tilde`` suffix in the parameter
                 names signals to the inference system that the whitened parametrization
                 is active.  Default False (original parametrization).
-            sigma_scale: Multiplicative factor applied to the covariance, so that
-                :math:`\Sigma' = \sigma_\text{scale}\,\Sigma`.  The factor is applied
-                via its square root to the base Cholesky factor :math:`L`, forming
-                :math:`L_\text{wide} = \sqrt{\sigma_\text{scale}}\,L`.
+            sigma_scale: Multiplicative factor applied directly to the base Cholesky
+                factor :math:`L` to form :math:`L_\text{wide} = \sigma_\text{scale}\,L`.
+                This scales the standard deviation of the reparametrized distribution.
                 Only used when ``reparametrized=True``.  Values greater than 1 broaden
                 the reparametrized prior around the radio posterior; the default 1.0
-                uses the posterior covariance exactly.  Must be strictly positive.
+                uses the posterior standard deviation exactly.  Must be strictly positive.
         """
         super().__init__()
         self.crust_name = crust_name
@@ -214,12 +211,8 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
             raise ValueError(
                 f"sigma_scale must be strictly positive, got {sigma_scale}"
             )
-        # sigma_scale multiplies the covariance (Cov' = sigma_scale * Σ); the factor
-        # is applied via its square root to the Cholesky factor so that
-        # L_wide = jnp.sqrt(sigma_scale) * L and L_wide @ L_wide^T = sigma_scale * Σ.
-        self.reparam_l_wide: Float[Array, "4 4"] = (
-            jnp.sqrt(sigma_scale) * self.REPARAM_L_BASE
-        )
+        # sigma_scale scales the standard deviation directly: L_wide = sigma_scale * L.
+        self.reparam_l_wide: Float[Array, "4 4"] = sigma_scale * self.REPARAM_L_BASE
 
         # Load and preprocess low-density crust data
         # TODO: lalsuite loads the SLY crust, but then filters out the first 69 points
@@ -233,6 +226,11 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
             f"Initialized SpectralDecomposition_EOS_model with crust={crust_name}, "
             f"n_points={n_points_high}"
         )
+        if reparametrized:
+            logger.warning(
+                "Spectral EOS reparametrization is experimental. "
+                "Results should be carefully verified against the original parametrization."
+            )
 
         # Convert reference pressure to MeV fm⁻³ for internal use
         self.p0_nuclear = self.p0_geom / utils.MeV_fm_inv3_to_geometric
