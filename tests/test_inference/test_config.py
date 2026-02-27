@@ -705,6 +705,66 @@ class TestGWEventConfig:
                 from_bilby_result="./result.hdf5",
             )
 
+    def test_gw_event_npz_mode_minimal(self):
+        """Valid config with just from_npz_file (no flow_config, no nf_model_dir)."""
+        event = schema.GWEventConfig(
+            name="GW170817",
+            from_npz_file="./GW170817_posterior.npz",
+        )
+        assert event.from_npz_file == "./GW170817_posterior.npz"
+        assert event.nf_model_dir is None
+        assert event.from_bilby_result is None
+        assert event.flow_config is None
+        assert event.retrain_flow is False
+
+    def test_gw_event_npz_mode_full(self):
+        """Valid NPZ config with from_npz_file, flow_config, and retrain_flow."""
+        event = schema.GWEventConfig(
+            name="GW170817",
+            from_npz_file="./GW170817_posterior.npz",
+            flow_config="./flow_config.yaml",
+            retrain_flow=True,
+        )
+        assert event.from_npz_file == "./GW170817_posterior.npz"
+        assert event.flow_config == "./flow_config.yaml"
+        assert event.retrain_flow is True
+
+    def test_gw_event_nf_model_dir_and_npz_raises(self):
+        """Specifying both nf_model_dir and from_npz_file raises ValidationError."""
+        with pytest.raises(ValidationError, match="Cannot specify both"):
+            schema.GWEventConfig(
+                name="GW170817",
+                nf_model_dir="./my_flow",
+                from_npz_file="./posterior.npz",
+            )
+
+    def test_gw_event_bilby_and_npz_raises(self):
+        """Specifying both from_bilby_result and from_npz_file raises ValidationError."""
+        with pytest.raises(ValidationError, match="Cannot specify both"):
+            schema.GWEventConfig(
+                name="GW170817",
+                from_bilby_result="./result.hdf5",
+                from_npz_file="./posterior.npz",
+            )
+
+    def test_gw_event_flow_config_with_npz_valid(self):
+        """flow_config with from_npz_file is valid."""
+        event = schema.GWEventConfig(
+            name="GW170817",
+            from_npz_file="./posterior.npz",
+            flow_config="./flow_config.yaml",
+        )
+        assert event.flow_config == "./flow_config.yaml"
+
+    def test_gw_event_retrain_flow_with_npz_valid(self):
+        """retrain_flow=True with from_npz_file is valid."""
+        event = schema.GWEventConfig(
+            name="GW170817",
+            from_npz_file="./posterior.npz",
+            retrain_flow=True,
+        )
+        assert event.retrain_flow is True
+
     def test_gw_likelihood_config_with_event_objects(self):
         """GWLikelihoodConfig accepts a list of GWEventConfig objects."""
         events = [

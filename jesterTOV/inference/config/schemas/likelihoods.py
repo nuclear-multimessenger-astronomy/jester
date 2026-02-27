@@ -29,17 +29,25 @@ class BaseLikelihoodConfig(BaseModel):
 class GWEventConfig(BaseModel):
     r"""Configuration for a single GW event in the likelihood.
 
-    Two modes are supported:
+    Three modes are supported:
 
     **Mode 1 — pre-trained flow** (default):
       Provide ``nf_model_dir`` or omit it to use a built-in preset.
 
     **Mode 2 — from bilby result**:
-      Provide ``from_bilby_result`` to extract samples and train the flow
-      automatically when running :func:`~jesterTOV.inference.run_inference.main`.
+      Provide ``from_bilby_result`` to extract samples from a bilby HDF5 file
+      and train the flow automatically when running
+      :func:`~jesterTOV.inference.run_inference.main`.
 
-    The two modes are mutually exclusive: ``nf_model_dir`` and
-    ``from_bilby_result`` cannot both be set.
+    **Mode 3 — from NPZ file**:
+      Provide ``from_npz_file`` to train the flow directly from an existing
+      NPZ file (e.g. one previously produced by the ``jester_extract_gw_posterior_bilby``
+      CLI tool), skipping the bilby extraction step.
+
+    ``nf_model_dir`` is mutually exclusive with both ``from_bilby_result`` and
+    ``from_npz_file``.  ``from_bilby_result`` and ``from_npz_file`` are also
+    mutually exclusive with each other.  ``flow_config`` and ``retrain_flow``
+    are valid in both Mode 2 and Mode 3.
 
     Examples
     --------
@@ -67,6 +75,16 @@ class GWEventConfig(BaseModel):
             from_bilby_result: ./GW170817_result.hdf5
             flow_config: ./flow_config.yaml    # optional
             retrain_flow: false                # optional
+
+    From NPZ file:
+
+    .. code-block:: yaml
+
+        events:
+          - name: GW170817
+            from_npz_file: ./GW170817_posterior.npz
+            flow_config: ./flow_config.yaml    # optional
+            retrain_flow: false                # optional
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -87,38 +105,68 @@ class GWEventConfig(BaseModel):
             "running inference."
         ),
     )
+    from_npz_file: str | None = Field(
+        default=None,
+        description=(
+            "Path to an NPZ file with posterior samples "
+            "(mass_1_source, mass_2_source, lambda_1, lambda_2).  "
+            "When set, jester will train a normalizing flow directly from this "
+            "file before running inference, skipping the bilby extraction step."
+        ),
+    )
     flow_config: str | None = Field(
         default=None,
         description=(
             "Path to a YAML file with FlowTrainingConfig overrides.  "
-            "Only meaningful when 'from_bilby_result' is set."
+            "Only meaningful when 'from_bilby_result' or 'from_npz_file' is set."
         ),
     )
     retrain_flow: bool = Field(
         default=False,
         description=(
             "Force retraining even if a cached flow already exists.  "
-            "Only meaningful when 'from_bilby_result' is set."
+            "Only meaningful when 'from_bilby_result' or 'from_npz_file' is set."
         ),
     )
 
     @model_validator(mode="after")
     def validate_mode_consistency(self) -> "GWEventConfig":
-        """Ensure that bilby mode and pre-trained mode are not mixed."""
-        if self.from_bilby_result is not None and self.nf_model_dir is not None:
+        """Ensure that the three source modes are not mixed."""
+        has_pretrained = self.nf_model_dir is not None
+        has_bilby = self.from_bilby_result is not None
+        has_npz = self.from_npz_file is not None
+
+        if has_pretrained and has_bilby:
             raise ValueError(
                 "Cannot specify both 'from_bilby_result' and 'nf_model_dir'. "
                 "Use 'from_bilby_result' to extract samples and train a flow, "
                 "or 'nf_model_dir' to point to an already-trained flow."
             )
-        if self.from_bilby_result is None:
+        if has_pretrained and has_npz:
+            raise ValueError(
+                "Cannot specify both 'from_npz_file' and 'nf_model_dir'. "
+                "Use 'from_npz_file' to train a flow from an existing NPZ, "
+                "or 'nf_model_dir' to point to an already-trained flow."
+            )
+        if has_bilby and has_npz:
+            raise ValueError(
+                "Cannot specify both 'from_bilby_result' and 'from_npz_file'. "
+                "Use 'from_bilby_result' to extract samples from a bilby HDF5, "
+                "or 'from_npz_file' to start directly from an existing NPZ file."
+            )
+
+        # flow_config and retrain_flow only make sense when training a flow
+        needs_training = has_bilby or has_npz
+        if not needs_training:
             if self.flow_config is not None:
                 raise ValueError(
-                    "'flow_config' is only valid when 'from_bilby_result' is provided."
+                    "'flow_config' is only valid when 'from_bilby_result' or "
+                    "'from_npz_file' is provided."
                 )
             if self.retrain_flow:
                 raise ValueError(
-                    "'retrain_flow' is only valid when 'from_bilby_result' is provided."
+                    "'retrain_flow' is only valid when 'from_bilby_result' or "
+                    "'from_npz_file' is provided."
                 )
         return self
 
@@ -129,9 +177,10 @@ class GWLikelihoodConfig(BaseLikelihoodConfig):
     This is the default GW likelihood that pre-samples masses from the
     GW posterior for efficient evaluation during MCMC sampling.
 
-    Each entry in ``events`` is a :class:`GWEventConfig` that supports two
-    modes: using a pre-trained normalizing flow (default) or automatically
-    extracting samples from a bilby result file and training the flow.
+    Each entry in ``events`` is a :class:`GWEventConfig` that supports three
+    modes: using a pre-trained normalizing flow (default), automatically
+    extracting samples from a bilby result file and training the flow, or
+    training the flow directly from an existing NPZ file.
 
     Examples
     --------
