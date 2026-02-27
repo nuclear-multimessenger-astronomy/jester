@@ -4,6 +4,8 @@ import yaml
 from pathlib import Path
 from typing import Union
 
+from pydantic import ValidationError
+
 from .schema import InferenceConfig
 from jesterTOV.logging_config import get_logger
 
@@ -81,7 +83,32 @@ def load_config(config_path: Union[str, Path]) -> InferenceConfig:
         logger.debug(f"  Sampler type: {config.sampler.type}")
         logger.debug(f"  Output directory: {config.sampler.output_dir}")
         return config
+    except ValidationError as e:
+        raise ValueError(_format_validation_error(e, config_path)) from e
     except Exception as e:
         raise ValueError(
             f"Error validating configuration from {config_path}: {e}"
         ) from e
+
+
+def _format_validation_error(e: ValidationError, config_path: Path) -> str:
+    """Format a Pydantic ValidationError into a clean, actionable message.
+
+    Strips Pydantic's auto-appended metadata (``[type=value_error, input_value=...]``)
+    so that multi-line messages from JesterBaseModel's extra-field validator are
+    displayed without noise.
+    """
+    _YAML_REFERENCE_URL = "https://nuclear-multimessenger-astronomy.github.io/jester/inference/yaml_reference.html"
+    blocks: list[str] = [
+        f"Configuration error in {config_path}:",
+    ]
+    for error in e.errors():
+        loc_parts = [str(p) for p in error["loc"] if p != "__root__"]
+        loc = " → ".join(loc_parts) if loc_parts else "(top level)"
+        msg: str = error["msg"]
+        # Pydantic prefixes our ValueError messages with "Value error, " — strip it.
+        if msg.startswith("Value error, "):
+            msg = msg[len("Value error, ") :]
+        blocks.append(f"\n[{loc}]\n{msg}")
+    blocks.append(f"\nFor all available config options, see: {_YAML_REFERENCE_URL}")
+    return "\n".join(blocks)

@@ -553,7 +553,7 @@ seed: 42
 """
         )
 
-        with pytest.raises(ValueError, match="Error validating configuration"):
+        with pytest.raises(ValueError, match="Configuration error in"):
             parser.load_config(incomplete_config)
 
 
@@ -562,7 +562,7 @@ class TestExtraFieldValidation:
 
     def test_eos_config_rejects_extra_fields(self):
         """Test that EOS config rejects unknown fields."""
-        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        with pytest.raises(ValidationError, match="Unrecognized field"):
             schema.MetamodelEOSConfig(
                 type="metamodel",
                 nb_CSE=0,
@@ -571,7 +571,7 @@ class TestExtraFieldValidation:
 
     def test_tov_config_rejects_extra_fields(self):
         """Test that TOV config rejects unknown fields."""
-        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        with pytest.raises(ValidationError, match="Unrecognized field"):
             schema.TOVConfig(
                 type="gr",
                 wrong_entry=500,  # Should be rejected
@@ -579,7 +579,7 @@ class TestExtraFieldValidation:
 
     def test_prior_config_rejects_extra_fields(self):
         """Test that PriorConfig rejects unknown fields."""
-        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        with pytest.raises(ValidationError, match="Unrecognized field"):
             schema.PriorConfig(
                 specification_file="test.prior",
                 invalid_param="value",  # Should be rejected
@@ -587,7 +587,7 @@ class TestExtraFieldValidation:
 
     def test_likelihood_config_rejects_extra_fields(self):
         """Test that LikelihoodConfig rejects unknown fields."""
-        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        with pytest.raises(ValidationError, match="Unrecognized field"):
             schema.ZeroLikelihoodConfig(
                 enabled=True,
                 extra_field="should_fail",  # Should be rejected
@@ -595,7 +595,7 @@ class TestExtraFieldValidation:
 
     def test_sampler_config_rejects_extra_fields(self):
         """Test that FlowMCSamplerConfig rejects unknown fields."""
-        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        with pytest.raises(ValidationError, match="Unrecognized field"):
             schema.FlowMCSamplerConfig(
                 type="flowmc",
                 n_chains=4,
@@ -606,7 +606,7 @@ class TestExtraFieldValidation:
 
     def test_postprocessing_config_rejects_extra_fields(self):
         """Test that PostprocessingConfig rejects unknown fields."""
-        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        with pytest.raises(ValidationError, match="Unrecognized field"):
             schema.PostprocessingConfig(
                 enabled=True,
                 make_cornerplot=True,
@@ -614,19 +614,19 @@ class TestExtraFieldValidation:
             )
 
     def test_inference_config_rejects_extra_fields(self, sample_config_dict):
-        """Test that InferenceConfig rejects unknown fields."""
+        """Test that InferenceConfig rejects unknown fields with a helpful message."""
         config_dict = sample_config_dict.copy()
         config_dict["random_invalid_field"] = "should_fail"
 
-        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        with pytest.raises(ValidationError, match="Unrecognized field"):
             schema.InferenceConfig(**config_dict)
 
     def test_nested_extra_fields_rejected(self, sample_config_dict):
-        """Test that extra fields in nested config sections are rejected."""
+        """Test that extra fields in nested config sections are rejected with a helpful message."""
         config_dict = sample_config_dict.copy()
         config_dict["eos"]["wrong_entry"] = 500  # Should be rejected
 
-        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        with pytest.raises(ValidationError, match="Unrecognized field"):
             schema.InferenceConfig(**config_dict)
 
 
@@ -689,8 +689,8 @@ class TestGWEventConfig:
             )
 
     def test_gw_event_extra_field_rejected(self):
-        """Unknown field raises ValidationError (extra='forbid')."""
-        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        """Unknown field raises ValidationError with a helpful message."""
+        with pytest.raises(ValidationError, match="Unrecognized field"):
             schema.GWEventConfig(  # type: ignore[call-arg]
                 name="GW170817",
                 unknown_field="bad",
@@ -786,7 +786,7 @@ class TestGWEventConfig:
 
     def test_gw_likelihood_old_model_dir_rejected(self):
         """Using the old 'model_dir' key (instead of 'nf_model_dir') raises ValidationError."""
-        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        with pytest.raises(ValidationError, match="Unrecognized field"):
             schema.GWLikelihoodConfig(
                 events=[{"name": "GW170817", "model_dir": "./my_flow"}],  # type: ignore[arg-type]
             )
