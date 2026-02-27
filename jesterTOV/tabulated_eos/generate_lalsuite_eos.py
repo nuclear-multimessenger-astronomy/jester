@@ -1,105 +1,213 @@
 r"""
-Using bilby functionalities, generate EOS files from lalsuite
+Using lalsimulation Python bindings, generate EOS files for JESTER.
 
-NOTE: This requires bilby and lalsuite dependency, and is not meant to be executed using the base installation. Can install them in the uv venv with:
-```bash
-uv pip install -e ".[dev]"
-```
+NOTE: This requires lalsuite dependency, and is not meant to be executed using
+the base installation. Install with:
 
-This script generates NPZ files containing EOS data in geometric units, compatible with JESTER's injection_eos_path feature.
+.. code-block:: bash
+
+    uv pip install -e ".[dev]"
+
+This script generates NPZ files containing EOS data in geometric units,
+compatible with JESTER's injection_eos_path feature. Output files are written
+to ``tabulated_eos/lalsuite/``.
 
 Output format:
-- masses_EOS: Solar masses :math:`M_{\odot}` - converted from geometric
-- radii_EOS: :math:`\mathrm{km}` - converted from geometric
-- Lambda_EOS: dimensionless tidal deformability
-- n: baryon number density in geometric units :math:`m^{-3}`
+
+- masses_EOS: Solar masses :math:`M_{\odot}` (from LALSuite TOV solver)
+- radii_EOS: :math:`\mathrm{km}` (from LALSuite TOV solver)
+- Lambda_EOS: dimensionless tidal deformability (from LALSuite TOV solver)
+- n: baryon number density in geometric units :math:`m^{-3}` (approximated as
+  :math:`\varepsilon / m_\mathrm{avg}`)
 - p: pressure in geometric units :math:`m^{-2}`
 - e: energy density in geometric units :math:`m^{-2}`
-- cs2: speed of sound squared (dimensionless)
+- h: pseudo-enthalpy (dimensionless)
+- dloge_dlogp: logarithmic derivative :math:`d\ln\varepsilon / d\ln p` using
+  LALSuite's analytic derivative (same function used internally by the LALSuite
+  TOV integrator — more accurate than finite differences)
+- cs2: speed of sound squared :math:`c_s^2 = p / (\varepsilon \cdot d\ln\varepsilon/d\ln p)`
 """
 
 import numpy as np
 from numpy.typing import NDArray
 from pathlib import Path
-from bilby.gw.eos import TabularEOS, EOSFamily  # type: ignore[import-untyped]
 
-# Physical constants (from bilby)
-from bilby.core import utils  # type: ignore[import-untyped]
+try:
+    import lal  # type: ignore[import-untyped]
+    import lalsimulation  # type: ignore[import-untyped]
+except ImportError as _lal_import_error:
+    raise ImportError(
+        "lalsuite is required to run this script but is not installed.\n"
+        "Install the JESTER dev dependencies:\n"
+        '    uv pip install -e ".[dev]"\n'
+        "Or install lalsuite directly:\n"
+        "    uv pip install lalsuite"
+    ) from _lal_import_error
 
-C_SI = utils.speed_of_light  # m/s
-G_SI = utils.gravitational_constant  # m^3 kg^-1 s^-2
-MSUN_SI = utils.solar_mass  # kg
+# Physical constants from lal
+C_SI = lal.C_SI  # m/s
+G_SI = lal.G_SI  # m^3 kg^-1 s^-2
+MSUN_SI = lal.MSUN_SI  # kg
+MRSUN_SI = lal.MRSUN_SI  # m (solar mass in geometric units = G M_sun / c^2)
 
-# Conversion from geometric to physical units
-GEOM_TO_MSUN = (C_SI**2 / G_SI) / MSUN_SI  # Convert geometric mass (m) to solar masses
-GEOM_TO_KM = 1e-3  # Convert geometric length (m) to km
+# Average nucleon mass for baryon density approximation (MeV)
+_m_n = 939.5654205203889  # Neutron mass in MeV
+_m_p = 938.2720881604904  # Proton mass in MeV
+_m_avg_MeV = (_m_n + _m_p) / 2.0
 
-# Average nucleon mass for density conversion (MeV)
-m_n = 939.5654205203889  # Neutron mass in MeV
-m_p = 938.2720881604904  # Proton mass in MeV
-m_avg = (m_n + m_p) / 2.0
+# m_avg in geometric units (m): MeV → J → kg → m
+_MeV_to_J = 1e6 * 1.602176634e-19
+_m_avg_geom = (_m_avg_MeV * _MeV_to_J / C_SI**2) * G_SI / C_SI**2  # m
 
-# Conversion factors (from jester utils)
-hbarc = 197.3269804593025  # MeV⋅fm
-fm_to_m = 1e-15
-MeV_to_J = 1e6 * 1.602176634e-19
-fm_inv3_to_SI = 1.0 / fm_to_m**3
-MeV_fm_inv3_to_SI = MeV_to_J * fm_inv3_to_SI
+# Pressure sampling grid (SI units: Pa)
+# LOG_P_MIN = 26: SLY/SLY4 and similar EOSs extend down to ~10^26 Pa. Using
+# a higher cutoff misses the low-pressure crust and biases k2/Lambda.
+LOG_P_MIN = 26  # 10^26 Pa — covers full crust for all known LALSuite EOSs
+LOG_P_MAX = 37  # 10^37 Pa — well above MTOV central pressure
+N_EOS_POINTS = 1000
+
+# Central pressure range for M-R-Lambda family curves (SI units: Pa)
+PC_MIN_SI = 1e32  # Pa — well below 0.5 M_sun, captures the full low-mass branch
+PC_MAX_SI = 1.3e35  # Pa — above MTOV for most EOSs
+N_FAMILY_POINTS = 500
 
 
-def get_bilby_eos(name: str) -> tuple[TabularEOS, EOSFamily]:
-    """
-    Generates the bilby EOS objects for a given EOS name.
+def extract_eos_table(
+    eos_name: str,
+) -> tuple[
+    NDArray[np.floating],
+    NDArray[np.floating],
+    NDArray[np.floating],
+    NDArray[np.floating],
+    NDArray[np.floating],
+    NDArray[np.floating],
+]:
+    r"""
+    Extract EOS table from LALSuite for a given EOS name.
+
+    Samples a pressure grid from :math:`10^{26}` to :math:`10^{37}` Pa and
+    queries LALSuite for enthalpy, energy density, and the analytic energy
+    density derivative at each valid pressure.
 
     Args:
-        name (str): The name of the EOS.
+        eos_name: LALSuite EOS name (e.g., ``"SLY"``, ``"APR4"``).
 
     Returns:
-        tuple[TabularEOS, EOSFamily]: The tabular EOS and EOS family objects.
+        Tuple of arrays ``(p, h, e, dloge_dlogp, cs2, n)`` in geometric units:
+
+        - p: pressure :math:`m^{-2}`
+        - h: pseudo-enthalpy (dimensionless)
+        - e: energy density :math:`m^{-2}`
+        - dloge_dlogp: :math:`d\ln\varepsilon / d\ln p` (dimensionless)
+        - cs2: speed of sound squared (dimensionless)
+        - n: baryon number density :math:`m^{-3}` (approximated as
+          :math:`\varepsilon / m_\mathrm{avg}`)
 
     Raises:
-        ValueError: If the EOS name is not recognized or objects cannot be created.
+        ValueError: If fewer than 100 valid pressure points are found.
     """
-    try:
-        tabular_eos = TabularEOS(name)
-        eos_family = EOSFamily(tabular_eos)
-        return tabular_eos, eos_family
-    except Exception as e:
-        raise ValueError(f"Could not create bilby EOS objects for EOS name {name}: {e}")
+    eos = lalsimulation.SimNeutronStarEOSByName(eos_name)  # type: ignore[attr-defined]
+
+    p_si_arr = 10.0 ** np.linspace(LOG_P_MIN, LOG_P_MAX, N_EOS_POINTS)
+    # Convert SI pressure (Pa) to geometric units (m^-2): P_geom = P_SI * G / c^4
+    p_geom_arr = p_si_arr * G_SI / C_SI**4
+
+    h_list: list[float] = []
+    e_list: list[float] = []
+    dedp_list: list[float] = []
+    p_valid: list[float] = []
+
+    for p_geom in p_geom_arr:
+        try:
+            h = lalsimulation.SimNeutronStarEOSPseudoEnthalpyOfPressureGeometerized(  # type: ignore[attr-defined]
+                p_geom, eos
+            )
+            e = lalsimulation.SimNeutronStarEOSEnergyDensityOfPressureGeometerized(  # type: ignore[attr-defined]
+                p_geom, eos
+            )
+            # Analytic dε/dP — same function pointer used by the LALSuite TOV
+            # integrator; more accurate than np.gradient finite differences.
+            dedp = lalsimulation.SimNeutronStarEOSEnergyDensityDerivOfPressureGeometerized(  # type: ignore[attr-defined]
+                p_geom, eos
+            )
+            h_list.append(h)
+            e_list.append(e)
+            dedp_list.append(dedp)
+            p_valid.append(p_geom)
+        except Exception:
+            continue  # pressure outside EOS validity range — skip
+
+    if len(p_valid) < 100:
+        raise ValueError(
+            f"Only {len(p_valid)} valid pressure points for {eos_name} — EOS may be invalid."
+        )
+
+    p_arr = np.array(p_valid)
+    h_arr = np.array(h_list)
+    e_arr = np.array(e_list)
+    dedp_arr = np.array(dedp_list)
+
+    # d(ln ε)/d(ln P) = (P/ε) * (dε/dP)
+    dloge_dlogp_arr = (p_arr / e_arr) * dedp_arr
+
+    # c_s^2 = dP/dε = P / (ε * d(ln ε)/d(ln P))
+    cs2_arr = p_arr / (e_arr * dloge_dlogp_arr)
+
+    # Baryon number density: n ≈ ε / m_avg  (rest-mass approximation)
+    n_arr = e_arr / _m_avg_geom  # m^-3
+
+    return p_arr, h_arr, e_arr, dloge_dlogp_arr, cs2_arr, n_arr
 
 
-def compute_density_and_cs2(
-    pressure_geom: NDArray[np.floating],
-    energy_density_geom: NDArray[np.floating],
-) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
+def compute_mr_lambda(
+    eos_name: str,
+) -> tuple[NDArray[np.floating], NDArray[np.floating], NDArray[np.floating]]:
     r"""
-    Compute baryon number density and speed of sound squared from p and e.
+    Compute the M-R-:math:`\Lambda` family using the LALSuite TOV solver.
+
+    Integrates the TOV equations over a logarithmic grid of central pressures
+    from ``PC_MIN_SI`` to ``PC_MAX_SI`` and collects converged solutions.
 
     Args:
-        pressure_geom: Pressure in geometric units :math:`m^{-2}`
-        energy_density_geom: Energy density in geometric units :math:`m^{-2}`
+        eos_name: LALSuite EOS name (e.g., ``"SLY"``, ``"APR4"``).
 
     Returns:
-        n_geom: Baryon number density in geometric units :math:`m^{-3}`
-        cs2: Speed of sound squared (dimensionless)
+        Tuple ``(masses_Msun, radii_km, lambdas)`` where:
+
+        - masses_Msun: gravitational mass in :math:`M_\odot`
+        - radii_km: circumferential radius in km
+        - lambdas: dimensionless tidal deformability
+          :math:`\Lambda = \frac{2}{3} k_2 \mathcal{C}^{-5}`
     """
-    # Speed of sound squared: cs^2 = dp/de
-    # Use finite differences
-    cs2 = np.gradient(pressure_geom, energy_density_geom)
+    eos = lalsimulation.SimNeutronStarEOSByName(eos_name)
 
-    # Baryon number density from energy density
-    # e = n * m_avg (approximately, in natural units where c=1)
-    # Convert m_avg from MeV to geometric units
+    pc_arr = np.logspace(np.log10(PC_MIN_SI), np.log10(PC_MAX_SI), N_FAMILY_POINTS)
 
-    # m_avg in MeV → m_avg in Joules → m_avg in kg → m_avg in geometric (m)
-    m_avg_J = m_avg * MeV_to_J
-    m_avg_kg = m_avg_J / C_SI**2
-    m_avg_geom = m_avg_kg * G_SI / C_SI**2  # geometric mass (m)
+    masses_Msun: list[float] = []
+    radii_km: list[float] = []
+    lambdas: list[float] = []
 
-    # n = e / m_avg (both in geometric units)
-    n_geom = energy_density_geom / m_avg_geom
+    for pc_si in pc_arr:
+        try:
+            r_m, m_kg, k2 = lalsimulation.SimNeutronStarTOVODEIntegrate(pc_si, eos)
+            m_geom = m_kg * MRSUN_SI / MSUN_SI  # geometric mass (m)
+            C = m_geom / r_m  # compactness
+            lam = (2.0 / 3.0) * k2 / C**5
+            masses_Msun.append(m_kg / MSUN_SI)
+            radii_km.append(r_m / 1e3)
+            lambdas.append(lam)
+        except Exception:
+            continue  # solver failed at this central pressure — skip
 
-    return n_geom, cs2
+    masses = np.array(masses_Msun)
+    radii = np.array(radii_km)
+    lams = np.array(lambdas)
+
+    # Truncate at maximum mass: keep only the stable branch up to M_TOV.
+    # Central pressure increases monotonically along pc_arr, so mass increases
+    # then turns over. Everything after the peak is the unstable branch.
+    i_max = int(np.argmax(masses))
+    return masses[: i_max + 1], radii[: i_max + 1], lams[: i_max + 1]
 
 
 def generate_eos_file(eos_name: str, output_dir: str | Path | None = None) -> Path:
@@ -107,133 +215,190 @@ def generate_eos_file(eos_name: str, output_dir: str | Path | None = None) -> Pa
     Generate NPZ file for a single EOS.
 
     Args:
-        eos_name: Name of the EOS (e.g., "SLY", "APR4")
-        output_dir: Directory to save the file (default: current directory)
+        eos_name: LALSuite EOS name (e.g., ``"SLY"``, ``"APR4"``).
+        output_dir: Directory to save the file. Defaults to
+            ``tabulated_eos/lalsuite/`` relative to this script.
 
     Returns:
-        Path to the generated NPZ file
+        Path to the generated NPZ file.
     """
     print(f"\n{'='*70}")
     print(f"Processing EOS: {eos_name}")
     print("=" * 70)
 
-    # Load EOS
-    print("Loading EOS from bilby...")
-    tabular_eos, eos_family = get_bilby_eos(eos_name)
-    print("✓ EOS loaded successfully")
-
-    # Extract EOS table data (all in geometric units)
-    p_geom = tabular_eos.pressure  # m^-2
-    e_geom = tabular_eos.energy_density  # m^-2
-    h = tabular_eos.pseudo_enthalpy  # dimensionless
-
+    # Extract EOS table
+    print("Extracting EOS table from LALSuite...")
+    p_geom, h, e_geom, dloge_dlogp, cs2, n_geom = extract_eos_table(eos_name)
+    print(f"  ✓ {len(p_geom)} valid points")
     print(f"  Pressure range: {p_geom.min():.3e} to {p_geom.max():.3e} m^-2")
     print(f"  Energy density range: {e_geom.min():.3e} to {e_geom.max():.3e} m^-2")
-    print(f"  Number of EOS points: {len(p_geom)}")
-
-    # Compute density and cs2
-    print("Computing density and speed of sound...")
-    n_geom, cs2 = compute_density_and_cs2(p_geom, e_geom)
-    print(f"  Density range: {n_geom.min():.3e} to {n_geom.max():.3e} m^-3")
     print(f"  cs2 range: {cs2.min():.3f} to {cs2.max():.3f}")
 
-    # Extract M-R-Lambda from TOV solver (all in geometric units)
-    mass_geom = eos_family.mass  # m (geometric)
-    radius_geom = eos_family.radius  # m (geometric)
-    lambda_dimensionless = eos_family.tidal_deformability  # dimensionless
+    # Compute M-R-Lambda family using LALSuite TOV solver
+    print("Computing M-R-Lambda family with LALSuite TOV solver...")
+    masses_Msun, radii_km, lambdas = compute_mr_lambda(eos_name)
 
-    print("\nTOV solver results:")
-    print(f"  Number of M-R points: {len(mass_geom)}")
+    if len(masses_Msun) == 0:
+        raise ValueError(f"No valid TOV solutions found for {eos_name}.")
 
-    # Convert mass and radius to standard units
-    masses_Msun = mass_geom * GEOM_TO_MSUN  # Convert to solar masses
-    radii_km = radius_geom * GEOM_TO_KM  # Convert to km
-
+    print(f"  ✓ {len(masses_Msun)} M-R-Lambda points")
     print(f"  Mass range: {masses_Msun.min():.3f} to {masses_Msun.max():.3f} M_sun")
     print(f"  Radius range: {radii_km.min():.3f} to {radii_km.max():.3f} km")
-    print(
-        f"  Lambda range: {lambda_dimensionless.min():.1f} to {lambda_dimensionless.max():.1f}"
-    )
-    print(f"  Maximum mass: {eos_family.maximum_mass:.3f} M_sun")
+    print(f"  Lambda range: {lambdas.min():.1f} to {lambdas.max():.1f}")
+    print(f"  Maximum mass: {masses_Msun.max():.3f} M_sun")
 
     # Save to NPZ file
     output_dir_path: Path
     if output_dir is None:
-        output_dir_path = Path(__file__).parent
+        output_dir_path = Path(__file__).parent / "lalsuite"
     else:
         output_dir_path = Path(output_dir)
-        output_dir_path.mkdir(parents=True, exist_ok=True)
 
+    output_dir_path.mkdir(parents=True, exist_ok=True)
     filename = output_dir_path / f"{eos_name}.npz"
 
-    # Save in JESTER injection format (geometric units for thermodynamic quantities)
     np.savez(
         filename,
-        # M-R-Lambda in physical units
+        # M-R-Lambda in physical units (from LALSuite TOV solver)
         masses_EOS=masses_Msun,  # M_sun
         radii_EOS=radii_km,  # km
-        Lambda_EOS=lambda_dimensionless,  # dimensionless
+        Lambda_EOS=lambdas,  # dimensionless
         # Thermodynamic quantities in geometric units (as expected by load_injection_eos)
         n=n_geom,  # m^-3
         p=p_geom,  # m^-2
         e=e_geom,  # m^-2
+        h=h,  # dimensionless pseudo-enthalpy
+        dloge_dlogp=dloge_dlogp,  # dimensionless (analytic, from LALSuite)
         cs2=cs2,  # dimensionless
         # Metadata
         eos_name=eos_name,
-        source="LALSimulation via bilby",
+        source="LALSimulation",
     )
 
-    print(f"\n✓ EOS data saved to: {filename}")
+    print(f"\n✓ Saved to: {filename}")
 
-    # Verify we can load it back
-    print("Verifying saved data...")
+    # Verify the saved file
     loaded = np.load(filename)
     print(f"  Keys: {list(loaded.keys())}")
-    print(f"  masses_EOS shape: {loaded['masses_EOS'].shape}")
-    print(f"  n shape: {loaded['n'].shape}")
 
     return filename
 
 
 def list_available_eos() -> list[str]:
-    """List all available LAL EOS names."""
-    from bilby.gw.eos.eos import valid_eos_names  # type: ignore[import-untyped]
+    """Return all EOS names loadable by the installed LALSuite version.
 
-    return sorted(valid_eos_names)
+    Tries a comprehensive list of known LALSuite EOS names and returns those
+    that can be successfully instantiated.
+    """
+    candidates = [
+        "SLY",
+        "SLY2",
+        "SLY4",
+        "SLY9",
+        "SLY230A",
+        "APR",
+        "APR1",
+        "APR2",
+        "APR3",
+        "APR4",
+        "APR4_EPP",
+        "MS1",
+        "MS1B",
+        "MS2",
+        "H1",
+        "H2",
+        "H3",
+        "H4",
+        "H5",
+        "H6",
+        "H7",
+        "MPA1",
+        "WFF1",
+        "WFF2",
+        "WFF3",
+        "ENG",
+        "ALF1",
+        "ALF2",
+        "ALF3",
+        "ALF4",
+        "GS1",
+        "GS2",
+        "BBB2",
+        "BGN1H1",
+        "BPAL12",
+        "FPS",
+        "GNH3",
+        "KDE0V",
+        "KDE0V1",
+        "PCL2",
+        "RS",
+        "SK255",
+        "SK272",
+        "SKA",
+        "SKB",
+        "SKI2",
+        "SKI3",
+        "SKI4",
+        "SKI5",
+        "SKI6",
+        "SKMP",
+        "SKT1",
+        "SKT2",
+        "SKT3",
+        "SKX",
+        "SQM1",
+        "SQM2",
+        "SQM3",
+        "SV",
+        "UU",
+        "DD2",
+        "AP1",
+        "AP2",
+        "AP3",
+        "AP4",
+        "L",
+    ]
+
+    available: list[str] = []
+    for name in sorted(set(candidates)):
+        try:
+            lalsimulation.SimNeutronStarEOSByName(name)
+            available.append(name)
+        except Exception:
+            pass
+
+    return sorted(available)
 
 
 def main() -> None:
     """Generate NPZ files for a selection of commonly used EOSs."""
-
     print("=" * 70)
     print("LALSuite EOS to NPZ Converter")
     print("Generates injection-compatible NPZ files for JESTER")
     print("=" * 70)
 
-    # Get output directory
-    output_dir = Path(__file__).parent
+    output_dir = Path(__file__).parent / "lalsuite"
     print(f"\nOutput directory: {output_dir}")
 
-    # List of EOSs to generate (common ones used in NS physics)
+    # Selection of commonly used EOSs available in LALSuite
     eos_names = [
         "SLY",
+        "SLY4",
         "SLY230A",
+        "APR4_EPP",
         "MPA1",
         "H4",
         "MS1",
-        "SLY4",
+        "MS1B",
         "WFF1",
+        "WFF2",
         "ENG",
-        "HQC18",
     ]
 
-    # Show all available EOSs
-    print(f"\nAvailable EOSs in bilby: {len(list_available_eos())}")
-    print(f"Generating files for {len(eos_names)} selected EOSs...")
+    print(f"\nGenerating files for {len(eos_names)} selected EOSs...")
 
-    # Generate files
-    generated_files = []
-    failed_eos = []
+    generated_files: list[Path] = []
+    failed_eos: list[str] = []
 
     for eos_name in eos_names:
         try:
@@ -260,19 +425,6 @@ def main() -> None:
         print("\nFailed EOSs:")
         for name in failed_eos:
             print(f"  - {name}")
-
-    print("\n" + "=" * 70)
-    print("To use these files in JESTER, add to your config.yaml:")
-    print("=" * 70)
-    print(
-        """
-postprocessing:
-  enabled: true
-  make_massradius: true
-  make_pressuredensity: true
-  injection_eos_path: "jesterTOV/tabulated_eos/SLY.npz"
-    """
-    )
 
 
 if __name__ == "__main__":
