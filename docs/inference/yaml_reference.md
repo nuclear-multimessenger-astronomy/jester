@@ -187,9 +187,10 @@ Constrain the EOS using gravitational wave observations of binary neutron star m
 
 **Field Details:**
 
-- **`events`** (`list[GWEventConfig]`) - List of GW event configs (see **GWEventConfig** below). Each entry must have `name`. Two modes are supported:
+- **`events`** (`list[GWEventConfig]`) - List of GW event configs (see **GWEventConfig** below). Each entry must have `name`. Three modes are supported:
   - **Pre-trained flow**: set `nf_model_dir` to point to a trained flow, or omit it to use a built-in preset.
   - **From bilby result**: set `from_bilby_result` to the path of a bilby HDF5 result file; jester will extract posterior samples and train a flow automatically before inference.
+  - **From NPZ file**: set `from_npz_file` to an existing `.npz` file with posterior samples; jester will train a flow directly from it, skipping the bilby extraction step.
 - **`penalty_value`** (`float`, default: `0.0`) - Log-likelihood penalty for masses exceeding TOV maximum mass (default: 0.0, i.e. no penalty)
 - **`N_masses_evaluation`** (`int`, default: `2000`) - Number of mass samples to pre-sample from the GW posterior
 - **`N_masses_batch_size`** (`int`, default: `1000`) - Batch size for jax.lax.map processing of mass grid
@@ -206,10 +207,11 @@ Constrain the EOS using gravitational wave observations of binary neutron star m
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `name` | str | required | Event name, e.g. `GW170817` |
-| `nf_model_dir` | str\|null | null | Path to a pre-trained normalizing flow directory. Mutually exclusive with `from_bilby_result`. |
-| `from_bilby_result` | str\|null | null | Path to a bilby result `.hdf5` file. jester will extract posterior samples and train a flow automatically. |
-| `flow_config` | str\|null | null | Path to a `FlowTrainingConfig` YAML file for custom flow training (only valid with `from_bilby_result`). |
-| `retrain_flow` | bool | false | Force re-training even if a cached flow exists (only valid with `from_bilby_result`). |
+| `nf_model_dir` | str\|null | null | Path to a pre-trained normalizing flow directory. Mutually exclusive with `from_bilby_result` and `from_npz_file`. |
+| `from_bilby_result` | str\|null | null | Path to a bilby result `.hdf5` file. jester will extract posterior samples and train a flow automatically. Mutually exclusive with `nf_model_dir` and `from_npz_file`. |
+| `from_npz_file` | str\|null | null | Path to an existing `.npz` file with posterior samples (`mass_1_source`, `mass_2_source`, `lambda_1`, `lambda_2`). jester will train a flow directly from this file, skipping bilby extraction. Mutually exclusive with `nf_model_dir` and `from_bilby_result`. |
+| `flow_config` | str\|null | null | Path to a `FlowTrainingConfig` YAML file for custom flow training (only valid with `from_bilby_result` or `from_npz_file`). |
+| `retrain_flow` | bool | false | Force re-training even if a cached flow exists (only valid with `from_bilby_result` or `from_npz_file`). |
 
 **Examples**:
 
@@ -227,6 +229,11 @@ events:
 events:
   - name: GW170817
     from_bilby_result: ./GW170817_result.hdf5
+
+# From existing NPZ file (skip bilby extraction):
+events:
+  - name: GW170817
+    from_npz_file: ./GW170817_posterior.npz
 ```
 
 ::::

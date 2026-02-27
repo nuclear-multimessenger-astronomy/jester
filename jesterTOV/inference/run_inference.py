@@ -303,6 +303,20 @@ def prepare_gw_flows(config: InferenceConfig, outdir: Path) -> InferenceConfig:
             else:
                 # NPZ mode: use the provided NPZ file directly
                 npz_path = Path(event.from_npz_file)  # type: ignore[arg-type]
+                if not npz_path.exists():
+                    logger.error(
+                        f"GW event '{event.name}': from_npz_file path does not exist: {npz_path}"
+                    )
+                    raise ValueError(
+                        f"GW event '{event.name}': from_npz_file '{npz_path}' does not exist."
+                    )
+                if npz_path.suffix.lower() != ".npz":
+                    logger.error(
+                        f"GW event '{event.name}': from_npz_file does not have a .npz extension: {npz_path}"
+                    )
+                    raise ValueError(
+                        f"GW event '{event.name}': from_npz_file '{npz_path}' does not have a .npz extension."
+                    )
                 logger.info(
                     f"Using provided NPZ posterior samples for '{event.name}' "
                     f"at {npz_path}"
