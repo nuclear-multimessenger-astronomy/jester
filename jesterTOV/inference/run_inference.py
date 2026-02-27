@@ -108,7 +108,7 @@ def setup_prior(config: InferenceConfig) -> CombinePrior:
     # Note: gw_presampled does NOT need _random_key (uses fixed seed at init)
     needs_random_key = False
     for lk in config.likelihoods:
-        if lk.enabled and lk.type in ["gw_resampled", "nicer"]:
+        if lk.enabled and lk.type in ["gw_resampled", "nicer_kde"]:
             needs_random_key = True
             break
 
