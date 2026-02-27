@@ -127,6 +127,7 @@ order-by-type = false
 [tool.pyright]
 reportIncompatibleMethodOverride = true
 include = ["jesterTOV"]
+exclude = ["jesterTOV/tabulated_eos/generate_lalsuite_eos.py"]
 
 # pyproject.toml
 [tool.pytest.ini_options]
