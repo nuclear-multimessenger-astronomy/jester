@@ -35,8 +35,8 @@ logger = get_logger("jester")
 # Preset flow model directories for GW events with trained flows
 # Paths are relative to jesterTOV/inference/ directory
 GW_EVENT_PRESETS = {
-    "GW170817": "flows/models/gw_maf/gw170817/gw170817_xp_nrtv3",
-    "GW190425": "flows/models/gw_maf/gw190425/gw190425_xp_nrtv3",
+    "GW170817": "flows/models/gw_maf/gw170817/gw170817_gwtc1_lowspin",
+    "GW190425": "flows/models/gw_maf/gw190425/gw190425_phenompnrt_ls",
 }
 
 
