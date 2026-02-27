@@ -3,7 +3,6 @@
 import warnings
 from typing import Literal, Union, Annotated
 from pydantic import (
-    BaseModel,
     Field,
     field_validator,
     model_validator,
@@ -13,10 +12,12 @@ from pydantic import (
 
 from jesterTOV.logging_config import get_logger
 
+from ._base import JesterBaseModel
+
 logger = get_logger("jester")
 
 
-class BaseLikelihoodConfig(BaseModel):
+class BaseLikelihoodConfig(JesterBaseModel):
     """Base configuration for all likelihood types."""
 
     model_config = ConfigDict(extra="forbid")
@@ -26,7 +27,7 @@ class BaseLikelihoodConfig(BaseModel):
     )
 
 
-class GWEventConfig(BaseModel):
+class GWEventConfig(JesterBaseModel):
     r"""Configuration for a single GW event in the likelihood.
 
     Three modes are supported:
