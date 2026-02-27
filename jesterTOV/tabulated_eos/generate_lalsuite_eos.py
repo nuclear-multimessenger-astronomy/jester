@@ -393,6 +393,7 @@ def main() -> None:
         "WFF1",
         "WFF2",
         "ENG",
+        "HQC18",
     ]
 
     print(f"\nGenerating files for {len(eos_names)} selected EOSs...")
