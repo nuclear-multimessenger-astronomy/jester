@@ -1,10 +1,12 @@
 """Pydantic models for EOS configuration."""
 
 from typing import Literal, Union, Annotated
-from pydantic import BaseModel, field_validator, ConfigDict, Discriminator
+from pydantic import field_validator, ConfigDict, Discriminator
+
+from ._base import JesterBaseModel
 
 
-class BaseEOSConfig(BaseModel):
+class BaseEOSConfig(JesterBaseModel):
     """Base configuration shared by all EOS types.
 
     Attributes

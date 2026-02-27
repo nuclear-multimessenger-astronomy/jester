@@ -1,10 +1,12 @@
 """Pydantic models for sampler configuration."""
 
 from typing import Literal, Union, Annotated
-from pydantic import BaseModel, Field, field_validator, ConfigDict, Discriminator
+from pydantic import Field, field_validator, ConfigDict, Discriminator
+
+from ._base import JesterBaseModel
 
 
-class BaseSamplerConfig(BaseModel):
+class BaseSamplerConfig(JesterBaseModel):
     """Base configuration for all samplers.
 
     This base class provides common fields shared by all sampler types.

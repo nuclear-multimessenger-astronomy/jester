@@ -21,7 +21,9 @@ This module assembles them into the top-level :class:`InferenceConfig` and re-ex
 every name so that existing imports (``from .schema import ...``) continue to work.
 """
 
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import Field, field_validator, ConfigDict
+
+from .schemas._base import JesterBaseModel
 
 # EOS schemas
 from .schemas.eos import (
@@ -75,7 +77,7 @@ from .schemas.samplers import (
 # ============================================================================
 
 
-class PriorConfig(BaseModel):
+class PriorConfig(JesterBaseModel):
     """Configuration for priors.
 
     Attributes
@@ -104,7 +106,7 @@ class PriorConfig(BaseModel):
 # ============================================================================
 
 
-class PostprocessingConfig(BaseModel):
+class PostprocessingConfig(JesterBaseModel):
     r"""Configuration for postprocessing plots.
 
     Attributes
@@ -156,7 +158,7 @@ class PostprocessingConfig(BaseModel):
 # ============================================================================
 
 
-class InferenceConfig(BaseModel):
+class InferenceConfig(JesterBaseModel):
     """Top-level inference configuration.
 
     Attributes
