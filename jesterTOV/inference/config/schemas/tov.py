@@ -1,7 +1,9 @@
 """Pydantic models for TOV solver configuration."""
 
 from typing import Literal
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
+
+from ._base import JesterBaseModel
 
 # FIXME: TOVConfig is a type alias for the discriminated union of all TOV solver configs.
 # Currently only GRTOVConfig exists; extend the union when adding AnisotropyTOVConfig,
@@ -13,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 #   ]
 
 
-class BaseTOVConfig(BaseModel):
+class BaseTOVConfig(JesterBaseModel):
     """Base configuration shared by all TOV solvers.
 
     Attributes
