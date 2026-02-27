@@ -105,10 +105,11 @@ def setup_prior(config: InferenceConfig) -> CombinePrior:
     nb_CSE = config.eos.nb_CSE if isinstance(config.eos, MetamodelCSEEOSConfig) else 0
 
     # Check if GW or NICER likelihoods are enabled (both need _random_key)
-    # Note: gw_presampled does NOT need _random_key (uses fixed seed at init)
+    # Note: the default `gw` and `nicer` likelihoods do NOT need
+    # _random_key as they pre-generate masses on which to evaluate
     needs_random_key = False
     for lk in config.likelihoods:
-        if lk.enabled and lk.type in ["gw_resampled", "nicer"]:
+        if lk.enabled and lk.type in ["gw_resampled", "nicer_kde"]:
             needs_random_key = True
             break
 
