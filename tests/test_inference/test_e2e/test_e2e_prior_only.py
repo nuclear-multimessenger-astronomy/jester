@@ -18,13 +18,11 @@ from jesterTOV.inference.run_inference import (
 from jesterTOV.inference.samplers import create_sampler
 
 
+@pytest.mark.slow
 @pytest.mark.integration
 @pytest.mark.e2e
 class TestPriorOnlyFast:
-    """Fast prior-only tests that should complete quickly.
-
-    These tests are NOT marked @slow so they run in regular CI.
-    """
+    """Prior-only tests with light hyperparameters."""
 
     def test_smc_rw_prior_only_minimal(self, smc_rw_prior_config, e2e_temp_dir):
         """Minimal SMC-RW test - should complete very quickly.
@@ -137,6 +135,7 @@ class TestPriorOnlyFast:
         assert not jnp.isnan(output.log_prob).any()
 
 
+@pytest.mark.slow
 @pytest.mark.integration
 @pytest.mark.e2e
 class TestSpectralPriorOnly:
@@ -247,6 +246,7 @@ class TestSpectralPriorOnly:
         assert not jnp.isnan(output.log_prob).any()
 
 
+@pytest.mark.slow
 @pytest.mark.integration
 @pytest.mark.e2e
 class TestSamplerFactorySmoke:
