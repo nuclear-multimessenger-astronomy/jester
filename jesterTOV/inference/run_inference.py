@@ -224,17 +224,20 @@ def setup_transform(
 
 
 def prepare_gw_flows(config: InferenceConfig, outdir: Path) -> InferenceConfig:
-    """Prepare normalizing flows for GW events that use ``from_bilby_result`` mode.
+    """Prepare normalizing flows for GW events that need flow training.
 
     For each enabled :class:`~jesterTOV.inference.config.schema.GWLikelihoodConfig`
-    with events in bilby mode, this function:
+    with events in bilby or NPZ mode, this function:
 
     1. Resolves the ``nf_model_dir`` to ``{outdir}/gw_flow_cache/{event.name}``.
-    2. Extracts posterior samples from the bilby HDF5 result file (cached).
+    2. Obtains posterior samples — either by extracting from a bilby HDF5
+       (``from_bilby_result``) or by using an existing NPZ directly
+       (``from_npz_file``).
     3. Trains a normalizing flow (with config-hash-based cache invalidation).
-    4. Replaces the bilby-mode event with a pre-trained-flow-mode event.
+    4. Replaces the training-mode event with a pre-trained-flow-mode event.
 
-    This is a no-op if no ``GWLikelihoodConfig`` events use ``from_bilby_result``.
+    This is a no-op if no ``GWLikelihoodConfig`` events use ``from_bilby_result``
+    or ``from_npz_file``.
 
     Parameters
     ----------
@@ -263,33 +266,46 @@ def prepare_gw_flows(config: InferenceConfig, outdir: Path) -> InferenceConfig:
         if not isinstance(lk_config, GWLikelihoodConfig) or not lk_config.enabled:
             continue
 
-        bilby_events = [e for e in lk_config.events if e.from_bilby_result is not None]
-        if not bilby_events:
+        training_events = [
+            e
+            for e in lk_config.events
+            if e.from_bilby_result is not None or e.from_npz_file is not None
+        ]
+        if not training_events:
             continue
 
         updated_events = list(lk_config.events)
         for ev_idx, event in enumerate(lk_config.events):
-            if event.from_bilby_result is None:
+            if event.from_bilby_result is None and event.from_npz_file is None:
                 continue
 
-            # 1. Resolve nf_model_dir
+            # 1. Resolve nf_model_dir (cache directory for this event)
             nf_model_dir = outdir / "gw_flow_cache" / event.name
             nf_model_dir.mkdir(parents=True, exist_ok=True)
 
-            # 2. Extract NPZ from bilby HDF5
-            npz_path = nf_model_dir / "posterior_samples.npz"
-            if not npz_path.exists():
-                logger.info(
-                    f"Extracting GW posterior for '{event.name}' from "
-                    f"{event.from_bilby_result}"
-                )
-                extract_gw_posterior_from_bilby(
-                    bilby_result_file=event.from_bilby_result,
-                    output_file=str(npz_path),
-                )
+            # 2. Obtain NPZ path
+            if event.from_bilby_result is not None:
+                # Bilby mode: extract NPZ from HDF5 into the cache directory
+                npz_path = nf_model_dir / "posterior_samples.npz"
+                if not npz_path.exists():
+                    logger.info(
+                        f"Extracting GW posterior for '{event.name}' from "
+                        f"{event.from_bilby_result}"
+                    )
+                    extract_gw_posterior_from_bilby(
+                        bilby_result_file=event.from_bilby_result,
+                        output_file=str(npz_path),
+                    )
+                else:
+                    logger.info(
+                        f"Using cached posterior samples for '{event.name}' at {npz_path}"
+                    )
             else:
+                # NPZ mode: use the provided NPZ file directly
+                npz_path = Path(event.from_npz_file)  # type: ignore[arg-type]
                 logger.info(
-                    f"Using cached posterior samples for '{event.name}' at {npz_path}"
+                    f"Using provided NPZ posterior samples for '{event.name}' "
+                    f"at {npz_path}"
                 )
 
             # 3. Build FlowTrainingConfig
@@ -334,8 +350,8 @@ def prepare_gw_flows(config: InferenceConfig, outdir: Path) -> InferenceConfig:
                     )
                     shutil.rmtree(nf_model_dir)
                     nf_model_dir.mkdir(parents=True, exist_ok=True)
-                    # Re-extract NPZ after clearing the directory
-                    if not npz_path.exists():
+                    # For bilby mode: re-extract NPZ after clearing the cache directory
+                    if event.from_bilby_result is not None and not npz_path.exists():
                         extract_gw_posterior_from_bilby(
                             bilby_result_file=event.from_bilby_result,
                             output_file=str(npz_path),
@@ -344,7 +360,8 @@ def prepare_gw_flows(config: InferenceConfig, outdir: Path) -> InferenceConfig:
                 logger.info(f"retrain_flow=True for '{event.name}' → retraining")
                 shutil.rmtree(nf_model_dir)
                 nf_model_dir.mkdir(parents=True, exist_ok=True)
-                if not npz_path.exists():
+                # For bilby mode: re-extract NPZ after clearing the cache directory
+                if event.from_bilby_result is not None and not npz_path.exists():
                     extract_gw_posterior_from_bilby(
                         bilby_result_file=event.from_bilby_result,
                         output_file=str(npz_path),
