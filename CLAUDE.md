@@ -480,6 +480,7 @@ uv build
 git tag v0.x.x
 git push origin v0.x.x
 
-# 6. Publish to PyPI
-uv publish --token <token>
+# 6. PyPI publishing is NOT possible - jester depends on a specific fork of blackjax
+# (https://github.com/handley-lab/blackjax) which cannot be published to PyPI.
+# Users install directly from the GitHub repository via git clone.
 ```
