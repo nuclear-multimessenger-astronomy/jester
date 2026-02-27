@@ -1,4 +1,4 @@
-seed: 45
+seed: 42
 dry_run: false
 validate_only: false
 eos:
@@ -17,6 +17,15 @@ prior:
 likelihoods:
 - type: constraints_eos
   enabled: true
+- type: radio
+  enabled: true
+  pulsars:
+  - name: J1614
+    mass_mean: 1.94
+    mass_std: 0.06
+  - name: J0740
+    mass_mean: 2.08
+    mass_std: 0.14
 - type: nicer
   enabled: true
   pulsars:
