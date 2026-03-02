@@ -7,6 +7,8 @@ where the gravitational interaction includes both a metric tensor and a scalar f
 **Units:** All calculations are performed in geometric units where :math:`G = c = 1`.
 
 **Reference:** G. Creci et al Phys.Rev.D 111 (2025) 8, 089901 (erratum)
+
+# FIXME: Need to fully integrate the TOV solver: see docs/developer_guide/adding_new_tov.md
 """
 
 import jax.numpy as jnp
@@ -346,7 +348,10 @@ class ScalarTensorTOVSolver(TOVSolverBase):
         pc : float
             Central pressure (geometric units).
         tov_params : dict[str, float]
-            Scalar-tensor theory parameters with keys ``beta_ST``, ``nu_c``, ``phi_c``.
+            Scalar-tensor theory parameters: ``beta_ST`` is the coupling constant
+            (dimensionless), ``phi_c`` is the central scalar field value
+            (dimensionless), and ``phi_inf_tgt`` is the target asymptotic scalar
+            field value at infinity (dimensionless).
 
         Returns
         -------
