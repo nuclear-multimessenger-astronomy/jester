@@ -380,7 +380,9 @@ class InferenceResult:
         # Apply transform with batched processing
         logger.info(f"Applying transform to {n_eos_samples} samples...")
         if n_eos_samples == 0:
-            logger.warning("No posterior samples available for EOS generation; skipping transform.")
+            logger.warning(
+                "No posterior samples available for EOS generation; skipping transform."
+            )
             return
         if batch_size > n_eos_samples:
             logger.warning(
