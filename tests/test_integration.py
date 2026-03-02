@@ -59,7 +59,9 @@ class TestMetaModelEOSIntegration:
 
         # Construct neutron star family using GRTOVSolver
         solver = GRTOVSolver()
-        family_data = solver.construct_family(eos_data, ndat=30, min_nsat=0.75)
+        family_data = solver.construct_family(
+            eos_data, tov_params={}, ndat=30, min_nsat=0.75
+        )
 
         # Check neutron star properties
         assert len(family_data.masses) == 30
@@ -141,7 +143,9 @@ class TestMetaModelEOSIntegration:
 
         # Construct family using GRTOVSolver
         solver = GRTOVSolver()
-        family_data = solver.construct_family(eos_data, ndat=25, min_nsat=0.75)
+        family_data = solver.construct_family(
+            eos_data, tov_params={}, ndat=25, min_nsat=0.75
+        )
 
         # Should get reasonable neutron star properties (CSE with 6 nsat base)
         assert (
@@ -188,7 +192,7 @@ class TestTOVIntegration:
             if idx < len(ps):
                 pc = float(ps[idx])
                 try:
-                    solution = solver.solve(eos_data, pc)
+                    solution = solver.solve(eos_data, pc, {})
 
                     if (
                         jnp.isfinite(solution.M)
@@ -258,7 +262,7 @@ class TestTOVIntegration:
 
         # GR TOV solver
         gr_solver = GRTOVSolver()
-        tov_solution = gr_solver.solve(eos_data, pc)
+        tov_solution = gr_solver.solve(eos_data, pc, {})
         M_tov, R_tov, k2_tov = tov_solution.M, tov_solution.R, tov_solution.k2
 
         # Post-TOV solver in GR limit (all MG parameters = 0)
@@ -271,7 +275,7 @@ class TestTOVIntegration:
             "alpha": 10.0,
             "beta": 0.3,
         }
-        post_solution = post_solver.solve(eos_data, pc, **post_params)
+        post_solution = post_solver.solve(eos_data, pc, post_params)
         M_post, R_post, k2_post = post_solution.M, post_solution.R, post_solution.k2
 
         # Should be very similar in GR limit
@@ -382,7 +386,9 @@ class TestCrustIntegration:
 
         # Should be able to construct neutron star family using GRTOVSolver
         solver = GRTOVSolver()
-        family_data = solver.construct_family(eos_data, ndat=20, min_nsat=0.75)
+        family_data = solver.construct_family(
+            eos_data, tov_params={}, ndat=20, min_nsat=0.75
+        )
 
         assert len(family_data.masses) == 20
         assert jnp.all(family_data.masses > 0)
@@ -436,7 +442,9 @@ class TestNumericalStability:
 
                 # Should be able to solve TOV using GRTOVSolver
                 solver = GRTOVSolver()
-                family_data = solver.construct_family(eos_data, ndat=15, min_nsat=0.75)
+                family_data = solver.construct_family(
+                    eos_data, tov_params={}, ndat=15, min_nsat=0.75
+                )
 
                 assert jnp.all(family_data.masses > 0)
                 assert jnp.all(family_data.radii > 0)
@@ -491,7 +499,9 @@ def test_full_pipeline_reproducibility():
 
         # Use GRTOVSolver to construct family
         solver = GRTOVSolver()
-        family_data = solver.construct_family(eos_data, ndat=20, min_nsat=0.75)
+        family_data = solver.construct_family(
+            eos_data, tov_params={}, ndat=20, min_nsat=0.75
+        )
 
         max_mass = jnp.max(family_data.masses)
         radius_at_1p4 = jnp.interp(

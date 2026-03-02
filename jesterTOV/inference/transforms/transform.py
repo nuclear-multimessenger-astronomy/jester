@@ -325,18 +325,15 @@ class JesterTransform(NtoMTransform):
         # EOS handles all parameter preprocessing (e.g., CSE conversion)
         eos_data = self.eos.construct_eos(params)
 
-        # Pass all sampled parameters that are not EOS parameters to the TOV solver.
-        # This supports solvers whose parameters are all optional (e.g. AnisotropyTOVSolver),
-        # where only a subset may appear in the prior.
-        eos_param_set = set(self.eos_params)
-        tov_kwargs = {key: params[key] for key in params if key not in eos_param_set}
+        # Extract TOV-specific parameters from the combined prior dict
+        tov_params = self.tov_solver.fetch_params(params)
 
         # Solve TOV equations to get M-R-Λ family
         family_data = self.tov_solver.construct_family(
             eos_data,
             ndat=self.ndat_TOV,
             min_nsat=self.min_nsat_TOV,
-            **tov_kwargs,
+            tov_params=tov_params,
         )
 
         # Create standardized return dictionary with constraint checking
