@@ -392,6 +392,17 @@ class InferenceResult:
 
         # Apply transform with batched processing
         logger.info(f"Applying transform to {n_eos_samples} samples...")
+        if n_eos_samples == 0:
+            logger.warning(
+                "No posterior samples available for EOS generation; skipping transform."
+            )
+            return
+        if batch_size > n_eos_samples:
+            logger.warning(
+                f"Requested batch size ({batch_size}) is larger than the number of samples "
+                f"({n_eos_samples}). Adjusting batch size to {n_eos_samples}."
+            )
+            batch_size = n_eos_samples
         logger.info(f"Using batch size: {batch_size}")
 
         chosen_samples_jax = {k: jnp.array(v) for k, v in chosen_samples.items()}

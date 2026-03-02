@@ -617,3 +617,82 @@ class TestEOSSampleGeneration:
         assert len(result.posterior["log_prob_full"]) == n_full_samples
         assert len(result.posterior["weights_full"]) == n_full_samples
         assert len(result.posterior["ess_full"]) == n_full_samples
+
+    def test_batch_size_capped_to_n_eos_samples(self, temp_dir, caplog):
+        """Test that batch_size is automatically reduced when larger than n_eos_samples.
+
+        Regression test for issue #95: batch size was not capped when the number of
+        requested EOS samples was smaller than the configured batch size.
+        """
+        import logging
+
+        import numpy as np
+
+        from jesterTOV.inference.config.schema import InferenceConfig
+        from jesterTOV.inference.result import InferenceResult
+        from jesterTOV.inference.transforms import JesterTransform
+
+        n_full_samples = 50
+        posterior = {
+            "E_sat": np.random.uniform(-15.9, -16.1, n_full_samples),
+            "K_sat": np.random.uniform(150, 300, n_full_samples),
+            "L_sym": np.random.uniform(10, 200, n_full_samples),
+            "Q_sat": np.random.uniform(100, 300, n_full_samples),
+            "Q_sym": np.random.uniform(-200, 200, n_full_samples),
+            "Z_sat": np.random.uniform(-100, 100, n_full_samples),
+            "Z_sym": np.random.uniform(-200, 200, n_full_samples),
+            "E_sym": np.ones(n_full_samples) * 31.6,
+            "K_sym": np.ones(n_full_samples) * -100.0,
+            "log_prob": np.random.uniform(-100, -10, n_full_samples),
+        }
+        result = InferenceResult(
+            sampler_type="flowmc",
+            posterior=posterior,
+            metadata={"sampler": "flowmc", "n_samples": n_full_samples, "seed": 42},
+        )
+
+        config_dict = {
+            "seed": 42,
+            "eos": {"type": "metamodel", "nb_CSE": 0},
+            "tov": {"type": "gr"},
+            "prior": {"specification_file": "dummy.prior"},
+            "likelihoods": [{"type": "zero", "enabled": True}],
+            "sampler": {
+                "type": "flowmc",
+                "n_chains": 10,
+                "n_loop_training": 2,
+                "n_loop_production": 2,
+                "n_local_steps": 50,
+                "n_global_steps": 50,
+                "n_epochs": 30,
+                "learning_rate": 0.01,
+                "output_dir": str(temp_dir),
+                "n_eos_samples": 10,
+                "log_prob_batch_size": 1000,  # Larger than n_eos_samples
+            },
+        }
+        config = InferenceConfig(**config_dict)
+        transform = JesterTransform.from_config(config.eos, config.tov)
+
+        # batch_size=1000 is larger than n_eos_samples=10 → should be capped with a warning.
+        # The jester logger has propagate=False, so we temporarily enable propagation
+        # so caplog can capture log records from it.
+        jester_logger = logging.getLogger("jester")
+        with caplog.at_level(logging.WARNING, logger="jester"):
+            jester_logger.propagate = True
+            try:
+                result.add_eos_from_transform(
+                    transform=transform,
+                    n_eos_samples=10,
+                    batch_size=1000,
+                )
+            finally:
+                jester_logger.propagate = False
+
+        assert any(
+            "Adjusting batch size" in msg for msg in caplog.messages
+        ), "Expected a warning about batch size being adjusted"
+
+        # EOS quantities should still be generated correctly
+        assert "masses_EOS" in result.posterior
+        assert len(result.posterior["masses_EOS"]) == 10
