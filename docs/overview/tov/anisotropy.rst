@@ -1,9 +1,9 @@
 .. _tov-anisotropy:
 
-Pressure Anisotropy (Post-TOV)
-==============================
+Pressure Anisotropy (AnisotropyTOV)
+=====================================
 
-[Placeholder: Detailed explanation of the Post-TOV solver with anisotropic effects]
+[Placeholder: Detailed explanation of the Anisotropy TOV solver with beyond-GR effects]
 
 This page will cover:
 

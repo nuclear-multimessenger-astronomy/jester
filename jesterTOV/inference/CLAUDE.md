@@ -136,7 +136,7 @@ parse_prior_file() → ParsedPrior(prior: CombinePrior, fixed_params: dict)
     ↓
 JesterTransform.from_config(config.eos, config.tov)
   ├─ Instantiate EOS (MetaModel/MetaModelCSE/Spectral)
-  └─ Instantiate TOV solver (GR/Post/ScalarTensor)
+  └─ Instantiate TOV solver (GR/Anisotropy)
     ↓
 Validate parameters
   ├─ Check all required EOS params in prior → raise error if missing
@@ -210,8 +210,8 @@ Save to outdir/{result_id}.h5
        - Jordan frame (Brown 2023, ApJ 958 125)
        - Required: beta_ST, phi_c, nu_c
    - Each implements:
-     - `solve(eos_data, pc, **kwargs) -> TOVSolution` - Single star
-     - `construct_family(eos_data, ndat, min_nsat, **kwargs) -> FamilyData` - M-R-Λ family
+     - `solve(eos_data, pc, tov_params: dict) -> TOVSolution` - Single star
+     - `construct_family(eos_data, ndat, min_nsat, tov_params: dict) -> FamilyData` - M-R-Λ family
      - `get_required_parameters() -> list[str]` - List additional parameters
    - Key features:
      - Uses Diffrax ODE solver with adaptive step size
@@ -528,13 +528,15 @@ Transforms convert between parameter spaces. Two types:
    from jesterTOV.tov.data_classes import EOSData, TOVSolution, FamilyData
 
    class MyNewTOVSolver(TOVSolverBase):
-       def solve(self, eos_data: EOSData, pc: float, **kwargs) -> TOVSolution:
+       def solve(self, eos_data: EOSData, pc: float,
+                 tov_params: dict[str, float]) -> TOVSolution:
            """Solve TOV for single central pressure."""
            # Your implementation here
            return TOVSolution(M=..., R=..., k2=...)
 
        def construct_family(self, eos_data: EOSData, ndat: int,
-                           min_nsat: float, **kwargs) -> FamilyData:
+                           min_nsat: float,
+                           tov_params: dict[str, float]) -> FamilyData:
            """Build M-R-Λ family curves."""
            # Usually uses jax.vmap over self.solve
            return FamilyData(log10pcs=..., masses=..., radii=..., lambdas=...)
