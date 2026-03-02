@@ -2,7 +2,12 @@ r"""Parser for .prior specification files in bilby-style Python format."""
 
 from pathlib import Path
 from typing import Union, Any, Dict
-from jesterTOV.inference.base import CombinePrior, Prior, UniformPrior
+from jesterTOV.inference.base import (
+    CombinePrior,
+    Prior,
+    UniformPrior,
+    MultivariateGaussianPrior,
+)
 
 
 def parse_prior_file(
@@ -63,6 +68,7 @@ def parse_prior_file(
     # Create execution namespace with required imports only
     namespace: dict[str, Any] = {
         "UniformPrior": UniformPrior,
+        "MultivariateGaussianPrior": MultivariateGaussianPrior,
     }
 
     # Execute the prior file to populate the namespace
@@ -72,7 +78,7 @@ def parse_prior_file(
         raise ValueError(f"Error executing prior file {prior_file}: {e}") from e
 
     # Extract all Prior objects from the namespace
-    excluded_keys = {"__builtins__", "UniformPrior"}
+    excluded_keys = {"__builtins__", "UniformPrior", "MultivariateGaussianPrior"}
     all_priors: Dict[str, Prior] = {}
 
     for key, value in namespace.items():

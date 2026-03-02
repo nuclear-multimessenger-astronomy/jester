@@ -655,30 +655,30 @@ class TestGWEventPresets:
         result = factory.get_gw_model_dir(schema.GWEventConfig(name="GW170817"))
 
         # Should contain the expected path components
-        assert "gw170817_xp_nrtv3" in result
-        assert result.endswith("gw170817_xp_nrtv3")
+        assert "gw170817_gwtc1_lowspin" in result
+        assert result.endswith("gw170817_gwtc1_lowspin")
 
     def test_get_gw_model_dir_gw190425_preset(self):
         """Test that GW190425 uses preset path when nf_model_dir not provided."""
         result = factory.get_gw_model_dir(schema.GWEventConfig(name="GW190425"))
 
         # Should contain the expected path components
-        assert "gw190425_xp_nrtv3" in result
-        assert result.endswith("gw190425_xp_nrtv3")
+        assert "gw190425_phenompnrt_ls" in result
+        assert result.endswith("gw190425_phenompnrt_ls")
 
     def test_get_gw_model_dir_case_insensitive(self):
         """Test that event name matching is case-insensitive."""
         # Lowercase should work
         result_lower = factory.get_gw_model_dir(schema.GWEventConfig(name="gw170817"))
-        assert "gw170817_xp_nrtv3" in result_lower
+        assert "gw170817_gwtc1_lowspin" in result_lower
 
         # Mixed case should work
         result_mixed = factory.get_gw_model_dir(schema.GWEventConfig(name="Gw170817"))
-        assert "gw170817_xp_nrtv3" in result_mixed
+        assert "gw170817_gwtc1_lowspin" in result_mixed
 
         # Uppercase should work
         result_upper = factory.get_gw_model_dir(schema.GWEventConfig(name="GW170817"))
-        assert "gw170817_xp_nrtv3" in result_upper
+        assert "gw170817_gwtc1_lowspin" in result_upper
 
     def test_get_gw_model_dir_custom_path(self):
         """Test that custom nf_model_dir takes precedence over preset."""
@@ -689,14 +689,14 @@ class TestGWEventPresets:
 
         # Should use the custom path, not preset
         assert "custom/path/to/model" in result
-        assert "gw170817_xp_nrtv3" not in result
+        assert "gw170817_gwtc1_lowspin" not in result
 
     def test_get_gw_model_dir_no_nf_model_dir_uses_preset(self):
         """Test that omitting nf_model_dir triggers preset lookup."""
         result = factory.get_gw_model_dir(schema.GWEventConfig(name="GW170817"))
 
         # No nf_model_dir should trigger preset
-        assert "gw170817_xp_nrtv3" in result
+        assert "gw170817_gwtc1_lowspin" in result
 
     def test_get_gw_model_dir_unknown_event_raises_error(self):
         """Test that unknown event without nf_model_dir raises ValueError."""
