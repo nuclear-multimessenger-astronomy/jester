@@ -42,7 +42,7 @@ class TestSMCRandomWalkE2E:
         config = InferenceConfig(**smc_rw_prior_config)
 
         # Setup components (following run_inference.py flow)
-        prior = setup_prior(config)
+        prior, _fixed_params = setup_prior(config)
         keep_names = determine_keep_names(config, prior)
         transform = setup_transform(config, prior=prior, keep_names=keep_names)
         likelihood = setup_likelihood(config, transform)
@@ -85,7 +85,7 @@ class TestSMCRandomWalkE2E:
         """
         config = InferenceConfig(**smc_rw_chieft_config)
 
-        prior = setup_prior(config)
+        prior, _fixed_params = setup_prior(config)
         keep_names = determine_keep_names(config, prior)
         transform = setup_transform(config, prior=prior, keep_names=keep_names)
         likelihood = setup_likelihood(config, transform)
@@ -116,7 +116,7 @@ class TestSMCRandomWalkE2E:
         """Test that SMC-RW produces samples in prior bounds."""
         config = InferenceConfig(**smc_rw_prior_config)
 
-        prior = setup_prior(config)
+        prior, _fixed_params = setup_prior(config)
         keep_names = determine_keep_names(config, prior)
         transform = setup_transform(config, prior=prior, keep_names=keep_names)
         likelihood = setup_likelihood(config, transform)
@@ -150,7 +150,7 @@ class TestSMCRandomWalkE2E:
         # Run twice with same seed
         results = []
         for _ in range(2):
-            prior = setup_prior(config)
+            prior, _fixed_params = setup_prior(config)
             keep_names = determine_keep_names(config, prior)
             transform = setup_transform(config, prior=prior, keep_names=keep_names)
             likelihood = setup_likelihood(config, transform)
