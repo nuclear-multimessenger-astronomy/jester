@@ -2,7 +2,7 @@
 
 import pytest
 from unittest.mock import MagicMock
-from jesterTOV.inference.config.schema import MetamodelEOSConfig, TOVConfig
+from jesterTOV.inference.config.schema import MetamodelEOSConfig, GRTOVConfig
 from jesterTOV.inference.run_inference import setup_transform
 from jesterTOV.inference.base.prior import CombinePrior, UniformPrior
 
@@ -15,7 +15,7 @@ def test_missing_parameters_raises_error():
         ndat_metamodel=100,
         nmax_nsat=25.0,
     )
-    tov_config = TOVConfig(
+    tov_config = GRTOVConfig(
         ndat_TOV=100,
         min_nsat_TOV=0.75,
     )
@@ -62,7 +62,7 @@ def test_all_parameters_present_succeeds():
         ndat_metamodel=100,
         nmax_nsat=25.0,
     )
-    tov_config = TOVConfig(
+    tov_config = GRTOVConfig(
         ndat_TOV=100,
         min_nsat_TOV=0.75,
     )
@@ -100,7 +100,7 @@ def test_unused_parameters_succeeds():
         ndat_metamodel=100,
         nmax_nsat=25.0,
     )
-    tov_config = TOVConfig(
+    tov_config = GRTOVConfig(
         ndat_TOV=100,
         min_nsat_TOV=0.75,
     )

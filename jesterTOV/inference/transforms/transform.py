@@ -21,6 +21,7 @@ from jesterTOV.inference.config.schema import (
     SpectralEOSConfig,
     BaseTOVConfig,
     GRTOVConfig,
+    AnisotropyTOVConfig,
 )
 from jesterTOV.inference.likelihoods.constraints import check_all_constraints
 from jesterTOV.logging_config import get_logger
@@ -44,7 +45,7 @@ class JesterTransform(NtoMTransform):
     eos : Interpolate_EOS_model
         EOS model instance (MetaModel, MetaModelCSE, Spectral, etc.)
     tov_solver : TOVSolverBase
-        TOV solver instance (GRTOVSolver, PostTOVSolver, ScalarTensorTOVSolver)
+        TOV solver instance (GRTOVSolver, AnisotropyTOVSolver, ScalarTensorTOVSolver)
     name_mapping : tuple[list[str], list[str]] | None
         Tuple of (input_names, output_names). If None, constructed from
         EOS and TOV required parameters.
@@ -267,16 +268,13 @@ class JesterTransform(NtoMTransform):
         if isinstance(config, GRTOVConfig):
             return GRTOVSolver()
 
-        # String-based dispatch for solvers that do not yet have their own config class
-        tov_type = config.type
-        if tov_type == "post":
-            raise NotImplementedError("PostTOVSolver config class not implemented yet")
-        elif tov_type == "scalar_tensor":
-            raise NotImplementedError(
-                "ScalarTensorTOVSolver config class not implemented yet"
-            )
+        elif isinstance(config, AnisotropyTOVConfig):
+            from jesterTOV.tov.anisotropy import AnisotropyTOVSolver
+
+            return AnisotropyTOVSolver()
+
         else:
-            raise ValueError(f"Unknown TOV solver type: {tov_type}")
+            raise ValueError(f"Unknown TOV solver type: {type(config).__name__}")
 
     def get_eos_type(self) -> str:
         """Return EOS type identifier.
@@ -329,8 +327,11 @@ class JesterTransform(NtoMTransform):
         # EOS handles all parameter preprocessing (e.g., CSE conversion)
         eos_data = self.eos.construct_eos(params)
 
-        # Extract TOV-specific parameters if any
-        tov_kwargs = {key: params[key] for key in self.tov_params if key in params}
+        # Pass all sampled parameters that are not EOS parameters to the TOV solver.
+        # This supports solvers whose parameters are all optional (e.g. AnisotropyTOVSolver),
+        # where only a subset may appear in the prior.
+        eos_param_set = set(self.eos_params)
+        tov_kwargs = {key: params[key] for key in params if key not in eos_param_set}
 
         # Solve TOV equations to get M-R-Λ family
         family_data = self.tov_solver.construct_family(
