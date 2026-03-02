@@ -332,6 +332,55 @@ class CombinePrior(Prior):
         return output
 
 
+class Fixed(Prior):
+    """A parameter fixed to a constant value, excluded from the sampling space.
+
+    This is not a proper prior distribution — it has no ``log_prob`` or
+    ``sample`` implementation.  Use it in ``.prior`` files to pin a parameter
+    to a specific value while keeping the specification co-located with the
+    sampled priors:
+
+    .. code-block:: python
+
+        lambda_BL = Fixed(0.0, parameter_names=["lambda_BL"])
+
+    The parser will extract ``Fixed`` entries into a separate
+    ``fixed_params`` dict and will not add them to the ``CombinePrior`` that
+    defines the sampling space.
+
+    Parameters
+    ----------
+    value : float
+        The fixed value for the parameter.
+    parameter_names : list[str]
+        Must contain exactly one parameter name.
+    """
+
+    value: float
+
+    def __repr__(self) -> str:
+        return f"Fixed(value={self.value}, parameter_names={self.parameter_names})"
+
+    def __init__(self, value: float, parameter_names: list[str]) -> None:
+        super().__init__(parameter_names)
+        assert self.n_dim == 1, "Fixed must be 1D (one parameter per Fixed instance)"
+        self.value = float(value)
+
+    def sample(
+        self, rng_key: PRNGKeyArray, n_samples: int
+    ) -> dict[str, Float[Array, " n_samples"]]:
+        raise NotImplementedError(
+            "Fixed parameters are not sampled. "
+            "They are injected as constants into the transform."
+        )
+
+    def log_prob(self, z: dict[str, Float | Array]) -> Float:
+        raise NotImplementedError(
+            "Fixed parameters have no log_prob. "
+            "They do not contribute to the posterior density."
+        )
+
+
 @jaxtyped(typechecker=typechecker)
 class UniformPrior(SequentialTransformPrior):
     """
