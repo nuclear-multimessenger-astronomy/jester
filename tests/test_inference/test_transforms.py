@@ -8,7 +8,7 @@ from jesterTOV.inference.config.schema import (
     MetamodelEOSConfig,
     MetamodelCSEEOSConfig,
     SpectralEOSConfig,
-    TOVConfig,
+    GRTOVConfig,
 )
 from jesterTOV.inference.transforms import JesterTransform
 
@@ -25,7 +25,7 @@ class TestJesterTransform:
             nb_CSE=0,
             crust_name="DH",
         )
-        tov_config = TOVConfig(
+        tov_config = GRTOVConfig(
             type="gr",
             min_nsat_TOV=0.75,
             ndat_TOV=100,
@@ -47,7 +47,7 @@ class TestJesterTransform:
             nb_CSE=8,
             crust_name="DH",
         )
-        tov_config = TOVConfig(
+        tov_config = GRTOVConfig(
             type="gr",
             min_nsat_TOV=0.75,
             ndat_TOV=100,
@@ -65,7 +65,7 @@ class TestJesterTransform:
             type="spectral",
             crust_name="SLy",  # Spectral requires SLy for LALSuite compatibility
         )
-        tov_config = TOVConfig(
+        tov_config = GRTOVConfig(
             type="gr",
             min_nsat_TOV=0.75,
             ndat_TOV=100,
@@ -100,7 +100,7 @@ class TestJesterTransform:
     def test_get_parameter_names_metamodel(self):
         """Test that MetaModel transform reports correct parameter names."""
         eos_config = MetamodelEOSConfig(type="metamodel", nb_CSE=0)
-        tov_config = TOVConfig()
+        tov_config = GRTOVConfig()
 
         transform = JesterTransform.from_config(eos_config, tov_config)
         param_names = transform.get_parameter_names()
@@ -124,7 +124,7 @@ class TestJesterTransform:
     def test_get_parameter_names_metamodel_cse(self):
         """Test that MetaModel+CSE transform reports correct parameter names."""
         eos_config = MetamodelCSEEOSConfig(type="metamodel_cse", nb_CSE=8)
-        tov_config = TOVConfig()
+        tov_config = GRTOVConfig()
 
         transform = JesterTransform.from_config(eos_config, tov_config)
         param_names = transform.get_parameter_names()
@@ -143,7 +143,7 @@ class TestJesterTransform:
             nmax_nsat=2.0,
             nb_CSE=0,
         )
-        tov_config = TOVConfig(ndat_TOV=50)
+        tov_config = GRTOVConfig(ndat_TOV=50)
 
         keep_names = ["K_sat", "L_sym"]
         transform = JesterTransform.from_config(
@@ -192,7 +192,7 @@ class TestJesterTransformIntegration:
             nmax_nsat=2.0,
             nb_CSE=0,
         )
-        tov_config = TOVConfig(ndat_TOV=100)
+        tov_config = GRTOVConfig(ndat_TOV=100)
 
         transform = JesterTransform.from_config(eos_config, tov_config)
         result = transform.forward(realistic_nep_stiff)
@@ -239,7 +239,7 @@ class TestJesterTransformIntegration:
             nmax_nsat=25.0,
             nb_CSE=8,
         )
-        tov_config = TOVConfig(ndat_TOV=100)
+        tov_config = GRTOVConfig(ndat_TOV=100)
 
         transform = JesterTransform.from_config(eos_config, tov_config)
 
@@ -275,7 +275,7 @@ class TestJesterTransformIntegration:
             nmax_nsat=2.0,
             nb_CSE=0,
         )
-        tov_config = TOVConfig(ndat_TOV=50)
+        tov_config = GRTOVConfig(ndat_TOV=50)
 
         keep_names = list(realistic_nep_stiff.keys())
         transform = JesterTransform.from_config(
@@ -306,7 +306,7 @@ class TestSpectralTransform:
     def test_spectral_forward_single(self):
         """Test single forward pass of spectral transform."""
         eos_config = SpectralEOSConfig(type="spectral", crust_name="SLy")
-        tov_config = TOVConfig(ndat_TOV=30)
+        tov_config = GRTOVConfig(ndat_TOV=30)
         transform = JesterTransform.from_config(eos_config, tov_config)
 
         result = transform.forward(SPECTRAL_PARAMS)
@@ -324,7 +324,7 @@ class TestSpectralTransform:
         traced array, which raises ConcretizationTypeError inside vmap.
         """
         eos_config = SpectralEOSConfig(type="spectral", crust_name="SLy")
-        tov_config = TOVConfig(ndat_TOV=30)
+        tov_config = GRTOVConfig(ndat_TOV=30)
         transform = JesterTransform.from_config(eos_config, tov_config)
 
         # Batch of 3 spectral parameter sets
@@ -348,7 +348,7 @@ class TestSpectralTransform:
         This key is consumed by ConstraintGammaLikelihood.
         """
         eos_config = SpectralEOSConfig(type="spectral", crust_name="SLy")
-        tov_config = TOVConfig(ndat_TOV=30)
+        tov_config = GRTOVConfig(ndat_TOV=30)
         transform = JesterTransform.from_config(eos_config, tov_config)
 
         result = transform.forward(SPECTRAL_PARAMS)

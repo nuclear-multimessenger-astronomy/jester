@@ -222,7 +222,7 @@ def _calc_k2(R, M, H, b):
     return num / den
 
 
-class PostTOVSolver(TOVSolverBase):
+class AnisotropyTOVSolver(TOVSolverBase):
     """
     Post-TOV solver with phenomenological beyond-GR corrections.
 
@@ -238,7 +238,9 @@ class PostTOVSolver(TOVSolverBase):
         - Post-Newtonian corrections (gamma, alpha, beta)
     """
 
-    def solve(self, eos_data: EOSData, pc: float, **kwargs) -> TOVSolution:
+    def solve(
+        self, eos_data: EOSData, pc: float, tov_params: dict[str, float]
+    ) -> TOVSolution:
         r"""
         Solve post-TOV equations for given central pressure.
 
@@ -249,13 +251,9 @@ class PostTOVSolver(TOVSolverBase):
         Args:
             eos_data: EOS quantities in geometric units
             pc: Central pressure [geometric units]
-            **kwargs: Must contain theory modification parameters:
-                - lambda_BL: Bowers-and-Liang coupling parameter
-                - lambda_DY: Horvat et al. coupling parameter
-                - lambda_HB: Cosenza et al. coupling parameter
-                - gamma: Post-Newtonian amplitude parameter
-                - alpha: Post-Newtonian steepness parameter
-                - beta: Post-Newtonian transition point parameter
+            tov_params: Beyond-GR coupling parameters, as returned by
+                :meth:`~jesterTOV.tov.base.TOVSolverBase.fetch_params`.
+                Must contain all keys listed in :meth:`get_required_parameters`.
 
         Returns:
             TOVSolution: Mass, radius, and Love number in geometric units.
@@ -265,13 +263,12 @@ class PostTOVSolver(TOVSolverBase):
             The modifications affect the stellar structure but the same integration
             method and boundary conditions as the standard TOV case are used.
         """
-        # Extract modification parameters from kwargs
-        lambda_BL = kwargs.get("lambda_BL", 0.0)
-        lambda_DY = kwargs.get("lambda_DY", 0.0)
-        lambda_HB = kwargs.get("lambda_HB", 1.0)  # Default 1.0 means no correction
-        gamma = kwargs.get("gamma", 0.0)
-        alpha = kwargs.get("alpha", 0.0)
-        beta = kwargs.get("beta", 0.0)
+        lambda_BL = tov_params["lambda_BL"]
+        lambda_DY = tov_params["lambda_DY"]
+        lambda_HB = tov_params["lambda_HB"]
+        gamma = tov_params["gamma"]
+        alpha = tov_params["alpha"]
+        beta = tov_params["beta"]
 
         # Convert EOSData to dictionary for ODE solver
         eos_dict = {
@@ -325,12 +322,6 @@ class PostTOVSolver(TOVSolverBase):
             stepsize_controller=PIDController(rtol=1e-5, atol=1e-6),
             throw=False,
         )
-
-        # # TODO: remove this feature
-        # # Handle solver failure gracefully (JAX-compatible, no asserts)
-        # if sol.ys is None or sol.result != 0:
-        #     # Return NaN on failure - constraint checking will catch this
-        #     return TOVSolution(M=jnp.nan, R=jnp.nan, k2=jnp.nan)
 
         # Extract solution values (throw=False guarantees ys is populated)
         R = sol.ys[0][-1]  # type: ignore[index]

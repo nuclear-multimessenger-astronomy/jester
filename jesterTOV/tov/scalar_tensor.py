@@ -127,7 +127,9 @@ class ScalarTensorTOVSolver(TOVSolverBase):
         scalar-tensor theory. The k2 Love number is currently set to 0.
     """
 
-    def solve(self, eos_data: EOSData, pc: float, **kwargs) -> TOVSolution:
+    def solve(
+        self, eos_data: EOSData, pc: float, tov_params: dict[str, float]
+    ) -> TOVSolution:
         r"""
         Solve scalar-tensor TOV equations for given central pressure.
 
@@ -138,20 +140,17 @@ class ScalarTensorTOVSolver(TOVSolverBase):
         Args:
             eos_data: EOS quantities in geometric units
             pc: Central pressure [geometric units]
-            **kwargs: Must contain scalar-tensor parameters:
-                - beta_ST: Scalar field coupling parameter
-                - nu_c: Initial guess for central metric coefficient
-                - phi_c: Initial guess for central scalar field value
+            tov_params: Scalar-tensor theory parameters with keys
+                ``beta_ST``, ``nu_c``, ``phi_c``.
 
         Returns:
             TOVSolution: Mass, radius, and Love number in geometric units.
                         Returns NaN values on solver failure (JAX-compatible).
                         Note: k2 is currently set to 0 (not yet implemented).
         """
-        # Extract scalar-tensor parameters from kwargs
-        beta_ST = kwargs.get("beta_ST", 0.0)
-        nu0 = kwargs.get("nu_c", 0.0)
-        phi0 = kwargs.get("phi_c", 0.0)
+        beta_ST = tov_params["beta_ST"]
+        nu0 = tov_params["nu_c"]
+        phi0 = tov_params["phi_c"]
 
         # Convert EOSData to dictionary for ODE solver
         eos_dict = {
