@@ -1,6 +1,6 @@
-
 import jax
 import jax.numpy as jnp
+
 
 # Infinity expansion for boundary conditions:
 # From Creci et al Jupyter notebook https://community.wolfram.com/groups/-/m/t/3459453
@@ -198,7 +198,6 @@ def compute_tidal_deformabilities(coefficients):
     lambda_ST2 = (1.0 / double_factorial) * (2.0 * cQS2 / cET)  # scalar pert = 0
 
     return lambda_T, lambda_S, lambda_ST1, lambda_ST2
-
 
 
 # Asymptotic conditions

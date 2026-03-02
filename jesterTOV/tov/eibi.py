@@ -27,14 +27,14 @@ from jesterTOV.tov.data_classes import EOSData, TOVSolution
 def tov_ode(h, y, eos):
     r"""
     Solve TOV equations in Eddington-inspired Born-Infeld (EiBI) gravity.
-    
+
     This function implements the modified Tolman-Oppenheimer-Volkoff (TOV) equations
     within the framework of EiBI gravity, which introduces a new parameter $\kappa$
     that modifies the gravitational field equations. The equations reduce to standard
     GR when $\kappa \to 0$.
-    
+
     The pressure gradient equation in EiBI gravity becomes:
-    
+
     .. math::
         \frac{dp}{dr} = -\frac{1}{4\pi\kappa} \frac{
             \frac{r}{2\kappa}\left(\frac{1}{ab} + \frac{a}{b^3} - 2\right) + \frac{2m}{r^2} + \frac{\Lambda_{\mathrm{cosmo}} r}{3\lambda}
@@ -42,20 +42,20 @@ def tov_ode(h, y, eos):
             \left[\frac{4}{A - B} + \frac{3}{B} + \frac{1}{A}\frac{de}{dp}\right]
             \left[1 - \frac{2m}{r} - \frac{\Lambda_{\mathrm{cosmo}} r^2}{3\lambda}\right]
         }
-    
+
     where:
     - $a = \sqrt{1 + 8\pi\kappa\varepsilon}$, $b = \sqrt{1 - 8\pi\kappa p}$
     - $A = 1 + 8\pi\kappa\varepsilon$, $B = 1 - 8\pi\kappa p$
     - $\lambda = \kappa\Lambda_{\mathrm{cosmo}} + 1$
-    
+
     The mass equation becomes:
-    
+
     .. math::
         \frac{dm}{dr} = \frac{r^2}{4\kappa}\left(2 - \frac{3}{ab} + \frac{a}{b^3}\right)
-    
+
     The system automatically switches to standard GR equations when $|\kappa| < 10^4$
     for numerical stability.
-    
+
     Args:
         h (float): Enthalpy value (integration variable).
         y (tuple): Current state vector containing:
@@ -64,15 +64,15 @@ def tov_ode(h, y, eos):
             - yr: Tidal variable for deformability calculation
         eos (dict): Equation of state dictionary containing:
             - "p": Pressure array
-            - "h": Enthalpy array  
+            - "h": Enthalpy array
             - "e": Energy density array
             - "dloge_dlogp": Derivative d(log ε)/d(log p)
             - "kappa": EiBI gravity parameter $\kappa$ [Geom]
             - "Lambda_cosmo": Cosmological constant parameter
-    
+
     Returns:
         tuple: Derivatives (dr/dh, dm/dh, dyr/dh) for the ODE solver.
-    
+
     Note:
         Small EPS values are added throughout to prevent division by zero and
         ensure numerical stability near the stellar surface and in the GR limit.
@@ -87,49 +87,67 @@ def tov_ode(h, y, eos):
     p = utils.interp_in_logspace(h, hs, ps)
     dedp = e / p * jnp.interp(h, hs, dloge_dlogps)
 
-    K=eos["kappa"]
+    K = eos["kappa"]
     Lambda_cosmo = eos["Lambda_cosmo"]
-    lambda_small = K*Lambda_cosmo + 1 #Eq. 8 from https://arxiv.org/pdf/2109.05718
-    EPS = 1e-19 #small value to avoid zero division error
-    #close to surface, A and B -> 1. Small EPS added to make sure 1/(A-B) etc is safe.
-    B = jnp.sqrt(1-8*jnp.pi*K*p) + EPS
-    A = jnp.sqrt(1+8*jnp.pi*K*e) + 1.5*EPS
-    b=B
-    a=A
-    AA = 1+8*jnp.pi*K*e + EPS
-    BB = 1-8*jnp.pi*K*p + 1.2*EPS
-    
-    A_per_BBB = jnp.sqrt((1+8*jnp.pi*K*e)/(1-8*jnp.pi*K*p)) / BB
-    AB = jnp.sqrt((1-8*jnp.pi*K*p)*(1+8*jnp.pi*K*e))
-    
-    Q1 = 1/dedp #cs2(p0, G1, G2, G3,p)
-    Q2 = -Q1*B/A
+    lambda_small = K * Lambda_cosmo + 1  # Eq. 8 from https://arxiv.org/pdf/2109.05718
+    EPS = 1e-19  # small value to avoid zero division error
+    # close to surface, A and B -> 1. Small EPS added to make sure 1/(A-B) etc is safe.
+    B = jnp.sqrt(1 - 8 * jnp.pi * K * p) + EPS
+    A = jnp.sqrt(1 + 8 * jnp.pi * K * e) + 1.5 * EPS
+    b = B
+    a = A
+    AA = 1 + 8 * jnp.pi * K * e + EPS
+    BB = 1 - 8 * jnp.pi * K * p + 1.2 * EPS
 
-    term1 = (r / (2*K)) * (1/(a*b + EPS) + a/(b*b*b + EPS) - 2) + (2*m) / (r*r + EPS) + Lambda_cosmo*r/(3*lambda_small)
-    denominator1 = (4/(AA - BB + EPS)) + (3/(BB + EPS)) + (1/(AA + EPS)) * dedp
-    denominator2 = 1 - 2*m/r - Lambda_cosmo*r*r/(3*lambda_small)
-    
-    dpdr = -1/(4*jnp.pi*K) * term1 / (denominator1 * denominator2)
-    
-    dpdr_GR = -e * m / (r * r) * (1 + p / (e)) * (1 + 4 * jnp.pi * r*r*r * p / m) / (1 - 2 * m / r)
-    dpdr = jnp.where(jnp.abs(K) < 1e4, dpdr_GR, dpdr)  # turn to GR when K<0.01 km^2 for numerical stability
-    dmdr = (r*r / (4 * K)) * (2 - 3/(a*b + EPS) + a/(b*b*b + EPS))
-    dmdr_GR = 4.0 * jnp.pi * r*r * e
+    A_per_BBB = jnp.sqrt((1 + 8 * jnp.pi * K * e) / (1 - 8 * jnp.pi * K * p)) / BB
+    AB = jnp.sqrt((1 - 8 * jnp.pi * K * p) * (1 + 8 * jnp.pi * K * e))
+
+    Q1 = 1 / dedp  # cs2(p0, G1, G2, G3,p)
+    Q2 = -Q1 * B / A
+
+    term1 = (
+        (r / (2 * K)) * (1 / (a * b + EPS) + a / (b * b * b + EPS) - 2)
+        + (2 * m) / (r * r + EPS)
+        + Lambda_cosmo * r / (3 * lambda_small)
+    )
+    denominator1 = (4 / (AA - BB + EPS)) + (3 / (BB + EPS)) + (1 / (AA + EPS)) * dedp
+    denominator2 = 1 - 2 * m / r - Lambda_cosmo * r * r / (3 * lambda_small)
+
+    dpdr = -1 / (4 * jnp.pi * K) * term1 / (denominator1 * denominator2)
+
+    dpdr_GR = (
+        -e
+        * m
+        / (r * r)
+        * (1 + p / (e))
+        * (1 + 4 * jnp.pi * r * r * r * p / m)
+        / (1 - 2 * m / r)
+    )
+    dpdr = jnp.where(
+        jnp.abs(K) < 1e4, dpdr_GR, dpdr
+    )  # turn to GR when K<0.01 km^2 for numerical stability
+    dmdr = (r * r / (4 * K)) * (2 - 3 / (a * b + EPS) + a / (b * b * b + EPS))
+    dmdr_GR = 4.0 * jnp.pi * r * r * e
     dmdr = jnp.where(jnp.abs(K) < 1e4, dmdr_GR, dmdr)
 
-    #For tidal deformability
-    dbetadr = -2 * dpdr * (2*jnp.pi*K*(3/BB +1/AA*dedp)+1/(e+p))
-    expalpha = 1/(1-2*m/r-Lambda_cosmo*r*r/(3*lambda_small))
+    # For tidal deformability
+    dbetadr = -2 * dpdr * (2 * jnp.pi * K * (3 / BB + 1 / AA * dedp) + 1 / (e + p))
+    expalpha = 1 / (1 - 2 * m / r - Lambda_cosmo * r * r / (3 * lambda_small))
 
-    f_func = ((r * expalpha / K) * (1 / (A * B) - 1)+ expalpha / r+ 1 / r)
-    
-    g_func = ((2 * expalpha * A / (K * B*B*B))* (2- (4 / (AA - BB +EPS))* 1/((4 / (AA - BB+EPS))+ (1 / AA) * dedp+ (3 / BB)))- ((2 * (2 + 1) * expalpha / (r*r))+ (2 * expalpha / K)+ dbetadr*dbetadr))
+    f_func = (r * expalpha / K) * (1 / (A * B) - 1) + expalpha / r + 1 / r
+
+    g_func = (2 * expalpha * A / (K * B * B * B)) * (
+        2
+        - (4 / (AA - BB + EPS))
+        * 1
+        / ((4 / (AA - BB + EPS)) + (1 / AA) * dedp + (3 / BB))
+    ) - ((2 * (2 + 1) * expalpha / (r * r)) + (2 * expalpha / K) + dbetadr * dbetadr)
 
     drdh = (e + p) / dpdr
     dmdh = dmdr * drdh
-    dyrdr = -f_func*yr - r*g_func - yr*yr/r + yr/r
+    dyrdr = -f_func * yr - r * g_func - yr * yr / r + yr / r
     dyrdh = dyrdr * drdh
-    dydt = drdh, dmdh, dyrdh #output
+    dydt = drdh, dmdh, dyrdh  # output
     return dydt
 
 
@@ -168,8 +186,8 @@ def calc_k2_eibi(R, M, y_R, eos):
 
     # constants / choices
     YL = 2.0
-    LAM = eos["Lambda_cosmo"]   # chosen default (see notes)
-    K = eos["kappa"]   # choose K = YL as a best-effort mapping from Fortran
+    LAM = eos["Lambda_cosmo"]  # chosen default (see notes)
+    K = eos["kappa"]  # choose K = YL as a best-effort mapping from Fortran
     # L = LAM * K + 1.0 #original
     L = LAM * K + 1.0
 
@@ -177,20 +195,21 @@ def calc_k2_eibi(R, M, y_R, eos):
     C = M / R
 
     # eps as in Fortran but with GSS=MSS=1 removed (geometrized units)
-    eps = (LAM / L) * (C ** 2)
-
+    eps = (LAM / L) * (C**2)
 
     # coefficients a_?_2 and b_?_2 (copied from Fortran)
     a12 = 0.0
-    a22 = C ** 2 / 3.0
-    a32 = 113.0 * C ** 2 / 84.0
-    a42 = 13.0 * C ** 2 / 9.0
+    a22 = C**2 / 3.0
+    a32 = 113.0 * C**2 / 84.0
+    a42 = 13.0 * C**2 / 9.0
 
-    b12 = 15.0 / (8.0 * C ** 3)
+    b12 = 15.0 / (8.0 * C**3)
     b22 = 0.0
-    b32 = 1787.0 / (392.0 * C ** 3)
-    b42 = (-(3305.0 / 448.0 + 5.0 * (jnp.pi ** 2) / 7.0 + 15.0 * (jnp.log(2.0) ** 2) / 7.0)
-           / C ** 3)
+    b32 = 1787.0 / (392.0 * C**3)
+    b42 = (
+        -(3305.0 / 448.0 + 5.0 * (jnp.pi**2) / 7.0 + 15.0 * (jnp.log(2.0) ** 2) / 7.0)
+        / C**3
+    )
     # Use pre-computed gradients
     DQ2 = DQ2_fn
     DP2 = DP2_fn
@@ -204,16 +223,25 @@ def calc_k2_eibi(R, M, y_R, eos):
     SB2 = y_R * S2_fn(C) + C * DS2(C)
 
     # KN2 and KD2 as in Fortran
-    KN2 = (a12 + eps * a32) * QB2 + (a22 + eps * a42) * PB2 + eps * (a12 * TB2 + a22 * SB2)
-    KD2 = (b12 + eps * b32) * QB2 + (b22 + eps * b42) * PB2 + eps * (b12 * TB2 + b22 * SB2)
+    KN2 = (
+        (a12 + eps * a32) * QB2
+        + (a22 + eps * a42) * PB2
+        + eps * (a12 * TB2 + a22 * SB2)
+    )
+    KD2 = (
+        (b12 + eps * b32) * QB2
+        + (b22 + eps * b42) * PB2
+        + eps * (b12 * TB2 + b22 * SB2)
+    )
 
     # double factorial factor: DOUBFAC(2*YL - 1)
     n_df = int(2 * int(YL) - 1)
     dfac = double_factorial(n_df)
 
-    K2 = - (dfac / 2.0) * (KN2 / KD2)
+    K2 = -(dfac / 2.0) * (KN2 / KD2)
     return K2
-    
+
+
 def double_factorial(n):
     r"""
     Compute the double factorial :math:`n!!` for integer :math:`n`.
@@ -238,19 +266,27 @@ def double_factorial(n):
         Uses JAX control flow (lax.cond, fori_loop) for compatibility with JAX
         transformations (grad, vmap, jit).
     """
+
     def body(i, val):
         return val * i
+
     n = jnp.asarray(n, int)
     res = jax.lax.cond(
         n <= 0,
         lambda _: 1,
-        lambda _: jax.lax.fori_loop(1, n + 1,
-            lambda i, v: jax.lax.cond(i % 2 == n % 2, lambda _: v * i, lambda _: v, None),
-            1),
-        None
+        lambda _: jax.lax.fori_loop(
+            1,
+            n + 1,
+            lambda i, v: jax.lax.cond(
+                i % 2 == n % 2, lambda _: v * i, lambda _: v, None
+            ),
+            1,
+        ),
+        None,
     )
     return res
-    
+
+
 def Q2_fn(C):
     r"""
     Helper function :math:`Q_2(C)` for tidal Love number calculation in EiBI gravity.
@@ -276,15 +312,16 @@ def Q2_fn(C):
     C = jnp.asarray(C)
     XX = -1.0 + 1.0 / C
 
-    term1 = - ( -1.0 + XX )**2 / (48.0 * (1.0 + XX)**2)
-    term2 = ( -1.0 + XX ) / (6.0 * (1.0 + XX))
-    term3 = - (1.0 + XX) / (6.0 * ( -1.0 + XX ))
-    term4 = (1.0 + XX)**2 / (48.0 * ( -1.0 + XX )**2)
-    term5 = ( - jnp.log( -1.0 + XX ) + jnp.log( 1.0 + XX ) ) / 4.0
+    term1 = -((-1.0 + XX) ** 2) / (48.0 * (1.0 + XX) ** 2)
+    term2 = (-1.0 + XX) / (6.0 * (1.0 + XX))
+    term3 = -(1.0 + XX) / (6.0 * (-1.0 + XX))
+    term4 = (1.0 + XX) ** 2 / (48.0 * (-1.0 + XX) ** 2)
+    term5 = (-jnp.log(-1.0 + XX) + jnp.log(1.0 + XX)) / 4.0
 
     inner = term1 + term2 + term3 + term4 + term5
-    Q2_val = 6.0 * ( -1.0 + XX ) * ( 1.0 + XX ) * inner
+    Q2_val = 6.0 * (-1.0 + XX) * (1.0 + XX) * inner
     return Q2_val
+
 
 def P2_fn(C):
     r"""
@@ -309,9 +346,10 @@ def P2_fn(C):
     C = jnp.asarray(C)
     XX = -1.0 + 1.0 / C
     # keep algebraic structure faithful to Fortran
-    P2_val = (3.0 * (1.0 - XX)**2 * (1.0 + XX)) / (-1.0 + XX)
+    P2_val = (3.0 * (1.0 - XX) ** 2 * (1.0 + XX)) / (-1.0 + XX)
     return P2_val
-    
+
+
 def T2_fn(C):
     r"""
     Helper function :math:`T_2(C)` for tidal Love number calculation in EiBI gravity.
@@ -340,23 +378,47 @@ def T2_fn(C):
     XX = -1.0 + 1.0 / C
 
     # polynomial pieces
-    F32 = (235.0/56.0) + (1357.0*XX)/56.0 - (1469.0*XX**2)/84.0 - (1987.0*XX**3)/84.0 \
-          + (2057.0*XX**4)/168.0 + (389.0*XX**5)/56.0 - (8.0*XX**6)/7.0
+    F32 = (
+        (235.0 / 56.0)
+        + (1357.0 * XX) / 56.0
+        - (1469.0 * XX**2) / 84.0
+        - (1987.0 * XX**3) / 84.0
+        + (2057.0 * XX**4) / 168.0
+        + (389.0 * XX**5) / 56.0
+        - (8.0 * XX**6) / 7.0
+    )
 
-    F42 = -(25.0/14.0) + (153.0*XX)/14.0 + (171.0*XX**2)/14.0 - (17.0*XX**3)/14.0 \
-          - (25.0*XX**4)/7.0 - (4.0*XX**5)/7.0
+    F42 = (
+        -(25.0 / 14.0)
+        + (153.0 * XX) / 14.0
+        + (171.0 * XX**2) / 14.0
+        - (17.0 * XX**3) / 14.0
+        - (25.0 * XX**4) / 7.0
+        - (4.0 * XX**5) / 7.0
+    )
 
-    F52 = -(25.0/14.0) + (34.0*XX)/7.0 - (93.0*XX**2)/14.0 + (13.0*XX**3)/7.0 + (4.0*XX**4)/7.0
+    F52 = (
+        -(25.0 / 14.0)
+        + (34.0 * XX) / 7.0
+        - (93.0 * XX**2) / 14.0
+        + (13.0 * XX**3) / 7.0
+        + (4.0 * XX**4) / 7.0
+    )
 
     # the Fortran piece: ( -24/7 )*( DLOG(XX-1)*DLOG((XX+1)/4) + 2*PLG(C) )
-    F62 = - (24.0/7.0) * ( jnp.log(XX - 1.0) * jnp.log((XX + 1.0) / 4.0) + 2.0 * PLG_fn(C) )
+    F62 = -(24.0 / 7.0) * (
+        jnp.log(XX - 1.0) * jnp.log((XX + 1.0) / 4.0) + 2.0 * PLG_fn(C)
+    )
 
-    T2_val = F32 / ((XX + 1.0) * (XX - 1.0)**2) \
-             + F42 / (XX + 1.0) * jnp.log(XX - 1.0) \
-             + F52 * (XX + 1.0) / (XX - 1.0) * jnp.log(XX + 1.0) \
-             + (XX**2 - 1.0) * F62
+    T2_val = (
+        F32 / ((XX + 1.0) * (XX - 1.0) ** 2)
+        + F42 / (XX + 1.0) * jnp.log(XX - 1.0)
+        + F52 * (XX + 1.0) / (XX - 1.0) * jnp.log(XX + 1.0)
+        + (XX**2 - 1.0) * F62
+    )
 
     return T2_val
+
 
 def PLG_fn(C):
     r"""
@@ -417,6 +479,7 @@ def PLG_fn(C):
 
     return plg_val
 
+
 def S2_fn(C):
     r"""
     Helper function :math:`S_2(C)` for tidal Love number calculation in EiBI gravity.
@@ -441,10 +504,17 @@ def S2_fn(C):
     C = jnp.asarray(C)
     XX = -1.0 + 1.0 / C
 
-    F12 = 1.0 + 21.0*XX/4.0 - 46.0*XX**2/7.0 - 59.0*XX**3/4.0 \
-          - XX**4/7.0 + 6.0*XX**5 + 8.0*XX**6/7.0
+    F12 = (
+        1.0
+        + 21.0 * XX / 4.0
+        - 46.0 * XX**2 / 7.0
+        - 59.0 * XX**3 / 4.0
+        - XX**4 / 7.0
+        + 6.0 * XX**5
+        + 8.0 * XX**6 / 7.0
+    )
 
-    F22 = (3.0/56.0) * (113.0 * jnp.log(XX - 1.0) + 15.0 * jnp.log(XX + 1.0))
+    F22 = (3.0 / 56.0) * (113.0 * jnp.log(XX - 1.0) + 15.0 * jnp.log(XX + 1.0))
 
     S2_val = F12 / (XX**2 - 1.0) + (XX**2 - 1.0) * F22
     return S2_val
@@ -510,23 +580,23 @@ class EiBITOVSolver(TOVSolverBase):
     def solve(self, eos_data: EOSData, pc: float, **kwargs) -> TOVSolution:
         r"""
         Solve TOV equations for a single neutron star in EiBI gravity.
-        
+
         This function computes the structure of a single neutron star by solving the
         modified Tolman-Oppenheimer-Volkoff equations in Eddington-inspired Born-Infeld
         gravity for a given central pressure. The solution includes mass, radius, and
         tidal Love number calculations.
-        
+
         The integration starts from the stellar center using a series expansion for
         initial conditions and proceeds outward until the surface (where pressure
         drops to zero) is reached. The method uses a Dopri5 ODE solver with adaptive
         stepsize control for numerical accuracy.
-        
+
         The tidal Love number $k_2$ is computed using the surface value of the tidal
         variable $y_R$ through:
-        
+
         .. math::
             k_2 = \text{calc\_k2\_eibi}(R, M, y_R, \text{eos})
-        
+
         Args:
             eos_data: EOS quantities (type-safe dataclass) containing:
                 - ps: Pressure array [geometric units]
@@ -537,23 +607,25 @@ class EiBITOVSolver(TOVSolverBase):
             **kwargs: Additional solver parameters:
                 - kappa: EiBI gravity parameter $\kappa$ [Geom] (default: 0.0)
                 - Lambda_cosmo: Cosmological constant parameter [1/m²] (default: 1.4657e-52)
-        
+
         Returns:
             tuple: A tuple containing:
                 - M: Gravitational mass [geometric units]
                 - R: Circumferential radius [geometric units]
                 - k2: Tidal Love number
-        
+
         Note:
             The function filters out unsuccessful integrations (non-positive mass or
             solver failures) by returning NaN values. Initial conditions are derived
-            from a series expansion around the stellar center in GR (assuming EiBI 
+            from a series expansion around the stellar center in GR (assuming EiBI
             correction is small) to ensure numerical stability.
         """
         # Extract EOS interpolation arrays
 
         kappa = kwargs.get("kappa", 0.0)
-        Lambda_cosmo = kwargs.get("Lambda_cosmo", 1.4657e-52) #in 1/m^2, default value from Daniel Scolnic et al 2025 ApJL 979 L9
+        Lambda_cosmo = kwargs.get(
+            "Lambda_cosmo", 1.4657e-52
+        )  # in 1/m^2, default value from Daniel Scolnic et al 2025 ApJL 979 L9
         # Convert EOSData to dictionary for ODE solver
         eos_dict = {
             "p": eos_data.ps,
@@ -562,9 +634,9 @@ class EiBITOVSolver(TOVSolverBase):
             "dloge_dlogp": eos_data.dloge_dlogps,
             # Add modification parameters
             "kappa": kappa,
-            "Lambda_cosmo":Lambda_cosmo,
+            "Lambda_cosmo": Lambda_cosmo,
         }
-        
+
         ps = eos_data.ps
         hs = eos_data.hs
         es = eos_data.es
@@ -576,20 +648,20 @@ class EiBITOVSolver(TOVSolverBase):
         dedp_c = ec / pc * jnp.interp(hc, hs, dloge_dlogps)
         dhdp_c = 1.0 / (ec + pc)
         dedh_c = dedp_c / dhdp_c
-    
+
         # Initial values using series expansion near center
-        dh  = -1e-3 * hc
-        h0  = hc + dh
-        r0  = jnp.sqrt(3.0 * (-dh) / 2.0 / jnp.pi / (ec + 3.0 * pc))
+        dh = -1e-3 * hc
+        h0 = hc + dh
+        r0 = jnp.sqrt(3.0 * (-dh) / 2.0 / jnp.pi / (ec + 3.0 * pc))
         r0 *= 1.0 - 0.25 * (ec - 3.0 * pc - 0.6 * dedh_c) * (-dh) / (ec + 3.0 * pc)
-        m0  = 4.0 * jnp.pi * ec * jnp.power(r0, 3.0) / 3.0
+        m0 = 4.0 * jnp.pi * ec * jnp.power(r0, 3.0) / 3.0
         m0 *= 1.0 - 0.6 * dedh_c * (-dh) / ec
-        H0  = r0 * r0
-        b0  = 2.0 * r0
+        H0 = r0 * r0
+        b0 = 2.0 * r0
         yr0 = 2.0
-    
-        y0  = (r0, m0, yr0)
-    
+
+        y0 = (r0, m0, yr0)
+
         sol = diffeqsolve(
             ODETerm(tov_ode),
             Dopri5(scan_kind="bounded"),
@@ -602,16 +674,16 @@ class EiBITOVSolver(TOVSolverBase):
             stepsize_controller=PIDController(rtol=1e-6, atol=1e-7),
             throw=False,
         )
-        
+
         R = sol.ys[0][-1]
         M = sol.ys[1][-1]
         y_R = sol.ys[2][-1]
-    
+
         # Filter out unsuccessful results
-        R = jnp.where((sol.result == RESULTS.successful) & (M>0), R, jnp.nan)
-        M = jnp.where((sol.result == RESULTS.successful) & (M>0), M, jnp.nan)
-        y_R = jnp.where((sol.result == RESULTS.successful) & (M>0), y_R, jnp.nan)
-    
+        R = jnp.where((sol.result == RESULTS.successful) & (M > 0), R, jnp.nan)
+        M = jnp.where((sol.result == RESULTS.successful) & (M > 0), M, jnp.nan)
+        y_R = jnp.where((sol.result == RESULTS.successful) & (M > 0), y_R, jnp.nan)
+
         k2 = calc_k2_eibi(R, M, y_R, eos_dict)
         return TOVSolution(M=M, R=R, k2=k2)
 
