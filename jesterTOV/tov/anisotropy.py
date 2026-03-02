@@ -326,12 +326,6 @@ class AnisotropyTOVSolver(TOVSolverBase):
             throw=False,
         )
 
-        # # TODO: remove this feature
-        # # Handle solver failure gracefully (JAX-compatible, no asserts)
-        # if sol.ys is None or sol.result != 0:
-        #     # Return NaN on failure - constraint checking will catch this
-        #     return TOVSolution(M=jnp.nan, R=jnp.nan, k2=jnp.nan)
-
         # Extract solution values (throw=False guarantees ys is populated)
         R = sol.ys[0][-1]  # type: ignore[index]
         M = sol.ys[1][-1]  # type: ignore[index]
