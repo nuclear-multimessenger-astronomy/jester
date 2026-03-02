@@ -85,9 +85,9 @@ def determine_keep_names(
     return keep_names if keep_names else None
 
 
-def setup_prior(config: InferenceConfig) -> CombinePrior:
+def setup_prior(config: InferenceConfig) -> tuple[CombinePrior, dict[str, float]]:
     """
-    Setup prior from configuration
+    Setup prior from configuration.
 
     Parameters
     ----------
@@ -96,8 +96,11 @@ def setup_prior(config: InferenceConfig) -> CombinePrior:
 
     Returns
     -------
-    CombinePrior
-        Combined prior object
+    prior : CombinePrior
+        Combined prior over sampled parameters only.
+    fixed_params : dict[str, float]
+        Parameters pinned to constant values via ``Fixed(...)`` in the prior
+        file.  These are excluded from the sampling space.
     """
     from .base.prior import UniformPrior, CombinePrior
 
@@ -114,10 +117,15 @@ def setup_prior(config: InferenceConfig) -> CombinePrior:
             break
 
     # Parse prior file
-    prior = parse_prior_file(
+    parsed = parse_prior_file(
         config.prior.specification_file,
         nb_CSE=nb_CSE,
     )
+    prior = parsed.prior
+    fixed_params = parsed.fixed_params
+
+    if fixed_params:
+        logger.info(f"Fixed parameters found in prior file: {fixed_params}")
 
     # Add _random_key prior if GW or NICER likelihoods are enabled
     if needs_random_key:
@@ -128,13 +136,14 @@ def setup_prior(config: InferenceConfig) -> CombinePrior:
         # Flatten the prior structure to avoid nested CombinePrior
         prior = CombinePrior(prior.base_prior + [random_key_prior])
 
-    return prior
+    return prior, fixed_params
 
 
 def setup_transform(
     config: InferenceConfig,
     prior: CombinePrior | None = None,
     keep_names: list[str] | None = None,
+    fixed_params: dict[str, float] | None = None,
 ) -> JesterTransform:
     """
     Setup transform from configuration
@@ -147,12 +156,16 @@ def setup_transform(
         Prior object to extract parameter bounds (e.g., max nbreak for metamodel_cse)
     keep_names : list[str], optional
         Parameter names to keep in transformed output
+    fixed_params : dict[str, float], optional
+        Parameters pinned to constant values, excluded from the sampling space.
 
     Returns
     -------
     JesterTransform
         Transform instance
     """
+    _fixed_params = fixed_params or {}
+
     # Determine max_nbreak_nsat for MetamodelCSE: compare config field vs prior bound
     # TODO: in a future version, need to improve this...
     max_nbreak_nsat = None
@@ -195,9 +208,12 @@ def setup_transform(
         tov_config=config.tov,
         keep_names=keep_names,
         max_nbreak_nsat=max_nbreak_nsat,
+        fixed_params=_fixed_params if _fixed_params else None,
     )
 
-    # Validate that all required parameters are in the prior
+    # Validate that all required parameters are present.
+    # get_parameter_names() already excludes fixed params, so we only need to
+    # check that the remaining required params are covered by the sampled prior.
     if prior is not None:
         required_params = set(transform.get_parameter_names())
         prior_params = set(prior.parameter_names)
@@ -627,7 +643,7 @@ def main(config_path: str) -> None:
 
     # Setup components
     logger.info("Setting up prior...")
-    prior = setup_prior(config)
+    prior, fixed_params = setup_prior(config)
 
     # Log detailed prior information
     logger.info(f"Prior has {prior.n_dim} dimensions")
@@ -669,7 +685,9 @@ def main(config_path: str) -> None:
     keep_names = determine_keep_names(config, prior)
 
     logger.info("Setting up transform...")
-    transform = setup_transform(config, prior=prior, keep_names=keep_names)
+    transform = setup_transform(
+        config, prior=prior, keep_names=keep_names, fixed_params=fixed_params
+    )
 
     # Log transform details
     logger.info(f"EOS type: {config.eos.type}")
