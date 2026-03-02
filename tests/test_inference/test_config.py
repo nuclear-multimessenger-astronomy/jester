@@ -574,7 +574,7 @@ class TestExtraFieldValidation:
 
     def test_tov_config_rejects_extra_fields(self):
         """Test that TOV config rejects unknown fields."""
-        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        with pytest.raises(ValidationError, match="Unrecognized field"):
             schema.GRTOVConfig(
                 type="gr",
                 wrong_entry=500,  # type: ignore[call-arg]  # Should be rejected
