@@ -579,6 +579,12 @@ def generate_eos_samples(
 
     # Get batch size from config
     batch_size = config.sampler.log_prob_batch_size
+    if batch_size > n_eos_samples:
+        logger.warning(
+            f"Requested batch size ({batch_size}) is larger than the number of samples "
+            f"({n_eos_samples}). Adjusting batch size to {n_eos_samples}."
+        )
+        batch_size = n_eos_samples
     logger.info(f"Using batch size: {batch_size}")
 
     # Run with batched processing (JIT compilation happens on first batch)
