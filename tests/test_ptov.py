@@ -38,19 +38,22 @@ class TestAnisotropyTOVSolver:
 
         # GR solver
         gr_solver = GRTOVSolver()
-        gr_solution = gr_solver.solve(sample_eos_data_post, pc)
+        gr_solution = gr_solver.solve(sample_eos_data_post, pc, {})
 
-        # Post-TOV solver with GR parameters (all MG terms zero)
+        # Post-TOV solver with GR parameters (all MG terms zero / GR defaults)
         post_solver = AnisotropyTOVSolver()
-        post_params = {
-            "lambda_BL": 0.0,
-            "lambda_DY": 0.0,
-            "lambda_HB": 1.0,  # GR value
-            "gamma": 0.0,
-            "alpha": 10.0,
-            "beta": 0.3,
-        }
-        post_solution = post_solver.solve(sample_eos_data_post, pc, **post_params)
+        post_solution = post_solver.solve(
+            sample_eos_data_post,
+            pc,
+            {
+                "lambda_BL": 0.0,
+                "lambda_DY": 0.0,
+                "lambda_HB": 1.0,
+                "gamma": 0.0,
+                "alpha": 10.0,
+                "beta": 0.3,
+            },
+        )
 
         # Results should be very similar (allowing for numerical differences)
         assert abs(gr_solution.M - post_solution.M) / gr_solution.M < 0.01  # 1%
@@ -71,7 +74,7 @@ class TestAnisotropyTOVSolver:
             "beta": 0.3,
         }
 
-        solution = post_solver.solve(sample_eos_data_post, pc, **mg_params)
+        solution = post_solver.solve(sample_eos_data_post, pc, mg_params)
 
         # Check that results are finite and positive
         assert jnp.isfinite(solution.M)
@@ -129,7 +132,7 @@ class TestAnisotropyTOVSolver:
         results = []
         for mg_params in mg_param_sets:
             try:
-                solution = post_solver.solve(sample_eos_data_post, pc, **mg_params)
+                solution = post_solver.solve(sample_eos_data_post, pc, mg_params)
 
                 # Basic checks
                 assert jnp.isfinite(solution.M) and solution.M > 0
@@ -168,7 +171,7 @@ class TestAnisotropyTOVSolver:
         # Solve multiple times
         results = []
         for _ in range(3):
-            solution = post_solver.solve(sample_eos_data_post, pc, **mg_params)
+            solution = post_solver.solve(sample_eos_data_post, pc, mg_params)
             results.append((solution.M, solution.R, solution.k2))
 
         # Results should be identical (deterministic)
@@ -202,7 +205,7 @@ class TestAnisotropyTOVPhysicalConsistency:
             if idx < len(sample_eos_data_post.ps):
                 pc = sample_eos_data_post.ps[idx]
                 try:
-                    solution = post_solver.solve(sample_eos_data_post, pc, **mg_params)
+                    solution = post_solver.solve(sample_eos_data_post, pc, mg_params)
                     if (
                         jnp.isfinite(solution.M)
                         and jnp.isfinite(solution.R)
@@ -251,8 +254,8 @@ class TestAnisotropyTOVPhysicalConsistency:
         }
 
         try:
-            gr_solution = post_solver.solve(sample_eos_data_post, pc, **gr_params)
-            mg_solution = post_solver.solve(sample_eos_data_post, pc, **mg_params)
+            gr_solution = post_solver.solve(sample_eos_data_post, pc, gr_params)
+            mg_solution = post_solver.solve(sample_eos_data_post, pc, mg_params)
 
             # Results should be different (though possibly small differences)
             mass_diff = abs(mg_solution.M - gr_solution.M) / gr_solution.M
@@ -283,7 +286,7 @@ def test_post_solver_parameter_sweep(sample_eos_data_post, lambda_BL, lambda_DY)
     }
 
     try:
-        solution = post_solver.solve(sample_eos_data_post, pc, **mg_params)
+        solution = post_solver.solve(sample_eos_data_post, pc, mg_params)
 
         assert jnp.isfinite(solution.M)
         assert jnp.isfinite(solution.R)
@@ -322,7 +325,7 @@ def test_post_solver_individual_mg_params(sample_eos_data_post, mg_param, value)
     mg_params[mg_param] = value
 
     try:
-        solution = post_solver.solve(sample_eos_data_post, pc, **mg_params)
+        solution = post_solver.solve(sample_eos_data_post, pc, mg_params)
 
         assert jnp.isfinite(solution.M) and solution.M > 0
         assert jnp.isfinite(solution.R) and solution.R > 0
