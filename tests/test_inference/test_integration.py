@@ -663,13 +663,20 @@ class TestEOSSampleGeneration:
         config = InferenceConfig(**config_dict)
         transform = JesterTransform.from_config(config.eos, config.tov)
 
-        # batch_size=1000 is larger than n_eos_samples=10 → should be capped with a warning
+        # batch_size=1000 is larger than n_eos_samples=10 → should be capped with a warning.
+        # The jester logger has propagate=False, so we temporarily enable propagation
+        # so caplog can capture log records from it.
+        jester_logger = logging.getLogger("jester")
         with caplog.at_level(logging.WARNING, logger="jester"):
-            result.add_eos_from_transform(
-                transform=transform,
-                n_eos_samples=10,
-                batch_size=1000,
-            )
+            jester_logger.propagate = True
+            try:
+                result.add_eos_from_transform(
+                    transform=transform,
+                    n_eos_samples=10,
+                    batch_size=1000,
+                )
+            finally:
+                jester_logger.propagate = False
 
         assert any(
             "Adjusting batch size" in msg for msg in caplog.messages
