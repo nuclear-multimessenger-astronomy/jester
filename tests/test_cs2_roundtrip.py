@@ -56,7 +56,9 @@ class TestCS2Roundtrip:
             ns=ns, ps=ps, hs=hs, es=es, dloge_dlogps=dloge_dlogps, cs2=cs2_correct
         )
         solver = GRTOVSolver()
-        family_data = solver.construct_family(eos_data, ndat=10, min_nsat=0.75)
+        family_data = solver.construct_family(
+            eos_data, tov_params={}, ndat=10, min_nsat=0.75
+        )
 
         # If construct_family recomputed cs2, it would use cs2_recomputed which
         # might hit causality limit. With cs2_correct, it should work fine.
@@ -159,7 +161,9 @@ class TestCS2Roundtrip:
 
         # Construct family (including cs2 to avoid bug)
         solver = GRTOVSolver()
-        family_data = solver.construct_family(eos_data, ndat=50, min_nsat=0.75)
+        family_data = solver.construct_family(
+            eos_data, tov_params={}, ndat=50, min_nsat=0.75
+        )
 
         # Calculate MTOV
         mtov = jnp.max(family_data.masses)
@@ -226,7 +230,9 @@ class TestCS2Roundtrip:
 
         # Test that using stored cs2 gives correct results
         solver = GRTOVSolver()
-        family_data = solver.construct_family(eos_data, ndat=30, min_nsat=0.75)
+        family_data = solver.construct_family(
+            eos_data, tov_params={}, ndat=30, min_nsat=0.75
+        )
 
         # Should get reasonable neutron stars when using analytical cs2
         mtov = jnp.max(family_data.masses)
