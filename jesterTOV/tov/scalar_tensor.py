@@ -10,14 +10,18 @@ where the gravitational interaction includes both a metric tensor and a scalar f
 """
 
 import jax.numpy as jnp
-import jax
 from jax import lax
 from diffrax import diffeqsolve, ODETerm, Dopri8, SaveAt, PIDController, Event
 
 from jesterTOV import utils
 from jesterTOV.tov.base import TOVSolverBase
 from jesterTOV.tov.data_classes import EOSData, TOVSolution
-from jesterTOV.tov.scalar_tensor_utils import build_exterior_basis, build_exterior_basis_autodiff, coeff_solver, compute_tidal_deformabilities
+from jesterTOV.tov.scalar_tensor_utils import (
+    build_exterior_basis,
+    build_exterior_basis_autodiff,
+    coeff_solver,
+    compute_tidal_deformabilities,
+)
 
 
 def _tov_ode_iter(h, y, eos):
@@ -292,8 +296,6 @@ def _tov_ode_iter_tidal(h, y, eos):
     )
 
 
-
-
 # --------------------------------------------
 # This part, define matrix multiplication to solve for matching conditions (as well as it's derivative)
 # [ H0OnlyQT(M,q,R)   H0OnlyET(M,q,R)   H0OnlyQS(M,q,R)   H0OnlyES(M,q,R) ]   [ cQT ]   [ H0_int(M,q,R) ]
@@ -301,9 +303,6 @@ def _tov_ode_iter_tidal(h, y, eos):
 # [ φpOnlyQT(M,q,R)   φpOnlyET(M,q,R)   φpOnlyQS(M,q,R)   φpOnlyES(M,q,R) ]  [ cQS ]   [ φp_int(M,q,R) ]
 # [ φpOnlyQT'(M,q,R)  φpOnlyET'(M,q,R)  φpOnlyQS'(M,q,R)  φpOnlyES'(M,q,R) ]  [ cES ]   [ φp'_int(M,q,R) ]
 # Left matrix from infinity expansion, right matrix from tov solver, and c matrix is what we solve for to determine lambdas.
-
-
-
 
 
 class ScalarTensorTOVSolver(TOVSolverBase):
