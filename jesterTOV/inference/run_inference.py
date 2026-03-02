@@ -412,7 +412,11 @@ def setup_likelihood(
 
 
 def run_sampling(
-    sampler: JesterSampler, seed: int, config: InferenceConfig, outdir: str | Path
+    sampler: JesterSampler,
+    seed: int,
+    config: InferenceConfig,
+    outdir: str | Path,
+    fixed_params: dict[str, float] | None = None,
 ) -> InferenceResult:
     """
     Run MCMC sampling and create InferenceResult
@@ -427,6 +431,8 @@ def run_sampling(
         Configuration object
     outdir : str or Path
         Output directory
+    fixed_params : dict[str, float] | None, optional
+        Parameters pinned to constant values during inference.
 
     Returns
     -------
@@ -460,6 +466,7 @@ def run_sampling(
         sampler=sampler,
         config=config,
         runtime=runtime,
+        fixed_params=fixed_params,
     )
 
     return result
@@ -749,7 +756,9 @@ def main(config_path: str) -> None:
     logger.info(f"Test log probabilities: {test_log_prob}")
 
     # Run inference
-    result = run_sampling(sampler, config.seed, config, outdir)
+    result = run_sampling(
+        sampler, config.seed, config, outdir, fixed_params=fixed_params
+    )
 
     # Generate EOS quantities from posterior samples
     # Note: This requires recomputing the TOV solver for selected samples.

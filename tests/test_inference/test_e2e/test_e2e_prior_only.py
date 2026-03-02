@@ -37,7 +37,7 @@ class TestPriorOnlyFast:
 
         config = InferenceConfig(**smc_rw_prior_config)
 
-        prior = setup_prior(config)
+        prior, _fixed_params = setup_prior(config)
         keep_names = determine_keep_names(config, prior)
         transform = setup_transform(config, prior=prior, keep_names=keep_names)
         likelihood = setup_likelihood(config, transform)
@@ -74,7 +74,7 @@ class TestPriorOnlyFast:
 
         config = InferenceConfig(**flowmc_prior_config)
 
-        prior = setup_prior(config)
+        prior, _fixed_params = setup_prior(config)
         keep_names = determine_keep_names(config, prior)
         transform = setup_transform(config, prior=prior, keep_names=keep_names)
         likelihood = setup_likelihood(config, transform)
@@ -113,7 +113,7 @@ class TestPriorOnlyFast:
 
         config = InferenceConfig(**blackjax_ns_aw_prior_config)
 
-        prior = setup_prior(config)
+        prior, _fixed_params = setup_prior(config)
         keep_names = determine_keep_names(config, prior)
         transform = setup_transform(config, prior=prior, keep_names=keep_names)
         likelihood = setup_likelihood(config, transform)
@@ -159,7 +159,7 @@ class TestSpectralPriorOnly:
 
         config = InferenceConfig(**smc_rw_spectral_config)
 
-        prior = setup_prior(config)
+        prior, _fixed_params = setup_prior(config)
         keep_names = determine_keep_names(config, prior)
         transform = setup_transform(config, prior=prior, keep_names=keep_names)
         likelihood = setup_likelihood(config, transform)
@@ -191,7 +191,7 @@ class TestSpectralPriorOnly:
 
         config = InferenceConfig(**flowmc_spectral_config)
 
-        prior = setup_prior(config)
+        prior, _fixed_params = setup_prior(config)
         keep_names = determine_keep_names(config, prior)
         transform = setup_transform(config, prior=prior, keep_names=keep_names)
         likelihood = setup_likelihood(config, transform)
@@ -224,7 +224,7 @@ class TestSpectralPriorOnly:
 
         config = InferenceConfig(**blackjax_ns_aw_spectral_config)
 
-        prior = setup_prior(config)
+        prior, _fixed_params = setup_prior(config)
         keep_names = determine_keep_names(config, prior)
         transform = setup_transform(config, prior=prior, keep_names=keep_names)
         likelihood = setup_likelihood(config, transform)
@@ -256,7 +256,7 @@ class TestSamplerFactorySmoke:
         """Test that SMC-RW sampler can be created from config."""
         config = InferenceConfig(**smc_rw_prior_config)
 
-        prior = setup_prior(config)
+        prior, _fixed_params = setup_prior(config)
         transform = setup_transform(config, prior=prior)
         likelihood = setup_likelihood(config, transform)
 
@@ -278,7 +278,7 @@ class TestSamplerFactorySmoke:
         """Test that FlowMC sampler can be created from config."""
         config = InferenceConfig(**flowmc_prior_config)
 
-        prior = setup_prior(config)
+        prior, _fixed_params = setup_prior(config)
         transform = setup_transform(config, prior=prior)
         likelihood = setup_likelihood(config, transform)
 
@@ -300,7 +300,7 @@ class TestSamplerFactorySmoke:
         """Test that NS-AW sampler can be created from config."""
         config = InferenceConfig(**blackjax_ns_aw_prior_config)
 
-        prior = setup_prior(config)
+        prior, _fixed_params = setup_prior(config)
         transform = setup_transform(config, prior=prior)
         likelihood = setup_likelihood(config, transform)
 
