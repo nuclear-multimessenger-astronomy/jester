@@ -12,4 +12,4 @@ Classes
    :nosignatures:
    :toctree: _autosummary/
 
-   PostTOVSolver
+   AnisotropyTOVSolver

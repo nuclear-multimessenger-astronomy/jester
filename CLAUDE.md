@@ -162,7 +162,7 @@ value = array.item()  # type: ignore[union-attr]
 - Available solvers:
   1. **GRTOVSolver** (`tov/gr.py`) - General Relativity
      - Standard TOV equations, no additional parameters
-  2. **PostTOVSolver** (`tov/anisotropy.py`) - Beyond-GR modifications
+  2. **AnisotropyTOVSolver** (`tov/anisotropy.py`) - Beyond-GR modifications
      - Phenomenological sigma terms (Yagi & Yunes 2013)
      - Multiple correction models: Bowers-Liang, Doneva-Yazadjiev, Herrera-Barreto, Post-Newtonian
      - Required parameters: coupling constants (lambda_BL, lambda_DY, etc.)

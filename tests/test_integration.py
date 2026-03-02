@@ -224,7 +224,7 @@ class TestTOVIntegration:
     @pytest.mark.integration
     def test_tov_post_comparison(self):
         """Test comparison between GR TOV and post-TOV solvers."""
-        from jesterTOV.tov.anisotropy import PostTOVSolver
+        from jesterTOV.tov.anisotropy import AnisotropyTOVSolver
 
         # Create simple EOS
         n = jnp.linspace(0.1, 1.0, 80)
@@ -262,7 +262,7 @@ class TestTOVIntegration:
         M_tov, R_tov, k2_tov = tov_solution.M, tov_solution.R, tov_solution.k2
 
         # Post-TOV solver in GR limit (all MG parameters = 0)
-        post_solver = PostTOVSolver()
+        post_solver = AnisotropyTOVSolver()
         post_params = {
             "lambda_BL": 0.0,
             "lambda_DY": 0.0,

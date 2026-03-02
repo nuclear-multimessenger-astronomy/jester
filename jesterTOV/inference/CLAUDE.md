@@ -202,7 +202,7 @@ Save to outdir/{result_id}.h5
      - `GRTOVSolver` - General Relativity
        - Standard TOV equations, no additional parameters
        - Uses Dopri5 (Dormand-Prince 5th order)
-     - `PostTOVSolver` - Beyond-GR modifications
+     - `AnisotropyTOVSolver` - Beyond-GR modifications
        - Phenomenological sigma terms (Yagi & Yunes 2013)
        - Models: Bowers-Liang, Doneva-Yazadjiev, Herrera-Barreto, Post-Newtonian
        - Required: coupling constants (lambda_BL, lambda_DY, etc.)
@@ -329,7 +329,7 @@ Configuration files use YAML with Pydantic validation. See `examples/inference/*
 - `transform`: EOS transform configuration
   - `type`: EOS model (metamodel, metamodel_cse, spectral)
   - `nb_CSE`: Number of CSE parameters (only for metamodel_cse)
-  - `type`: TOV solver type (gr, post, scalar_tensor)
+  - `type`: TOV solver type (gr, anisotropy, scalar_tensor)
   - Grid parameters: ndat, min_nsat, etc.
 - `prior`: Path to `.prior` specification file (bilby-style Python)
 - `likelihoods`: List of observational constraints (discriminated union)
@@ -411,7 +411,7 @@ Transforms convert between parameter spaces. Two types:
    - No Jacobian corrections
    - **JesterTransform is the single unified likelihood transform**:
      - Handles all EOS types (metamodel, metamodel_cse, spectral)
-     - Handles all TOV solver types (gr, post, scalar_tensor)
+     - Handles all TOV solver types (gr, anisotropy, scalar_tensor)
      - Use `JesterTransform.from_config(config)` to instantiate
 
 ### Sampler Architecture
