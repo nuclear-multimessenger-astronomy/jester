@@ -108,7 +108,7 @@ class JesterTransform(NtoMTransform):
         self.ndat_TOV = ndat_TOV
         self.min_nsat_TOV = min_nsat_TOV
         if fixed_params is not None:
-            self.fixed_params: dict[str, float] = fixed_params
+            self.fixed_params: dict[str, float] = fixed_params.copy()
         else:
             self.fixed_params = {}
 

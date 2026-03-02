@@ -38,7 +38,14 @@ class TOVSolverBase(ABC):
         Returns:
             dict[str, float]: Solver-specific subset of ``params``.
         """
-        return {k: params[k] for k in self.get_required_parameters()}
+        required = self.get_required_parameters()
+        missing = [k for k in required if k not in params]
+        if missing:
+            raise ValueError(
+                f"{type(self).__name__}.fetch_params: missing required parameter(s): {missing}. "
+                f"Available keys: {sorted(params.keys())}"
+            )
+        return {k: params[k] for k in required}
 
     @abstractmethod
     def solve(

@@ -37,7 +37,9 @@ logger = get_logger("jester")
 
 
 def determine_keep_names(
-    config: InferenceConfig, prior: CombinePrior
+    config: InferenceConfig,
+    prior: CombinePrior,
+    fixed_params: dict[str, float] | None = None,
 ) -> list[str] | None:
     """
     Determine which parameters need to be preserved in transform output.
@@ -51,7 +53,10 @@ def determine_keep_names(
     config : InferenceConfig
         Configuration object with likelihood settings
     prior : CombinePrior
-        Prior object with parameter names
+        Prior object with parameter names (sampled parameters only)
+    fixed_params : dict[str, float] | None
+        Parameters pinned to constant values via ``Fixed(...)`` in the prior
+        file. These are not in ``prior.parameter_names`` but are still valid.
 
     Returns
     -------
@@ -61,8 +66,9 @@ def determine_keep_names(
     Raises
     ------
     ValueError
-        If a required parameter is missing from the prior
+        If a required parameter is missing from both the prior and fixed_params
     """
+    _fixed = fixed_params or {}
     keep_names = []
 
     # ChiEFT likelihood requires 'nbreak' parameter for CSE grid stitching
@@ -71,16 +77,23 @@ def determine_keep_names(
         lk.enabled and lk.type == "chieft" for lk in config.likelihoods
     )
     if chieft_enabled and isinstance(config.eos, MetamodelCSEEOSConfig):
-        if "nbreak" not in prior.parameter_names:
+        if "nbreak" not in prior.parameter_names and "nbreak" not in _fixed:
             raise ValueError(
                 "ChiEFT likelihood is enabled with metamodel_cse but 'nbreak' parameter is not in the prior. "
                 "Please add 'nbreak' to your prior specification file. "
                 f"Current prior parameters: {prior.parameter_names}"
             )
-        keep_names.append("nbreak")
-        logger.info(
-            "ChiEFT likelihood enabled: 'nbreak' parameter will be preserved in transform output"
-        )
+        # Only add to keep_names if nbreak is sampled (not fixed).
+        # Fixed parameters are already added to the transform output automatically.
+        if "nbreak" in prior.parameter_names:
+            keep_names.append("nbreak")
+            logger.info(
+                "ChiEFT likelihood enabled: 'nbreak' parameter will be preserved in transform output"
+            )
+        else:
+            logger.info(
+                "ChiEFT likelihood enabled: 'nbreak' is fixed, will appear in transform output via fixed_params"
+            )
 
     return keep_names if keep_names else None
 
@@ -688,8 +701,8 @@ def main(config_path: str) -> None:
             idx += 1
 
     # Determine which parameters need to be preserved in transform output
-    # based on enabled likelihoods (validates required parameters exist in prior)
-    keep_names = determine_keep_names(config, prior)
+    # based on enabled likelihoods (validates required parameters exist in prior or fixed_params)
+    keep_names = determine_keep_names(config, prior, fixed_params)
 
     logger.info("Setting up transform...")
     transform = setup_transform(
