@@ -5,7 +5,7 @@ to remove the dependency on jimgw.
 """
 
 from .likelihood import LikelihoodBase
-from .prior import Prior, CombinePrior, UniformPrior, MultivariateGaussianPrior, Fixed
+from .prior import Prior, CombinePrior, UniformPrior, Fixed
 from .transform import Transform, NtoMTransform, BijectiveTransform
 
 __all__ = [
@@ -13,7 +13,6 @@ __all__ = [
     "Prior",
     "CombinePrior",
     "UniformPrior",
-    "MultivariateGaussianPrior",
     "Fixed",
     "Transform",
     "NtoMTransform",
