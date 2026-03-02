@@ -25,7 +25,10 @@ class TestConfigToComponents:
         prior_spec_file = config.prior.specification_file
 
         # Create prior
-        prior = prior_parser.parse_prior_file(prior_spec_file, nb_CSE=config.eos.nb_CSE)
+        parsed = prior_parser.parse_prior_file(
+            prior_spec_file, nb_CSE=config.eos.nb_CSE
+        )
+        prior = parsed.prior
 
         # Prior should have correct number of dimensions
         assert prior.n_dim == 9  # 9 NEP parameters for nb_CSE=0 (includes E_sat)
@@ -148,9 +151,10 @@ Z_sym = UniformPrior(-2000.0, 1500.0, parameter_names=["Z_sym"])
         that the components are compatible.
         """
         # Create prior
-        prior = prior_parser.parse_prior_file(
+        parsed = prior_parser.parse_prior_file(
             full_config.prior.specification_file, nb_CSE=full_config.eos.nb_CSE
         )
+        prior = parsed.prior
 
         # Sample from prior
         rng_key = jax.random.PRNGKey(42)
@@ -178,9 +182,10 @@ Z_sym = UniformPrior(-2000.0, 1500.0, parameter_names=["Z_sym"])
     def test_prior_log_prob_and_likelihood(self, full_config):
         """Test evaluating prior log probability and likelihood together."""
         # Create prior
-        prior = prior_parser.parse_prior_file(
+        parsed = prior_parser.parse_prior_file(
             full_config.prior.specification_file, nb_CSE=full_config.eos.nb_CSE
         )
+        prior = parsed.prior
 
         # Sample from prior
         rng_key = jax.random.PRNGKey(42)
@@ -254,7 +259,8 @@ class TestParameterNamePropagation:
     def test_prior_parameter_names_match_transform(self, sample_prior_file):
         """Test that prior parameter names match what transform expects."""
         # Create prior
-        prior = prior_parser.parse_prior_file(sample_prior_file, nb_CSE=0)
+        parsed = prior_parser.parse_prior_file(sample_prior_file, nb_CSE=0)
+        prior = parsed.prior
 
         # Get parameter names
         param_names = prior.parameter_names
@@ -278,7 +284,10 @@ class TestParameterNamePropagation:
         """Test that CSE parameters are added when nb_CSE > 0."""
         # Create prior with CSE
         nb_CSE = 8
-        prior = prior_parser.parse_prior_file(sample_prior_file_with_cse, nb_CSE=nb_CSE)
+        parsed = prior_parser.parse_prior_file(
+            sample_prior_file_with_cse, nb_CSE=nb_CSE
+        )
+        prior = parsed.prior
 
         # Get parameter names
         param_names = prior.parameter_names
@@ -300,7 +309,8 @@ class TestSampleValidation:
 
     def test_prior_samples_are_in_bounds(self, sample_prior_file):
         """Test that prior samples respect bounds."""
-        prior = prior_parser.parse_prior_file(sample_prior_file, nb_CSE=0)
+        parsed = prior_parser.parse_prior_file(sample_prior_file, nb_CSE=0)
+        prior = parsed.prior
 
         # Sample many times
         rng_key = jax.random.PRNGKey(42)
@@ -316,7 +326,8 @@ class TestSampleValidation:
 
     def test_samples_are_deterministic_with_same_seed(self, sample_prior_file):
         """Test that sampling is deterministic given same RNG key."""
-        prior = prior_parser.parse_prior_file(sample_prior_file, nb_CSE=0)
+        parsed = prior_parser.parse_prior_file(sample_prior_file, nb_CSE=0)
+        prior = parsed.prior
 
         # Sample twice with same key
         rng_key = jax.random.PRNGKey(42)

@@ -65,6 +65,7 @@ class InferenceResult:
         posterior: Dict[str, np.ndarray],
         metadata: Dict[str, Any],
         histories: Dict[str, np.ndarray] | None = None,
+        fixed_params: Dict[str, float] | None = None,
     ):
         """Initialize InferenceResult.
 
@@ -78,11 +79,17 @@ class InferenceResult:
             Sampler configuration and run statistics
         histories : Dict[str, np.ndarray] | None, optional
             Time-series histories for diagnostics
+        fixed_params : Dict[str, float] | None, optional
+            Parameters that were pinned to constant values during inference.
+            E.g. ``{"lambda_BL": 0.0, "lambda_DY": 0.0}``.
         """
         self.sampler_type = sampler_type
         self.posterior = posterior
         self.metadata = metadata
         self.histories = histories
+        self.fixed_params: Dict[str, float] = (
+            fixed_params if fixed_params is not None else {}
+        )
 
     @classmethod
     def from_sampler(
@@ -90,6 +97,7 @@ class InferenceResult:
         sampler: JesterSampler,
         config: InferenceConfig,
         runtime: float,
+        fixed_params: Dict[str, float] | None = None,
     ) -> "InferenceResult":
         """Create InferenceResult from sampler output.
 
@@ -103,6 +111,9 @@ class InferenceResult:
             Configuration used for inference
         runtime : float
             Total runtime in seconds
+        fixed_params : Dict[str, float] | None, optional
+            Parameters pinned to constant values during inference.
+            Stored in metadata for later retrieval.
 
         Returns
         -------
@@ -155,6 +166,7 @@ class InferenceResult:
             "creation_timestamp": datetime.now().isoformat(),
             "config_json": config_json,
             "parameter_names": sampler.parameter_names,  # Save prior parameter names
+            "fixed_params": fixed_params or {},  # Fixed parameters (not sampled)
         }
 
         # Extract sampler-specific metadata and histories
@@ -273,6 +285,7 @@ class InferenceResult:
             posterior=posterior,
             metadata=metadata,
             histories=histories,
+            fixed_params=fixed_params,
         )
 
     def add_derived_eos(self, eos_dict: Dict[str, Array]) -> None:
@@ -534,6 +547,11 @@ class InferenceResult:
                     param_names_json = json.dumps(value)
                     metadata_grp.attrs[key] = param_names_json
                     continue
+                elif key == "fixed_params":
+                    # Store fixed parameters as JSON string (dict[str, float])
+                    fixed_params_json = json.dumps(value)
+                    metadata_grp.attrs[key] = fixed_params_json
+                    continue
                 # HDF5 attributes must be scalars or small arrays
                 if isinstance(value, (int, float, str, bool)):
                     metadata_grp.attrs[key] = value
@@ -624,8 +642,13 @@ class InferenceResult:
             # Load attributes
             if "metadata" in f:
                 for key, value in f["metadata"].attrs.items():
-                    # Deserialize parameter_names from JSON
                     if key == "parameter_names":
+                        # Deserialize from JSON string (list of strings)
+                        if isinstance(value, bytes):
+                            value = value.decode("utf-8")
+                        metadata[key] = json.loads(value)
+                    elif key == "fixed_params":
+                        # Deserialize from JSON string (dict[str, float])
                         if isinstance(value, bytes):
                             value = value.decode("utf-8")
                         metadata[key] = json.loads(value)
@@ -639,8 +662,9 @@ class InferenceResult:
                 for key in f["histories"].keys():  # type: ignore[union-attr]
                     histories[key] = f["histories"][key][:]  # type: ignore[index]
 
-            # Get sampler type from metadata
+            # Get sampler type and fixed_params from metadata
             sampler_type = metadata.get("sampler", "unknown")
+            fixed_params_loaded: Dict[str, float] = metadata.get("fixed_params", {})
 
         logger.info(f"Successfully loaded {sampler_type} results")
 
@@ -649,6 +673,7 @@ class InferenceResult:
             posterior=posterior,
             metadata=metadata,
             histories=histories,
+            fixed_params=fixed_params_loaded,
         )
 
     @property
@@ -686,6 +711,8 @@ class InferenceResult:
         )
         lines.append(f"Random seed: {self.metadata.get('seed', 'unknown')}")
         lines.append(f"Number of samples: {self.metadata.get('n_samples', 0)}")
+        if self.fixed_params:
+            lines.append(f"Fixed parameters: {self.fixed_params}")
 
         # Sampler-specific info
         if self.sampler_type == "flowmc":
