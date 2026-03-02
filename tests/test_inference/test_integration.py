@@ -664,7 +664,7 @@ class TestEOSSampleGeneration:
         transform = JesterTransform.from_config(config.eos, config.tov)
 
         # batch_size=1000 is larger than n_eos_samples=10 → should be capped with a warning
-        with caplog.at_level(logging.WARNING, logger="jesterTOV"):
+        with caplog.at_level(logging.WARNING, logger="jester"):
             result.add_eos_from_transform(
                 transform=transform,
                 n_eos_samples=10,
