@@ -132,7 +132,7 @@ config.yaml + prior.prior
     ↓
 parse_config() → InferenceConfig (Pydantic validated)
     ↓
-parse_prior_file() → CombinePrior object
+parse_prior_file() → ParsedPrior(prior: CombinePrior, fixed_params: dict)
     ↓
 JesterTransform.from_config(config.eos, config.tov)
   ├─ Instantiate EOS (MetaModel/MetaModelCSE/Spectral)
