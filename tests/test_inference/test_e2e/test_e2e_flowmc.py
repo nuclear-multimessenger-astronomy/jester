@@ -40,7 +40,7 @@ class TestFlowMCE2E:
         """
         config = InferenceConfig(**flowmc_prior_config)
 
-        prior = setup_prior(config)
+        prior, _fixed_params = setup_prior(config)
         keep_names = determine_keep_names(config, prior)
         transform = setup_transform(config, prior=prior, keep_names=keep_names)
         likelihood = setup_likelihood(config, transform)
@@ -75,7 +75,7 @@ class TestFlowMCE2E:
         """
         config = InferenceConfig(**flowmc_chieft_config)
 
-        prior = setup_prior(config)
+        prior, _fixed_params = setup_prior(config)
         keep_names = determine_keep_names(config, prior)
         transform = setup_transform(config, prior=prior, keep_names=keep_names)
         likelihood = setup_likelihood(config, transform)
@@ -105,7 +105,7 @@ class TestFlowMCE2E:
         """Test FlowMC provides separate training and production samples."""
         config = InferenceConfig(**flowmc_prior_config)
 
-        prior = setup_prior(config)
+        prior, _fixed_params = setup_prior(config)
         keep_names = determine_keep_names(config, prior)
         transform = setup_transform(config, prior=prior, keep_names=keep_names)
         likelihood = setup_likelihood(config, transform)
@@ -146,7 +146,7 @@ class TestFlowMCE2E:
         """Test that FlowMC produces samples in prior bounds."""
         config = InferenceConfig(**flowmc_prior_config)
 
-        prior = setup_prior(config)
+        prior, _fixed_params = setup_prior(config)
         keep_names = determine_keep_names(config, prior)
         transform = setup_transform(config, prior=prior, keep_names=keep_names)
         likelihood = setup_likelihood(config, transform)
