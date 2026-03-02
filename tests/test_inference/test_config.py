@@ -147,7 +147,7 @@ class TestTOVConfig:
 
     def test_valid_tov_config(self):
         """Test valid TOV configuration."""
-        config = schema.TOVConfig(
+        config = schema.GRTOVConfig(
             type="gr",
             min_nsat_TOV=0.75,
             ndat_TOV=100,
@@ -159,7 +159,7 @@ class TestTOVConfig:
 
     def test_tov_default_values(self):
         """Test that TOV default values are set correctly."""
-        config = schema.TOVConfig()
+        config = schema.GRTOVConfig()
         assert config.type == "gr"
         assert config.min_nsat_TOV == 0.75
         assert config.ndat_TOV == 100
@@ -167,8 +167,11 @@ class TestTOVConfig:
 
     def test_invalid_solver_type_fails(self):
         """Test that invalid TOV solver type fails validation."""
+        from pydantic import TypeAdapter
+
+        ta: TypeAdapter[schema.TOVConfig] = TypeAdapter(schema.TOVConfig)  # type: ignore[type-arg]
         with pytest.raises(ValidationError):
-            schema.TOVConfig(type="invalid_solver")  # type: ignore[arg-type]  # intentionally wrong
+            ta.validate_python({"type": "invalid_solver"})
 
 
 class TestPriorConfig:
@@ -571,10 +574,10 @@ class TestExtraFieldValidation:
 
     def test_tov_config_rejects_extra_fields(self):
         """Test that TOV config rejects unknown fields."""
-        with pytest.raises(ValidationError, match="Unrecognized field"):
-            schema.TOVConfig(
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            schema.GRTOVConfig(
                 type="gr",
-                wrong_entry=500,  # Should be rejected
+                wrong_entry=500,  # type: ignore[call-arg]  # Should be rejected
             )
 
     def test_prior_config_rejects_extra_fields(self):

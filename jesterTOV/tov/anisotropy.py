@@ -238,7 +238,9 @@ class AnisotropyTOVSolver(TOVSolverBase):
         - Post-Newtonian corrections (gamma, alpha, beta)
     """
 
-    def solve(self, eos_data: EOSData, pc: float, **kwargs) -> TOVSolution:
+    def solve(
+        self, eos_data: EOSData, pc: float, tov_params: dict[str, float]
+    ) -> TOVSolution:
         r"""
         Solve post-TOV equations for given central pressure.
 
@@ -249,13 +251,9 @@ class AnisotropyTOVSolver(TOVSolverBase):
         Args:
             eos_data: EOS quantities in geometric units
             pc: Central pressure [geometric units]
-            **kwargs: Must contain theory modification parameters:
-                - lambda_BL: Bowers-and-Liang coupling parameter
-                - lambda_DY: Horvat et al. coupling parameter
-                - lambda_HB: Cosenza et al. coupling parameter
-                - gamma: Post-Newtonian amplitude parameter
-                - alpha: Post-Newtonian steepness parameter
-                - beta: Post-Newtonian transition point parameter
+            tov_params: Beyond-GR coupling parameters, as returned by
+                :meth:`~jesterTOV.tov.base.TOVSolverBase.fetch_params`.
+                Must contain all keys listed in :meth:`get_required_parameters`.
 
         Returns:
             TOVSolution: Mass, radius, and Love number in geometric units.
@@ -265,13 +263,12 @@ class AnisotropyTOVSolver(TOVSolverBase):
             The modifications affect the stellar structure but the same integration
             method and boundary conditions as the standard TOV case are used.
         """
-        # Extract modification parameters from kwargs
-        lambda_BL = kwargs.get("lambda_BL", 0.0)
-        lambda_DY = kwargs.get("lambda_DY", 0.0)
-        lambda_HB = kwargs.get("lambda_HB", 1.0)  # Default 1.0 means no correction
-        gamma = kwargs.get("gamma", 0.0)
-        alpha = kwargs.get("alpha", 0.0)
-        beta = kwargs.get("beta", 0.0)
+        lambda_BL = tov_params["lambda_BL"]
+        lambda_DY = tov_params["lambda_DY"]
+        lambda_HB = tov_params["lambda_HB"]
+        gamma = tov_params["gamma"]
+        alpha = tov_params["alpha"]
+        beta = tov_params["beta"]
 
         # Convert EOSData to dictionary for ODE solver
         eos_dict = {
@@ -338,15 +335,9 @@ class AnisotropyTOVSolver(TOVSolverBase):
 
     def get_required_parameters(self) -> list[str]:
         """
-        Post-TOV has no strictly required parameters beyond EOS.
-
-        All six theory parameters have physical defaults (GR limit):
-        ``lambda_BL=0``, ``lambda_DY=0``, ``lambda_HB=1``,
-        ``gamma=0``, ``alpha=0``, ``beta=0``.  Any subset may be included
-        in the prior file and will be picked up automatically by the
-        inference transform.
+        Post-TOV requires 6 additional theory parameters.
 
         Returns:
-            list[str]: empty list — all parameters are optional.
+            list[str]: ["lambda_BL", "lambda_DY", "lambda_HB", "gamma", "alpha", "beta"]
         """
-        return []
+        return ["lambda_BL", "lambda_DY", "lambda_HB", "gamma", "alpha", "beta"]
