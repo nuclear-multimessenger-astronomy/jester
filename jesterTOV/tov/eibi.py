@@ -83,9 +83,16 @@ def tov_ode(h, y, eos):
     es = eos["e"]
     dloge_dlogps = eos["dloge_dlogp"]
     r, m, yr = y
-    e = utils.interp_in_logspace(h, hs, es)
-    p = utils.interp_in_logspace(h, hs, ps)
-    dedp = e / p * jnp.interp(h, hs, dloge_dlogps)
+
+    # Guard h against non-positive values. Diffrax's adaptive step controller
+    # evaluates the ODE at tentative points that can overshoot t1=0 into h <= 0.
+    # interp_in_logspace computes jnp.log(h), which is NaN for h < 0, producing
+    # a NaN that propagates into the adjoint backward pass and corrupts gradients.
+    h_safe = jnp.maximum(h, hs[0])
+
+    e = utils.interp_in_logspace(h_safe, hs, es)
+    p = utils.interp_in_logspace(h_safe, hs, ps)
+    dedp = e / p * jnp.interp(h_safe, hs, dloge_dlogps)
 
     K = eos["kappa"]
     Lambda_cosmo = eos["Lambda_cosmo"]
@@ -567,17 +574,20 @@ class EiBITOVSolver(TOVSolverBase):
         - I. Prasetyo et al., Phys. Rev. D 104, 084029 (2021)
         - Implementation adapted from Fortran code by Ilham Prasetyo
 
+    # TODO: check the default values here
     Example:
         >>> from jesterTOV.tov.eibi import EiBITOVSolver
         >>> from jesterTOV.eos import MetaModelEOS
         >>> solver = EiBITOVSolver()
         >>> eos = MetaModelEOS()
         >>> eos_data = eos.construct_eos(...)
-        >>> solution = solver.solve(eos_data, pc=1e-5, kappa=1e4, Lambda_cosmo=1.4657e-52)
+        >>> solution = solver.solve(eos_data, pc=1e-5, tov_params={"kappa": 1e4, "Lambda_cosmo": 1.4657e-52})
         >>> print(f"Mass: {solution.M:.3f}, Radius: {solution.R:.3f}, k2: {solution.k2:.3f}")
     """
 
-    def solve(self, eos_data: EOSData, pc: float, **kwargs) -> TOVSolution:
+    def solve(
+        self, eos_data: EOSData, pc: float, tov_params: dict[str, float]
+    ) -> TOVSolution:
         r"""
         Solve TOV equations for a single neutron star in EiBI gravity.
 
@@ -604,15 +614,13 @@ class EiBITOVSolver(TOVSolverBase):
                 - es: Energy density array [geometric units]
                 - dloge_dlogps: Derivative d(log ε)/d(log p)
             pc (float): Central pressure value [geometric units] at which to solve the TOV equations.
-            **kwargs: Additional solver parameters:
-                - kappa: EiBI gravity parameter $\kappa$ [Geom] (default: 0.0)
-                - Lambda_cosmo: Cosmological constant parameter [1/m²] (default: 1.4657e-52)
+            tov_params: EiBI gravity parameters as returned by :meth:`~jesterTOV.tov.base.TOVSolverBase.fetch_params`.
+                Must contain:
+                - ``kappa``: EiBI gravity parameter :math:`\kappa` [Geom]
+                - ``Lambda_cosmo``: Cosmological constant [1/m²]
 
         Returns:
-            tuple: A tuple containing:
-                - M: Gravitational mass [geometric units]
-                - R: Circumferential radius [geometric units]
-                - k2: Tidal Love number
+            TOVSolution: Mass, radius, and Love number in geometric units.
 
         Note:
             The function filters out unsuccessful integrations (non-positive mass or
@@ -622,10 +630,8 @@ class EiBITOVSolver(TOVSolverBase):
         """
         # Extract EOS interpolation arrays
 
-        kappa = kwargs.get("kappa", 0.0)
-        Lambda_cosmo = kwargs.get(
-            "Lambda_cosmo", 1.4657e-52
-        )  # in 1/m^2, default value from Daniel Scolnic et al 2025 ApJL 979 L9
+        kappa = tov_params["kappa"]
+        Lambda_cosmo = tov_params["Lambda_cosmo"]
         # Convert EOSData to dictionary for ODE solver
         eos_dict = {
             "p": eos_data.ps,
@@ -656,8 +662,6 @@ class EiBITOVSolver(TOVSolverBase):
         r0 *= 1.0 - 0.25 * (ec - 3.0 * pc - 0.6 * dedh_c) * (-dh) / (ec + 3.0 * pc)
         m0 = 4.0 * jnp.pi * ec * jnp.power(r0, 3.0) / 3.0
         m0 *= 1.0 - 0.6 * dedh_c * (-dh) / ec
-        H0 = r0 * r0
-        b0 = 2.0 * r0
         yr0 = 2.0
 
         y0 = (r0, m0, yr0)
@@ -667,7 +671,7 @@ class EiBITOVSolver(TOVSolverBase):
             Dopri5(scan_kind="bounded"),
             t0=h0,
             t1=0,
-            dt0=None,
+            dt0=dh,
             y0=y0,
             args=eos_dict,
             saveat=SaveAt(t1=True),
@@ -675,17 +679,19 @@ class EiBITOVSolver(TOVSolverBase):
             throw=False,
         )
 
-        R = sol.ys[0][-1]
-        M = sol.ys[1][-1]
-        y_R = sol.ys[2][-1]
+        R = sol.ys[0][-1]  # type: ignore[index]
+        M = sol.ys[1][-1]  # type: ignore[index]
+        y_R = sol.ys[2][-1]  # type: ignore[index]
 
         # Filter out unsuccessful results
-        R = jnp.where((sol.result == RESULTS.successful) & (M > 0), R, jnp.nan)
-        M = jnp.where((sol.result == RESULTS.successful) & (M > 0), M, jnp.nan)
-        y_R = jnp.where((sol.result == RESULTS.successful) & (M > 0), y_R, jnp.nan)
+        # TODO: check if the NaNs here can break the inference
+        success = (sol.result == RESULTS.successful) & (M > 0)  # type: ignore[operator]
+        R = jnp.where(success, R, jnp.nan)
+        M = jnp.where(success, M, jnp.nan)
+        y_R = jnp.where(success, y_R, jnp.nan)
 
         k2 = calc_k2_eibi(R, M, y_R, eos_dict)
-        return TOVSolution(M=M, R=R, k2=k2)
+        return TOVSolution(M=M, R=R, k2=k2)  # type: ignore[arg-type]
 
     def get_required_parameters(self) -> list[str]:
         r"""

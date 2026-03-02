@@ -365,7 +365,8 @@ class TestReparamPriorParsing:
             ' "gamma_2_tilde", "gamma_3_tilde"],\n'
             ")\n"
         )
-        prior = parse_prior_file(prior_file)
+        parsed = parse_prior_file(prior_file)
+        prior = parsed.prior
         assert prior.n_dim == 4
         assert "gamma_0_tilde" in prior.parameter_names
         assert "gamma_3_tilde" in prior.parameter_names
@@ -381,8 +382,9 @@ class TestReparamPriorParsing:
             ' "gamma_2_tilde", "gamma_3_tilde"],\n'
             ")\n"
         )
-        prior = parse_prior_file(prior_file)
+        parsed = parse_prior_file(prior_file)
         rng = jax.random.PRNGKey(7)
+        prior = parsed.prior
         samples = prior.sample(rng, n_samples=200)
 
         for name in [

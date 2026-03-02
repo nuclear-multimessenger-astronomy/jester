@@ -37,7 +37,9 @@ logger = get_logger("jester")
 
 
 def determine_keep_names(
-    config: InferenceConfig, prior: CombinePrior
+    config: InferenceConfig,
+    prior: CombinePrior,
+    fixed_params: dict[str, float] | None = None,
 ) -> list[str] | None:
     """
     Determine which parameters need to be preserved in transform output.
@@ -51,7 +53,10 @@ def determine_keep_names(
     config : InferenceConfig
         Configuration object with likelihood settings
     prior : CombinePrior
-        Prior object with parameter names
+        Prior object with parameter names (sampled parameters only)
+    fixed_params : dict[str, float] | None
+        Parameters pinned to constant values via ``Fixed(...)`` in the prior
+        file. These are not in ``prior.parameter_names`` but are still valid.
 
     Returns
     -------
@@ -61,8 +66,9 @@ def determine_keep_names(
     Raises
     ------
     ValueError
-        If a required parameter is missing from the prior
+        If a required parameter is missing from both the prior and fixed_params
     """
+    _fixed = fixed_params or {}
     keep_names = []
 
     # ChiEFT likelihood requires 'nbreak' parameter for CSE grid stitching
@@ -71,23 +77,30 @@ def determine_keep_names(
         lk.enabled and lk.type == "chieft" for lk in config.likelihoods
     )
     if chieft_enabled and isinstance(config.eos, MetamodelCSEEOSConfig):
-        if "nbreak" not in prior.parameter_names:
+        if "nbreak" not in prior.parameter_names and "nbreak" not in _fixed:
             raise ValueError(
                 "ChiEFT likelihood is enabled with metamodel_cse but 'nbreak' parameter is not in the prior. "
                 "Please add 'nbreak' to your prior specification file. "
                 f"Current prior parameters: {prior.parameter_names}"
             )
-        keep_names.append("nbreak")
-        logger.info(
-            "ChiEFT likelihood enabled: 'nbreak' parameter will be preserved in transform output"
-        )
+        # Only add to keep_names if nbreak is sampled (not fixed).
+        # Fixed parameters are already added to the transform output automatically.
+        if "nbreak" in prior.parameter_names:
+            keep_names.append("nbreak")
+            logger.info(
+                "ChiEFT likelihood enabled: 'nbreak' parameter will be preserved in transform output"
+            )
+        else:
+            logger.info(
+                "ChiEFT likelihood enabled: 'nbreak' is fixed, will appear in transform output via fixed_params"
+            )
 
     return keep_names if keep_names else None
 
 
-def setup_prior(config: InferenceConfig) -> CombinePrior:
+def setup_prior(config: InferenceConfig) -> tuple[CombinePrior, dict[str, float]]:
     """
-    Setup prior from configuration
+    Setup prior from configuration.
 
     Parameters
     ----------
@@ -96,8 +109,11 @@ def setup_prior(config: InferenceConfig) -> CombinePrior:
 
     Returns
     -------
-    CombinePrior
-        Combined prior object
+    prior : CombinePrior
+        Combined prior over sampled parameters only.
+    fixed_params : dict[str, float]
+        Parameters pinned to constant values via ``Fixed(...)`` in the prior
+        file.  These are excluded from the sampling space.
     """
     from .base.prior import UniformPrior, CombinePrior
 
@@ -114,10 +130,15 @@ def setup_prior(config: InferenceConfig) -> CombinePrior:
             break
 
     # Parse prior file
-    prior = parse_prior_file(
+    parsed = parse_prior_file(
         config.prior.specification_file,
         nb_CSE=nb_CSE,
     )
+    prior = parsed.prior
+    fixed_params = parsed.fixed_params
+
+    if fixed_params:
+        logger.info(f"Fixed parameters found in prior file: {fixed_params}")
 
     # Add _random_key prior if GW or NICER likelihoods are enabled
     if needs_random_key:
@@ -128,13 +149,14 @@ def setup_prior(config: InferenceConfig) -> CombinePrior:
         # Flatten the prior structure to avoid nested CombinePrior
         prior = CombinePrior(prior.base_prior + [random_key_prior])
 
-    return prior
+    return prior, fixed_params
 
 
 def setup_transform(
     config: InferenceConfig,
     prior: CombinePrior | None = None,
     keep_names: list[str] | None = None,
+    fixed_params: dict[str, float] | None = None,
 ) -> JesterTransform:
     """
     Setup transform from configuration
@@ -147,12 +169,16 @@ def setup_transform(
         Prior object to extract parameter bounds (e.g., max nbreak for metamodel_cse)
     keep_names : list[str], optional
         Parameter names to keep in transformed output
+    fixed_params : dict[str, float], optional
+        Parameters pinned to constant values, excluded from the sampling space.
 
     Returns
     -------
     JesterTransform
         Transform instance
     """
+    _fixed_params = fixed_params or {}
+
     # Determine max_nbreak_nsat for MetamodelCSE: compare config field vs prior bound
     # TODO: in a future version, need to improve this...
     max_nbreak_nsat = None
@@ -195,9 +221,12 @@ def setup_transform(
         tov_config=config.tov,
         keep_names=keep_names,
         max_nbreak_nsat=max_nbreak_nsat,
+        fixed_params=_fixed_params if _fixed_params else None,
     )
 
-    # Validate that all required parameters are in the prior
+    # Validate that all required parameters are present.
+    # get_parameter_names() already excludes fixed params, so we only need to
+    # check that the remaining required params are covered by the sampled prior.
     if prior is not None:
         required_params = set(transform.get_parameter_names())
         prior_params = set(prior.parameter_names)
@@ -428,7 +457,11 @@ def setup_likelihood(
 
 
 def run_sampling(
-    sampler: JesterSampler, seed: int, config: InferenceConfig, outdir: str | Path
+    sampler: JesterSampler,
+    seed: int,
+    config: InferenceConfig,
+    outdir: str | Path,
+    fixed_params: dict[str, float] | None = None,
 ) -> InferenceResult:
     """
     Run MCMC sampling and create InferenceResult
@@ -443,6 +476,8 @@ def run_sampling(
         Configuration object
     outdir : str or Path
         Output directory
+    fixed_params : dict[str, float] | None, optional
+        Parameters pinned to constant values during inference.
 
     Returns
     -------
@@ -476,6 +511,7 @@ def run_sampling(
         sampler=sampler,
         config=config,
         runtime=runtime,
+        fixed_params=fixed_params,
     )
 
     return result
@@ -579,6 +615,12 @@ def generate_eos_samples(
 
     # Get batch size from config
     batch_size = config.sampler.log_prob_batch_size
+    if batch_size > n_eos_samples:
+        logger.warning(
+            f"Requested batch size ({batch_size}) is larger than the number of samples "
+            f"({n_eos_samples}). Adjusting batch size to {n_eos_samples}."
+        )
+        batch_size = n_eos_samples
     logger.info(f"Using batch size: {batch_size}")
 
     # Run with batched processing (JIT compilation happens on first batch)
@@ -627,7 +669,7 @@ def main(config_path: str) -> None:
 
     # Setup components
     logger.info("Setting up prior...")
-    prior = setup_prior(config)
+    prior, fixed_params = setup_prior(config)
 
     # Log detailed prior information
     logger.info(f"Prior has {prior.n_dim} dimensions")
@@ -665,11 +707,13 @@ def main(config_path: str) -> None:
             idx += 1
 
     # Determine which parameters need to be preserved in transform output
-    # based on enabled likelihoods (validates required parameters exist in prior)
-    keep_names = determine_keep_names(config, prior)
+    # based on enabled likelihoods (validates required parameters exist in prior or fixed_params)
+    keep_names = determine_keep_names(config, prior, fixed_params)
 
     logger.info("Setting up transform...")
-    transform = setup_transform(config, prior=prior, keep_names=keep_names)
+    transform = setup_transform(
+        config, prior=prior, keep_names=keep_names, fixed_params=fixed_params
+    )
 
     # Log transform details
     logger.info(f"EOS type: {config.eos.type}")
@@ -763,7 +807,9 @@ def main(config_path: str) -> None:
     logger.info(f"Test log probabilities: {test_log_prob}")
 
     # Run inference
-    result = run_sampling(sampler, config.seed, config, outdir)
+    result = run_sampling(
+        sampler, config.seed, config, outdir, fixed_params=fixed_params
+    )
 
     # Generate EOS quantities from posterior samples
     # Note: This requires recomputing the TOV solver for selected samples.

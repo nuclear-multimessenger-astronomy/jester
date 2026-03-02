@@ -21,6 +21,7 @@ from jesterTOV.inference.config.schema import (
     SpectralEOSConfig,
     BaseTOVConfig,
     GRTOVConfig,
+    AnisotropyTOVConfig,
 )
 from jesterTOV.inference.likelihoods.constraints import check_all_constraints
 from jesterTOV.logging_config import get_logger
@@ -44,7 +45,7 @@ class JesterTransform(NtoMTransform):
     eos : Interpolate_EOS_model
         EOS model instance (MetaModel, MetaModelCSE, Spectral, etc.)
     tov_solver : TOVSolverBase
-        TOV solver instance (GRTOVSolver, PostTOVSolver, ScalarTensorTOVSolver)
+        TOV solver instance (GRTOVSolver, AnisotropyTOVSolver, ScalarTensorTOVSolver)
     name_mapping : tuple[list[str], list[str]] | None
         Tuple of (input_names, output_names). If None, constructed from
         EOS and TOV required parameters.
@@ -99,20 +100,29 @@ class JesterTransform(NtoMTransform):
         keep_names: list[str] | None = None,
         ndat_TOV: int = 100,
         min_nsat_TOV: float = 0.75,
-        **kwargs: Any,
+        fixed_params: dict[str, float] | None = None,
+        **kwargs: Any,  # FIXME: remove kwargs argument in a future release
     ) -> None:
         self.eos = eos
         self.tov_solver = tov_solver
         self.ndat_TOV = ndat_TOV
         self.min_nsat_TOV = min_nsat_TOV
+        if fixed_params is not None:
+            self.fixed_params: dict[str, float] = fixed_params.copy()
+        else:
+            self.fixed_params = {}
 
         # Get required parameters from EOS and TOV solver
         self.eos_params = eos.get_required_parameters()
         self.tov_params = tov_solver.get_required_parameters()
 
-        # Construct name mapping if not provided
+        # Construct name mapping if not provided.
+        # Fixed parameters are not part of the sampled input space, so they
+        # are excluded from input_names.
         if name_mapping is None:
-            input_names = self.eos_params + self.tov_params
+            sampled_eos = [p for p in self.eos_params if p not in self.fixed_params]
+            sampled_tov = [p for p in self.tov_params if p not in self.fixed_params]
+            input_names = sampled_eos + sampled_tov
             output_names = ["logpc_EOS", "masses_EOS", "radii_EOS", "Lambdas_EOS"]
             name_mapping = (input_names, output_names)
 
@@ -132,6 +142,8 @@ class JesterTransform(NtoMTransform):
         )
         logger.debug(f"  EOS parameters ({len(self.eos_params)}): {self.eos_params}")
         logger.debug(f"  TOV parameters ({len(self.tov_params)}): {self.tov_params}")
+        if self.fixed_params:
+            logger.info(f"  Fixed parameters: {self.fixed_params}")
 
     @classmethod
     def from_config(
@@ -140,6 +152,7 @@ class JesterTransform(NtoMTransform):
         tov_config: BaseTOVConfig,
         keep_names: list[str] | None = None,
         max_nbreak_nsat: float | None = None,
+        fixed_params: dict[str, float] | None = None,
     ) -> "JesterTransform":
         """Create transform from configuration objects.
 
@@ -156,6 +169,9 @@ class JesterTransform(NtoMTransform):
             Parameters to preserve in output
         max_nbreak_nsat : float | None
             Maximum nbreak value (for MetaModelCSE optimization)
+        fixed_params : dict[str, float] | None
+            Parameters pinned to constant values, excluded from the sampling
+            space but injected into every ``forward()`` call.
 
         Returns
         -------
@@ -186,6 +202,7 @@ class JesterTransform(NtoMTransform):
             keep_names=keep_names,
             ndat_TOV=tov_config.ndat_TOV,
             min_nsat_TOV=tov_config.min_nsat_TOV,
+            fixed_params=fixed_params,
         )
 
     @staticmethod
@@ -267,16 +284,13 @@ class JesterTransform(NtoMTransform):
         if isinstance(config, GRTOVConfig):
             return GRTOVSolver()
 
-        # String-based dispatch for solvers that do not yet have their own config class
-        tov_type = config.type
-        if tov_type == "post":
-            raise NotImplementedError("PostTOVSolver config class not implemented yet")
-        elif tov_type == "scalar_tensor":
-            raise NotImplementedError(
-                "ScalarTensorTOVSolver config class not implemented yet"
-            )
+        elif isinstance(config, AnisotropyTOVConfig):
+            from jesterTOV.tov.anisotropy import AnisotropyTOVSolver
+
+            return AnisotropyTOVSolver()
+
         else:
-            raise ValueError(f"Unknown TOV solver type: {tov_type}")
+            raise ValueError(f"Unknown TOV solver type: {type(config).__name__}")
 
     def get_eos_type(self) -> str:
         """Return EOS type identifier.
@@ -289,14 +303,18 @@ class JesterTransform(NtoMTransform):
         return repr(self.eos)
 
     def get_parameter_names(self) -> list[str]:
-        """Return combined list of EOS and TOV parameters.
+        """Return combined list of sampled EOS and TOV parameter names.
+
+        Fixed parameters (those pinned via ``Fixed(...)`` in the prior file)
+        are excluded — they are not part of the sampling space.
 
         Returns
         -------
         list[str]
-            All parameter names required by this transform
+            Sampled parameter names required by this transform
         """
-        return self.eos_params + self.tov_params
+        all_params = self.eos_params + self.tov_params
+        return [p for p in all_params if p not in self.fixed_params]
 
     def construct_eos_and_solve_tov(
         self,
@@ -329,15 +347,15 @@ class JesterTransform(NtoMTransform):
         # EOS handles all parameter preprocessing (e.g., CSE conversion)
         eos_data = self.eos.construct_eos(params)
 
-        # Extract TOV-specific parameters if any
-        tov_kwargs = {key: params[key] for key in self.tov_params if key in params}
+        # Extract TOV-specific parameters from the combined prior dict
+        tov_params = self.tov_solver.fetch_params(params)
 
         # Solve TOV equations to get M-R-Λ family
         family_data = self.tov_solver.construct_family(
             eos_data,
             ndat=self.ndat_TOV,
             min_nsat=self.min_nsat_TOV,
-            **tov_kwargs,
+            tov_params=tov_params,
         )
 
         # Create standardized return dictionary with constraint checking
@@ -445,19 +463,27 @@ class JesterTransform(NtoMTransform):
     def forward(self, x: dict[str, Float]) -> dict[str, Float]:
         """Transform parameters and preserve keep_names.
 
-        This overrides NtoMTransform.forward() to preserve parameters
-        specified in self.keep_names.
+        This overrides NtoMTransform.forward() to:
+
+        1. Merge fixed parameters into ``x`` before the EOS/TOV pipeline runs.
+        2. Preserve parameters specified in ``self.keep_names``.
+        3. Add fixed parameters to the output so they appear in the result.
 
         Parameters
         ----------
         x : dict[str, Float]
-            Input parameter dictionary
+            Input parameter dictionary (sampled parameters only)
 
         Returns
         -------
         dict[str, Float]
-            Transformed parameters with keep_names preserved
+            Transformed parameters with keep_names and fixed_params included
         """
+        # Inject fixed parameters so the EOS/TOV pipeline receives them.
+        # Create a new dict to avoid mutating the caller's input.
+        if self.fixed_params:
+            x = {**x, **self.fixed_params}
+
         # Save parameters that should be kept
         kept_params = {name: x[name] for name in self.keep_names if name in x}
 
@@ -466,5 +492,9 @@ class JesterTransform(NtoMTransform):
 
         # Add back the kept parameters
         result.update(kept_params)
+
+        # Add fixed parameters to the output for traceability
+        if self.fixed_params:
+            result.update(self.fixed_params)
 
         return result

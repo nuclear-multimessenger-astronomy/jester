@@ -1,9 +1,9 @@
 .. _tov-anisotropy:
 
-Pressure Anisotropy (Post-TOV)
-==============================
+Pressure Anisotropy (AnisotropyTOV)
+=====================================
 
-[Placeholder: Detailed explanation of the Post-TOV solver with anisotropic effects]
+[Placeholder: Detailed explanation of the Anisotropy TOV solver with beyond-GR effects]
 
 This page will cover:
 
@@ -12,4 +12,4 @@ This page will cover:
 * Anisotropy models and parametrizations
 * Impact on neutron star observables
 * Usage examples
-* API reference: :class:`jesterTOV.tov.anisotropy.PostTOVSolver`
+* API reference: :class:`jesterTOV.tov.anisotropy.AnisotropyTOVSolver`
