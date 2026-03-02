@@ -13,6 +13,8 @@ General Relativity in the limit $\kappa \to 0$.
 - I. Prasetyo et al., Phys. Rev. D 104, 084029 (2021)
 - Implementation of tidal deformability adapted from Fortran code by Ilham Prasetyo,
   https://github.com/ilhamdotP/fortran2mathematica-TOV-EiBI-momin-tidal
+
+# FIXME: Need to fully integrate the TOV solver: see docs/developer_guide/adding_new_tov.md
 """
 
 import jax
