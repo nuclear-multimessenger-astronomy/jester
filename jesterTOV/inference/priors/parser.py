@@ -1,5 +1,6 @@
 r"""Parser for .prior specification files in bilby-style Python format."""
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Union, Any, Dict
 from jesterTOV.inference.base import (
@@ -8,24 +9,52 @@ from jesterTOV.inference.base import (
     UniformPrior,
     MultivariateGaussianPrior,
 )
+from jesterTOV.inference.base.prior import Fixed
+
+
+@dataclass
+class ParsedPrior:
+    """Result of parsing a ``.prior`` file.
+
+    Parameters
+    ----------
+    prior : CombinePrior
+        Combined prior containing only the sampled (non-fixed) parameters.
+    fixed_params : dict[str, float]
+        Mapping of parameter name to fixed value for parameters declared with
+        ``Fixed(...)`` in the prior file.
+    """
+
+    prior: CombinePrior
+    fixed_params: dict[str, float]
 
 
 def parse_prior_file(
     prior_file: Union[str, Path],
     nb_CSE: int = 0,
-) -> CombinePrior:
-    """Parse .prior file (Python format) and return CombinePrior object.
+) -> ParsedPrior:
+    """Parse .prior file (Python format) and return a :class:`ParsedPrior`.
 
     The prior file should contain Python variable assignments in bilby-style format:
+
+    .. code-block:: python
 
         K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
         Q_sat = UniformPrior(-500.0, 1100.0, parameter_names=["Q_sat"])
         nbreak = UniformPrior(0.16, 0.32, parameter_names=["nbreak"])
 
+        # Pin a parameter to a fixed value (not sampled):
+        lambda_BL = Fixed(0.0, parameter_names=["lambda_BL"])
+
+    Parameters declared with :class:`~jesterTOV.inference.base.prior.Fixed` are
+    collected into :attr:`ParsedPrior.fixed_params` and excluded from the
+    sampling prior.
+
     The parser will automatically:
-    - Include all NEP parameters (_sat and _sym parameters)
-    - Include nbreak only if nb_CSE > 0
-    - Add CSE grid parameters (n_CSE_i_u, cs2_CSE_i) automatically if nb_CSE > 0
+
+    - Include all NEP parameters (``_sat`` and ``_sym`` parameters)
+    - Include ``nbreak`` only if ``nb_CSE > 0``
+    - Add CSE grid parameters (``n_CSE_i_u``, ``cs2_CSE_i``) if ``nb_CSE > 0``
 
     Parameters
     ----------
@@ -36,8 +65,8 @@ def parse_prior_file(
 
     Returns
     -------
-    CombinePrior
-        Combined prior object ready for sampling
+    ParsedPrior
+        Parsed prior with sampled :class:`CombinePrior` and ``fixed_params`` dict.
 
     Raises
     ------
@@ -48,13 +77,11 @@ def parse_prior_file(
 
     Examples
     --------
-    >>> prior = parse_prior_file("nep_standard.prior", nb_CSE=8)
-    >>> print(prior.n_dim)  # Number of dimensions
+    >>> result = parse_prior_file("nep_standard.prior", nb_CSE=8)
+    >>> print(result.prior.n_dim)  # Number of sampled dimensions
     25  # 8 NEP + 1 nbreak + 8*2 CSE grid params
-
-    >>> prior = parse_prior_file("nep_standard.prior", nb_CSE=0)
-    >>> print(prior.n_dim)
-    8  # 8 NEP parameters only
+    >>> print(result.fixed_params)  # Any fixed parameters
+    {}
     """
     prior_file = Path(prior_file)
 
@@ -69,6 +96,7 @@ def parse_prior_file(
     namespace: dict[str, Any] = {
         "UniformPrior": UniformPrior,
         "MultivariateGaussianPrior": MultivariateGaussianPrior,
+        "Fixed": Fixed,
     }
 
     # Execute the prior file to populate the namespace
@@ -78,17 +106,32 @@ def parse_prior_file(
         raise ValueError(f"Error executing prior file {prior_file}: {e}") from e
 
     # Extract all Prior objects from the namespace
-    excluded_keys = {"__builtins__", "UniformPrior", "MultivariateGaussianPrior"}
+    excluded_keys = {
+        "__builtins__",
+        "UniformPrior",
+        "MultivariateGaussianPrior",
+        "Fixed",
+    }
     all_priors: Dict[str, Prior] = {}
 
     for key, value in namespace.items():
         if key not in excluded_keys and isinstance(value, Prior):
             all_priors[key] = value
 
-    # Filter priors based on configuration
-    prior_list = []
+    # Separate Fixed parameters from sampled priors
+    fixed_params: dict[str, float] = {}
+    sampled_priors: Dict[str, Prior] = {}
 
     for param_name, prior in all_priors.items():
+        if isinstance(prior, Fixed):
+            fixed_params[prior.parameter_names[0]] = prior.value
+        else:
+            sampled_priors[param_name] = prior
+
+    # Filter sampled priors based on configuration
+    prior_list = []
+
+    for param_name, prior in sampled_priors.items():
         # Always include NEP parameters (_sat and _sym)
         if param_name.endswith("_sat") or param_name.endswith("_sym"):
             prior_list.append(prior)
@@ -114,8 +157,9 @@ def parse_prior_file(
 
     if len(prior_list) == 0:
         raise ValueError(
-            f"No priors found in {prior_file}. "
-            "Check file format and ensure at least one Prior object is defined."
+            f"No sampled priors found in {prior_file}. "
+            "Check file format and ensure at least one Prior object is defined. "
+            "Note: Fixed parameters do not count as sampled priors."
         )
 
-    return CombinePrior(prior_list)
+    return ParsedPrior(prior=CombinePrior(prior_list), fixed_params=fixed_params)

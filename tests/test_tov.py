@@ -132,7 +132,7 @@ class TestTOVSolver:
         pc = float(sample_eos_data.ps[25])  # Middle pressure value
 
         solver = GRTOVSolver()
-        solution = solver.solve(sample_eos_data, pc)
+        solution = solver.solve(sample_eos_data, pc, {})
 
         # Check that results are finite and positive
         assert jnp.isfinite(solution.M)
@@ -157,7 +157,7 @@ class TestTOVSolver:
         for idx in pressure_indices:
             if idx < len(sample_eos_data.ps):
                 pc = float(sample_eos_data.ps[idx])
-                solution = solver.solve(sample_eos_data, pc)
+                solution = solver.solve(sample_eos_data, pc, {})
 
                 # Basic sanity checks
                 assert jnp.isfinite(solution.M) and solution.M > 0
@@ -188,7 +188,7 @@ class TestTOVSolver:
         # The solver should handle initial condition setup internally
         # We just test that it doesn't crash and gives reasonable results
         solver = GRTOVSolver()
-        solution = solver.solve(sample_eos_data, pc)
+        solution = solver.solve(sample_eos_data, pc, {})
 
         # Results should be in reasonable ranges for neutron stars
         # Convert to physical units for checking
@@ -218,7 +218,7 @@ class TestTOVSolver:
 
         # Solve TOV equations
         solver = GRTOVSolver()
-        solution = solver.solve(sample_eos_data, pc)
+        solution = solver.solve(sample_eos_data, pc, {})
 
         # Results should be consistent with input
         assert jnp.isfinite(solution.M) and solution.M > 0
@@ -241,7 +241,7 @@ class TestTOVPhysicalConsistency:
             if idx < len(sample_eos_data.ps):
                 pc = float(sample_eos_data.ps[idx])
                 try:
-                    solution = solver.solve(sample_eos_data, pc)
+                    solution = solver.solve(sample_eos_data, pc, {})
                     if (
                         jnp.isfinite(solution.M)
                         and jnp.isfinite(solution.R)
@@ -279,7 +279,7 @@ class TestTOVPhysicalConsistency:
         # Solve multiple times (should be deterministic)
         results = []
         for _ in range(3):
-            solution = solver.solve(sample_eos_data, pc)
+            solution = solver.solve(sample_eos_data, pc, {})
             results.append((solution.M, solution.R, solution.k2))
 
         # Results should be identical (within numerical precision)
@@ -303,7 +303,7 @@ def test_tov_solver_pressure_range(sample_eos_data, pressure_fraction):
     solver = GRTOVSolver()
 
     try:
-        solution = solver.solve(sample_eos_data, pc)
+        solution = solver.solve(sample_eos_data, pc, {})
 
         # Basic physical checks
         assert jnp.isfinite(solution.M) and solution.M > 0

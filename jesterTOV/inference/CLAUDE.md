@@ -132,11 +132,11 @@ config.yaml + prior.prior
     ↓
 parse_config() → InferenceConfig (Pydantic validated)
     ↓
-parse_prior_file() → CombinePrior object
+parse_prior_file() → ParsedPrior(prior: CombinePrior, fixed_params: dict)
     ↓
 JesterTransform.from_config(config.eos, config.tov)
   ├─ Instantiate EOS (MetaModel/MetaModelCSE/Spectral)
-  └─ Instantiate TOV solver (GR/Post/ScalarTensor)
+  └─ Instantiate TOV solver (GR/Anisotropy)
     ↓
 Validate parameters
   ├─ Check all required EOS params in prior → raise error if missing
@@ -202,7 +202,7 @@ Save to outdir/{result_id}.h5
      - `GRTOVSolver` - General Relativity
        - Standard TOV equations, no additional parameters
        - Uses Dopri5 (Dormand-Prince 5th order)
-     - `PostTOVSolver` - Beyond-GR modifications
+     - `AnisotropyTOVSolver` - Beyond-GR modifications
        - Phenomenological sigma terms (Yagi & Yunes 2013)
        - Models: Bowers-Liang, Doneva-Yazadjiev, Herrera-Barreto, Post-Newtonian
        - Required: coupling constants (lambda_BL, lambda_DY, etc.)
@@ -210,8 +210,8 @@ Save to outdir/{result_id}.h5
        - Jordan frame (Brown 2023, ApJ 958 125)
        - Required: beta_ST, phi_c, nu_c
    - Each implements:
-     - `solve(eos_data, pc, **kwargs) -> TOVSolution` - Single star
-     - `construct_family(eos_data, ndat, min_nsat, **kwargs) -> FamilyData` - M-R-Λ family
+     - `solve(eos_data, pc, tov_params: dict) -> TOVSolution` - Single star
+     - `construct_family(eos_data, ndat, min_nsat, tov_params: dict) -> FamilyData` - M-R-Λ family
      - `get_required_parameters() -> list[str]` - List additional parameters
    - Key features:
      - Uses Diffrax ODE solver with adaptive step size
@@ -329,7 +329,7 @@ Configuration files use YAML with Pydantic validation. See `examples/inference/*
 - `transform`: EOS transform configuration
   - `type`: EOS model (metamodel, metamodel_cse, spectral)
   - `nb_CSE`: Number of CSE parameters (only for metamodel_cse)
-  - `type`: TOV solver type (gr, post, scalar_tensor)
+  - `type`: TOV solver type (gr, anisotropy, scalar_tensor)
   - Grid parameters: ndat, min_nsat, etc.
 - `prior`: Path to `.prior` specification file (bilby-style Python)
 - `likelihoods`: List of observational constraints (discriminated union)
@@ -411,7 +411,7 @@ Transforms convert between parameter spaces. Two types:
    - No Jacobian corrections
    - **JesterTransform is the single unified likelihood transform**:
      - Handles all EOS types (metamodel, metamodel_cse, spectral)
-     - Handles all TOV solver types (gr, post, scalar_tensor)
+     - Handles all TOV solver types (gr, anisotropy, scalar_tensor)
      - Use `JesterTransform.from_config(config)` to instantiate
 
 ### Sampler Architecture
@@ -528,13 +528,15 @@ Transforms convert between parameter spaces. Two types:
    from jesterTOV.tov.data_classes import EOSData, TOVSolution, FamilyData
 
    class MyNewTOVSolver(TOVSolverBase):
-       def solve(self, eos_data: EOSData, pc: float, **kwargs) -> TOVSolution:
+       def solve(self, eos_data: EOSData, pc: float,
+                 tov_params: dict[str, float]) -> TOVSolution:
            """Solve TOV for single central pressure."""
            # Your implementation here
            return TOVSolution(M=..., R=..., k2=...)
 
        def construct_family(self, eos_data: EOSData, ndat: int,
-                           min_nsat: float, **kwargs) -> FamilyData:
+                           min_nsat: float,
+                           tov_params: dict[str, float]) -> FamilyData:
            """Build M-R-Λ family curves."""
            # Usually uses jax.vmap over self.solve
            return FamilyData(log10pcs=..., masses=..., radii=..., lambdas=...)

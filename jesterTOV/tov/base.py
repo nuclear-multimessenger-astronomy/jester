@@ -26,15 +26,39 @@ class TOVSolverBase(ABC):
     - get_required_parameters(): Return list of additional parameters beyond EOS
     """
 
+    def fetch_params(self, params: dict[str, float]) -> dict[str, float]:
+        """Extract solver-specific parameters from the combined EOS+TOV parameter dict.
+
+        Uses :meth:`get_required_parameters` as the key list. For GR this returns
+        an empty dict (no additional parameters needed).
+
+        Args:
+            params: Full parameter dictionary from the prior (EOS + TOV combined).
+
+        Returns:
+            dict[str, float]: Solver-specific subset of ``params``.
+        """
+        required = self.get_required_parameters()
+        missing = [k for k in required if k not in params]
+        if missing:
+            raise ValueError(
+                f"{type(self).__name__}.fetch_params: missing required parameter(s): {missing}. "
+                f"Available keys: {sorted(params.keys())}"
+            )
+        return {k: params[k] for k in required}
+
     @abstractmethod
-    def solve(self, eos_data: EOSData, pc: float, **kwargs) -> TOVSolution:
+    def solve(
+        self, eos_data: EOSData, pc: float, tov_params: dict[str, float]
+    ) -> TOVSolution:
         r"""
         Solve TOV equations for given central pressure.
 
         Args:
             eos_data: EOS quantities (type-safe dataclass)
             pc: Central pressure [geometric units]
-            **kwargs: Additional solver-specific parameters
+            tov_params: Solver-specific parameters returned by :meth:`fetch_params`.
+                Empty dict ``{}`` for GR; populated dict for modified-gravity solvers.
 
         Returns:
             TOVSolution: Mass, radius, and Love number k2 [geometric units]
@@ -60,7 +84,7 @@ class TOVSolverBase(ABC):
         eos_data: EOSData,
         ndat: int,
         min_nsat: float,
-        **kwargs,
+        tov_params: dict[str, float],
     ) -> FamilyData:
         r"""
         Construct M-R-Λ curves by solving for multiple central pressures.
@@ -73,7 +97,8 @@ class TOVSolverBase(ABC):
             ndat: Number of points in central pressure grid
             min_nsat: Minimum central density in units of saturation density
                      (assumed to be 0.16 :math:`\mathrm{fm}^{-3}`)
-            **kwargs: Additional solver-specific parameters
+            tov_params: Solver-specific parameters returned by :meth:`fetch_params`.
+                Empty dict ``{}`` for GR; populated dict for modified-gravity solvers.
 
         Returns:
             FamilyData: Mass-radius-tidal curves in physical units
@@ -86,7 +111,7 @@ class TOVSolverBase(ABC):
         # Solve TOV for each pc using vmap
         # NOTE: vmap batches TOVSolution fields into arrays
         def solve_single_pc(pc):
-            return self.solve(eos_data, pc, **kwargs)
+            return self.solve(eos_data, pc, tov_params)
 
         solutions = jax.vmap(solve_single_pc)(pcs)
 

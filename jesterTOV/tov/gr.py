@@ -164,7 +164,9 @@ class GRTOVSolver(TOVSolverBase):
     plus the equations for tidal deformability.
     """
 
-    def solve(self, eos_data: EOSData, pc: float, **kwargs) -> TOVSolution:
+    def solve(
+        self, eos_data: EOSData, pc: float, tov_params: dict[str, float]
+    ) -> TOVSolution:
         r"""
         Solve TOV equations for given central pressure.
 
@@ -179,7 +181,7 @@ class GRTOVSolver(TOVSolverBase):
         Args:
             eos_data: EOS quantities in geometric units
             pc: Central pressure [geometric units]
-            **kwargs: Not used for GR TOV (included for interface compatibility)
+            tov_params: Not used for GR TOV (empty dict ``{}`` — no additional parameters)
 
         Returns:
             TOVSolution: Mass, radius, and Love number in geometric units.

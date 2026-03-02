@@ -332,7 +332,9 @@ class ScalarTensorTOVSolver(TOVSolverBase):
     :math:`\\Lambda_{\\mathrm{ST}}`) using matched asymptotic expansions.
     """
 
-    def solve(self, eos_data: EOSData, pc: float, **kwargs) -> TOVSolution:
+    def solve(
+        self, eos_data: EOSData, pc: float, tov_params: dict[str, float]
+    ) -> TOVSolution:
         r"""
         Solve scalar-tensor TOV equations for given EOS and central pressure.
 
@@ -343,11 +345,8 @@ class ScalarTensorTOVSolver(TOVSolverBase):
             and logarithmic derivatives.
         pc : float
             Central pressure (geometric units).
-        **kwargs : dict
-            Additional parameters:
-            - beta_ST: Scalar-tensor coupling parameter (default: 0.0)
-            - phi_inf_tgt: Target asymptotic scalar field at infinity (default: 1e-3)
-            - phi_c: Central scalar field value (default: 1.0)
+        tov_params : dict[str, float]
+            Scalar-tensor theory parameters with keys ``beta_ST``, ``nu_c``, ``phi_c``.
 
         Returns
         -------
@@ -366,9 +365,9 @@ class ScalarTensorTOVSolver(TOVSolverBase):
         are computed using two particular interior solutions combined with exterior
         basis functions.
         """
-        beta_ST = kwargs.get("beta_ST", 0.0)
-        phi_inf_target = kwargs.get("phi_inf_tgt", 1e-3)
-        phi0 = kwargs.get("phi_c", 1.0)
+        beta_ST = tov_params["beta_ST"]
+        phi_inf_target = tov_params["phi_inf_tgt"]
+        phi0 = tov_params["phi_c"]
         # Extract EOS interpolation arrays
         # Convert EOSData to dictionary for ODE solver
         eos_dict = {
@@ -454,11 +453,11 @@ class ScalarTensorTOVSolver(TOVSolverBase):
                 )
                 # In this iteration, failed solver will still be useful for the next iteration.
                 # More iteration = more converge to physical value.
-                R = sol_iter.ys[0][-1]
-                M_s = sol_iter.ys[1][-1]
-                nu_s = sol_iter.ys[2][-1]
-                psi_s = sol_iter.ys[3][-1]
-                phi_s = sol_iter.ys[4][-1]
+                R = sol_iter.ys[0][-1]  # type: ignore[index]
+                M_s = sol_iter.ys[1][-1]  # type: ignore[index]
+                nu_s = sol_iter.ys[2][-1]  # type: ignore[index]
+                psi_s = sol_iter.ys[3][-1]  # type: ignore[index]
+                phi_s = sol_iter.ys[4][-1]  # type: ignore[index]
 
                 EPS = 1e-25
                 nu_s_prime = 2 * M_s / (R * (R - 2.0 * M_s)) + R * jnp.power(psi_s, 2)
@@ -555,15 +554,15 @@ class ScalarTensorTOVSolver(TOVSolverBase):
                     throw=False,
                 )
 
-                R = sol_iter_1.ys[0][-1]
-                M_s = sol_iter_1.ys[1][-1]
-                nu_s = sol_iter_1.ys[2][-1]
-                psi_s = sol_iter_1.ys[3][-1]
-                phi_s = sol_iter_1.ys[4][-1]
-                H0_surface_1 = sol_iter_1.ys[5][-1]
-                H0_prime_surface_1 = sol_iter_1.ys[6][-1]
-                delta_phi_surface_1 = sol_iter_1.ys[7][-1]
-                delta_phi_prime_surface_1 = sol_iter_1.ys[8][-1]
+                R = sol_iter_1.ys[0][-1]  # type: ignore[index]
+                M_s = sol_iter_1.ys[1][-1]  # type: ignore[index]
+                nu_s = sol_iter_1.ys[2][-1]  # type: ignore[index]
+                psi_s = sol_iter_1.ys[3][-1]  # type: ignore[index]
+                phi_s = sol_iter_1.ys[4][-1]  # type: ignore[index]
+                H0_surface_1 = sol_iter_1.ys[5][-1]  # type: ignore[index]
+                H0_prime_surface_1 = sol_iter_1.ys[6][-1]  # type: ignore[index]
+                delta_phi_surface_1 = sol_iter_1.ys[7][-1]  # type: ignore[index]
+                delta_phi_prime_surface_1 = sol_iter_1.ys[8][-1]  # type: ignore[index]
 
                 # case 2
                 y0_case2 = (
@@ -590,10 +589,10 @@ class ScalarTensorTOVSolver(TOVSolverBase):
                     stepsize_controller=PIDController(rtol=1e-7, atol=1e-8),
                     throw=False,
                 )
-                H0_surface_2 = sol_iter_2.ys[5][-1]
-                H0_prime_surface_2 = sol_iter_2.ys[6][-1]
-                delta_phi_surface_2 = sol_iter_2.ys[7][-1]
-                delta_phi_prime_surface_2 = sol_iter_2.ys[8][-1]
+                H0_surface_2 = sol_iter_2.ys[5][-1]  # type: ignore[index]
+                H0_prime_surface_2 = sol_iter_2.ys[6][-1]  # type: ignore[index]
+                delta_phi_surface_2 = sol_iter_2.ys[7][-1]  # type: ignore[index]
+                delta_phi_prime_surface_2 = sol_iter_2.ys[8][-1]  # type: ignore[index]
                 return (
                     R_final,
                     M_inf_final,
