@@ -121,7 +121,52 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         \mu(x) &= \exp\left[-\int_0^x \frac{1}{\Gamma(x')} \, dx'\right] \\
         \varepsilon(x) &= \varepsilon_0 \cdot \exp\left[\int_0^x \frac{\mu(x')}{1+\mu(x')} \, dx'\right] \\
         p(x) &= p_0 \cdot \exp(x)
+
+    **Reparametrization** (``reparametrized=True``):
+
+    When this flag is set the model expects tilde parameters
+    :math:`\tilde\gamma = [\tilde\gamma_0, \tilde\gamma_1, \tilde\gamma_2, \tilde\gamma_3]`
+    drawn from a 4-D unit normal, and maps them to physical spectral coefficients via:
+
+    .. math::
+        \boldsymbol{\gamma} = \boldsymbol{\mu}_\text{radio} + L_\text{wide}\,\tilde{\boldsymbol{\gamma}}
+
+    where :math:`\boldsymbol{\mu}_\text{radio}` is the posterior mean from a radio-timing
+    inference run and :math:`L_\text{wide} = \sigma_\text{scale}\,L` is the Cholesky factor
+    of the radio posterior covariance scaled by ``sigma_scale`` (default 1.0).
+    Increasing ``sigma_scale`` broadens the reparametrized prior around the radio posterior.
+    This concentrates the sampler around physically reasonable EOS.
     """
+
+    # ---------------------------------------------------------------------------
+    # Reparametrization constants (radio-timing posterior, sigma_scale = 1.0)
+    # ---------------------------------------------------------------------------
+    # Fitted from a BlackJAX SMC run with radio constraints only.
+    # See internal-jester-review/spectral_reparametrization/04_fit_gaussian_prior.py
+    # and output_gaussian_fit/gaussian_fit_params.npz for derivation details.
+
+    #: Posterior mean :math:`\boldsymbol{\mu}_\text{radio}` of the spectral coefficients.
+    REPARAM_MEAN: Float[Array, "4"] = jnp.array(
+        [
+            +0.92232738,  # gamma_0
+            +0.34177628,  # gamma_1
+            -0.08307007,  # gamma_2
+            +0.00413816,  # gamma_3
+        ]
+    )
+
+    #: Lower-triangular Cholesky factor :math:`L` of the radio posterior covariance
+    #: (:math:`\Sigma_\text{radio} = L\,L^\top`).  The effective transform uses
+    #: :math:`L_\text{wide} = \sigma_\text{scale}\,L` where ``sigma_scale`` is set at
+    #: initialisation time.
+    REPARAM_L_BASE: Float[Array, "4 4"] = jnp.array(
+        [
+            [+3.41174267e-01, 0.00000000e00, 0.00000000e00, 0.00000000e00],
+            [-2.12029883e-01, +1.15271551e-01, 0.00000000e00, 0.00000000e00],
+            [+3.18696840e-02, -3.73794902e-02, +8.27531880e-03, 0.00000000e00],
+            [-1.38603940e-03, +2.39274018e-03, -7.76593593e-04, +1.86425321e-04],
+        ]
+    )
 
     # Reference values in geometric units (from LALSuite): Minimum pressure and energy density of core EOS geom
     e0_geom = 9.54629006e-11  # m^-2
@@ -134,6 +179,8 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         self,
         crust_name: str = "SLy",
         n_points_high: int = 500,
+        reparametrized: bool = False,
+        sigma_scale: float = 1.0,
     ):
         r"""
         Initialize spectral decomposition EOS model.
@@ -143,10 +190,29 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
                        Default 'SLy' for LALSuite compatibility.
             n_points_high: Number of high-density points to generate.
                           Default 500 to match LALSuite although this is a bit high.
+            reparametrized: If True, expect tilde parameters
+                :math:`\tilde\gamma_i` drawn from a 4-D unit normal and apply
+                the affine map :math:`\gamma = \mu_\text{radio} + L_\text{wide}\,\tilde\gamma`
+                inside :meth:`construct_eos`.  The ``_tilde`` suffix in the parameter
+                names signals to the inference system that the whitened parametrization
+                is active.  Default False (original parametrization).
+            sigma_scale: Multiplicative factor applied directly to the base Cholesky
+                factor :math:`L` to form :math:`L_\text{wide} = \sigma_\text{scale}\,L`.
+                This scales the standard deviation of the reparametrized distribution.
+                Only used when ``reparametrized=True``.  Values greater than 1 broaden
+                the reparametrized prior around the radio posterior; the default 1.0
+                uses the posterior standard deviation exactly.  Must be strictly positive.
         """
         super().__init__()
         self.crust_name = crust_name
         self.n_points_high = n_points_high
+        self.reparametrized = reparametrized
+        if sigma_scale <= 0:
+            raise ValueError(
+                f"sigma_scale must be strictly positive, got {sigma_scale}"
+            )
+        # sigma_scale scales the standard deviation directly: L_wide = sigma_scale * L.
+        self.reparam_l_wide: Float[Array, "4 4"] = sigma_scale * self.REPARAM_L_BASE
 
         # Load and preprocess low-density crust data
         # TODO: lalsuite loads the SLY crust, but then filters out the first 69 points
@@ -160,6 +226,11 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
             f"Initialized SpectralDecomposition_EOS_model with crust={crust_name}, "
             f"n_points={n_points_high}"
         )
+        if reparametrized:
+            logger.warning(
+                "Spectral EOS reparametrization is experimental. "
+                "Results should be carefully verified against the original parametrization."
+            )
 
         # Convert reference pressure to MeV fm⁻³ for internal use
         self.p0_nuclear = self.p0_geom / utils.MeV_fm_inv3_to_geometric
@@ -335,15 +406,28 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
                     If gamma bounds are violated, extra_constraints contains
                     the violation count.
         """
-        # Extract gamma parameters
-        gamma = jnp.array(
-            [
-                params["gamma_0"],
-                params["gamma_1"],
-                params["gamma_2"],
-                params["gamma_3"],
-            ]
-        )
+        # Extract gamma parameters, applying the reparametrization if enabled.
+        # When reparametrized=True the sampler draws tilde params z ~ N(0, I_4)
+        # and we recover physical coefficients via gamma = mu + L_wide @ z.
+        if self.reparametrized:
+            z = jnp.array(
+                [
+                    params["gamma_0_tilde"],
+                    params["gamma_1_tilde"],
+                    params["gamma_2_tilde"],
+                    params["gamma_3_tilde"],
+                ]
+            )
+            gamma = self.REPARAM_MEAN + jnp.dot(self.reparam_l_wide, z)
+        else:
+            gamma = jnp.array(
+                [
+                    params["gamma_0"],
+                    params["gamma_1"],
+                    params["gamma_2"],
+                    params["gamma_3"],
+                ]
+            )
 
         # Sample the adiabatic index across the valid x range and count bound violations
         x_samples = jnp.linspace(0.0, self.xmax, 100)
@@ -381,12 +465,22 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
         )
 
     def get_required_parameters(self) -> list[str]:
-        """
+        r"""
         Return list of spectral parameters required for this EOS.
 
         Returns:
-            list[str]: ["gamma_0", "gamma_1", "gamma_2", "gamma_3"]
+            list[str]: ``["gamma_0", "gamma_1", "gamma_2", "gamma_3"]`` in the
+            original parametrization, or
+            ``["gamma_0_tilde", "gamma_1_tilde", "gamma_2_tilde", "gamma_3_tilde"]``
+            when ``reparametrized=True``.
         """
+        if self.reparametrized:
+            return [
+                "gamma_0_tilde",
+                "gamma_1_tilde",
+                "gamma_2_tilde",
+                "gamma_3_tilde",
+            ]
         return ["gamma_0", "gamma_1", "gamma_2", "gamma_3"]
 
     def _generate_spectral_region(

@@ -471,7 +471,7 @@ When we are ready to make a new release, here are some steps:
 # 1. Feature branch for version bump
 git checkout -b release/v0.x.x
 
-# 2. Update version in pyproject.toml
+# 2. Update version in pyproject.toml and docs/conf.py
 # 3. Build and verify
 uv build
 
@@ -480,6 +480,7 @@ uv build
 git tag v0.x.x
 git push origin v0.x.x
 
-# 6. Publish to PyPI
-uv publish --token <token>
+# 6. PyPI publishing is NOT possible - jester depends on a specific fork of blackjax
+# (https://github.com/handley-lab/blackjax) which cannot be published to PyPI.
+# Users install directly from the GitHub repository via git clone.
 ```

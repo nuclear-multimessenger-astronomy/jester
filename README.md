@@ -23,17 +23,8 @@ Moreover, the following samplers are supported:
 
 ## Installation
 
-The latest stable release version can be installed with `pip`:
-```bash
-pip install jesterTOV
-```
+`jester` depends on a [specific fork of blackjax](https://github.com/handley-lab/blackjax) for nested sampling support, which prevents publishing to PyPI. Install the latest version by cloning the repository:
 
-To run Bayesian inference, make sure to install support for CUDA or upgrade `jax` according to [the `jax` documentation page](https://docs.jax.dev/en/latest/installation.html):
-```bash
-pip install "jax[cuda12]"
-```
-
-For developers, we recommend installing locally with `uv`:
 ```bash
 git clone https://github.com/nuclear-multimessenger-astronomy/jester
 cd jester
@@ -44,7 +35,12 @@ Extra dependencies can be installed as follows:
 ```bash
 uv sync --extra cuda12 # For GPU support (fast sampling)
 uv sync --extra docs   # To work on documentation locally
-uv sync --extra dev    # To run tests locally 
+uv sync --extra dev    # To run tests locally
+```
+
+To run Bayesian inference, make sure to install support for CUDA or upgrade `jax` according to [the `jax` documentation page](https://docs.jax.dev/en/latest/installation.html):
+```bash
+uv sync --extra cuda12
 ```
 
 ## Examples
