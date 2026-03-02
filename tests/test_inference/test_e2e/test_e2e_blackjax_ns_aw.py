@@ -41,7 +41,7 @@ class TestBlackJAXNSAWE2E:
         """
         config = InferenceConfig(**blackjax_ns_aw_prior_config)
 
-        prior = setup_prior(config)
+        prior, _fixed_params = setup_prior(config)
         keep_names = determine_keep_names(config, prior)
         transform = setup_transform(config, prior=prior, keep_names=keep_names)
         likelihood = setup_likelihood(config, transform)
@@ -78,7 +78,7 @@ class TestBlackJAXNSAWE2E:
         """
         config = InferenceConfig(**blackjax_ns_aw_chieft_config)
 
-        prior = setup_prior(config)
+        prior, _fixed_params = setup_prior(config)
         keep_names = determine_keep_names(config, prior)
         transform = setup_transform(config, prior=prior, keep_names=keep_names)
         likelihood = setup_likelihood(config, transform)
@@ -109,7 +109,7 @@ class TestBlackJAXNSAWE2E:
         """Test that NS-AW computes evidence estimate (logZ)."""
         config = InferenceConfig(**blackjax_ns_aw_prior_config)
 
-        prior = setup_prior(config)
+        prior, _fixed_params = setup_prior(config)
         keep_names = determine_keep_names(config, prior)
         transform = setup_transform(config, prior=prior, keep_names=keep_names)
         likelihood = setup_likelihood(config, transform)
@@ -156,7 +156,7 @@ class TestBlackJAXNSAWE2E:
         """Test that NS-AW produces samples in prior bounds."""
         config = InferenceConfig(**blackjax_ns_aw_prior_config)
 
-        prior = setup_prior(config)
+        prior, _fixed_params = setup_prior(config)
         keep_names = determine_keep_names(config, prior)
         transform = setup_transform(config, prior=prior, keep_names=keep_names)
         likelihood = setup_likelihood(config, transform)
@@ -189,7 +189,7 @@ class TestBlackJAXNSAWE2E:
         """Test that NS-AW properly creates unit cube transforms automatically."""
         config = InferenceConfig(**blackjax_ns_aw_prior_config)
 
-        prior = setup_prior(config)
+        prior, _fixed_params = setup_prior(config)
         keep_names = determine_keep_names(config, prior)
         transform = setup_transform(config, prior=prior, keep_names=keep_names)
         likelihood = setup_likelihood(config, transform)

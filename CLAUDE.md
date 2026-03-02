@@ -6,6 +6,8 @@ This file provides guidance to Claude Code when working with the JESTER reposito
 
 **Testing Philosophy**: When tests fail, investigate root causes rather than modifying tests to pass.
 
+**Examples**: In the examples, you will sometimes find `submit.sh` files for submitting the tests on a cluster. These might have hardcoded paths etc, but ignore those: these files are just intended as an example and they should not be judged so rigourously as the source code.
+
 **Auto-update CLAUDE.md**: When code changes in infrastructure, make sure CLAUDE.md files in `jester`, and `jester/jesterTOV/inference` are updated to guide future Claude Code sessions.
 
 **Documentation Style**: Write clear, concise documentation in full sentences as if by a human researcher. Avoid LLM-like verbosity.
@@ -162,7 +164,7 @@ value = array.item()  # type: ignore[union-attr]
 - Available solvers:
   1. **GRTOVSolver** (`tov/gr.py`) - General Relativity
      - Standard TOV equations, no additional parameters
-  2. **PostTOVSolver** (`tov/anisotropy.py`) - Beyond-GR modifications
+  2. **AnisotropyTOVSolver** (`tov/anisotropy.py`) - Beyond-GR modifications
      - Phenomenological sigma terms (Yagi & Yunes 2013)
      - Multiple correction models: Bowers-Liang, Doneva-Yazadjiev, Herrera-Barreto, Post-Newtonian
      - Required parameters: coupling constants (lambda_BL, lambda_DY, etc.)
