@@ -393,10 +393,29 @@ class MVGaussianToUnitCube(BijectiveTransform):
         cov : Float[Array, "n_dim n_dim"]
             Covariance matrix (positive definite).
         """
+        n_out = len(name_mapping[0])
+        n_in = len(name_mapping[1])
+        mean_arr_raw = jnp.asarray(mean)
+        cov_arr_raw = jnp.asarray(cov)
+        if n_out != n_in:
+            raise ValueError(
+                f"MVGaussianToUnitCube: name_mapping output names ({n_out}) and "
+                f"input names ({n_in}) must have the same length."
+            )
+        if mean_arr_raw.shape != (n_out,):
+            raise ValueError(
+                f"MVGaussianToUnitCube: mean shape {mean_arr_raw.shape} does not match "
+                f"expected ({n_out},) from name_mapping."
+            )
+        if cov_arr_raw.shape != (n_out, n_out):
+            raise ValueError(
+                f"MVGaussianToUnitCube: cov shape {cov_arr_raw.shape} does not match "
+                f"expected ({n_out}, {n_out}) from name_mapping."
+            )
         super().__init__(name_mapping)
-        self.mean = jnp.asarray(mean)
-        self.L = jnp.linalg.cholesky(jnp.asarray(cov))
-        n = len(name_mapping[0])
+        self.mean = mean_arr_raw
+        self.L = jnp.linalg.cholesky(cov_arr_raw)
+        n = n_out
         mean_arr = self.mean
         L_arr = self.L
 
@@ -408,7 +427,16 @@ class MVGaussianToUnitCube(BijectiveTransform):
 
         def _inverse(y: ParamDict) -> ParamDict:
             u = jnp.array([y[k] for k in name_mapping[1]])
-            z = jax.scipy.special.ndtri(u)
+            # Clamp to open interval (0, 1) so ndtri never produces ±inf,
+            # which happens when the unit-cube stepper lands exactly on 0.0 or 1.0.
+            u_lo = jnp.nextafter(
+                jnp.array(0.0, dtype=u.dtype), jnp.array(1.0, dtype=u.dtype)
+            )
+            u_hi = jnp.nextafter(
+                jnp.array(1.0, dtype=u.dtype), jnp.array(0.0, dtype=u.dtype)
+            )
+            u_clamped = jnp.clip(u, u_lo, u_hi)
+            z = jax.scipy.special.ndtri(u_clamped)
             theta = mean_arr + L_arr @ z
             return {name_mapping[0][i]: theta[i] for i in range(n)}
 
