@@ -15,7 +15,7 @@ from typing import Callable, TypeAlias
 import jax
 import jax.numpy as jnp
 from beartype import beartype as typechecker
-from jaxtyping import Float, jaxtyped
+from jaxtyping import Array, Float, jaxtyped
 
 # Type aliases for better readability
 ParamDict: TypeAlias = dict[
@@ -335,6 +335,85 @@ class LogitTransform(BijectiveTransform):
             )
             for i in range(len(name_mapping[1]))
         }
+
+
+@jaxtyped(typechecker=typechecker)
+class MVGaussianToUnitCube(BijectiveTransform):
+    r"""Maps Multivariate Gaussian parameter space :math:`\leftrightarrow` unit hypercube :math:`[0,1]^n`.
+
+    Uses the probability integral transform to convert between a multivariate
+    Gaussian distribution and the unit hypercube, enabling nested sampling (which
+    requires sampling in :math:`[0,1]^n`) with Gaussian priors.
+
+    Forward :math:`\theta \to \tilde{u}`:
+
+    .. math::
+
+        z = L^{-1}(\theta - \mu), \quad \tilde{u}_i = \Phi(z_i)
+
+    Backward :math:`\tilde{u} \to \theta`:
+
+    .. math::
+
+        z_i = \Phi^{-1}(\tilde{u}_i), \quad \theta = \mu + Lz
+
+    where :math:`L` is the lower-triangular Cholesky factor of the covariance
+    :math:`\Sigma`, and :math:`\Phi` is the standard normal CDF.
+
+    By the probability integral transform, the prior density in unit-cube space is
+    exactly flat (log density = 0), which is what nested sampling requires.
+
+    Parameters
+    ----------
+    name_mapping : NameMapping
+        Tuple of (input_names, output_names). Typically the same parameter names
+        are used in both spaces.
+    mean : Float[Array, " n_dim"]
+        Mean vector of the Gaussian prior.
+    cov : Float[Array, "n_dim n_dim"]
+        Covariance matrix of the Gaussian prior (must be positive definite).
+    """
+
+    mean: Float[Array, " n_dim"]
+    L: Float[Array, "n_dim n_dim"]  # Lower triangular Cholesky factor of cov
+
+    def __init__(
+        self,
+        name_mapping: NameMapping,
+        mean: Float[Array, " n_dim"],
+        cov: Float[Array, "n_dim n_dim"],
+    ) -> None:
+        """
+        Parameters
+        ----------
+        name_mapping : NameMapping
+            Tuple of (input_names, output_names).
+        mean : Float[Array, " n_dim"]
+            Mean vector.
+        cov : Float[Array, "n_dim n_dim"]
+            Covariance matrix (positive definite).
+        """
+        super().__init__(name_mapping)
+        self.mean = jnp.asarray(mean)
+        self.L = jnp.linalg.cholesky(jnp.asarray(cov))
+        n = len(name_mapping[0])
+        mean_arr = self.mean
+        L_arr = self.L
+
+        def _forward(x: ParamDict) -> ParamDict:
+            theta = jnp.array([x[k] for k in name_mapping[0]])
+            z = jnp.linalg.solve(L_arr, theta - mean_arr)
+            u = jax.scipy.special.ndtr(z)
+            return {name_mapping[1][i]: u[i] for i in range(n)}
+
+        def _inverse(y: ParamDict) -> ParamDict:
+            u = jnp.array([y[k] for k in name_mapping[1]])
+            z = jax.scipy.special.ndtri(u)
+            theta = mean_arr + L_arr @ z
+            return {name_mapping[0][i]: theta[i] for i in range(n)}
+
+        self.transform_func = _forward
+        self.inverse_transform_func = _inverse
 
 
 @jaxtyped(typechecker=typechecker)
