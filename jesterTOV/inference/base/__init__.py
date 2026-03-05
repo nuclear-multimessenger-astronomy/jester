@@ -6,7 +6,12 @@ to remove the dependency on jimgw.
 
 from .likelihood import LikelihoodBase
 from .prior import Prior, CombinePrior, UniformPrior, MultivariateGaussianPrior, Fixed
-from .transform import Transform, NtoMTransform, BijectiveTransform
+from .transform import (
+    Transform,
+    NtoMTransform,
+    BijectiveTransform,
+    MVGaussianToUnitCube,
+)
 
 __all__ = [
     "LikelihoodBase",
@@ -18,4 +23,5 @@ __all__ = [
     "Transform",
     "NtoMTransform",
     "BijectiveTransform",
+    "MVGaussianToUnitCube",
 ]
