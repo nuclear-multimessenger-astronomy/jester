@@ -182,12 +182,15 @@ class BlackJAXNSAWSampler(BlackjaxSampler):
             MVGaussianToUnitCube,
         )
 
-        # Handle both single UniformPrior and CombinePrior
+        # Handle both single UniformPrior, MultivariateGaussianPrior, and CombinePrior
         if isinstance(prior, UniformPrior):
+            prior = CombinePrior([prior])
+        elif isinstance(prior, MultivariateGaussianPrior):
             prior = CombinePrior([prior])
         elif not isinstance(prior, CombinePrior):
             raise ValueError(
-                f"BlackJAX NS-AW requires UniformPrior or CombinePrior, got {type(prior).__name__}. "
+                f"BlackJAX NS-AW requires UniformPrior, MultivariateGaussianPrior, or CombinePrior, "
+                f"got {type(prior).__name__}. "
                 "Ensure your prior is a (combination of) UniformPrior / MultivariateGaussianPrior."
             )
 
