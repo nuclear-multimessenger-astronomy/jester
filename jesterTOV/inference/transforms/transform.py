@@ -19,6 +19,7 @@ from jesterTOV.inference.config.schema import (
     MetamodelEOSConfig,
     MetamodelCSEEOSConfig,
     SpectralEOSConfig,
+    UnifiedCrustEOSConfig,
     BaseTOVConfig,
     GRTOVConfig,
     AnisotropyTOVConfig,
@@ -255,6 +256,17 @@ class JesterTransform(NtoMTransform):
                 n_points_high=config.n_points_high,
                 reparametrized=config.reparametrized,
                 sigma_scale=config.sigma_scale,
+            )
+
+        elif isinstance(config, UnifiedCrustEOSConfig):
+            from jesterTOV.eos.unified_crust import UnifiedCrustEOS_MetaModel
+
+            return UnifiedCrustEOS_MetaModel(
+                bsk_outer_crust=config.bsk_outer_crust,
+                ndat_outer=config.ndat_outer,
+                nsat=0.16,
+                nmax_nsat=config.nmax_nsat,
+                ndat_core=config.ndat_metamodel,
             )
 
         else:

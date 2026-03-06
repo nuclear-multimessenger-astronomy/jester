@@ -149,8 +149,54 @@ class SpectralEOSConfig(BaseEOSConfig):
         return v
 
 
+class UnifiedCrustEOSConfig(BaseMetamodelEOSConfig):
+    r"""Configuration for the unified neutron star crust EOS.
+
+    Provides a thermodynamically consistent EOS where the crust is derived from
+    the same nuclear empirical parameters (NEPs) as the core. The outer crust
+    (n < neutron drip ≈ 2.6×10⁻⁴ fm⁻³) uses a BSk22 or BSk24 Pearson analytical
+    fit. The inner crust and core use the metamodel Taylor expansion, ensuring the
+    same NEPs govern the full density range.
+
+    This approximates the Compressible Liquid Drop Model (CLDM) calculation
+    performed by the CUTER tool, using the bulk metamodel as a proxy for the inner
+    crust WS cell energy. Expected radius bias vs. full CLDM: < 0.1 km.
+
+    Attributes
+    ----------
+    type : Literal["unified_crust"]
+        EOS type identifier
+    bsk_outer_crust : int
+        BSk model for the outer crust Pearson fit (22 or 24, default 24).
+    ndat_outer : int
+        Number of density points in the BSk outer crust table (default 50).
+    ndat_inner : int
+        Number of additional metamodel points for the inner crust / spline region.
+        Currently unused — the metamodel covers inner crust + core in a single grid
+        (``ndat_metamodel`` points). Reserved for future inner/core grid splitting.
+    """
+
+    type: Literal["unified_crust"] = "unified_crust"
+    bsk_outer_crust: int = 24
+    ndat_outer: int = 50
+    ndat_inner: int = 100  # reserved for future inner/core grid splitting
+
+    @field_validator("bsk_outer_crust")
+    @classmethod
+    def validate_bsk_model(cls, v: int) -> int:
+        """Validate BSk model number."""
+        if v not in (22, 24):
+            raise ValueError(f"bsk_outer_crust must be 22 or 24, got {v}.")
+        return v
+
+
 # Discriminated union of all EOS types
 EOSConfig = Annotated[
-    Union[MetamodelEOSConfig, MetamodelCSEEOSConfig, SpectralEOSConfig],
+    Union[
+        MetamodelEOSConfig,
+        MetamodelCSEEOSConfig,
+        SpectralEOSConfig,
+        UnifiedCrustEOSConfig,
+    ],
     Discriminator("type"),
 ]

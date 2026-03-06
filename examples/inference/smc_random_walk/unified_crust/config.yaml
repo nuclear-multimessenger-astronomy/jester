@@ -1,0 +1,30 @@
+seed: 42
+
+eos:
+  type: unified_crust
+  bsk_outer_crust: 24
+  ndat_outer: 50
+  ndat_metamodel: 200
+  nmax_nsat: 12.0
+
+tov:
+  type: gr
+  min_nsat_TOV: 0.75
+  ndat_TOV: 100
+
+prior:
+  specification_file: prior.prior
+
+likelihoods:
+  - type: constraints_eos
+    enabled: true
+  - type: zero
+    enabled: true
+
+sampler:
+  type: smc-rw
+  n_particles: 2000
+  n_mcmc_steps: 20
+  target_ess: 0.9
+  random_walk_sigma: 0.1
+  output_dir: ./outdir/
