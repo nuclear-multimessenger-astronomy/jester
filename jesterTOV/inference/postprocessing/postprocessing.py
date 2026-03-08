@@ -818,6 +818,175 @@ def make_mass_lambda_plot(
     logger.info(f"Mass-Lambda plot saved to {save_name}")
 
 
+def make_mass_lambda_ratio_plot(
+    data: Dict[str, Any],
+    outdir: str,
+    injection_data: Dict[str, Any],
+) -> None:
+    r"""Create mass-Lambda ratio plot showing the posterior credible band relative to the injection.
+
+    At each point on a common mass grid, the ratio :math:`\Lambda / \Lambda_{\rm inj}` is
+    computed for every valid posterior sample by interpolating both the posterior and the
+    injection Lambda curves onto that mass.  The 90% credible interval (HDI) and median of
+    these ratios are then plotted as a filled band, which naturally determines the y-axis
+    range.  The injection appears as a horizontal reference line at unity.
+
+    Parameters
+    ----------
+    data : dict
+        EOS data dictionary
+    outdir : str
+        Output directory
+    injection_data : dict
+        Injection EOS data.  Must contain ``"masses_EOS"`` and ``"Lambda_EOS"`` keys.
+    """
+    if "masses_EOS" not in injection_data or "Lambda_EOS" not in injection_data:
+        logger.warning(
+            "Injection data is missing 'masses_EOS' or 'Lambda_EOS'; "
+            "skipping mass-Lambda ratio plot."
+        )
+        return
+
+    logger.info("Creating mass-Lambda ratio plot...")
+
+    # Use first injection curve as reference
+    m_inj_ref = injection_data["masses_EOS"][0]
+    l_inj_ref = injection_data["Lambda_EOS"][0]
+
+    m, r, l = data["masses"], data["radii"], data["lambdas"]
+    log_prob = data["log_prob"]
+    nb_samples = np.shape(m)[0]
+
+    if len(log_prob) != nb_samples:
+        raise ValueError(
+            f"Mismatch between log_prob ({len(log_prob)}) and EOS samples ({nb_samples}). "
+            "This indicates a bug in the EOS sample generation code."
+        )
+
+    # Collect valid sample indices
+    valid_indices = []
+    max_mtov = 0.0
+    prob = np.exp(log_prob - np.max(log_prob))
+    for i in range(len(prob)):
+        if any(np.isnan(m[i])) or any(np.isnan(r[i])) or any(np.isnan(l[i])):
+            continue
+        if any(l[i] < 0):
+            continue
+        if any((m[i] > M_MIN) * (r[i] > R_MAX)):
+            continue
+        valid_indices.append(i)
+        mtov = np.max(m[i])
+        if mtov > max_mtov:
+            max_mtov = mtov
+
+    m_min = M_MIN
+    m_max = max_mtov + 0.25 if max_mtov > M_MAX else M_MAX
+
+    logger.info(
+        f"Computing Lambda ratio CI over {len(valid_indices)} valid samples "
+        f"(excluded {nb_samples - len(valid_indices)} invalid)..."
+    )
+
+    # Common mass grid — stop slightly below max MTOV to avoid edge noise
+    masses_array = np.linspace(m_min, min(m_max - 0.1, max_mtov - 0.05), 100)
+
+    ratio_low = np.empty_like(masses_array)
+    ratio_med = np.empty_like(masses_array)
+    ratio_high = np.empty_like(masses_array)
+
+    for j, mass_point in enumerate(masses_array):
+        ratios_at_mass = []
+        l_inj_at_mass = np.interp(mass_point, m_inj_ref, l_inj_ref)
+        if l_inj_at_mass <= 0:
+            ratio_low[j] = ratio_med[j] = ratio_high[j] = np.nan
+            continue
+
+        for i in valid_indices:
+            l_post = np.interp(mass_point, m[i], l[i])
+            ratios_at_mass.append(l_post / l_inj_at_mass)
+
+        ratios_at_mass_arr = np.array(ratios_at_mass)
+        low_err, med, high_err = report_credible_interval(
+            ratios_at_mass_arr, hdi_prob=HDI_PROB
+        )
+        ratio_low[j] = med - low_err
+        ratio_med[j] = med
+        ratio_high[j] = med + high_err
+
+    # Mask out any NaN entries (e.g. near TOV maximum)
+    valid_mask = np.isfinite(ratio_low) & np.isfinite(ratio_high)
+
+    plt.figure(figsize=(10, 8))
+
+    plt.fill_between(
+        masses_array[valid_mask],
+        ratio_low[valid_mask],
+        ratio_high[valid_mask],
+        alpha=0.5,
+        color=COLORS_DICT["posterior"],
+        label=(
+            f"Posterior ({int(HDI_PROB * 100)}\\% CI)"
+            if TEX_ENABLED
+            else f"Posterior ({int(HDI_PROB * 100)}% CI)"
+        ),
+    )
+    plt.plot(
+        masses_array[valid_mask],
+        ratio_med[valid_mask],
+        color=COLORS_DICT["posterior"],
+        lw=2.0,
+        label="Posterior median",
+    )
+    plt.plot(
+        masses_array[valid_mask],
+        ratio_low[valid_mask],
+        color=COLORS_DICT["posterior"],
+        lw=1.5,
+    )
+    plt.plot(
+        masses_array[valid_mask],
+        ratio_high[valid_mask],
+        color=COLORS_DICT["posterior"],
+        lw=1.5,
+    )
+
+    # Reference line at ratio = 1 (the injection itself)
+    plt.axhline(
+        1.0,
+        color=INJECTION_COLOR,
+        linestyle=INJECTION_LINESTYLE,
+        linewidth=INJECTION_LINEWIDTH,
+        alpha=INJECTION_ALPHA,
+        label="Injection",
+        zorder=1e11,
+    )
+
+    # Auto-zoom: use 5th/95th percentile of the CI band edges to ignore the widest
+    # outlier mass points (typically at the low- and high-mass edges), then add 5% padding
+    finite_low = ratio_low[valid_mask]
+    finite_high = ratio_high[valid_mask]
+    if len(finite_low) > 0:
+        y_lo = np.percentile(finite_low, 5)
+        y_hi = np.percentile(finite_high, 95)
+        margin = 0.05 * (y_hi - y_lo)
+        plt.ylim(y_lo - margin, y_hi + margin)
+
+    # Styling
+    xlabel = r"$M$ [$M_{\odot}$]" if TEX_ENABLED else "M [M_sun]"
+    ylabel = r"$\Lambda / \Lambda_{\rm{inj}}$" if TEX_ENABLED else "Lambda / Lambda_inj"
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    x_max = float(np.max(m_inj_ref))
+    plt.xlim(m_min, x_max)
+    plt.legend(loc="upper right")
+
+    # Save figure
+    save_name = os.path.join(outdir, "mass_lambda_plot_ratio.pdf")
+    plt.savefig(save_name, bbox_inches="tight")
+    plt.close()
+    logger.info(f"Mass-Lambda ratio plot saved to {save_name}")
+
+
 def make_pressure_density_plot(
     data: Dict[str, Any],
     prior_data: Optional[Dict[str, Any]],
@@ -1534,6 +1703,8 @@ def generate_all_plots(
         make_mass_lambda_plot(
             data, prior_data, figures_dir, injection_data=injection_data
         )
+        if injection_data is not None:
+            make_mass_lambda_ratio_plot(data, figures_dir, injection_data)
 
     if make_pressuredensity_flag:
         make_pressure_density_plot(
