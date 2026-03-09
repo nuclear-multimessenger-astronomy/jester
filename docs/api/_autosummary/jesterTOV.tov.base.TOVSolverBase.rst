@@ -15,6 +15,7 @@
    
       ~TOVSolverBase.__init__
       ~TOVSolverBase.construct_family
+      ~TOVSolverBase.fetch_params
       ~TOVSolverBase.get_required_parameters
       ~TOVSolverBase.solve
    
