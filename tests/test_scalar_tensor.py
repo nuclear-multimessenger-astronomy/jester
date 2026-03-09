@@ -22,7 +22,7 @@ class TestScalarTensorTOVSolver:
             "phi_c": 1.0
         }
 
-        solution = solver.solve(sample_eos_data, pc, **params)
+        solution = solver.solve(sample_eos_data, pc, tov_params=params)
 
         # Check that results are finite and positive
         assert jnp.isfinite(solution.M)
@@ -50,7 +50,7 @@ class TestScalarTensorTOVSolver:
             sample_eos_data,
             ndat=10,
             min_nsat=0.75,
-            **params
+            tov_params=params
         )
 
         # Check shapes
@@ -88,8 +88,8 @@ class TestScalarTensorTOVSolver:
             "phi_c": 1.0
         }
 
-        sol_st = st_solver.solve(sample_eos_data, pc, **params)
-        sol_gr = gr_solver.solve(sample_eos_data, pc)
+        sol_st = st_solver.solve(sample_eos_data, pc, tov_params=params)
+        sol_gr = gr_solver.solve(sample_eos_data, pc, tov_params={})
 
         # Results should match GR
         assert jnp.allclose(sol_st.M, sol_gr.M, rtol=1e-3)
@@ -118,6 +118,6 @@ class TestScalarTensorTOVSolver:
             "phi_c": 1.0
         }
 
-        solution = solver.solve(sample_eos_data, pc, **params)
+        solution = solver.solve(sample_eos_data, pc, tov_params=params)
         assert jnp.isfinite(solution.M)
         assert solution.M > 0

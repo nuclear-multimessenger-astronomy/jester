@@ -627,11 +627,13 @@ class ScalarTensorTOVSolver(TOVSolverBase):
     following Creci et al. (2023) Phys.Rev.D 111 (2025) 8, 089901 (erratum).
     """
 
-    def solve(self, eos_data: EOSData, pc: float, **kwargs) -> TOVSolution:
-        beta_ST = kwargs.get("beta_ST", 0.0)
-        phi_inf_target = kwargs.get("phi_inf_tgt", 1e-3)
-        phi0 = kwargs.get("phi_c", 1.0)
-        max_iterations = 100 
+    def solve(
+        self, eos_data: EOSData, pc: float, tov_params: dict[str, float]
+    ) -> TOVSolution:
+        beta_ST = tov_params.get("beta_ST", 0.0)
+        phi_inf_target = tov_params.get("phi_inf_tgt", 1e-3)
+        phi0 = tov_params.get("phi_c", 1.0)
+        max_iterations = 100
 
         (
             M_inf_jordan,
