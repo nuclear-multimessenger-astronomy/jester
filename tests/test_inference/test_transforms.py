@@ -8,6 +8,8 @@ from jesterTOV.inference.config.schema import (
     MetamodelCSEEOSConfig,
     SpectralEOSConfig,
     TOVConfig,
+    GRTOVConfig,
+    ScalarTensorTOVConfig,
 )
 from jesterTOV.inference.transforms import JesterTransform
 
@@ -24,7 +26,7 @@ class TestJesterTransform:
             nb_CSE=0,
             crust_name="DH",
         )
-        tov_config = TOVConfig(
+        tov_config = GRTOVConfig(
             type="gr",
             min_nsat_TOV=0.75,
             ndat_TOV=100,
@@ -46,7 +48,7 @@ class TestJesterTransform:
             nb_CSE=8,
             crust_name="DH",
         )
-        tov_config = TOVConfig(
+        tov_config = GRTOVConfig(
             type="gr",
             min_nsat_TOV=0.75,
             ndat_TOV=100,
@@ -64,7 +66,7 @@ class TestJesterTransform:
             type="spectral",
             crust_name="SLy",  # Spectral requires SLy for LALSuite compatibility
         )
-        tov_config = TOVConfig(
+        tov_config = GRTOVConfig(
             type="gr",
             min_nsat_TOV=0.75,
             ndat_TOV=100,
@@ -74,6 +76,28 @@ class TestJesterTransform:
 
         assert transform is not None
         assert "SpectralDecomposition_EOS_model" in transform.get_eos_type()
+
+    def test_from_config_scalar_tensor(self):
+        """Test creating Scalar-Tensor transform via from_config."""
+        eos_config = MetamodelEOSConfig(
+            type="metamodel",
+            ndat_metamodel=100,
+            nmax_nsat=2.0,
+            nb_CSE=0,
+            crust_name="DH",
+        )
+        tov_config = ScalarTensorTOVConfig(
+            type="scalar_tensor",
+            beta_ST=-1.0,
+            phi_inf_tgt=1e-3,
+            phi_c=1.0,
+        )
+
+        transform = JesterTransform.from_config(eos_config, tov_config)
+
+        assert transform is not None
+        assert "MetaModel_EOS_model" in transform.get_eos_type()
+        assert "ScalarTensorTOVSolver" in str(type(transform.tov_solver))
 
     def test_invalid_eos_type_fails(self):
         """Test that unknown EOS config type raises ValueError at runtime."""
@@ -99,7 +123,7 @@ class TestJesterTransform:
     def test_get_parameter_names_metamodel(self):
         """Test that MetaModel transform reports correct parameter names."""
         eos_config = MetamodelEOSConfig(type="metamodel", nb_CSE=0)
-        tov_config = TOVConfig()
+        tov_config = GRTOVConfig()
 
         transform = JesterTransform.from_config(eos_config, tov_config)
         param_names = transform.get_parameter_names()
@@ -123,7 +147,7 @@ class TestJesterTransform:
     def test_get_parameter_names_metamodel_cse(self):
         """Test that MetaModel+CSE transform reports correct parameter names."""
         eos_config = MetamodelCSEEOSConfig(type="metamodel_cse", nb_CSE=8)
-        tov_config = TOVConfig()
+        tov_config = GRTOVConfig()
 
         transform = JesterTransform.from_config(eos_config, tov_config)
         param_names = transform.get_parameter_names()
@@ -142,7 +166,7 @@ class TestJesterTransform:
             nmax_nsat=2.0,
             nb_CSE=0,
         )
-        tov_config = TOVConfig(ndat_TOV=50)
+        tov_config = GRTOVConfig(ndat_TOV=50)
 
         keep_names = ["K_sat", "L_sym"]
         transform = JesterTransform.from_config(
@@ -191,7 +215,7 @@ class TestJesterTransformIntegration:
             nmax_nsat=2.0,
             nb_CSE=0,
         )
-        tov_config = TOVConfig(ndat_TOV=100)
+        tov_config = GRTOVConfig(ndat_TOV=100)
 
         transform = JesterTransform.from_config(eos_config, tov_config)
         result = transform.forward(realistic_nep_stiff)
@@ -238,7 +262,7 @@ class TestJesterTransformIntegration:
             nmax_nsat=25.0,
             nb_CSE=8,
         )
-        tov_config = TOVConfig(ndat_TOV=100)
+        tov_config = GRTOVConfig(ndat_TOV=100)
 
         transform = JesterTransform.from_config(eos_config, tov_config)
 
@@ -274,7 +298,7 @@ class TestJesterTransformIntegration:
             nmax_nsat=2.0,
             nb_CSE=0,
         )
-        tov_config = TOVConfig(ndat_TOV=50)
+        tov_config = GRTOVConfig(ndat_TOV=50)
 
         keep_names = list(realistic_nep_stiff.keys())
         transform = JesterTransform.from_config(
