@@ -15,6 +15,7 @@
    
       ~ScalarTensorTOVSolver.__init__
       ~ScalarTensorTOVSolver.construct_family
+      ~ScalarTensorTOVSolver.fetch_params
       ~ScalarTensorTOVSolver.get_required_parameters
       ~ScalarTensorTOVSolver.solve
    

@@ -95,6 +95,7 @@ Contents
    inference/quickstart
    inference/yaml_reference
    inference/workflow
+   inference/analyze_bns
 
 .. toctree::
    :maxdepth: 2

@@ -26,6 +26,8 @@
 
    .. autosummary::
    
+      ~SpectralDecomposition_EOS_model.REPARAM_L_BASE
+      ~SpectralDecomposition_EOS_model.REPARAM_MEAN
       ~SpectralDecomposition_EOS_model.e0_geom
       ~SpectralDecomposition_EOS_model.p0_geom
       ~SpectralDecomposition_EOS_model.xmax
