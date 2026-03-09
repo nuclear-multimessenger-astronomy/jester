@@ -55,16 +55,8 @@ See the :doc:`overview` guide for detailed explanations.
 Installation
 =============
 
-The latest stable release version can be installed with ``pip``::
-
-    pip install jesterTOV
-
-To run Bayesian inference, make sure to install support for CUDA or upgrade ``jax`` according to the
-`jax documentation page <https://docs.jax.dev/en/latest/installation.html>`_::
-
-    pip install "jax[cuda12]"
-
-For developers, we recommend installing locally with ``uv``::
+``jester`` depends on a `specific fork of blackjax <https://github.com/handley-lab/blackjax>`_ for nested sampling support,
+which prevents publishing to PyPI. Install the latest version by cloning the repository::
 
     git clone https://github.com/nuclear-multimessenger-astronomy/jester
     cd jester
@@ -74,6 +66,11 @@ Extra dependencies can be installed as follows::
 
     uv sync --extra cuda12   # For GPU support (fast sampling)
     uv sync --extra dev      # For developers (work on documentation, run tests,...)
+
+To run Bayesian inference, make sure to install support for CUDA or upgrade ``jax`` according to the
+`jax documentation page <https://docs.jax.dev/en/latest/installation.html>`_::
+
+    uv sync --extra cuda12
 
 
 Contents
@@ -98,6 +95,7 @@ Contents
    inference/quickstart
    inference/yaml_reference
    inference/workflow
+   inference/analyze_bns
 
 .. toctree::
    :maxdepth: 2

@@ -1,6 +1,7 @@
 r"""flowMC sampler implementation and setup"""
 
 from typing import Any
+import time
 
 import jax
 import jax.numpy as jnp
@@ -386,6 +387,90 @@ class FlowMCSampler(JesterSampler):
             )
         )
 
+        def _fmt_duration(seconds: float) -> str:
+            """Format a duration in seconds as a human-readable string."""
+            seconds = max(0.0, seconds)
+            if seconds < 60:
+                return f"{seconds:.1f}s"
+            elif seconds < 3600:
+                m, s = divmod(int(seconds), 60)
+                return f"{m}m {s:02d}s"
+            else:
+                h, rem = divmod(int(seconds), 3600)
+                m, s = divmod(rem, 60)
+                return f"{h}h {m:02d}m {s:02d}s"
+
+        # Progress tracking state (mutable lists allow mutation from closures)
+        _training_start: list[float] = []
+        _training_loops_done: list[int] = [0]
+        _production_start: list[float] = []
+        _production_loops_done: list[int] = [0]
+
+        def _cb_start_training() -> None:
+            """Record training start time and print phase header."""
+            _training_start.append(time.time())
+            logger.info("=" * 70)
+            logger.info(f"FLOWMC TRAINING PHASE  ({n_training_loops} loops)")
+            logger.info(
+                f"  Chains: {n_chains} | Local steps/loop: {n_local_steps} | "
+                f"Global steps/loop: {n_global_steps} | Epochs/loop: {n_epochs}"
+            )
+            logger.info("=" * 70)
+
+        def _cb_progress_training() -> None:
+            """Print training progress after each loop iteration."""
+            _training_loops_done[0] += 1
+            loop = _training_loops_done[0]
+            elapsed = time.time() - _training_start[0]
+            avg_per_loop = elapsed / loop
+            remaining = (n_training_loops - loop) * avg_per_loop
+            bar_length = 20
+            filled = int(loop / n_training_loops * bar_length)
+            bar = "█" * filled + "░" * (bar_length - filled)
+            logger.info(
+                f"[Training]  Loop {loop:3d}/{n_training_loops} [{bar}] | "
+                f"Elapsed: {_fmt_duration(elapsed):>10} | ETA: {_fmt_duration(remaining):>10} | "
+                f"{_fmt_duration(avg_per_loop)}/loop"
+            )
+
+        def _cb_start_production() -> None:
+            """Record production start time and print phase header."""
+            _production_start.append(time.time())
+            logger.info("=" * 70)
+            logger.info(f"FLOWMC PRODUCTION PHASE  ({n_production_loops} loops)")
+            logger.info(
+                f"  Chains: {n_chains} | Local steps/loop: {n_local_steps} | "
+                f"Global steps/loop: {n_global_steps}"
+            )
+            logger.info("=" * 70)
+
+        def _cb_progress_production() -> None:
+            """Print production progress after each loop iteration."""
+            _production_loops_done[0] += 1
+            loop = _production_loops_done[0]
+            elapsed = time.time() - _production_start[0]
+            avg_per_loop = elapsed / loop
+            remaining = (n_production_loops - loop) * avg_per_loop
+            bar_length = 20
+            filled = int(loop / n_production_loops * bar_length)
+            bar = "█" * filled + "░" * (bar_length - filled)
+            logger.info(
+                f"[Production] Loop {loop:3d}/{n_production_loops} [{bar}] | "
+                f"Elapsed: {_fmt_duration(elapsed):>10} | ETA: {_fmt_duration(remaining):>10} | "
+                f"{_fmt_duration(avg_per_loop)}/loop"
+            )
+
+        start_training_lambda = Lambda(lambda _rk, _r, _ip, _d: _cb_start_training())
+        progress_training_lambda = Lambda(
+            lambda _rk, _r, _ip, _d: _cb_progress_training()
+        )
+        start_production_lambda = Lambda(
+            lambda _rk, _r, _ip, _d: _cb_start_production()
+        )
+        progress_production_lambda = Lambda(
+            lambda _rk, _r, _ip, _d: _cb_progress_production()
+        )
+
         strategies = {
             "local_stepper": local_stepper,
             "global_stepper": global_stepper,
@@ -396,6 +481,10 @@ class FlowMCSampler(JesterSampler):
             "reset_steppers": reset_steppers_lambda,
             "update_model": update_model_lambda,
             "update_production_thinning": update_production_thinning_lambda,
+            "start_training": start_training_lambda,
+            "progress_training": progress_training_lambda,
+            "start_production": start_production_lambda,
+            "progress_production": progress_production_lambda,
         }
 
         # Build strategy order
@@ -413,15 +502,18 @@ class FlowMCSampler(JesterSampler):
             "global_stepper",
             "update_local_step",
         ]
-        strategy_order = []
+        strategy_order: list[str] = ["start_training"]
         for _ in range(n_training_loops):
             strategy_order.extend(training_phase)
+            strategy_order.append("progress_training")
 
         strategy_order.append("reset_steppers")
         strategy_order.append("update_state")
         strategy_order.append("update_production_thinning")
+        strategy_order.append("start_production")
         for _ in range(n_production_loops):
             strategy_order.extend(production_phase)
+            strategy_order.append("progress_production")
 
         # Create flowMC sampler
         self.sampler = Sampler(
@@ -678,6 +770,16 @@ class FlowMCSampler(JesterSampler):
         production_local_acceptance = local_accs_production.flatten()
         production_global_acceptance = global_accs_production.flatten()
 
+        # flowMC 0.4.5: Buffer is initialized with -inf; local and global acceptance
+        # buffers are only half-filled (local/global steppers share current_position
+        # but write to separate buffers). Filter -inf slots before computing stats.
+        valid_training_local = training_local_acceptance[
+            training_local_acceptance > -jnp.inf
+        ]
+        valid_training_global = training_global_acceptance[
+            training_global_acceptance > -jnp.inf
+        ]
+
         logger.info("Training summary")
         logger.info("=" * 10)
         for key, value in training_chain.items():
@@ -686,12 +788,19 @@ class FlowMCSampler(JesterSampler):
             f"Log probability: {training_log_prob.mean():.3f} +/- {training_log_prob.std():.3f}"
         )
         logger.info(
-            f"Local acceptance: {training_local_acceptance.mean():.3f} +/- {training_local_acceptance.std():.3f}"
+            f"Local acceptance: {valid_training_local.mean():.3f} +/- {valid_training_local.std():.3f}"
         )
         logger.info(
-            f"Global acceptance: {training_global_acceptance.mean():.3f} +/- {training_global_acceptance.std():.3f}"
+            f"Global acceptance: {valid_training_global.mean():.3f} +/- {valid_training_global.std():.3f}"
         )
         logger.info(f"Max loss: {loss_vals.max():.3f}, Min loss: {loss_vals.min():.3f}")
+
+        valid_production_local = production_local_acceptance[
+            production_local_acceptance > -jnp.inf
+        ]
+        valid_production_global = production_global_acceptance[
+            production_global_acceptance > -jnp.inf
+        ]
 
         logger.info("Production summary")
         logger.info("=" * 10)
@@ -701,8 +810,8 @@ class FlowMCSampler(JesterSampler):
             f"Log probability: {production_log_prob.mean():.3f} +/- {production_log_prob.std():.3f}"
         )
         logger.info(
-            f"Local acceptance: {production_local_acceptance.mean():.3f} +/- {production_local_acceptance.std():.3f}"
+            f"Local acceptance: {valid_production_local.mean():.3f} +/- {valid_production_local.std():.3f}"
         )
         logger.info(
-            f"Global acceptance: {production_global_acceptance.mean():.3f} +/- {production_global_acceptance.std():.3f}"
+            f"Global acceptance: {valid_production_global.mean():.3f} +/- {valid_production_global.std():.3f}"
         )

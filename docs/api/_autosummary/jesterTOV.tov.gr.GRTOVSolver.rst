@@ -15,6 +15,7 @@
    
       ~GRTOVSolver.__init__
       ~GRTOVSolver.construct_family
+      ~GRTOVSolver.fetch_params
       ~GRTOVSolver.get_required_parameters
       ~GRTOVSolver.solve
    

@@ -18,13 +18,11 @@ from jesterTOV.inference.run_inference import (
 from jesterTOV.inference.samplers import create_sampler
 
 
+@pytest.mark.slow
 @pytest.mark.integration
 @pytest.mark.e2e
 class TestPriorOnlyFast:
-    """Fast prior-only tests that should complete quickly.
-
-    These tests are NOT marked @slow so they run in regular CI.
-    """
+    """Prior-only tests with light hyperparameters."""
 
     def test_smc_rw_prior_only_minimal(self, smc_rw_prior_config, e2e_temp_dir):
         """Minimal SMC-RW test - should complete very quickly.
@@ -37,7 +35,7 @@ class TestPriorOnlyFast:
 
         config = InferenceConfig(**smc_rw_prior_config)
 
-        prior = setup_prior(config)
+        prior, _fixed_params = setup_prior(config)
         keep_names = determine_keep_names(config, prior)
         transform = setup_transform(config, prior=prior, keep_names=keep_names)
         likelihood = setup_likelihood(config, transform)
@@ -74,7 +72,7 @@ class TestPriorOnlyFast:
 
         config = InferenceConfig(**flowmc_prior_config)
 
-        prior = setup_prior(config)
+        prior, _fixed_params = setup_prior(config)
         keep_names = determine_keep_names(config, prior)
         transform = setup_transform(config, prior=prior, keep_names=keep_names)
         likelihood = setup_likelihood(config, transform)
@@ -113,7 +111,7 @@ class TestPriorOnlyFast:
 
         config = InferenceConfig(**blackjax_ns_aw_prior_config)
 
-        prior = setup_prior(config)
+        prior, _fixed_params = setup_prior(config)
         keep_names = determine_keep_names(config, prior)
         transform = setup_transform(config, prior=prior, keep_names=keep_names)
         likelihood = setup_likelihood(config, transform)
@@ -137,6 +135,118 @@ class TestPriorOnlyFast:
         assert not jnp.isnan(output.log_prob).any()
 
 
+@pytest.mark.slow
+@pytest.mark.integration
+@pytest.mark.e2e
+class TestSpectralPriorOnly:
+    """Prior-only tests for the spectral EOS - regression tests for JAX vmap compatibility.
+
+    These tests specifically guard against ConcretizationTypeError caused by
+    calling Python float() on a JAX traced array inside construct_eos, which
+    only manifests when the transform is invoked via jax.vmap (as in sampling).
+
+    All samplers are covered because the vmap happens inside the sampler's
+    log_prob function, regardless of sampler type.
+    """
+
+    SPECTRAL_PARAMS = ["gamma_0", "gamma_1", "gamma_2", "gamma_3"]
+
+    def test_smc_rw_spectral_prior_only(self, smc_rw_spectral_config, e2e_temp_dir):
+        """Regression test: spectral EOS must not crash under SMC-RW sampling."""
+        smc_rw_spectral_config["sampler"]["n_particles"] = 50
+        smc_rw_spectral_config["sampler"]["n_mcmc_steps"] = 2
+
+        config = InferenceConfig(**smc_rw_spectral_config)
+
+        prior, _fixed_params = setup_prior(config)
+        keep_names = determine_keep_names(config, prior)
+        transform = setup_transform(config, prior=prior, keep_names=keep_names)
+        likelihood = setup_likelihood(config, transform)
+
+        sampler = create_sampler(
+            config=config.sampler,
+            prior=prior,
+            likelihood=likelihood,
+            likelihood_transforms=[transform],
+            seed=config.seed,
+        )
+
+        key = jax.random.PRNGKey(config.seed)
+        sampler.sample(key)
+
+        output = sampler.get_sampler_output()
+
+        for param in self.SPECTRAL_PARAMS:
+            assert param in output.samples
+        assert not jnp.isnan(output.log_prob).any()
+
+    def test_flowmc_spectral_prior_only(self, flowmc_spectral_config, e2e_temp_dir):
+        """Regression test: spectral EOS must not crash under FlowMC sampling."""
+        flowmc_spectral_config["sampler"]["n_chains"] = 20
+        flowmc_spectral_config["sampler"]["n_loop_training"] = 2
+        flowmc_spectral_config["sampler"]["n_loop_production"] = 2
+        flowmc_spectral_config["sampler"]["n_local_steps"] = 5
+        flowmc_spectral_config["sampler"]["n_global_steps"] = 5
+
+        config = InferenceConfig(**flowmc_spectral_config)
+
+        prior, _fixed_params = setup_prior(config)
+        keep_names = determine_keep_names(config, prior)
+        transform = setup_transform(config, prior=prior, keep_names=keep_names)
+        likelihood = setup_likelihood(config, transform)
+
+        sampler = create_sampler(
+            config=config.sampler,
+            prior=prior,
+            likelihood=likelihood,
+            likelihood_transforms=[transform],
+            seed=config.seed,
+        )
+
+        key = jax.random.PRNGKey(config.seed)
+        sampler.sample(key)
+
+        output = sampler.get_sampler_output()
+
+        for param in self.SPECTRAL_PARAMS:
+            assert param in output.samples
+        assert not jnp.isnan(output.log_prob).any()
+
+    def test_blackjax_ns_aw_spectral_prior_only(
+        self, blackjax_ns_aw_spectral_config, e2e_temp_dir
+    ):
+        """Regression test: spectral EOS must not crash under NS-AW sampling."""
+        blackjax_ns_aw_spectral_config["sampler"]["n_live"] = 50
+        blackjax_ns_aw_spectral_config["sampler"]["n_target"] = 10
+        blackjax_ns_aw_spectral_config["sampler"]["max_mcmc"] = 200
+        blackjax_ns_aw_spectral_config["sampler"]["termination_dlogz"] = 1.0
+
+        config = InferenceConfig(**blackjax_ns_aw_spectral_config)
+
+        prior, _fixed_params = setup_prior(config)
+        keep_names = determine_keep_names(config, prior)
+        transform = setup_transform(config, prior=prior, keep_names=keep_names)
+        likelihood = setup_likelihood(config, transform)
+
+        sampler = create_sampler(
+            config=config.sampler,
+            prior=prior,
+            likelihood=likelihood,
+            likelihood_transforms=[transform],
+            seed=config.seed,
+        )
+
+        key = jax.random.PRNGKey(config.seed)
+        sampler.sample(key)
+
+        output = sampler.get_sampler_output()
+
+        for param in self.SPECTRAL_PARAMS:
+            assert param in output.samples
+        assert not jnp.isnan(output.log_prob).any()
+
+
+@pytest.mark.slow
 @pytest.mark.integration
 @pytest.mark.e2e
 class TestSamplerFactorySmoke:
@@ -146,7 +256,7 @@ class TestSamplerFactorySmoke:
         """Test that SMC-RW sampler can be created from config."""
         config = InferenceConfig(**smc_rw_prior_config)
 
-        prior = setup_prior(config)
+        prior, _fixed_params = setup_prior(config)
         transform = setup_transform(config, prior=prior)
         likelihood = setup_likelihood(config, transform)
 
@@ -168,7 +278,7 @@ class TestSamplerFactorySmoke:
         """Test that FlowMC sampler can be created from config."""
         config = InferenceConfig(**flowmc_prior_config)
 
-        prior = setup_prior(config)
+        prior, _fixed_params = setup_prior(config)
         transform = setup_transform(config, prior=prior)
         likelihood = setup_likelihood(config, transform)
 
@@ -190,7 +300,7 @@ class TestSamplerFactorySmoke:
         """Test that NS-AW sampler can be created from config."""
         config = InferenceConfig(**blackjax_ns_aw_prior_config)
 
-        prior = setup_prior(config)
+        prior, _fixed_params = setup_prior(config)
         transform = setup_transform(config, prior=prior)
         likelihood = setup_likelihood(config, transform)
 

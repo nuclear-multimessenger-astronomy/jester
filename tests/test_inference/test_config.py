@@ -147,16 +147,12 @@ class TestTOVConfig:
 
     def test_valid_tov_config(self):
         """Test valid TOV configuration."""
-        from pydantic import TypeAdapter
-
-        adapter = TypeAdapter(schema.TOVConfig)
-        config_dict = {
-            "type": "gr",
-            "min_nsat_TOV": 0.75,
-            "ndat_TOV": 100,
-            "nb_masses": 100,
-        }
-        config = adapter.validate_python(config_dict)
+        config = schema.GRTOVConfig(
+            type="gr",
+            min_nsat_TOV=0.75,
+            ndat_TOV=100,
+            nb_masses=100,
+        )
         assert config.type == "gr"
         assert config.min_nsat_TOV == 0.75
         assert config.ndat_TOV == 100
@@ -179,10 +175,7 @@ class TestTOVConfig:
 
     def test_tov_default_values(self):
         """Test that TOV default values are set correctly."""
-        from pydantic import TypeAdapter
-
-        adapter = TypeAdapter(schema.TOVConfig)
-        config = adapter.validate_python({"type": "gr"})
+        config = schema.GRTOVConfig()
         assert config.type == "gr"
         assert config.min_nsat_TOV == 0.75
         assert config.ndat_TOV == 100
@@ -192,9 +185,9 @@ class TestTOVConfig:
         """Test that invalid TOV solver type fails validation."""
         from pydantic import TypeAdapter
 
-        adapter = TypeAdapter(schema.TOVConfig)
+        ta: TypeAdapter[schema.TOVConfig] = TypeAdapter(schema.TOVConfig)  # type: ignore[type-arg]
         with pytest.raises(ValidationError):
-            adapter.validate_python({"type": "invalid_solver"})
+            ta.validate_python({"type": "invalid_solver"})
 
 
 class TestPriorConfig:
@@ -579,7 +572,7 @@ seed: 42
 """
         )
 
-        with pytest.raises(ValueError, match="Error validating configuration"):
+        with pytest.raises(ValueError, match="Configuration error in"):
             parser.load_config(incomplete_config)
 
 
@@ -588,7 +581,7 @@ class TestExtraFieldValidation:
 
     def test_eos_config_rejects_extra_fields(self):
         """Test that EOS config rejects unknown fields."""
-        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        with pytest.raises(ValidationError, match="Unrecognized field"):
             schema.MetamodelEOSConfig(
                 type="metamodel",
                 nb_CSE=0,
@@ -597,15 +590,15 @@ class TestExtraFieldValidation:
 
     def test_tov_config_rejects_extra_fields(self):
         """Test that TOV config rejects unknown fields."""
-        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        with pytest.raises(ValidationError, match="Unrecognized field"):
             schema.GRTOVConfig(
                 type="gr",
-                wrong_entry=500,  # Should be rejected
+                wrong_entry=500,  # type: ignore[call-arg]  # Should be rejected
             )
 
     def test_prior_config_rejects_extra_fields(self):
         """Test that PriorConfig rejects unknown fields."""
-        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        with pytest.raises(ValidationError, match="Unrecognized field"):
             schema.PriorConfig(
                 specification_file="test.prior",
                 invalid_param="value",  # Should be rejected
@@ -613,7 +606,7 @@ class TestExtraFieldValidation:
 
     def test_likelihood_config_rejects_extra_fields(self):
         """Test that LikelihoodConfig rejects unknown fields."""
-        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        with pytest.raises(ValidationError, match="Unrecognized field"):
             schema.ZeroLikelihoodConfig(
                 enabled=True,
                 extra_field="should_fail",  # Should be rejected
@@ -621,7 +614,7 @@ class TestExtraFieldValidation:
 
     def test_sampler_config_rejects_extra_fields(self):
         """Test that FlowMCSamplerConfig rejects unknown fields."""
-        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        with pytest.raises(ValidationError, match="Unrecognized field"):
             schema.FlowMCSamplerConfig(
                 type="flowmc",
                 n_chains=4,
@@ -632,7 +625,7 @@ class TestExtraFieldValidation:
 
     def test_postprocessing_config_rejects_extra_fields(self):
         """Test that PostprocessingConfig rejects unknown fields."""
-        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        with pytest.raises(ValidationError, match="Unrecognized field"):
             schema.PostprocessingConfig(
                 enabled=True,
                 make_cornerplot=True,
@@ -640,19 +633,19 @@ class TestExtraFieldValidation:
             )
 
     def test_inference_config_rejects_extra_fields(self, sample_config_dict):
-        """Test that InferenceConfig rejects unknown fields."""
+        """Test that InferenceConfig rejects unknown fields with a helpful message."""
         config_dict = sample_config_dict.copy()
         config_dict["random_invalid_field"] = "should_fail"
 
-        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        with pytest.raises(ValidationError, match="Unrecognized field"):
             schema.InferenceConfig(**config_dict)
 
     def test_nested_extra_fields_rejected(self, sample_config_dict):
-        """Test that extra fields in nested config sections are rejected."""
+        """Test that extra fields in nested config sections are rejected with a helpful message."""
         config_dict = sample_config_dict.copy()
         config_dict["eos"]["wrong_entry"] = 500  # Should be rejected
 
-        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        with pytest.raises(ValidationError, match="Unrecognized field"):
             schema.InferenceConfig(**config_dict)
 
 
@@ -715,8 +708,8 @@ class TestGWEventConfig:
             )
 
     def test_gw_event_extra_field_rejected(self):
-        """Unknown field raises ValidationError (extra='forbid')."""
-        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        """Unknown field raises ValidationError with a helpful message."""
+        with pytest.raises(ValidationError, match="Unrecognized field"):
             schema.GWEventConfig(  # type: ignore[call-arg]
                 name="GW170817",
                 unknown_field="bad",
@@ -730,6 +723,66 @@ class TestGWEventConfig:
                 nf_model_dir="./my_flow",
                 from_bilby_result="./result.hdf5",
             )
+
+    def test_gw_event_npz_mode_minimal(self):
+        """Valid config with just from_npz_file (no flow_config, no nf_model_dir)."""
+        event = schema.GWEventConfig(
+            name="GW170817",
+            from_npz_file="./GW170817_posterior.npz",
+        )
+        assert event.from_npz_file == "./GW170817_posterior.npz"
+        assert event.nf_model_dir is None
+        assert event.from_bilby_result is None
+        assert event.flow_config is None
+        assert event.retrain_flow is False
+
+    def test_gw_event_npz_mode_full(self):
+        """Valid NPZ config with from_npz_file, flow_config, and retrain_flow."""
+        event = schema.GWEventConfig(
+            name="GW170817",
+            from_npz_file="./GW170817_posterior.npz",
+            flow_config="./flow_config.yaml",
+            retrain_flow=True,
+        )
+        assert event.from_npz_file == "./GW170817_posterior.npz"
+        assert event.flow_config == "./flow_config.yaml"
+        assert event.retrain_flow is True
+
+    def test_gw_event_nf_model_dir_and_npz_raises(self):
+        """Specifying both nf_model_dir and from_npz_file raises ValidationError."""
+        with pytest.raises(ValidationError, match="Cannot specify both"):
+            schema.GWEventConfig(
+                name="GW170817",
+                nf_model_dir="./my_flow",
+                from_npz_file="./posterior.npz",
+            )
+
+    def test_gw_event_bilby_and_npz_raises(self):
+        """Specifying both from_bilby_result and from_npz_file raises ValidationError."""
+        with pytest.raises(ValidationError, match="Cannot specify both"):
+            schema.GWEventConfig(
+                name="GW170817",
+                from_bilby_result="./result.hdf5",
+                from_npz_file="./posterior.npz",
+            )
+
+    def test_gw_event_flow_config_with_npz_valid(self):
+        """flow_config with from_npz_file is valid."""
+        event = schema.GWEventConfig(
+            name="GW170817",
+            from_npz_file="./posterior.npz",
+            flow_config="./flow_config.yaml",
+        )
+        assert event.flow_config == "./flow_config.yaml"
+
+    def test_gw_event_retrain_flow_with_npz_valid(self):
+        """retrain_flow=True with from_npz_file is valid."""
+        event = schema.GWEventConfig(
+            name="GW170817",
+            from_npz_file="./posterior.npz",
+            retrain_flow=True,
+        )
+        assert event.retrain_flow is True
 
     def test_gw_likelihood_config_with_event_objects(self):
         """GWLikelihoodConfig accepts a list of GWEventConfig objects."""
@@ -752,7 +805,7 @@ class TestGWEventConfig:
 
     def test_gw_likelihood_old_model_dir_rejected(self):
         """Using the old 'model_dir' key (instead of 'nf_model_dir') raises ValidationError."""
-        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        with pytest.raises(ValidationError, match="Unrecognized field"):
             schema.GWLikelihoodConfig(
                 events=[{"name": "GW170817", "model_dir": "./my_flow"}],  # type: ignore[arg-type]
             )

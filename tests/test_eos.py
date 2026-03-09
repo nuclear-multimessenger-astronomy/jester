@@ -384,7 +384,9 @@ class TestConstructFamily:
 
         # Test family construction using GRTOVSolver
         solver = GRTOVSolver()
-        family_data = solver.construct_family(eos_data, ndat=10, min_nsat=1.0)
+        family_data = solver.construct_family(
+            eos_data, tov_params={}, ndat=10, min_nsat=1.0
+        )
 
         # Check output shapes
         assert len(family_data.log10pcs) == 10
@@ -432,7 +434,9 @@ class TestMetaModelIntegration:
 
         # Construct neutron star family using GRTOVSolver
         solver = GRTOVSolver()
-        family_data = solver.construct_family(eos_data, ndat=20, min_nsat=0.75)
+        family_data = solver.construct_family(
+            eos_data, tov_params={}, ndat=20, min_nsat=0.75
+        )
 
         # Check that we get reasonable neutron star properties for limited EOS (2 nsat)
         assert jnp.max(family_data.masses) > 0.5  # Maximum mass for soft/limited EOS

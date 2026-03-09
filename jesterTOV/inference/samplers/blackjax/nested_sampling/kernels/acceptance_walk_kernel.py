@@ -143,12 +143,22 @@ def de_rwalk_one_step_unit_cube(
 
     # Ensure final_logl is an Array (pyright inference issue workaround)
     final_logl_array = jnp.asarray(final_logl)
+    # Set loglikelihood_birth to the NS threshold (loglikelihood_0) when accepted.
+    # This records when the new live point was born, which is required by anesthetic
+    # (and blackjax compute_num_live) for correct posterior weight calculation.
+    # Bug was: copying state.loglikelihood_birth (parent's NaN) for all new particles,
+    # causing all particles to appear born at -inf → wrong nlive → biased posterior.
+    final_logl_birth = jnp.where(
+        is_accepted,
+        jnp.asarray(loglikelihood_0, dtype=final_logl_array.dtype),
+        state.loglikelihood_birth,
+    )
     # Create state with same structure as input (StateWithLogLikelihood)
     new_state = StateWithLogLikelihood(
         position=final_pos,
         logdensity=final_logp,
         loglikelihood=final_logl_array,
-        loglikelihood_birth=state.loglikelihood_birth,  # Keep birth threshold
+        loglikelihood_birth=final_logl_birth,
     )
     # Ensure is_valid is a JAX array before calling astype
     likelihood_evals = jnp.asarray(is_valid, dtype=jnp.bool_).astype(jnp.int32)

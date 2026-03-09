@@ -164,3 +164,4 @@ cython_debug/
 lalsuite/
 
 examples/inference/*/*/outdir/
+cython_debug/
