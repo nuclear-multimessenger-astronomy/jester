@@ -79,6 +79,21 @@ class TOVSolverBase(ABC):
         Returns:
             FamilyData: Mass-radius-tidal curves in physical units
         """
+        # Evaluate EOS validity once for the entire family
+        is_valid_eos = (
+            jnp.all(eos_data.ps > 0) & 
+            jnp.all(eos_data.hs > 0) & 
+            jnp.all(eos_data.es > 0) & 
+            jnp.all(eos_data.cs2 >= 0) & 
+            jnp.all(eos_data.cs2 <= 1)
+        )
+
+        # Poison the EOS data with NaNs if unphysical
+        eos_data = jax.tree_util.tree_map(
+            lambda x: jnp.where(is_valid_eos, x, jnp.nan), 
+            eos_data
+        )
+
         # Create central pressure grid
         pc_min = self._get_pc_min(eos_data, min_nsat)
         pc_max = self._get_pc_max(eos_data)
@@ -177,34 +192,26 @@ class TOVSolverBase(ABC):
         # Calculate tidal deformability
         lambdas = 2.0 / 3.0 * k2s * jnp.power(compactness, -5.0)
 
-        # Limit masses to be below MTOV (removes unstable branch)
-        pcs_lim, masses_lim, radii_lim, lambdas_lim = utils.limit_by_MTOV(
-            pcs, masses_solar, radii_km, lambdas
+        # Limit masses to be below MTOV and interpolate onto a uniform log(pc) grid on stable segments
+        pcs_lim, masses_lim, radii_lim, lambdas_lim = utils.limit_by_MTOV_and_interpolate(
+            pcs, masses_solar, radii_km, lambdas, ndat
         )
-
-        # Get a mass grid and interpolate, since we might have some duplicate points
-        mass_grid = jnp.linspace(jnp.min(masses_lim), jnp.max(masses_lim), ndat)
-        radii_interp = jnp.interp(mass_grid, masses_lim, radii_lim)
-        lambdas_interp = jnp.interp(mass_grid, masses_lim, lambdas_lim)
-        pcs_interp = jnp.interp(mass_grid, masses_lim, pcs_lim)
-        log10pcs = jnp.log10(pcs_interp)
 
         # Process extra solver-specific fields if provided
         extra_processed: Optional[dict[str, Float[Array, "ndat"]]] = None
         if extra is not None:
-            extra_processed = {}
-            for key, arr in extra.items():
-                # Apply MTOV limiting using same mask
-                pcs_extra, masses_extra, radii_extra, arr_lim = utils.limit_by_MTOV(
-                    pcs, masses_solar, radii_km, arr
-                )
-                # Interpolate to mass grid
-                extra_processed[key] = jnp.interp(mass_grid, masses_extra, arr_lim)
+            # Use tree_map to efficiently apply interpolation to all extra fields at once
+            extra_processed = jax.tree_util.tree_map(
+                lambda val: utils.limit_by_MTOV_and_interpolate(
+                    pcs, masses_solar, radii_km, val, ndat
+                )[3],  # Take only the interpolated fourth element (the 'lambda'-like array)
+                extra
+            )
 
         return FamilyData(
-            log10pcs=log10pcs,
-            masses=mass_grid,
-            radii=radii_interp,
-            lambdas=lambdas_interp,
+            log10pcs=jnp.log10(pcs_lim),
+            masses=masses_lim,
+            radii=radii_lim,
+            lambdas=lambdas_lim,
             extra=extra_processed,
         )
