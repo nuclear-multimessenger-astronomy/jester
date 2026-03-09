@@ -2,9 +2,15 @@ import jax
 import jax.numpy as jnp
 
 
-# Infinity expansion for boundary conditions:
-# From Creci et al Jupyter notebook https://community.wolfram.com/groups/-/m/t/3459453
-# Used as exterior basis to match conditions
+# --------------------------------------------
+# This part, define matrix multiplication to solve for matching conditions (as well as it's derivative)
+# [ H0OnlyQT(M,q,R)   H0OnlyET(M,q,R)   H0OnlyQS(M,q,R)   H0OnlyES(M,q,R) ]   [ cQT ]   [ H0_int(M,q,R) ]
+# [ H0OnlyQT'(M,q,R)  H0OnlyET'(M,q,R)  H0OnlyQS'(M,q,R)  H0OnlyES'(M,q,R) ]  [ cET ] = [ H0'_int(M,q,R) ]
+# [ φpOnlyQT(M,q,R)   φpOnlyET(M,q,R)   φpOnlyQS(M,q,R)   φpOnlyES(M,q,R) ]  [ cQS ]   [ φp_int(M,q,R) ]
+# [ φpOnlyQT'(M,q,R)  φpOnlyET'(M,q,R)  φpOnlyQS'(M,q,R)  φpOnlyES'(M,q,R) ]  [ cES ]   [ φp'_int(M,q,R) ]
+# Left matrix from infinity expansion, right matrix from tov solver, and c matrix is what we solve for to determine lambdas.
+
+
 def build_exterior_basis(M, q, R):
     r"""
     Build exterior basis functions for matching at stellar surface.
@@ -200,7 +206,11 @@ def compute_tidal_deformabilities(coefficients):
     return lambda_T, lambda_S, lambda_ST1, lambda_ST2
 
 
-# Asymptotic conditions
+# Infinity expansion for boundary conditions:
+# From Creci et al Jupyter notebook https://community.wolfram.com/groups/-/m/t/3459453
+# Used as exterior basis to match conditions
+
+
 def H0OnlyQT_jax(M, q, r):
     r"""
     Compute the H0 (only QT) basis function for exterior solution.

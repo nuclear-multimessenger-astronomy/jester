@@ -21,6 +21,7 @@ from jesterTOV.inference.config.schema import (
     SpectralEOSConfig,
     BaseTOVConfig,
     GRTOVConfig,
+    ScalarTensorTOVConfig,
     AnisotropyTOVConfig,
 )
 from jesterTOV.inference.likelihoods.constraints import check_all_constraints
@@ -283,12 +284,17 @@ class JesterTransform(NtoMTransform):
         """
         if isinstance(config, GRTOVConfig):
             return GRTOVSolver()
+        elif isinstance(config, ScalarTensorTOVConfig):
+            from jesterTOV.tov.scalar_tensor import ScalarTensorTOVSolver
+            return ScalarTensorTOVSolver()
 
+        # String-based dispatch for solvers that do not yet have their own config class
+        tov_type = config.type
+        if tov_type == "post":
+            raise NotImplementedError("PostTOVSolver config class not implemented yet")
         elif isinstance(config, AnisotropyTOVConfig):
             from jesterTOV.tov.anisotropy import AnisotropyTOVSolver
-
             return AnisotropyTOVSolver()
-
         else:
             raise ValueError(f"Unknown TOV solver type: {type(config).__name__}")
 
