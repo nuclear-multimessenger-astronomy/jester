@@ -1,6 +1,7 @@
 """Tests for unified JesterTransform system."""
 
 import pytest
+import jax
 import jax.numpy as jnp
 
 from jesterTOV.inference.config.schema import (
@@ -10,6 +11,7 @@ from jesterTOV.inference.config.schema import (
     TOVConfig,
     GRTOVConfig,
     ScalarTensorTOVConfig,
+    GRTOVConfig,
 )
 from jesterTOV.inference.transforms import JesterTransform
 
@@ -311,3 +313,72 @@ class TestJesterTransformIntegration:
         for param, value in realistic_nep_stiff.items():
             assert param in result
             assert result[param] == value
+
+
+# Realistic spectral params (LALSuite-compatible, within standard prior bounds)
+SPECTRAL_PARAMS = {
+    "gamma_0": 1.35,
+    "gamma_1": 0.5,
+    "gamma_2": 0.1,
+    "gamma_3": 0.005,
+}
+
+
+class TestSpectralTransform:
+    """Tests specific to the spectral decomposition transform."""
+
+    @pytest.mark.slow
+    def test_spectral_forward_single(self):
+        """Test single forward pass of spectral transform."""
+        eos_config = SpectralEOSConfig(type="spectral", crust_name="SLy")
+        tov_config = GRTOVConfig(ndat_TOV=30)
+        transform = JesterTransform.from_config(eos_config, tov_config)
+
+        result = transform.forward(SPECTRAL_PARAMS)
+
+        assert "masses_EOS" in result
+        assert "radii_EOS" in result
+        assert "Lambdas_EOS" in result
+        assert jnp.isfinite(result["masses_EOS"]).any()
+
+    @pytest.mark.slow
+    def test_spectral_forward_vmap(self):
+        """Regression test: spectral forward must not crash under jax.vmap.
+
+        The bug was that construct_eos called float(gamma_violation) on a JAX
+        traced array, which raises ConcretizationTypeError inside vmap.
+        """
+        eos_config = SpectralEOSConfig(type="spectral", crust_name="SLy")
+        tov_config = GRTOVConfig(ndat_TOV=30)
+        transform = JesterTransform.from_config(eos_config, tov_config)
+
+        # Batch of 3 spectral parameter sets
+        params_batch = {
+            "gamma_0": jnp.array([1.35, 1.5, 0.8]),
+            "gamma_1": jnp.array([0.5, 0.2, 0.3]),
+            "gamma_2": jnp.array([0.1, 0.05, 0.0]),
+            "gamma_3": jnp.array([0.005, 0.001, -0.001]),
+        }
+
+        # This must not raise jax.errors.ConcretizationTypeError
+        results = jax.vmap(transform.forward)(params_batch)
+
+        assert "masses_EOS" in results
+        assert results["masses_EOS"].shape[0] == 3
+
+    @pytest.mark.slow
+    def test_spectral_gamma_constraint_key_present(self):
+        """Test that spectral EOS populates n_gamma_violations in transform output.
+
+        This key is consumed by ConstraintGammaLikelihood.
+        """
+        eos_config = SpectralEOSConfig(type="spectral", crust_name="SLy")
+        tov_config = GRTOVConfig(ndat_TOV=30)
+        transform = JesterTransform.from_config(eos_config, tov_config)
+
+        result = transform.forward(SPECTRAL_PARAMS)
+
+        assert "n_gamma_violations" in result, (
+            "Spectral transform must include 'n_gamma_violations' for "
+            "ConstraintGammaLikelihood to work correctly"
+        )

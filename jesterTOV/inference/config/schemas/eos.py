@@ -1,10 +1,12 @@
 """Pydantic models for EOS configuration."""
 
 from typing import Literal, Union, Annotated
-from pydantic import BaseModel, field_validator, ConfigDict, Discriminator
+from pydantic import field_validator, ConfigDict, Discriminator
+
+from ._base import JesterBaseModel
 
 
-class BaseEOSConfig(BaseModel):
+class BaseEOSConfig(JesterBaseModel):
     """Base configuration shared by all EOS types.
 
     Attributes
@@ -103,7 +105,7 @@ class MetamodelCSEEOSConfig(BaseMetamodelEOSConfig):
 
 
 class SpectralEOSConfig(BaseEOSConfig):
-    """Configuration for Spectral Decomposition EOS.
+    r"""Configuration for Spectral Decomposition EOS.
 
     Attributes
     ----------
@@ -113,11 +115,27 @@ class SpectralEOSConfig(BaseEOSConfig):
         Number of high-density points for spectral EOS (default: 500)
     nb_CSE : int
         Must be 0 for spectral (no CSE support)
+    reparametrized : bool
+        If False (default), sample directly in :math:`(\gamma_0, \gamma_1, \gamma_2, \gamma_3)`.
+        If True, sample in a whitened space :math:`(\tilde{\gamma}_0, \tilde{\gamma}_1, \tilde{\gamma}_2, \tilde{\gamma}_3)`
+        centred on a Gaussian fit to a radio-timing inference result.  The bijection
+        :math:`\boldsymbol{\gamma} = \boldsymbol{\mu} + L_\text{wide}\,\tilde{\boldsymbol{\gamma}}` maps the
+        unit-normal tilde parameters back to physical spectral coefficients, where
+        :math:`L_\text{wide} = \sigma_\text{scale}\,L` and :math:`\boldsymbol{\mu}` is
+        the posterior mean.  Use a ``MultivariateGaussianPrior`` with default (unit)
+        parameters in the prior file when this option is enabled.
+    sigma_scale : float
+        Multiplicative factor applied to the base Cholesky factor :math:`L` to form
+        :math:`L_\text{wide} = \sigma_\text{scale}\,L`.  Only used when
+        ``reparametrized=True``.  Default 1.0 (exact radio posterior covariance).
+        Increase to widen the prior around the radio posterior.
     """
 
     type: Literal["spectral"] = "spectral"
     n_points_high: int = 500
     nb_CSE: int = 0
+    reparametrized: bool = False
+    sigma_scale: float = 1.0
 
     @field_validator("nb_CSE")
     @classmethod

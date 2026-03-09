@@ -24,6 +24,15 @@ likelihoods:
   N_masses_evaluation: 2000
   N_masses_batch_size: 1000
   seed: 42
+- type: radio
+  enabled: true
+  pulsars:
+  - name: J1614
+    mass_mean: 1.94
+    mass_std: 0.06
+  - name: J0740
+    mass_mean: 2.08
+    mass_std: 0.14
 sampler:
   type: smc-rw
   n_particles: 5000
@@ -34,6 +43,6 @@ sampler:
   output_dir: ./outdir/
 postprocessing:
   enabled: true
-  make_cornerplot: false
+  make_cornerplot: true
   make_massradius: true
   make_pressuredensity: true

@@ -7,6 +7,8 @@ where the gravitational interaction includes both a metric tensor and a scalar f
 **Units:** All calculations are performed in geometric units where :math:`G = c = 1`.
 
 **Reference:** G. Creci et al Phys.Rev.D 111 (2025) 8, 089901 (erratum)
+
+# FIXME: Need to fully integrate the TOV solver: see docs/developer_guide/adding_new_tov.md
 """
 
 import functools
@@ -27,6 +29,34 @@ from jesterTOV.tov.scalar_tensor_utils import (
 
 
 def _tov_ode_iter(h, y, eos):
+    r"""
+    Scalar-tensor TOV ODE system for interior solution.
+    Used for iterating scalar field matching condition.
+
+    Parameters
+    ----------
+    h : float
+        Enthalpy (independent variable).
+    y : tuple
+        State vector :math:`(r, m, \\nu, \\psi, \\phi)` where:
+        - :math:`r`: radial coordinate
+        - :math:`m`: mass enclosed
+        - :math:`\\nu`: metric function
+        - :math:`\\psi`: scalar field derivative :math:`d\\phi/dr`
+        - :math:`\\phi`: scalar field
+    eos : dict
+        Dictionary containing EOS arrays and scalar-tensor parameters:
+        - ``p``: pressure array
+        - ``h``: enthalpy array
+        - ``e``: energy density array
+        - ``dloge_dlogp``: logarithmic derivative :math:`d\\log e/d\\log p`
+        - ``beta_ST``: scalar-tensor coupling parameter
+
+    Returns
+    -------
+    tuple
+        Derivatives :math:`(dr/dh, dm/dh, d\\nu/dh, d\\psi/dh, d\\phi/dh)`.
+    """
     # EOS quantities
     ps = eos["p"]
     hs = eos["h"]
@@ -93,6 +123,37 @@ def _tov_ode_iter(h, y, eos):
 
 
 def _tov_ode_iter_tidal(h, y, eos):
+    r"""
+    Scalar-tensor TOV ODE system for interior solution with tidal deformability.
+
+    Parameters
+    ----------
+    h : float
+        Enthalpy (independent variable).
+    y : tuple
+        State vector :math:`(r, m, \\nu, \\psi, \\phi, H_0, H_0', \\delta\\phi, \\delta\\phi')` where:
+        - :math:`r`: radial coordinate
+        - :math:`m`: mass enclosed
+        - :math:`\\nu`: metric function
+        - :math:`\\psi`: scalar field derivative :math:`d\\phi/dr`
+        - :math:`\\phi`: scalar field
+        - :math:`H_0`: metric perturbation (tidal field)
+        - :math:`H_0'`: derivative of :math:`H_0`
+        - :math:`\\delta\\phi`: scalar field perturbation
+        - :math:`\\delta\\phi'`: derivative of :math:`\\delta\\phi`
+    eos : dict
+        Dictionary containing EOS arrays and scalar-tensor parameters:
+        - ``p``: pressure array
+        - ``h``: enthalpy array
+        - ``e``: energy density array
+        - ``dloge_dlogp``: logarithmic derivative :math:`d\\log e/d\\log p`
+        - ``beta_ST``: scalar-tensor coupling parameter
+
+    Returns
+    -------
+    tuple
+        Derivatives :math:`(dr/dh, dm/dh, d\\nu/dh, d\\psi/dh, d\\phi/dh, dH_0/dh, dH_0'/dh, d\\delta\\phi/dh, d\\delta\\phi'/dh)`.
+    """
     # EOS quantities
     ps = eos["p"]
     hs = eos["h"]

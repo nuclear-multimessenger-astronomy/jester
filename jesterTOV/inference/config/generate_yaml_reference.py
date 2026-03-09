@@ -290,7 +290,7 @@ def extract_tov_config() -> dict[str, Any]:
                 "name": "type",
                 "type": "str",
                 "default": '"gr"',
-                "description": "TOV solver type. Currently only 'gr' (General Relativity) is implemented. 'anisotropy' and 'scalar_tensor' are planned but not yet available.",
+                "description": "TOV solver type. Supported values: 'gr' (General Relativity) and 'anisotropy' (post-TOV with beyond-GR corrections). 'scalar_tensor' is planned.",
             },
             {
                 "name": "min_nsat_TOV",
@@ -380,12 +380,15 @@ def extract_likelihoods() -> list[dict[str, Any]]:
                             "default": None,
                             "description": (
                                 "List of GW event configs (see **GWEventConfig** below). "
-                                "Each entry must have `name`. Two modes are supported:\n"
+                                "Each entry must have `name`. Three modes are supported:\n"
                                 "  - **Pre-trained flow**: set `nf_model_dir` to point to a trained flow, "
                                 "or omit it to use a built-in preset.\n"
                                 "  - **From bilby result**: set `from_bilby_result` to the path of a bilby "
                                 "HDF5 result file; jester will extract posterior samples and train a flow "
-                                "automatically before inference."
+                                "automatically before inference.\n"
+                                "  - **From NPZ file**: set `from_npz_file` to an existing `.npz` file with "
+                                "posterior samples; jester will train a flow directly from it, skipping the "
+                                "bilby extraction step."
                             ),
                         },
                         {
@@ -420,10 +423,11 @@ def extract_likelihoods() -> list[dict[str, Any]]:
                         "| Field | Type | Default | Description |\n"
                         "|-------|------|---------|-------------|\n"
                         "| `name` | str | required | Event name, e.g. `GW170817` |\n"
-                        "| `nf_model_dir` | str\\|null | null | Path to a pre-trained normalizing flow directory. Mutually exclusive with `from_bilby_result`. |\n"
-                        "| `from_bilby_result` | str\\|null | null | Path to a bilby result `.hdf5` file. jester will extract posterior samples and train a flow automatically. |\n"
-                        "| `flow_config` | str\\|null | null | Path to a `FlowTrainingConfig` YAML file for custom flow training (only valid with `from_bilby_result`). |\n"
-                        "| `retrain_flow` | bool | false | Force re-training even if a cached flow exists (only valid with `from_bilby_result`). |\n\n"
+                        "| `nf_model_dir` | str\\|null | null | Path to a pre-trained normalizing flow directory. Mutually exclusive with `from_bilby_result` and `from_npz_file`. |\n"
+                        "| `from_bilby_result` | str\\|null | null | Path to a bilby result `.hdf5` file. jester will extract posterior samples and train a flow automatically. Mutually exclusive with `nf_model_dir` and `from_npz_file`. |\n"
+                        "| `from_npz_file` | str\\|null | null | Path to an existing `.npz` file with posterior samples (`mass_1_source`, `mass_2_source`, `lambda_1`, `lambda_2`). jester will train a flow directly from this file, skipping bilby extraction. Mutually exclusive with `nf_model_dir` and `from_bilby_result`. |\n"
+                        "| `flow_config` | str\\|null | null | Path to a `FlowTrainingConfig` YAML file for custom flow training (only valid with `from_bilby_result` or `from_npz_file`). |\n"
+                        "| `retrain_flow` | bool | false | Force re-training even if a cached flow exists (only valid with `from_bilby_result` or `from_npz_file`). |\n\n"
                         "**Examples**:\n\n"
                         "```yaml\n"
                         "# Pre-trained flow (preset):\n"
@@ -436,7 +440,11 @@ def extract_likelihoods() -> list[dict[str, Any]]:
                         "# From bilby result (auto-train):\n"
                         "events:\n"
                         "  - name: GW170817\n"
-                        "    from_bilby_result: ./GW170817_result.hdf5\n"
+                        "    from_bilby_result: ./GW170817_result.hdf5\n\n"
+                        "# From existing NPZ file (skip bilby extraction):\n"
+                        "events:\n"
+                        "  - name: GW170817\n"
+                        "    from_npz_file: ./GW170817_posterior.npz\n"
                         "```"
                     ),
                 },
@@ -1437,7 +1445,7 @@ def extract_validation_rules() -> list[dict[str, Any]]:
         {
             "title": "TOV Configuration",
             "entries": [
-                '`type` must be `"gr"` (the only currently implemented option; `"post"` and `"scalar_tensor"` are planned)',
+                '`type` must be `"gr"` or `"anisotropy"`; `"scalar_tensor"` is planned but not yet available',
                 "`min_nsat_TOV`, `ndat_TOV`, and `nb_masses` must be positive",
             ],
         },

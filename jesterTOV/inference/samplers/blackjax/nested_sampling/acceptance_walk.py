@@ -46,7 +46,7 @@ class BlackJAXNSAWSampler(BlackjaxSampler):
     likelihood : LikelihoodBase
         Likelihood object with evaluate(params, data) method
     prior : Prior
-        Prior object (must be CombinePrior of UniformPrior)
+        Prior object (CombinePrior of UniformPrior and/or MultivariateGaussianPrior)
     sample_transforms : list[BijectiveTransform]
         Unit cube transforms (created by transform_factory)
     likelihood_transforms : list[NtoMTransform]
@@ -144,82 +144,107 @@ class BlackJAXNSAWSampler(BlackjaxSampler):
         # since it requires the acceptance walk kernel implementation
 
     def _create_unit_cube_transforms(self, prior: Prior) -> list[BijectiveTransform]:
-        """Create BoundToBound [0,1] transforms for all prior parameters.
+        """Create unit-cube transforms for all prior parameters.
 
         This is required for BlackJAX nested sampling with acceptance walk,
         which samples in unit cube space and applies the inverse transform
         to evaluate in prior space.
 
+        - ``UniformPrior`` components → single ``BoundToBound`` mapping
+          :math:`[a, b] \\to [0, 1]`.
+        - ``MultivariateGaussianPrior`` components → ``MVGaussianToUnitCube``
+          mapping :math:`\\mathcal{N}(\\mu, \\Sigma) \\to [0, 1]^n` via the
+          probability integral transform.
+
         Parameters
         ----------
         prior : Prior
-            Prior distribution (must be CombinePrior of UniformPrior)
+            Prior distribution (CombinePrior of UniformPrior and/or
+            MultivariateGaussianPrior components).
 
         Returns
         -------
         list[BijectiveTransform]
-            List containing single BoundToBound transform mapping all parameters to [0,1]
+            Transforms mapping all parameters to [0, 1].
 
         Raises
         ------
         ValueError
-            If prior is not a CombinePrior or contains non-uniform priors
+            If prior contains unsupported component types.
         """
-        from jesterTOV.inference.base.prior import UniformPrior, CombinePrior
-        from jesterTOV.inference.base.transform import BoundToBound
+        from jesterTOV.inference.base.prior import (
+            UniformPrior,
+            CombinePrior,
+            MultivariateGaussianPrior,
+        )
+        from jesterTOV.inference.base.transform import (
+            BoundToBound,
+            MVGaussianToUnitCube,
+        )
 
-        # Handle both single UniformPrior and CombinePrior
+        # Handle both single UniformPrior, MultivariateGaussianPrior, and CombinePrior
         if isinstance(prior, UniformPrior):
+            prior = CombinePrior([prior])
+        elif isinstance(prior, MultivariateGaussianPrior):
             prior = CombinePrior([prior])
         elif not isinstance(prior, CombinePrior):
             raise ValueError(
-                f"BlackJAX NS-AW requires UniformPrior or CombinePrior, got {type(prior).__name__}. "
-                "Ensure your prior is a (combination of) UniformPrior distribution(s)."
+                f"BlackJAX NS-AW requires UniformPrior, MultivariateGaussianPrior, or CombinePrior, "
+                f"got {type(prior).__name__}. "
+                "Ensure your prior is a (combination of) UniformPrior / MultivariateGaussianPrior."
             )
 
-        # Extract bounds from all component priors
-        original_lower = {}
-        original_upper = {}
-        param_names = []
+        transforms: list[BijectiveTransform] = []
+        uniform_names: list[str] = []
+        uniform_lower: dict[str, float] = {}
+        uniform_upper: dict[str, float] = {}
 
         for component_prior in prior.base_prior:
-            # Validate that each component is a UniformPrior
-            if not isinstance(component_prior, UniformPrior):
+            if isinstance(component_prior, UniformPrior):
+                param_name = component_prior.parameter_names[0]
+                uniform_names.append(param_name)
+                uniform_lower[param_name] = component_prior.xmin
+                uniform_upper[param_name] = component_prior.xmax
+
+            elif isinstance(component_prior, MultivariateGaussianPrior):
+                param_names = component_prior.parameter_names
+                transforms.append(
+                    MVGaussianToUnitCube(
+                        name_mapping=(param_names, param_names),
+                        mean=component_prior.mean,
+                        cov=component_prior.cov,
+                    )
+                )
+
+            else:
                 error_msg = (
-                    f"BlackJAX NS-AW requires UniformPrior components, got {type(component_prior).__name__}. "
-                    f"Parameter: {component_prior.parameter_names[0]}\n"
+                    f"BlackJAX NS-AW does not support prior component type "
+                    f"{type(component_prior).__name__} "
+                    f"(parameter: {component_prior.parameter_names}).\n"
+                    "Supported types: UniformPrior, MultivariateGaussianPrior."
                 )
                 if isinstance(component_prior, CombinePrior):
                     error_msg += (
-                        "Hint: Nested CombinePrior detected. This likely means a CombinePrior was wrapped "
-                        "in another CombinePrior. Instead of CombinePrior([prior1, prior2]), use "
-                        "CombinePrior(prior1.base_prior + prior2.base_prior) to flatten the structure."
+                        "\nHint: Nested CombinePrior detected. Flatten it with "
+                        "CombinePrior(prior1.base_prior + prior2.base_prior)."
                     )
                 raise ValueError(error_msg)
 
-            # Extract bounds (UniformPrior has xmin, xmax attributes)
-            param_name = component_prior.parameter_names[0]
-            param_names.append(param_name)
-            original_lower[param_name] = component_prior.xmin
-            original_upper[param_name] = component_prior.xmax
+        # Collect all uniform parameters into a single BoundToBound transform
+        if uniform_names:
+            target_lower = {name: 0.0 for name in uniform_names}
+            target_upper = {name: 1.0 for name in uniform_names}
+            transforms.append(
+                BoundToBound(
+                    name_mapping=(uniform_names, uniform_names),
+                    original_lower_bound=uniform_lower,
+                    original_upper_bound=uniform_upper,
+                    target_lower_bound=target_lower,
+                    target_upper_bound=target_upper,
+                )
+            )
 
-        # Create target bounds (unit cube [0, 1] for all parameters)
-        target_lower = {name: 0.0 for name in param_names}
-        target_upper = {name: 1.0 for name in param_names}
-
-        # Create name mapping (same names in both spaces)
-        name_mapping = (param_names, param_names)
-
-        # Create single BoundToBound transform for all parameters
-        transform = BoundToBound(
-            name_mapping=name_mapping,
-            original_lower_bound=original_lower,
-            original_upper_bound=original_upper,
-            target_lower_bound=target_lower,
-            target_upper_bound=target_upper,
-        )
-
-        return [transform]
+        return transforms
 
     def _create_unit_cube_stepper(self) -> None:
         """Create stepper function that wraps parameters at [0, 1] boundaries.

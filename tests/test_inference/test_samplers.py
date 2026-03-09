@@ -6,7 +6,12 @@ import jax.numpy as jnp
 
 from jesterTOV.inference.samplers.jester_sampler import JesterSampler
 from jesterTOV.inference.samplers.flowmc import FlowMCSampler
-from jesterTOV.inference.base import UniformPrior, CombinePrior, LikelihoodBase
+from jesterTOV.inference.base import (
+    UniformPrior,
+    CombinePrior,
+    LikelihoodBase,
+    MultivariateGaussianPrior,
+)
 from jesterTOV.inference.base.transform import (
     NtoMTransform,
     ScaleTransform,
@@ -970,6 +975,117 @@ class TestBlackJAXNSAWSampler:
 
         # get_n_samples should return 0 before sampling
         assert sampler.get_n_samples() == 0
+
+    def test_ns_aw_creates_mv_gaussian_transform_for_gaussian_prior(self):
+        """NS-AW creates MVGaussianToUnitCube when prior is MultivariateGaussianPrior."""
+        pytest.importorskip("blackjax")
+
+        from jesterTOV.inference.samplers.blackjax.nested_sampling import (
+            BlackJAXNSAWSampler,
+        )
+        from jesterTOV.inference.base.transform import MVGaussianToUnitCube
+        from jesterTOV.inference.config.schema import BlackJAXNSAWConfig
+
+        prior = CombinePrior(
+            [
+                MultivariateGaussianPrior(
+                    parameter_names=["a", "b"],
+                    mean=jnp.zeros(2),
+                    cov=jnp.eye(2),
+                )
+            ]
+        )
+        likelihood = MockLikelihood()
+        config = BlackJAXNSAWConfig(n_live=100, output_dir="./test_output/")
+
+        sampler = BlackJAXNSAWSampler(
+            likelihood=likelihood,
+            prior=prior,
+            sample_transforms=[],
+            likelihood_transforms=[],
+            config=config,
+        )
+
+        assert len(sampler.sample_transforms) == 1
+        assert isinstance(sampler.sample_transforms[0], MVGaussianToUnitCube)
+
+    def test_ns_aw_creates_two_transforms_for_mixed_prior(self):
+        """NS-AW creates MVGaussianToUnitCube + BoundToBound for mixed priors."""
+        pytest.importorskip("blackjax")
+
+        from jesterTOV.inference.samplers.blackjax.nested_sampling import (
+            BlackJAXNSAWSampler,
+        )
+        from jesterTOV.inference.base.transform import (
+            MVGaussianToUnitCube,
+            BoundToBound,
+        )
+        from jesterTOV.inference.config.schema import BlackJAXNSAWConfig
+
+        prior = CombinePrior(
+            [
+                UniformPrior(0.0, 1.0, parameter_names=["x"]),
+                MultivariateGaussianPrior(
+                    parameter_names=["a", "b"],
+                    mean=jnp.zeros(2),
+                    cov=jnp.eye(2),
+                ),
+            ]
+        )
+        likelihood = MockLikelihood()
+        config = BlackJAXNSAWConfig(n_live=100, output_dir="./test_output/")
+
+        sampler = BlackJAXNSAWSampler(
+            likelihood=likelihood,
+            prior=prior,
+            sample_transforms=[],
+            likelihood_transforms=[],
+            config=config,
+        )
+
+        assert len(sampler.sample_transforms) == 2
+        transform_types = {type(t) for t in sampler.sample_transforms}
+        assert MVGaussianToUnitCube in transform_types
+        assert BoundToBound in transform_types
+
+    def test_ns_aw_mv_gaussian_logprior_is_flat_in_unit_cube(self):
+        """logprior_fn evaluates to 0 anywhere in the unit cube for a Gaussian prior.
+
+        This verifies the probability integral transform property: the prior
+        density in unit-cube space is exactly flat, which is required for NS.
+        """
+        pytest.importorskip("blackjax")
+
+        from jesterTOV.inference.samplers.blackjax.nested_sampling import (
+            BlackJAXNSAWSampler,
+        )
+        from jesterTOV.inference.config.schema import BlackJAXNSAWConfig
+
+        prior = CombinePrior(
+            [
+                MultivariateGaussianPrior(
+                    parameter_names=["a", "b"],
+                    mean=jnp.array([1.0, 2.0]),
+                    cov=jnp.array([[2.0, 0.5], [0.5, 1.0]]),
+                )
+            ]
+        )
+        likelihood = MockLikelihood()
+        config = BlackJAXNSAWConfig(n_live=100, output_dir="./test_output/")
+
+        sampler = BlackJAXNSAWSampler(
+            likelihood=likelihood,
+            prior=prior,
+            sample_transforms=[],
+            likelihood_transforms=[],
+            config=config,
+        )
+
+        # Any point in the unit cube should give logprior = 0
+        for u_vals in [(0.3, 0.7), (0.1, 0.9), (0.5, 0.5)]:
+            params = {"a": u_vals[0], "b": u_vals[1]}
+            log_p = sampler._logprior_fn(params)
+            assert float(log_p) == pytest.approx(0.0, abs=1e-5)
 
 
 class TestSamplerFactory:

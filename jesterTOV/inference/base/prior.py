@@ -332,6 +332,142 @@ class CombinePrior(Prior):
         return output
 
 
+class Fixed(Prior):
+    """A parameter fixed to a constant value, excluded from the sampling space.
+
+    This is not a proper prior distribution — it has no ``log_prob`` or
+    ``sample`` implementation.  Use it in ``.prior`` files to pin a parameter
+    to a specific value while keeping the specification co-located with the
+    sampled priors:
+
+    .. code-block:: python
+
+        lambda_BL = Fixed(0.0, parameter_names=["lambda_BL"])
+
+    The parser will extract ``Fixed`` entries into a separate
+    ``fixed_params`` dict and will not add them to the ``CombinePrior`` that
+    defines the sampling space.
+
+    Parameters
+    ----------
+    value : float
+        The fixed value for the parameter.
+    parameter_names : list[str]
+        Must contain exactly one parameter name.
+    """
+
+    value: float
+
+    def __repr__(self) -> str:
+        return f"Fixed(value={self.value}, parameter_names={self.parameter_names})"
+
+    def __init__(self, value: float, parameter_names: list[str]) -> None:
+        super().__init__(parameter_names)
+        assert self.n_dim == 1, "Fixed must be 1D (one parameter per Fixed instance)"
+        self.value = float(value)
+
+    def sample(
+        self, rng_key: PRNGKeyArray, n_samples: int
+    ) -> dict[str, Float[Array, " n_samples"]]:
+        raise NotImplementedError(
+            "Fixed parameters are not sampled. "
+            "They are injected as constants into the transform."
+        )
+
+    def log_prob(self, z: dict[str, Float | Array]) -> Float:
+        raise NotImplementedError(
+            "Fixed parameters have no log_prob. "
+            "They do not contribute to the posterior density."
+        )
+
+
+@jaxtyped(typechecker=typechecker)
+class MultivariateGaussianPrior(Prior):
+    r"""Multivariate Gaussian prior :math:`\mathcal{N}(\mu, \Sigma)`.
+
+    By default this is the standard multivariate normal :math:`\mathcal{N}(0, I_d)`,
+    i.e. independent standard normals for each dimension.  Arbitrary mean and
+    covariance can be supplied for general use.
+
+    Attributes
+    ----------
+    mean : Float[Array, " n_dim"]
+        Mean vector.
+    cov : Float[Array, "n_dim n_dim"]
+        Covariance matrix (must be positive definite).
+    """
+
+    mean: Float[Array, " n_dim"]
+    cov: Float[Array, "n_dim n_dim"]
+
+    def __repr__(self) -> str:
+        return (
+            f"MultivariateGaussianPrior(n_dim={self.n_dim}, "
+            f"parameter_names={self.parameter_names})"
+        )
+
+    def __init__(
+        self,
+        parameter_names: list[str],
+        mean: Float[Array, " n_dim"] | None = None,
+        cov: Float[Array, "n_dim n_dim"] | None = None,
+    ) -> None:
+        r"""
+        Parameters
+        ----------
+        parameter_names : list[str]
+            Names for each dimension.
+        mean : array-like, optional
+            Mean vector of length ``len(parameter_names)``.  Defaults to zeros.
+        cov : array-like, optional
+            Covariance matrix of shape ``(n_dim, n_dim)``.  Defaults to identity.
+        """
+        super().__init__(parameter_names)
+        d = self.n_dim
+        self.mean = jnp.zeros(d) if mean is None else jnp.asarray(mean, dtype=float)
+        self.cov = jnp.eye(d) if cov is None else jnp.asarray(cov, dtype=float)
+        self.composite = False
+
+    def sample(
+        self, rng_key: PRNGKeyArray, n_samples: int
+    ) -> dict[str, Float[Array, " n_samples"]]:
+        r"""Sample from :math:`\mathcal{N}(\mu, \Sigma)`.
+
+        Parameters
+        ----------
+        rng_key : PRNGKeyArray
+            JAX random key.
+        n_samples : int
+            Number of samples to draw.
+
+        Returns
+        -------
+        dict[str, Float[Array, " n_samples"]]
+            Samples keyed by parameter name.
+        """
+        # Draw standard normals then apply affine transform: x = mu + L z
+        L = jnp.linalg.cholesky(self.cov)
+        z = jax.random.normal(rng_key, shape=(n_samples, self.n_dim))
+        samples = self.mean + z @ L.T  # (n_samples, n_dim)
+        return {name: samples[:, i] for i, name in enumerate(self.parameter_names)}
+
+    def log_prob(self, z: dict[str, Float | Array]) -> Float:
+        r"""Evaluate :math:`\log \mathcal{N}(z \mid \mu, \Sigma)`.
+
+        Parameters
+        ----------
+        z : dict[str, Float]
+            Dictionary mapping parameter names to scalar values.
+
+        Returns
+        -------
+        Float
+            Log probability (scalar).
+        """
+        x = jnp.array([z[name] for name in self.parameter_names])
+        return jax.scipy.stats.multivariate_normal.logpdf(x, self.mean, self.cov)
+
+
 @jaxtyped(typechecker=typechecker)
 class UniformPrior(SequentialTransformPrior):
     """
