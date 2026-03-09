@@ -1,7 +1,7 @@
 """Pydantic models for TOV solver configuration."""
 
-from typing import Literal
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Annotated, Literal, Union
+from pydantic import BaseModel, ConfigDict, Discriminator, Field
 
 # FIXME: TOVConfig is a type alias for the discriminated union of all TOV solver configs.
 # Currently only GRTOVConfig exists; extend the union when adding AnisotropyTOVConfig,
@@ -63,7 +63,34 @@ class GRTOVConfig(BaseTOVConfig):
     type: Literal["gr"] = "gr"  # type: ignore[override]  # Literal["gr"] ⊂ str
 
 
-# TOVConfig is currently just GRTOVConfig since it is the only solver with a config.
-# Replace this alias with the Annotated discriminated union (see comment at top of file)
-# once AnisotropyTOVConfig / ScalarTensorTOVConfig are added.
-TOVConfig = GRTOVConfig
+class ScalarTensorTOVConfig(BaseTOVConfig):
+    """Configuration for the Scalar-Tensor TOV solver.
+
+    Attributes
+    ----------
+    type : Literal["scalar_tensor"]
+        TOV solver type identifier
+    beta_ST : float
+        Scalar-tensor coupling parameter beta_ST (default: 0.0)
+    phi_inf_tgt : float
+        Target asymptotic scalar field at infinity (default: 1e-3)
+    phi_c : float
+        Central scalar field value (default: 1.0)
+    """
+
+    type: Literal["scalar_tensor"] = "scalar_tensor"  # type: ignore[override]
+
+    beta_ST: float = Field(
+        default=0.0, description="Scalar-tensor coupling parameter beta_ST"
+    )
+    phi_inf_tgt: float = Field(
+        default=1e-3, description="Target asymptotic scalar field at infinity"
+    )
+    phi_c: float = Field(default=1.0, description="Central scalar field value")
+
+
+# TOVConfig is a discriminated union of all available TOV solver configs.
+TOVConfig = Annotated[
+    Union[GRTOVConfig, ScalarTensorTOVConfig],
+    Discriminator("type"),
+]
