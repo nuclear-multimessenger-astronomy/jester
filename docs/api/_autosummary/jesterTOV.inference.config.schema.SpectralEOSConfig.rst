@@ -55,6 +55,8 @@
       ~SpectralEOSConfig.type
       ~SpectralEOSConfig.n_points_high
       ~SpectralEOSConfig.nb_CSE
+      ~SpectralEOSConfig.reparametrized
+      ~SpectralEOSConfig.sigma_scale
       ~SpectralEOSConfig.crust_name
    
    

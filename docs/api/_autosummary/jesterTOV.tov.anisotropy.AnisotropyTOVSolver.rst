@@ -1,5 +1,5 @@
 ﻿jesterTOV.tov.anisotropy.AnisotropyTOVSolver
-======================================
+============================================
 
 .. currentmodule:: jesterTOV.tov.anisotropy
 
@@ -15,6 +15,7 @@
    
       ~AnisotropyTOVSolver.__init__
       ~AnisotropyTOVSolver.construct_family
+      ~AnisotropyTOVSolver.fetch_params
       ~AnisotropyTOVSolver.get_required_parameters
       ~AnisotropyTOVSolver.solve
    
