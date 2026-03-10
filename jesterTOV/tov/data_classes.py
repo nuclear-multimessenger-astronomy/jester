@@ -35,15 +35,15 @@ class TOVSolution(NamedTuple):
     """
     Single neutron star solution from TOV equations.
 
-    When vmapped, fields become batched arrays:
+    When vmapped, fields become batched arrays::
+
         solutions = jax.vmap(solve)(pcs)
         # solutions.M is array [M1, M2, ..., Mn]
 
     The 'extra' field holds solver-specific quantities as a dictionary.
-    For example, ScalarTensorTOVSolver populates:
-        - lambda_S: Scalar tidal deformability
-        - lambda_ST1, lambda_ST2: Mixed tidal deformabilities
-        - q: Scalar charge
+    For example, ScalarTensorTOVSolver populates ``lambda_S`` (scalar tidal
+    deformability), ``lambda_ST1`` and ``lambda_ST2`` (mixed tidal
+    deformabilities), and ``q`` (scalar charge).
     """
 
     M: float  # Mass [geometric units]
@@ -60,10 +60,9 @@ class FamilyData(NamedTuple):
     central pressures, forming M-R-Λ curves for inference.
 
     The 'extra' field holds solver-specific quantities as a dictionary of arrays.
-    For example, ScalarTensorTOVSolver populates:
-        - lambdas_S: Scalar tidal deformabilities
-        - lambdas_ST1, lambdas_ST2: Mixed tidal deformabilities
-        - qs: Scalar charges
+    For example, ScalarTensorTOVSolver populates ``lambdas_S`` (scalar tidal
+    deformabilities), ``lambdas_ST1`` and ``lambdas_ST2`` (mixed tidal
+    deformabilities), and ``qs`` (scalar charges).
     """
 
     log10pcs: Float[Array, "ndat"]  # Log10 central pressure [geometric units]
