@@ -8,10 +8,8 @@ from jesterTOV.inference.config.schema import (
     MetamodelEOSConfig,
     MetamodelCSEEOSConfig,
     SpectralEOSConfig,
-    TOVConfig,
     GRTOVConfig,
     ScalarTensorTOVConfig,
-    GRTOVConfig,
 )
 from jesterTOV.inference.transforms import JesterTransform
 

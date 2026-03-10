@@ -18,9 +18,15 @@ Basic Examples
 
    :doc:`eos_tov/eos_STtov`
 
+**Scalar-tensor theory TOV solver**
+   Exploration of modified gravity theories using JESTER's scalar-tensor TOV solver to study deviations from general relativity.
+
+   :doc:`eos_tov/EoS_beyondGR`
+
 .. toctree::
    :hidden:
 
    eos_tov/eos_tov
    eos_tov/automatic_differentiation
    eos_tov/eos_STtov
+   eos_tov/EoS_beyondGR

@@ -16,11 +16,7 @@ class TestScalarTensorTOVSolver:
 
         solver = ScalarTensorTOVSolver()
         # Use values similar to notebook for stable test
-        params = {
-            "beta_ST": -4.5,
-            "phi_inf_tgt": 1e-3,
-            "phi_c": 1.0
-        }
+        params = {"beta_ST": -4.5, "phi_inf_tgt": 1e-3, "phi_c": 1.0}
 
         solution = solver.solve(sample_eos_data, pc, tov_params=params)
 
@@ -40,17 +36,10 @@ class TestScalarTensorTOVSolver:
     def test_construct_family(self, sample_eos_data):
         """Test M-R-Λ family construction for Scalar-Tensor gravity."""
         solver = ScalarTensorTOVSolver()
-        params = {
-            "beta_ST": -4.5,
-            "phi_inf_tgt": 1e-3,
-            "phi_c": 1.0
-        }
+        params = {"beta_ST": -4.5, "phi_inf_tgt": 1e-3, "phi_c": 1.0}
 
         family_data = solver.construct_family(
-            sample_eos_data,
-            ndat=10,
-            min_nsat=0.75,
-            tov_params=params
+            sample_eos_data, ndat=10, min_nsat=0.75, tov_params=params
         )
 
         # Check shapes
@@ -82,11 +71,7 @@ class TestScalarTensorTOVSolver:
         gr_solver = GRTOVSolver()
 
         # beta_ST = 0 with default notebook values for others should reduce to GR
-        params = {
-            "beta_ST": 0.0,
-            "phi_inf_tgt": 1e-3,
-            "phi_c": 1.0
-        }
+        params = {"beta_ST": 0.0, "phi_inf_tgt": 1e-3, "phi_c": 1.0}
 
         sol_st = st_solver.solve(sample_eos_data, pc, tov_params=params)
         sol_gr = gr_solver.solve(sample_eos_data, pc, tov_params={})
@@ -112,11 +97,7 @@ class TestScalarTensorTOVSolver:
         pc = float(sample_eos_data.ps[25])
         solver = ScalarTensorTOVSolver()
 
-        params = {
-            "beta_ST": beta_ST,
-            "phi_inf_tgt": 1e-3,
-            "phi_c": 1.0
-        }
+        params = {"beta_ST": beta_ST, "phi_inf_tgt": 1e-3, "phi_c": 1.0}
 
         solution = solver.solve(sample_eos_data, pc, tov_params=params)
         assert jnp.isfinite(solution.M)
