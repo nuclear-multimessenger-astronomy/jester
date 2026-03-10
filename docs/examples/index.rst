@@ -18,9 +18,18 @@ Basic Examples
 
    :doc:`eos_tov/eos_STtov`
 
+Inference Examples
+------------------
+
+**Inspecting inference results**
+   A walkthrough of how to load and explore the output of a completed ``jester`` inference run using the ``InferenceResult`` class, including accessing the posterior samples, metadata, and sampler diagnostics.
+
+   :doc:`inference/result`
+
 .. toctree::
    :hidden:
 
    eos_tov/eos_tov
    eos_tov/automatic_differentiation
    eos_tov/eos_STtov
+   inference/result
