@@ -259,7 +259,9 @@ class TestAnisotropyKwargsPassthrough:
         )
 
         # Run transform with gamma=0 (GR limit) vs small non-zero gamma
-        # All 6 anisotropy params are required
+        # Fix 5 of the 6 anisotropy params to isolate the effect of gamma.
+        # alpha must be non-zero: the PN term is gamma * ... * tanh(alpha * (...)),
+        # so alpha=0 makes tanh(0)=0 and gamma has no effect regardless of its value.
         base_aniso = {
             "lambda_BL": 0.0,
             "lambda_DY": 0.0,
@@ -274,5 +276,15 @@ class TestAnisotropyKwargsPassthrough:
             {**_NEP_PARAMS, **base_aniso, "gamma": 0.05}
         )
 
-        mass_diff = jnp.max(jnp.abs(result_gr["masses_EOS"] - result_mg["masses_EOS"]))
-        assert float(mass_diff) > 1e-6, "gamma should shift the M-R family"
+        # Get masses and radii from both solutions
+        masses_EOS_gr = result_gr["masses_EOS"]
+        radii_EOS_gr = result_gr["radii_EOS"]
+
+        masses_EOS_mg = result_mg["masses_EOS"]
+        radii_EOS_mg = result_mg["radii_EOS"]
+
+        # Compute R1.4
+        R1_4_gr = jnp.interp(1.4, masses_EOS_gr, radii_EOS_gr)
+        R1_4_mg = jnp.interp(1.4, masses_EOS_mg, radii_EOS_mg)
+        diff = float(abs(R1_4_gr - R1_4_mg) / R1_4_gr)
+        assert diff > 1e-6, "gamma should shift the M-R family"

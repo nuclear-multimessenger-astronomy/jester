@@ -9,6 +9,7 @@ from jesterTOV.inference.config.schema import (
     MetamodelCSEEOSConfig,
     SpectralEOSConfig,
     GRTOVConfig,
+    ScalarTensorTOVConfig,
 )
 from jesterTOV.inference.transforms import JesterTransform
 
@@ -75,6 +76,28 @@ class TestJesterTransform:
 
         assert transform is not None
         assert "SpectralDecomposition_EOS_model" in transform.get_eos_type()
+
+    def test_from_config_scalar_tensor(self):
+        """Test creating Scalar-Tensor transform via from_config."""
+        eos_config = MetamodelEOSConfig(
+            type="metamodel",
+            ndat_metamodel=100,
+            nmax_nsat=2.0,
+            nb_CSE=0,
+            crust_name="DH",
+        )
+        tov_config = ScalarTensorTOVConfig(
+            type="scalar_tensor",
+            beta_ST=-1.0,
+            phi_inf_tgt=1e-3,
+            phi_c=1.0,
+        )
+
+        transform = JesterTransform.from_config(eos_config, tov_config)
+
+        assert transform is not None
+        assert "MetaModel_EOS_model" in transform.get_eos_type()
+        assert "ScalarTensorTOVSolver" in str(type(transform.tov_solver))
 
     def test_invalid_eos_type_fails(self):
         """Test that unknown EOS config type raises ValueError at runtime."""

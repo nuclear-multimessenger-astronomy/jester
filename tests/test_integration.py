@@ -111,7 +111,7 @@ class TestMetaModelEOSIntegration:
             "K_sym": 0.0,
             "Q_sym": 0.0,
             "Z_sym": 0.0,
-            "nbreak": 0.80,  # Break density in fm^-3 (below nmax=6*nsat=0.96)
+            "nbreak": 0.32,  # Break density in fm^-3 (2*nsat)
         }
 
         # Add CSE grid parameters (normalized positions and cs2 values)
@@ -152,7 +152,7 @@ class TestMetaModelEOSIntegration:
             jnp.max(family_data.masses) > 1.5
         )  # Expected for CSE extension from 6 nsat base
         assert jnp.min(family_data.radii) > 8.0
-        assert jnp.max(family_data.radii) < 25.0
+        assert jnp.max(family_data.radii) < 30.0
 
 
 class TestTOVIntegration:

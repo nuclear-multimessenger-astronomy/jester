@@ -39,6 +39,7 @@ from .schemas.eos import (
 from .schemas.tov import (
     BaseTOVConfig,
     GRTOVConfig,
+    ScalarTensorTOVConfig,
     AnisotropyTOVConfig,
     TOVConfig,
 )
@@ -233,6 +234,7 @@ __all__ = [
     # TOV
     "BaseTOVConfig",
     "GRTOVConfig",
+    "ScalarTensorTOVConfig",
     "AnisotropyTOVConfig",
     "TOVConfig",
     # Likelihoods
