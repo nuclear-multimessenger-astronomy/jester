@@ -1,7 +1,8 @@
 """Modular likelihood components for jesterTOV inference"""
 
 from .combined import CombinedLikelihood, ZeroLikelihood
-from .gw import GWLikelihood, GWLikelihoodResampled
+from .gw import GWLikelihood, GWLikelihoodResampled, PopulationGWLikelihood
+from .multimessenger import MultiMessengerLikelihood
 from .nicer import NICERLikelihood
 from .radio import RadioTimingLikelihood
 from .chieft import ChiEFTLikelihood
