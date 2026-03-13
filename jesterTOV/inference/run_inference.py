@@ -134,6 +134,7 @@ def setup_transform(
     config: InferenceConfig,
     prior: CombinePrior | None = None,
     keep_names: list[str] | None = None,
+    fixed_params: dict[str, float] = {}
 ) -> JesterTransform:
     """
     Setup transform from configuration
@@ -146,6 +147,8 @@ def setup_transform(
         Prior object to extract parameter bounds (e.g., max nbreak for metamodel_cse)
     keep_names : list[str], optional
         Parameter names to keep in transformed output
+    fixed_params: dict[str, float]
+        parameters that are fixed and should be added in the transform step
 
     Returns
     -------
@@ -194,13 +197,15 @@ def setup_transform(
         tov_config=config.tov,
         keep_names=keep_names,
         max_nbreak_nsat=max_nbreak_nsat,
+        fixed_params=fixed_params
     )
 
     # Validate that all required parameters are in the prior
     if prior is not None:
         required_params = set(transform.get_parameter_names())
         prior_params = set(prior.parameter_names)
-        missing_params = required_params - prior_params
+        fixed_params = set(transform.fixed_params.keys())
+        missing_params = required_params - prior_params - fixed_params
 
         if missing_params:
             eos_name = transform.get_eos_type()
