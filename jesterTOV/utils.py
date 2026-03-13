@@ -427,3 +427,17 @@ def locate_lowest_non_causal_point(cs2: Float[Array, "n"]) -> Int[Array, ""]:
     masked_indices = jnp.where(mask, indices, len(cs2))
     first_index = jnp.min(masked_indices)
     return jnp.where(any_ones, first_index, -1)
+
+
+def lambda1_lambda2_to_lambda_tilde(lambda_1: Float | Array, lambda_2: Float | Array, mass_1: Float | Array, mass_2: Float | Array) -> Float | Array:
+
+    eta = jnp.minimum(mass_1 * mass_2 / (mass_1 + mass_2)**2, 0.25)
+
+    lambda_plus = lambda_1 + lambda_2
+    lambda_minus = lambda_1 - lambda_2
+    
+    lambda_tilde = 8 / 13 * (
+        (1 + 7 * eta - 31 * eta**2) * lambda_plus +
+        (1 - 4 * eta)**0.5 * (1 + 9 * eta - 11 * eta**2) * lambda_minus)
+    
+    return lambda_tilde
