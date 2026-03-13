@@ -234,7 +234,8 @@ def setup_transform(
     if prior is not None:
         required_params = set(transform.get_parameter_names())
         prior_params = set(prior.parameter_names)
-        missing_params = required_params - prior_params
+        fixed_params = set(transform.fixed_params.keys())
+        missing_params = required_params - prior_params - fixed_params
 
         if missing_params:
             eos_name = transform.get_eos_type()

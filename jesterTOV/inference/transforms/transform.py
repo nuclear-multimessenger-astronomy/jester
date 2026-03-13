@@ -57,6 +57,8 @@ class JesterTransform(NtoMTransform):
         Number of central pressure points for M-R-Λ curves (default: 100)
     min_nsat_TOV : float
         Minimum density for TOV integration in units of nsat (default: 0.75)
+    fixed_params : dict
+        Parameters that are kept fixed during the transformation and likelihood evaluation. (default: {})
     **kwargs
         Additional parameters (for compatibility)
 
@@ -133,6 +135,8 @@ class JesterTransform(NtoMTransform):
             keep_names = name_mapping[0]
         self.keep_names = keep_names
 
+        self.fixed_params = fixed_params
+
         # Initialize parent NtoMTransform
         super().__init__(name_mapping)
 
@@ -154,7 +158,7 @@ class JesterTransform(NtoMTransform):
         tov_config: BaseTOVConfig,
         keep_names: list[str] | None = None,
         max_nbreak_nsat: float | None = None,
-        fixed_params: dict[str, float] | None = None,
+        fixed_params: dict[str, float] ={},
     ) -> "JesterTransform":
         """Create transform from configuration objects.
 
@@ -171,9 +175,8 @@ class JesterTransform(NtoMTransform):
             Parameters to preserve in output
         max_nbreak_nsat : float | None
             Maximum nbreak value (for MetaModelCSE optimization)
-        fixed_params : dict[str, float] | None
-            Parameters pinned to constant values, excluded from the sampling
-            space but injected into every ``forward()`` call.
+        fixed_params: dict[str, float]
+            Parameters that should become fixed params for the transform. Defaults to {}.
 
         Returns
         -------
