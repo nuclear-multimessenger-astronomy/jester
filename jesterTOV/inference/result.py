@@ -165,7 +165,7 @@ class InferenceResult:
             # still need to decide where to do this, and if to save in metadata the history/final summary for training and production
 
             # FlowMC: Get metadata from sampler state
-            state = sampler.sampler.get_sampler_state(training=False)  # type: ignore[union-attr]
+            state = sampler.sampler.resources  # type: ignore[union-attr]
 
             # Add FlowMC-specific metadata
             flowmc_config = config.sampler  # type: ignore[attr-defined]
