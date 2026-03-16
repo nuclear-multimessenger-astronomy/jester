@@ -103,6 +103,20 @@ class TOVSolverBase(ABC):
         Returns:
             FamilyData: Mass-radius-tidal curves in physical units
         """
+        # Evaluate EOS validity once for the entire family
+        is_valid_eos = (
+            jnp.all(eos_data.ps > 0) & 
+            jnp.all(eos_data.hs > 0) & 
+            jnp.all(eos_data.es > 0) & 
+            jnp.all(eos_data.cs2 >= 0) & 
+            jnp.all(eos_data.cs2 <= 1)
+        )
+
+        # Poison the EOS data with NaNs if unphysical
+        eos_data = jax.tree_util.tree_map(
+            lambda x: jnp.where(is_valid_eos, x, jnp.nan), 
+            eos_data
+        )
         # Create central pressure grid
         pc_min = self._get_pc_min(eos_data, min_nsat)
         pc_max = self._get_pc_max(eos_data)
