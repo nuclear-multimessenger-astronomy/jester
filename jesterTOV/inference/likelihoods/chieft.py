@@ -212,9 +212,6 @@ class ChiEFTLikelihood(LikelihoodBase):
             return_value = (
                 -beta * (sample_p - high_p) * jnp.heaviside(sample_p - high_p, 0)
                 + -beta * (low_p - sample_p) * jnp.heaviside(low_p - sample_p, 0)
-                + 1
-                * jnp.heaviside(sample_p - low_p, 0)
-                * jnp.heaviside(high_p - sample_p, 0)
             )
             return return_value
 
