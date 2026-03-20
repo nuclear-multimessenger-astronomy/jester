@@ -1,9 +1,10 @@
 r"""Unified transform for EOS parameters to neutron star observables."""
 
-from typing import Any
+from typing import Any, Callable
 
 import jax.numpy as jnp
 from jaxtyping import Array, Float
+from jax.random import PRNGKey
 
 from jesterTOV.eos.base import Interpolate_EOS_model
 from jesterTOV.eos.metamodel import (
@@ -24,9 +25,17 @@ from jesterTOV.inference.config.schema import (
     BaseTOVConfig,
     GRTOVConfig,
     AnisotropyTOVConfig,
+    PopulationConfig
 )
 from jesterTOV.inference.likelihoods.constraints import check_all_constraints
 from jesterTOV.logging_config import get_logger
+
+from jesterTOV.inference.population.populations import (
+    RecycledBinary,
+    UniformPopulation, 
+    MassRatioPowerLaw
+)
+                                                
 
 logger = get_logger("jester")
 
@@ -514,3 +523,217 @@ class JesterTransform(NtoMTransform):
             result.update(self.fixed_params)
 
         return result
+
+
+class PopulationJesterTransform(JesterTransform):
+    """
+    Transform EOS parameters and parameters for the BNS mass distribution to 
+    neutron star observables (M, R, Λ) and samples for mass_1_source, mass_2_source
+    from the population model.
+
+    This is the transform class that should be used for joint inference of the EOS
+    and the mass population.
+
+    The transform can be created either by:
+    1. Passing EOS, TOV solver, and population instances directly
+    2. Using from_config() classmethod with configuration dict/object
+
+    Parameters
+    ----------
+    eos : Interpolate_EOS_model
+        EOS model instance (MetaModel, MetaModelCSE, Spectral, etc.)
+    tov_solver : TOVSolverBase
+        TOV solver instance (GRTOVSolver, PostTOVSolver, ScalarTensorTOVSolver)
+    population: Callable
+        jit-compatible population function that takes a random key, 
+        a param dict, and a size integer and returns arrays with mass_1, mass_2.
+    name_mapping : tuple[list[str], list[str]] | None
+        Tuple of (input_names, output_names). If None, constructed from
+        EOS and TOV required parameters.
+    keep_names : list[str] | None
+        Parameter names to preserve in output. If None, keeps all inputs.
+    ndat_TOV : int
+        Number of central pressure points for M-R-Λ curves (default: 100)
+    min_nsat_TOV : float
+        Minimum density for TOV integration in units of nsat (default: 0.75)
+    fixed_params : dict
+        Parameters that are kept fixed during the transformation and likelihood evaluation. (default: {})
+    pop_random_key : PRNGKey
+        fixed random key to draw the masses from the population model.
+        This key has to stay the same in order to make the likelihood evaluation deterministic.
+        Defaults to PRNGKey(170817).
+    N_masses_evaluation : int
+        Number of mass samples to draw from the population (default: 8000)
+        Large values recommended - GPU parallelization makes this cheap!
+    **kwargs
+        Additional parameters (for compatibility)
+
+    Attributes
+    ----------
+    eos : Interpolate_EOS_model
+        The equation of state model
+    tov_solver : TOVSolverBase
+        The TOV equation solver
+    population: Callable
+        The population model
+    eos_params : list[str]
+        Parameters required by the EOS
+    tov_params : list[str]
+        Parameters required by the TOV solver
+    keep_names : list[str]
+        Parameters to preserve in output
+
+    Examples
+    --------
+    >>> # Direct instantiation
+    >>> from jesterTOV.eos.metamodel import MetaModel_EOS_model
+    >>> from jesterTOV.tov.gr import GRTOVSolver
+    >>> eos = MetaModel_EOS_model(crust_name="DH")
+    >>> solver = GRTOVSolver()
+    >>> transform = JesterTransform(eos=eos, tov_solver=solver)
+
+    >>> # From configuration
+    >>> from jesterTOV.inference.config.schema import MetamodelCSEEOSConfig, TOVConfig
+    >>> eos_config = MetamodelCSEEOSConfig(type="metamodel_cse", nb_CSE=8)
+    >>> tov_config = TOVConfig(type="gr")
+    >>> transform = JesterTransform.from_config(eos_config, tov_config)
+
+    >>> # Transform parameters to observables
+    >>> params = {"E_sat": -16.0, "K_sat": 230.0, ...}
+    >>> result = transform.forward(params)
+    >>> print(result["masses_EOS"])  # Neutron star masses in M☉
+    """
+
+    def __init__(
+        self,
+        eos: Interpolate_EOS_model,
+        tov_solver: TOVSolverBase,
+        population: Callable,
+        name_mapping: tuple[list[str], list[str]] | None = None,
+        keep_names: list[str] | None = None,
+        ndat_TOV: int = 100,
+        min_nsat_TOV: float = 0.75,
+        fixed_params: dict = {},
+        pop_random_key: PRNGKey = PRNGKey(170817),
+        N_masses_evaluation: int = 8000,
+        **kwargs: Any,
+    ) -> None:
+
+
+        super().__init__(
+            eos,
+            tov_solver,
+            name_mapping,
+            keep_names,
+            ndat_TOV,
+            min_nsat_TOV,
+            fixed_params,
+            **kwargs,
+        )
+
+        # Get attributes 
+
+        self.population = population
+        self.pop_random_key = pop_random_key
+        self.N_masses_evaluation = N_masses_evaluation
+
+        logger.debug(f"Initialized with Population {self.population},"
+                     f" pop_random_key {self.pop_random_key}"
+                     f" N_masses_evaluation {self.N_masses_evaluation}.")
+
+        self.transform_func = self.construct_eos_and_solve_tov_and_sample_population
+    
+    @classmethod
+    def from_config(
+        cls,
+        eos_config: BaseEOSConfig,
+        tov_config: BaseTOVConfig,
+        population_config: PopulationConfig,
+        keep_names: list[str] | None = None,
+        max_nbreak_nsat: float | None = None,
+        fixed_params: dict[str, float] = {},
+    ) -> "PopulationJesterTransform":
+        
+        effective_max = (
+            max_nbreak_nsat
+            if max_nbreak_nsat is not None
+            else getattr(eos_config, "max_nbreak_nsat", None)
+        )
+        eos = cls._create_eos(eos_config, effective_max)
+
+        # Instantiate TOV solver based on tov_config
+        tov_solver = cls._create_tov_solver(tov_config)
+
+        # fetch the population args
+        match population_config.name:
+            case "RecycledBinary":
+                population_func = RecycledBinary
+            case "UniformPopulation":
+                population_func = UniformPopulation
+            case "MassRatioPowerLaw":
+                population_func = MassRatioPowerLaw
+            case _:
+                raise ValueError(f"Population name in config must be 'RecycledBinary', "
+                                 f" 'MassRatioPowerLaw', or 'UniformPopulation'.")
+        
+        pop_random_key = PRNGKey(population_config.pop_random_key)
+
+        return cls(
+            eos=eos,
+            tov_solver=tov_solver,
+            population=population_func,
+            keep_names=keep_names,
+            ndat_TOV=tov_config.ndat_TOV,
+            min_nsat_TOV=tov_config.min_nsat_TOV,
+            fixed_params=fixed_params,
+            pop_random_key=pop_random_key,
+            N_masses_evaluation=population_config.N_masses_evaluation
+        )
+
+    def sample_population(self, params):
+        """Wrapper function that enables deterministic sampling of the population
+            with the pop_random_key."""
+        
+        mass_arr =  self.population(
+            key=self.pop_random_key,
+            params=params,
+            size=self.N_masses_evaluation
+        )
+
+        return {"masses_1_pop": mass_arr[:, 0], "masses_2_pop": mass_arr[:, 1]}
+
+    def construct_eos_and_solve_tov_and_sample_population(
+        self,
+        params: dict[str, Float],
+    ) -> dict[str, Float | Float[Array, " n"]]:
+        """Construct EOS from parameters, solve TOV equations 
+            and sample population model.
+
+        This is the transformation method that:
+        1. Gets the M-R-Λ family with constraint check
+        2. Samples the population model
+
+        Parameters
+        ----------
+        params : dict[str, Float]
+            Input parameters (EOS + TOV parameters)
+
+        Returns
+        -------
+        dict[str, Float | Float[Array, " n"]]
+            Dictionary containing:
+            - masses_EOS : Neutron star masses [M☉]
+            - radii_EOS : Neutron star radii [km]
+            - Lambdas_EOS : Tidal deformabilities
+            - logpc_EOS : Log10 central pressures
+            - n, p, h, e, dloge_dlogp, cs2 : EOS quantities
+            - Constraint violation counts
+            - masses_1_pop: Samples from the population model for the heavier component
+            - masses_2_pop: Samples from the population model for the lighter component
+        """
+    
+        result = self.construct_eos_and_solve_tov(params)
+        result.update(self.sample_population(params))
+
+        return result
+

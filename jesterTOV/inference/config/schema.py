@@ -74,6 +74,10 @@ from .schemas.samplers import (
 )
 
 
+# population schema
+from .schemas.populations import PopulationConfig
+
+
 # ============================================================================
 # Prior Configuration
 # ============================================================================
@@ -175,6 +179,8 @@ class InferenceConfig(JesterBaseModel):
         Prior configuration
     likelihoods : list[LikelihoodConfig]
         List of likelihood configurations
+    population: str
+        Name of the population model
     sampler : SamplerConfig
         Sampler configuration
     postprocessing : PostprocessingConfig
@@ -196,6 +202,7 @@ class InferenceConfig(JesterBaseModel):
     tov: TOVConfig
     prior: PriorConfig
     likelihoods: list[LikelihoodConfig]
+    population: PopulationConfig | None = None
     sampler: SamplerConfig
     postprocessing: PostprocessingConfig = Field(default_factory=PostprocessingConfig)
     data_paths: dict[str, str] = Field(default_factory=dict)

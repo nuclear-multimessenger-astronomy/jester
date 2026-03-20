@@ -369,16 +369,8 @@ class PopulationGWLikelihood(LikelihoodBase):
         Name of the GW event (e.g., "GW170817")
     model_dir : str
         Path to directory containing the trained normalizing flow model
-    population: callable
-        A population function that provides m1, m2 samples from the population model.
-    pop_random_key: PRNGKey
-        Random key with which the m1, m2 samples from the population will be generated. 
-        Exists to make the likelihood evaluation deterministic.
     penalty_value : float, optional
         Penalty value for samples where masses exceed Mtov (default: 0.0, i.e. no penalty)
-    N_masses_evaluation : int, optional
-        Number of mass samples to pre-sample (default: 2000)
-        Large values recommended - GPU parallelization makes this cheap!
     N_masses_batch_size : int, optional
         Batch size for jax.lax.map processing (default: 1000)
     seed : int, optional
@@ -398,16 +390,10 @@ class PopulationGWLikelihood(LikelihoodBase):
         Exists to make the likelihood evaluation deterministic.
     penalty_value : float
         Penalty value for samples where masses exceed Mtov
-    N_masses_evaluation : int
-        Number of pre-sampled mass pairs
     N_masses_batch_size : int
         Batch size for processing
-    seed : int
-        Random seed used for pre-sampling
     flow : Flow
         Normalizing flow model for this GW event
-    fixed_mass_samples : Float[Array, "n_samples 2"]
-        Pre-sampled (m1, m2) pairs from the flow, shape [N, 2]
 
     Notes
     -----
@@ -418,20 +404,15 @@ class PopulationGWLikelihood(LikelihoodBase):
     event_name: str
     model_dir: str
     penalty_value: float
-    N_masses_evaluation: int
     N_masses_batch_size: int
     seed: int
     flow: Flow
-    fixed_mass_samples: Float[Array, "n_samples 2"]
 
     def __init__(
         self,
         event_name: str,
         model_dir: str,
-        population,
-        pop_random_key: jax.random.PRNGKey,
         penalty_value: float = 0.0,
-        N_masses_evaluation: int = 2000,
         N_masses_batch_size: int = 1000,
         seed: int = 42,
     ) -> None:
@@ -439,12 +420,8 @@ class PopulationGWLikelihood(LikelihoodBase):
         self.event_name = event_name
         self.model_dir = model_dir
         self.penalty_value = penalty_value
-        self.N_masses_evaluation = N_masses_evaluation
         self.N_masses_batch_size = N_masses_batch_size
         self.seed = seed
-
-        self.population = population
-        self.pop_random_key = pop_random_key
 
         # Load Flow model for this event
         logger.info(f"Loading NF model for {event_name} from {model_dir}")
@@ -461,7 +438,8 @@ class PopulationGWLikelihood(LikelihoodBase):
             Must contain:
             - 'masses_EOS': Array of neutron star masses from EOS
             - 'Lambdas_EOS': Array of tidal deformabilities from EOS
-            - **population parameters: The population parameters for the population model that are sampled over.
+            - 'masses_1_pop': Array of heavier NS masses sampled from the population
+            - 'masses_2_pop': Array of ligher NS sampled from the population.
 
         Returns
         -------
@@ -473,7 +451,8 @@ class PopulationGWLikelihood(LikelihoodBase):
         Lambdas_EOS: Float[Array, " n_points"] = params["Lambdas_EOS"]
         mtov: Float = jnp.max(masses_EOS)
         
-        mass_samples = self.population(self.pop_random_key, params, self.N_masses_evaluation)
+        mass_samples = jnp.array([params["masses_1_pop"],
+                                  params["masses_2_pop"]]).T
 
         def process_sample(sample: Float[Array, " 2"]) -> Float:
             """
@@ -517,6 +496,6 @@ class PopulationGWLikelihood(LikelihoodBase):
         )
 
         # Take logsumexp over all pre-sampled mass pairs
-        log_likelihood = logsumexp(all_logprobs) - jnp.log(self.N_masses_evaluation)
+        log_likelihood = logsumexp(all_logprobs) - jnp.log(mass_samples.shape[0])
 
         return log_likelihood
