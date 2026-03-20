@@ -439,7 +439,7 @@ class PopulationGWLikelihood(LikelihoodBase):
             - 'masses_EOS': Array of neutron star masses from EOS
             - 'Lambdas_EOS': Array of tidal deformabilities from EOS
             - 'masses_1_pop': Array of heavier NS masses sampled from the population
-            - 'masses_2_pop': Array of ligher NS sampled from the population.
+            - 'masses_2_pop': Array of ligher NS sampled from the population
 
         Returns
         -------
