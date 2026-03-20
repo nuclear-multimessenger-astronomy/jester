@@ -202,6 +202,7 @@ class InferenceConfig(JesterBaseModel):
     tov: TOVConfig
     prior: PriorConfig
     likelihoods: list[LikelihoodConfig]
+    multimessenger: bool = False
     population: PopulationConfig | None = None
     sampler: SamplerConfig
     postprocessing: PostprocessingConfig = Field(default_factory=PostprocessingConfig)

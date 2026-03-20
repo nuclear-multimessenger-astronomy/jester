@@ -637,7 +637,7 @@ class PopulationJesterTransform(JesterTransform):
         self.pop_random_key = pop_random_key
         self.N_masses_evaluation = N_masses_evaluation
 
-        logger.debug(f"Initialized with Population {self.population},"
+        logger.debug(f"Initialized Transform with population {self.population},"
                      f" pop_random_key {self.pop_random_key}"
                      f" N_masses_evaluation {self.N_masses_evaluation}.")
 
@@ -700,7 +700,7 @@ class PopulationJesterTransform(JesterTransform):
             size=self.N_masses_evaluation
         )
 
-        return {"masses_1_pop": mass_arr[:, 0], "masses_2_pop": mass_arr[:, 1]}
+        return {"masses_1_pop": mass_arr[0], "masses_2_pop": mass_arr[1]}
 
     def construct_eos_and_solve_tov_and_sample_population(
         self,

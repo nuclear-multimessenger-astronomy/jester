@@ -27,7 +27,7 @@ from .config.schema import (
 from .priors.parser import parse_prior_file
 from .base.prior import CombinePrior
 from .base.likelihood import LikelihoodBase
-from .transforms import JesterTransform, PopulationJesterTransform
+from .transforms import JesterTransform, PopulationJesterTransform, MultimessengerJesterTransform
 from .likelihoods.factory import create_combined_likelihood
 from .samplers import create_sampler, JesterSampler
 from .result import InferenceResult
@@ -219,8 +219,18 @@ def setup_transform(
             logger.info(
                 f"Using max_nbreak_nsat from eos config: {config_value:.4f} n_sat"
             )
+
+    if config.multimessenger:
+        transform = MultimessengerJesterTransform.from_config(
+            eos_config=config.eos,
+            tov_config=config.tov,
+            population_config=config.population,
+            keep_names=keep_names,
+            max_nbreak_nsat=max_nbreak_nsat,
+            fixed_params=fixed_params
+        )
         
-    if config.population is not None:
+    elif config.population is not None:
         transform = PopulationJesterTransform.from_config(
             eos_config=config.eos,
             tov_config=config.tov,
@@ -261,8 +271,8 @@ def setup_transform(
         unused_params = prior_params - required_params
         if unused_params:
             logger.warning(
-                f"Prior contains unused parameters: {sorted(unused_params)}. "
-                f"These will be preserved but not used by the transform."
+                f"Prior contains non-EOS parameters: {sorted(unused_params)}. "
+                f"These will be preserved but only used if the transform has a population function."
             )
 
     return transform
