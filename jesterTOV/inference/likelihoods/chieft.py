@@ -209,10 +209,9 @@ class ChiEFTLikelihood(LikelihoodBase):
         # Compute f
         def f(sample_p, low_p, high_p):
             beta = 6 / (high_p - low_p)
-            return_value = (
-                -beta * (sample_p - high_p) * jnp.heaviside(sample_p - high_p, 0)
-                + -beta * (low_p - sample_p) * jnp.heaviside(low_p - sample_p, 0)
-            )
+            return_value = -beta * (sample_p - high_p) * jnp.heaviside(
+                sample_p - high_p, 0
+            ) + -beta * (low_p - sample_p) * jnp.heaviside(low_p - sample_p, 0)
             return return_value
 
         f_array = f(sample_p, low_p, high_p)
