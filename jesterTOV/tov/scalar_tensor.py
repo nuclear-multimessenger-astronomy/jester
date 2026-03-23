@@ -296,7 +296,6 @@ def _tov_ode_iter_tidal(h, y, eos):
     )
 
 
-
 # @jax.jit
 @functools.partial(jax.jit, static_argnames=["max_iterations"])
 def _compiled_tov_solve(
@@ -379,15 +378,13 @@ def _compiled_tov_solve(
             nu_s_prime = 2 * M_s / (R * (R - 2.0 * M_s)) + R * jnp.power(psi_s, 2)
 
             front = (
-                2
-                * psi_s
-                / jnp.sqrt(jnp.power(nu_s_prime, 2) + 4 * jnp.power(psi_s, 2))
+                2 * psi_s / jnp.sqrt(jnp.power(nu_s_prime, 2) + 4 * jnp.power(psi_s, 2))
             )
             inside_tanh = jnp.sqrt(
                 jnp.power(nu_s_prime, 2) + 4 * jnp.power(psi_s, 2)
             ) / (nu_s_prime + 2 / R)
             phi_inf = phi_s + front * jnp.arctanh(inside_tanh)
-            
+
             return jnp.array([phi_inf - phi_inf_target]), (R, M_s)
 
         def step_func(state, _):
@@ -444,10 +441,10 @@ def _compiled_tov_solve(
                 jnp.array([nu0, nu0]),
                 jnp.array([psi0, psi0]),
                 jnp.array([phi0_final, phi0_final]),
-                jnp.array([0.0, H0_center]),                # H0
-                jnp.array([0.0, H0_prime_center]),          # H0_prime
-                jnp.array([delta_phi_center, 0.0]),         # delta_phi
-                jnp.array([delta_phi_prime_center, 0.0]),   # delta_phi_prime
+                jnp.array([0.0, H0_center]),  # H0
+                jnp.array([0.0, H0_prime_center]),  # H0_prime
+                jnp.array([delta_phi_center, 0.0]),  # delta_phi
+                jnp.array([delta_phi_prime_center, 0.0]),  # delta_phi_prime
             )
 
             def solve_single(y0):
@@ -476,7 +473,9 @@ def _compiled_tov_solve(
             H0_surface_1, H0_surface_2 = sol_batched.ys[5][:, -1]
             H0_prime_surface_1, H0_prime_surface_2 = sol_batched.ys[6][:, -1]
             delta_phi_surface_1, delta_phi_surface_2 = sol_batched.ys[7][:, -1]
-            delta_phi_prime_surface_1, delta_phi_prime_surface_2 = sol_batched.ys[8][:, -1]
+            delta_phi_prime_surface_1, delta_phi_prime_surface_2 = sol_batched.ys[8][
+                :, -1
+            ]
 
             return (
                 R_final,
@@ -574,9 +573,7 @@ def _compiled_tov_solve(
     A_phi_inf = jnp.exp(0.5 * beta_ST * jnp.power(phi_inf_target, 2))
     A_phi_s = jnp.exp(0.5 * beta_ST * jnp.power(phi_s, 2))
     R_jordan = A_phi_s * R
-    M_inf_jordan = (1 / A_phi_inf) * (
-        M_inf + (beta_ST * phi_inf_target * (-q * M_inf))
-    )
+    M_inf_jordan = (1 / A_phi_inf) * (M_inf + (beta_ST * phi_inf_target * (-q * M_inf)))
 
     Lambda_T_J = lambda_T * jnp.power(M_inf, -5.0)
     Lambda_S_J = (
@@ -661,11 +658,15 @@ class ScalarTensorTOVSolver(TOVSolverBase):
             "lambda_ST2": Lambda_ST2_J,
             "q": q,
         }
-        
+
         return TOVSolution(
             M=M_inf_jordan,
             R=R_jordan,
-            k2=3.0 / 2.0 * Lambda_T_J * jnp.power(M_inf_jordan, 5.0) / jnp.power(R_jordan, 5.0), # Rescaled from Lambda_T
+            k2=3.0
+            / 2.0
+            * Lambda_T_J
+            * jnp.power(M_inf_jordan, 5.0)
+            / jnp.power(R_jordan, 5.0),  # Rescaled from Lambda_T
             extra=extra,
         )  # type: ignore[arg-type]
 

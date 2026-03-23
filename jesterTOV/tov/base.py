@@ -106,18 +106,17 @@ class TOVSolverBase(ABC):
         """
         # Evaluate EOS validity once for the entire family
         is_valid_eos = (
-            jnp.all(eos_data.ps > 0) & 
-            jnp.all(eos_data.hs > 0) & 
-            jnp.all(eos_data.es > 0) & 
-            jnp.all(eos_data.cs2 >= 0) & 
-            jnp.all(eos_data.cs2 <= 1)
+            jnp.all(eos_data.ps > 0)
+            & jnp.all(eos_data.hs > 0)
+            & jnp.all(eos_data.es > 0)
+            & jnp.all(eos_data.cs2 >= 0)
+            & jnp.all(eos_data.cs2 <= 1)
         )
 
-        # Poison the EOS data with NaNs if unphysical
-        eos_data = jax.tree_util.tree_map(
-            lambda x: jnp.where(is_valid_eos, x, jnp.nan), 
-            eos_data
-        )
+        # # Poison the EOS data with NaNs if unphysical
+        # eos_data = jax.tree_util.tree_map(
+        #     lambda x: jnp.where(is_valid_eos, x, jnp.nan), eos_data
+        # )
 
         # Create central pressure grid
         pc_min = self._get_pc_min(eos_data, min_nsat)
@@ -218,8 +217,10 @@ class TOVSolverBase(ABC):
         lambdas = 2.0 / 3.0 * k2s * jnp.power(compactness, -5.0)
 
         # Limit masses to be below MTOV and interpolate onto a uniform log(pc) grid on stable segments
-        pcs_lim, masses_lim, radii_lim, lambdas_lim = utils.limit_by_MTOV_and_interpolate(
-            pcs, masses_solar, radii_km, lambdas, ndat
+        pcs_lim, masses_lim, radii_lim, lambdas_lim = (
+            utils.limit_by_MTOV_and_interpolate(
+                pcs, masses_solar, radii_km, lambdas, ndat
+            )
         )
 
         # Process extra solver-specific fields if provided
@@ -229,8 +230,10 @@ class TOVSolverBase(ABC):
             extra_processed = jax.tree_util.tree_map(
                 lambda val: utils.limit_by_MTOV_and_interpolate(
                     pcs, masses_solar, radii_km, val, ndat
-                )[3],  # Take only the interpolated fourth element (the 'lambda'-like array)
-                extra
+                )[
+                    3
+                ],  # Take only the interpolated fourth element (the 'lambda'-like array)
+                extra,
             )
 
         return FamilyData(

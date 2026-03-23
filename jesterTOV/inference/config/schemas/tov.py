@@ -1,7 +1,7 @@
 """Pydantic models for TOV solver configuration."""
 
 from typing import Annotated, Literal, Union
-from pydantic import ConfigDict, BaseModel, ConfigDict, Discriminator, Field
+from pydantic import ConfigDict, Discriminator, Field
 
 from ._base import JesterBaseModel
 
@@ -81,6 +81,7 @@ class ScalarTensorTOVConfig(BaseTOVConfig):
     )
     phi_c: float = Field(default=1.0, description="Central scalar field value")
 
+
 class AnisotropyTOVConfig(BaseTOVConfig):
     """Configuration for the post-TOV solver with beyond-GR corrections.
 
@@ -95,6 +96,7 @@ class AnisotropyTOVConfig(BaseTOVConfig):
     """
 
     type: Literal["anisotropy"] = "anisotropy"  # type: ignore[override]  # Literal["anisotropy"] ⊂ str
+
 
 # TOVConfig is a discriminated union of all available TOV solver configs.
 TOVConfig = Annotated[
