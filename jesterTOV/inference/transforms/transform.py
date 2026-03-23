@@ -288,11 +288,6 @@ class JesterTransform(NtoMTransform):
             from jesterTOV.tov.scalar_tensor import ScalarTensorTOVSolver
 
             return ScalarTensorTOVSolver()
-
-        # String-based dispatch for solvers that do not yet have their own config class
-        tov_type = config.type
-        if tov_type == "post":
-            raise NotImplementedError("PostTOVSolver config class not implemented yet")
         elif isinstance(config, AnisotropyTOVConfig):
             from jesterTOV.tov.anisotropy import AnisotropyTOVSolver
 

@@ -296,7 +296,6 @@ def _tov_ode_iter_tidal(h, y, eos):
     )
 
 
-# @jax.jit
 @functools.partial(jax.jit, static_argnames=["max_iterations"])
 def _compiled_tov_solve(
     pc, beta_ST, phi_inf_target, phi0, ps, hs, es, dloge_dlogps, max_iterations=100

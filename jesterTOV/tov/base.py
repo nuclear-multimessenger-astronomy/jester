@@ -222,7 +222,7 @@ class TOVSolverBase(ABC):
                 pcs, masses_solar, radii_km, lambdas, ndat
             )
         )
-
+        # @TODO: merge extras interpolation in a single call in above.
         # Process extra solver-specific fields if provided
         extra_processed: Optional[dict[str, Float[Array, "ndat"]]] = None
         if extra is not None:
