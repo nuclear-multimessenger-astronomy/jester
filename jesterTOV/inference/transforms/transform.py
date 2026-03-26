@@ -287,7 +287,7 @@ class JesterTransform(NtoMTransform):
         elif isinstance(config, ScalarTensorTOVConfig):
             from jesterTOV.tov.scalar_tensor import ScalarTensorTOVSolver
 
-            return ScalarTensorTOVSolver()
+            return ScalarTensorTOVSolver(calculate_tidal=config.calculate_tidal)
         elif isinstance(config, AnisotropyTOVConfig):
             from jesterTOV.tov.anisotropy import AnisotropyTOVSolver
 
