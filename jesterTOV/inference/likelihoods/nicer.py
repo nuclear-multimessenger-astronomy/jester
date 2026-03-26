@@ -15,6 +15,7 @@ from jax.scipy.special import logsumexp
 
 from jesterTOV.inference.base.likelihood import LikelihoodBase
 from jesterTOV.logging_config import get_logger
+import jesterTOV.utils as utils
 
 logger = get_logger("jester")
 
@@ -193,7 +194,8 @@ class NICERLikelihood(LikelihoodBase):
     def evaluate(self, params: dict[str, Float | Array]) -> Float:
         """
         Evaluate log likelihood for given EOS parameters.
-
+        Handles two segments in case of phase transition.
+        Segments defined by detecting sudden jump in data gap along pc.
         Uses pre-sampled masses from initialization (deterministic evaluation).
 
         Parameters
@@ -212,85 +214,96 @@ class NICERLikelihood(LikelihoodBase):
         masses_EOS: Float[Array, " n_points"] = params["masses_EOS"]
         radii_EOS: Float[Array, " n_points"] = params["radii_EOS"]
         mtov: Float = jnp.max(masses_EOS)
+        
+        # mass-radius split wrt phase transition jump
+        split_idx = utils.get_MR_split_index(masses_EOS, radii_EOS)
+        
+        # divide by mask
+        idx = jnp.arange(masses_EOS.shape[0])
+        mask1 = idx < split_idx
+        mask2 = idx >= split_idx
 
-        def process_sample_amsterdam(mass: Float) -> Float:
-            """
-            Process a single Amsterdam mass sample
+        # Segment 1
+        m_eos_1 = jnp.where(mask1, masses_EOS, jnp.inf)
+        r_eos_1 = jnp.where(mask1, radii_EOS, 0.0)
+        sort_1 = jnp.argsort(m_eos_1)
+        m_eos_1, r_eos_1 = m_eos_1[sort_1], r_eos_1[sort_1]
+        
+        # Boundary 1: Find valid min and max mass for this segment
+        seg1_min = m_eos_1[0]
+        seg1_max = jnp.max(jnp.where(m_eos_1 == jnp.inf, -jnp.inf, m_eos_1))
 
-            Parameters
-            ----------
-            mass : Float
-                Sampled mass value (scalar)
+        # Segment 2
+        m_eos_2 = jnp.where(mask2, masses_EOS, jnp.inf)
+        r_eos_2 = jnp.where(mask2, radii_EOS, 0.0)
+        sort_2 = jnp.argsort(m_eos_2)
+        m_eos_2, r_eos_2 = m_eos_2[sort_2], r_eos_2[sort_2]
 
-            Returns
-            -------
-            Float
-                Log probability from Amsterdam flow including penalty
-            """
-            # Interpolate radius from EOS
-            radius = jnp.interp(mass, masses_EOS, radii_EOS)
+        # Boundary 2: Find valid min and max mass for this segment
+        seg2_min = m_eos_2[0]
+        seg2_max = jnp.max(jnp.where(m_eos_2 == jnp.inf, -jnp.inf, m_eos_2))
 
-            # Evaluate Amsterdam flow at (mass, radius)
-            mr_point = jnp.array(
-                [[mass, radius]]
-            )  # Shape: (1, 2) for (n_samples, n_features)
+        def process_sample_amsterdam(mass: Float, m_eos: Array, r_eos: Array, max_m_tov: Float, seg_min: Float, seg_max: Float) -> Float:
+            radius = jnp.interp(mass, m_eos, r_eos)
+            mr_point = jnp.array([[mass, radius]])
             logpdf = self.amsterdam_flow.log_prob(mr_point)
-
-            # Penalty for mass exceeding Mtov
-            penalty = jnp.where(mass > mtov, self.penalty_value, 0.0)
-
+            
+            # Do not extrapolate: zero probability mask for extrapolated points, so no need for weighing
+            in_segment = (mass >= seg_min) & (mass <= seg_max)
+            logpdf = jnp.where(in_segment, logpdf, -jnp.inf)
+            
+            penalty = jnp.where(mass > max_m_tov, self.penalty_value, 0.0)
             return logpdf + penalty
 
-        def process_sample_maryland(mass: Float) -> Float:
-            """
-            Process a single Maryland mass sample
-
-            Parameters
-            ----------
-            mass : Float
-                Sampled mass value (scalar)
-
-            Returns
-            -------
-            Float
-                Log probability from Maryland flow including penalty
-            """
-            # Interpolate radius from EOS
-            radius = jnp.interp(mass, masses_EOS, radii_EOS)
-
-            # Evaluate Maryland flow at (mass, radius)
-            mr_point = jnp.array(
-                [[mass, radius]]
-            )  # Shape: (1, 2) for (n_samples, n_features)
+        def process_sample_maryland(mass: Float, m_eos: Array, r_eos: Array, max_m_tov: Float, seg_min: Float, seg_max: Float) -> Float:
+            radius = jnp.interp(mass, m_eos, r_eos)
+            mr_point = jnp.array([[mass, radius]])
             logpdf = self.maryland_flow.log_prob(mr_point)
-
-            # Penalty for mass exceeding Mtov
-            penalty = jnp.where(mass > mtov, self.penalty_value, 0.0)
-
+            
+            # Zero probability mask for extrapolated points, so no need for weighing
+            in_segment = (mass >= seg_min) & (mass <= seg_max)
+            logpdf = jnp.where(in_segment, logpdf, -jnp.inf)
+            
+            penalty = jnp.where(mass > max_m_tov, self.penalty_value, 0.0)
             return logpdf + penalty
 
-        # Use jax.lax.map with batching for memory-efficient processing
-        amsterdam_logprobs = jax.lax.map(
-            process_sample_amsterdam,
+        amsterdam_logprobs_1 = jax.lax.map(
+            lambda m: process_sample_amsterdam(m, m_eos_1, r_eos_1, mtov, seg1_min, seg1_max),
             self.amsterdam_fixed_mass_samples,
             batch_size=self.N_masses_batch_size,
         )
 
-        maryland_logprobs = jax.lax.map(
-            process_sample_maryland,
+        maryland_logprobs_1 = jax.lax.map(
+            lambda m: process_sample_maryland(m, m_eos_1, r_eos_1, mtov, seg1_min, seg1_max),
             self.maryland_fixed_mass_samples,
             batch_size=self.N_masses_batch_size,
         )
 
-        # Average over all samples for each group (log-mean = logsumexp - log(N))
-        N_amsterdam = amsterdam_logprobs.shape[0]
-        N_maryland = maryland_logprobs.shape[0]
-        logL_amsterdam = logsumexp(amsterdam_logprobs) - jnp.log(N_amsterdam)
-        logL_maryland = logsumexp(maryland_logprobs) - jnp.log(N_maryland)
+        amsterdam_logprobs_2 = jax.lax.map(
+            lambda m: process_sample_amsterdam(m, m_eos_2, r_eos_2, mtov, seg2_min, seg2_max),
+            self.amsterdam_fixed_mass_samples,
+            batch_size=self.N_masses_batch_size,
+        )
 
-        # Average the two groups (equal weights, log-mean = logsumexp - log(2))
+        maryland_logprobs_2 = jax.lax.map(
+            lambda m: process_sample_maryland(m, m_eos_2, r_eos_2, mtov, seg2_min, seg2_max),
+            self.maryland_fixed_mass_samples,
+            batch_size=self.N_masses_batch_size,
+        )
+
+        # Average over all samples for each group
+        # In this case, even if data is accidentally splitted somewhere, log_likelihood will be exactly the same.
+        N_amsterdam = amsterdam_logprobs_1.shape[0]
+        N_maryland = maryland_logprobs_1.shape[0]
+
+        logL_amsterdam_1 = logsumexp(amsterdam_logprobs_1) - jnp.log(N_amsterdam) 
+        logL_maryland_1 = logsumexp(maryland_logprobs_1) - jnp.log(N_maryland) 
+        
+        logL_amsterdam_2 = logsumexp(amsterdam_logprobs_2) - jnp.log(N_amsterdam) 
+        logL_maryland_2 = logsumexp(maryland_logprobs_2) - jnp.log(N_maryland) 
+
         log_likelihood = logsumexp(
-            jnp.array([logL_amsterdam, logL_maryland])
+            jnp.array([logL_amsterdam_1, logL_maryland_1, logL_amsterdam_2, logL_maryland_2])
         ) - jnp.log(2.0)
 
         return log_likelihood
@@ -408,7 +421,9 @@ class NICERKDELikelihood(LikelihoodBase):
 
     def evaluate(self, params: dict[str, Float | Array]) -> Float:
         """
-        Evaluate log likelihood for given EOS parameters
+        Evaluate log likelihood for given EOS parameters.
+        Handles two segments in case of phase transition.
+        Segments defined by detecting sudden jump in data gap along pc.
 
         Parameters
         ----------
@@ -429,6 +444,34 @@ class NICERKDELikelihood(LikelihoodBase):
         masses_EOS: Float[Array, " n_points"] = params["masses_EOS"]
         radii_EOS: Float[Array, " n_points"] = params["radii_EOS"]
         mtov: Float = jnp.max(masses_EOS)
+
+        # mass-radius split wrt phase transition jump
+        split_idx = utils.get_MR_split_index(masses_EOS, radii_EOS)
+        
+        # divide by mask
+        idx = jnp.arange(masses_EOS.shape[0])
+        mask1 = idx < split_idx
+        mask2 = idx >= split_idx
+
+        # Segment 1
+        m_eos_1 = jnp.where(mask1, masses_EOS, jnp.inf)
+        r_eos_1 = jnp.where(mask1, radii_EOS, 0.0)
+        sort_1 = jnp.argsort(m_eos_1)
+        m_eos_1, r_eos_1 = m_eos_1[sort_1], r_eos_1[sort_1]
+        
+        # Boundary 1: Find valid min and max mass for this segment
+        seg1_min = m_eos_1[0]
+        seg1_max = jnp.max(jnp.where(m_eos_1 == jnp.inf, -jnp.inf, m_eos_1))
+
+        # Segment 2
+        m_eos_2 = jnp.where(mask2, masses_EOS, jnp.inf)
+        r_eos_2 = jnp.where(mask2, radii_EOS, 0.0)
+        sort_2 = jnp.argsort(m_eos_2)
+        m_eos_2, r_eos_2 = m_eos_2[sort_2], r_eos_2[sort_2]
+
+        # Boundary 2: Find valid min and max mass for this segment
+        seg2_min = m_eos_2[0]
+        seg2_max = jnp.max(jnp.where(m_eos_2 == jnp.inf, -jnp.inf, m_eos_2))
 
         # Split key for Amsterdam and Maryland sampling
         key_amsterdam, key_maryland = jax.random.split(key)
@@ -458,7 +501,7 @@ class NICERKDELikelihood(LikelihoodBase):
             self.maryland_masses[maryland_indices]
         )
 
-        def process_sample_amsterdam(mass: Float) -> Float:
+        def process_sample_amsterdam(mass: Float, m_eos: Array, r_eos: Array, max_m_tov: Float, seg_min: Float, seg_max: Float) -> Float:
             """
             Process a single Amsterdam mass sample
 
@@ -466,6 +509,16 @@ class NICERKDELikelihood(LikelihoodBase):
             ----------
             mass : Float
                 Sampled mass value
+            m_eos : Array
+                Segment mass array
+            r_eos : Array
+                Segment radius array
+            max_m_tov : Float
+                Maximum mass of the EOS
+            seg_min : Float
+                Minimum mass of the segment
+            seg_max : Float
+                Maximum mass of the segment
 
             Returns
             -------
@@ -473,18 +526,22 @@ class NICERKDELikelihood(LikelihoodBase):
                 Log probability from Amsterdam KDE including penalty
             """
             # Interpolate radius from EOS
-            radius = jnp.interp(mass, masses_EOS, radii_EOS)
+            radius = jnp.interp(mass, m_eos, r_eos)
 
             # Evaluate Amsterdam KDE at (mass, radius)
             mr_point = jnp.array([[mass], [radius]])  # Shape: (2, 1)
             logpdf = self.amsterdam_posterior.logpdf(mr_point)
 
+            # Do not extrapolate: zero probability mask for extrapolated points
+            in_segment = (mass >= seg_min) & (mass <= seg_max)
+            logpdf = jnp.where(in_segment, logpdf, -jnp.inf)
+
             # Penalty for mass exceeding Mtov
-            penalty = jnp.where(mass > mtov, self.penalty_value, 0.0)
+            penalty = jnp.where(mass > max_m_tov, self.penalty_value, 0.0)
 
             return logpdf + penalty
 
-        def process_sample_maryland(mass: Float) -> Float:
+        def process_sample_maryland(mass: Float, m_eos: Array, r_eos: Array, max_m_tov: Float, seg_min: Float, seg_max: Float) -> Float:
             """
             Process a single Maryland mass sample
 
@@ -492,6 +549,16 @@ class NICERKDELikelihood(LikelihoodBase):
             ----------
             mass : Float
                 Sampled mass value
+            m_eos : Array
+                Segment mass array
+            r_eos : Array
+                Segment radius array
+            max_m_tov : Float
+                Maximum mass of the EOS
+            seg_min : Float
+                Minimum mass of the segment
+            seg_max : Float
+                Maximum mass of the segment
 
             Returns
             -------
@@ -499,39 +566,59 @@ class NICERKDELikelihood(LikelihoodBase):
                 Log probability from Maryland KDE including penalty
             """
             # Interpolate radius from EOS
-            radius = jnp.interp(mass, masses_EOS, radii_EOS)
+            radius = jnp.interp(mass, m_eos, r_eos)
 
             # Evaluate Maryland KDE at (mass, radius)
             mr_point = jnp.array([[mass], [radius]])  # Shape: (2, 1)
             logpdf = self.maryland_posterior.logpdf(mr_point)
 
+            # Zero probability mask for extrapolated points
+            in_segment = (mass >= seg_min) & (mass <= seg_max)
+            logpdf = jnp.where(in_segment, logpdf, -jnp.inf)
+
             # Penalty for mass exceeding Mtov
-            penalty = jnp.where(mass > mtov, self.penalty_value, 0.0)
+            penalty = jnp.where(mass > max_m_tov, self.penalty_value, 0.0)
 
             return logpdf + penalty
 
         # Use jax.lax.map with batching for memory-efficient processing
-        amsterdam_logprobs = jax.lax.map(
-            process_sample_amsterdam,
+        amsterdam_logprobs_1 = jax.lax.map(
+            lambda m: process_sample_amsterdam(m, m_eos_1, r_eos_1, mtov, seg1_min, seg1_max),
             amsterdam_mass_samples,
             batch_size=self.N_masses_batch_size,
         )
 
-        maryland_logprobs = jax.lax.map(
-            process_sample_maryland,
+        maryland_logprobs_1 = jax.lax.map(
+            lambda m: process_sample_maryland(m, m_eos_1, r_eos_1, mtov, seg1_min, seg1_max),
+            maryland_mass_samples,
+            batch_size=self.N_masses_batch_size,
+        )
+
+        amsterdam_logprobs_2 = jax.lax.map(
+            lambda m: process_sample_amsterdam(m, m_eos_2, r_eos_2, mtov, seg2_min, seg2_max),
+            amsterdam_mass_samples,
+            batch_size=self.N_masses_batch_size,
+        )
+
+        maryland_logprobs_2 = jax.lax.map(
+            lambda m: process_sample_maryland(m, m_eos_2, r_eos_2, mtov, seg2_min, seg2_max),
             maryland_mass_samples,
             batch_size=self.N_masses_batch_size,
         )
 
         # Average over all samples for each group (log-mean = logsumexp - log(N))
-        N_amsterdam = amsterdam_logprobs.shape[0]
-        N_maryland = maryland_logprobs.shape[0]
-        logL_amsterdam = logsumexp(amsterdam_logprobs) - jnp.log(N_amsterdam)
-        logL_maryland = logsumexp(maryland_logprobs) - jnp.log(N_maryland)
+        N_amsterdam = amsterdam_logprobs_1.shape[0]
+        N_maryland = maryland_logprobs_1.shape[0]
+        
+        logL_amsterdam_1 = logsumexp(amsterdam_logprobs_1) - jnp.log(N_amsterdam)
+        logL_maryland_1 = logsumexp(maryland_logprobs_1) - jnp.log(N_maryland)
+        
+        logL_amsterdam_2 = logsumexp(amsterdam_logprobs_2) - jnp.log(N_amsterdam)
+        logL_maryland_2 = logsumexp(maryland_logprobs_2) - jnp.log(N_maryland)
 
-        # Average the two groups (equal weights, log-mean = logsumexp - log(2))
+        # Combine all likelihoods
         log_likelihood = logsumexp(
-            jnp.array([logL_amsterdam, logL_maryland])
+            jnp.array([logL_amsterdam_1, logL_maryland_1, logL_amsterdam_2, logL_maryland_2])
         ) - jnp.log(2.0)
 
         return log_likelihood

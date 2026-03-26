@@ -296,9 +296,9 @@ def _tov_ode_iter_tidal(h, y, eos):
     )
 
 
-@functools.partial(jax.jit, static_argnames=["max_iterations"])
+@functools.partial(jax.jit, static_argnames=["max_iterations", "calculate_tidal"])
 def _compiled_tov_solve(
-    pc, beta_ST, phi_inf_target, phi0, ps, hs, es, dloge_dlogps, max_iterations=100
+    pc, beta_ST, phi_inf_target, phi0, ps, hs, es, dloge_dlogps, max_iterations=100, calculate_tidal=True
 ):
     eos_dict = {
         "p": ps,
@@ -433,7 +433,7 @@ def _compiled_tov_solve(
         def nan_branch(_):
             return (jnp.nan,) * 15
 
-        def compute_branch(_):
+        def compute_branch_tidal(_):
             y0_batched = (
                 jnp.array([r0, r0]),
                 jnp.array([m0, m0]),
@@ -494,7 +494,54 @@ def _compiled_tov_solve(
                 delta_phi_prime_surface_2,
             )
 
-        return lax.cond(returnNAN, nan_branch, compute_branch, operand=None)
+        def compute_branch_no_tidal(_):
+            # Integrate without tidal perturbations
+            y0 = (r0, m0, nu0, psi0, phi0_final)
+            sol = diffeqsolve(
+                ODETerm(_tov_ode_iter),
+                Dopri8(scan_kind="bounded"),
+                t0=h0,
+                t1=0,
+                dt0=dh,
+                y0=y0,
+                args=eos_dict,
+                saveat=SaveAt(t1=True),
+                stepsize_controller=PIDController(rtol=1e-5, atol=1e-6),
+                throw=False,
+            )
+            R_s = sol.ys[0][-1]
+            M_s_final = sol.ys[1][-1]
+            nu_s = sol.ys[2][-1]
+            psi_s = sol.ys[3][-1]
+            phi_s = sol.ys[4][-1]
+            # Return nan for all tidal perturbation variables
+            return (
+                R_final,
+                M_inf_final,
+                nu_s,
+                phi_inf_final,
+                psi_s,
+                phi_s,
+                M_s_final,
+                jnp.nan,  # H0_surface_1
+                jnp.nan,  # H0_prime_surface_1
+                jnp.nan,  # delta_phi_surface_1
+                jnp.nan,  # delta_phi_prime_surface_1
+                jnp.nan,  # H0_surface_2
+                jnp.nan,  # H0_prime_surface_2
+                jnp.nan,  # delta_phi_surface_2
+                jnp.nan,  # delta_phi_prime_surface_2
+            )
+
+        # Choose between tidal and no-tidal branches
+        def branch_fun(_):
+            return lax.cond(
+                calculate_tidal,
+                compute_branch_tidal,
+                compute_branch_no_tidal,
+                operand=None,
+            )
+        return lax.cond(returnNAN, nan_branch, branch_fun, operand=None)
 
     (
         R,
@@ -623,6 +670,9 @@ class ScalarTensorTOVSolver(TOVSolverBase):
     following Creci et al. (2023) Phys.Rev.D 111 (2025) 8, 089901 (erratum).
     """
 
+    def __init__(self, calculate_tidal: bool = True):
+        self.calculate_tidal = calculate_tidal
+
     def solve(
         self, eos_data: EOSData, pc: float, tov_params: dict[str, float]
     ) -> TOVSolution:
@@ -649,6 +699,7 @@ class ScalarTensorTOVSolver(TOVSolverBase):
             eos_data.es,
             eos_data.dloge_dlogps,
             max_iterations=max_iterations,
+            calculate_tidal=self.calculate_tidal,
         )
 
         extra = {

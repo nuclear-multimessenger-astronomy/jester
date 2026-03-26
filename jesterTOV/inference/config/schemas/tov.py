@@ -69,6 +69,10 @@ class ScalarTensorTOVConfig(BaseTOVConfig):
         Target asymptotic scalar field at infinity (default: 1e-3)
     phi_c : float
         Central scalar field value (default: 1.0)
+    calculate_tidal : bool
+        Whether to compute tidal deformability (k2 and related quantities).
+        Set to False to save computational resources when tidal calculations
+        are not needed (e.g., for M‑R constraints only). (default: True)
     """
 
     type: Literal["scalar_tensor"] = "scalar_tensor"  # type: ignore[override]
@@ -80,6 +84,12 @@ class ScalarTensorTOVConfig(BaseTOVConfig):
         default=1e-3, description="Target asymptotic scalar field at infinity"
     )
     phi_c: float = Field(default=1.0, description="Central scalar field value")
+    calculate_tidal: bool = Field(
+        default=True,
+        description="Whether to compute tidal deformability (k2 and related quantities). "
+        "Set to False to save computational resources when tidal calculations "
+        "are not needed (e.g., for M‑R constraints only)."
+    )
 
 
 class AnisotropyTOVConfig(BaseTOVConfig):
