@@ -722,6 +722,50 @@ class ZeroLikelihoodConfig(BaseLikelihoodConfig):
     )
 
 
+class MockMRLikelihoodConfig(BaseLikelihoodConfig):
+    """Mock mass-radius likelihood configuration.
+
+    Evaluates deterministic skewed correlated posteriors for mock pulsars.
+    Loads data from a CSV file with columns: Mass_Center_Noise, Radius_Center_Noise,
+    Std_Mass, Std_Radius, Covariance, Skew_Mass, Skew_Radius.
+
+    Examples
+    --------
+    .. code-block:: yaml
+
+        - type: "mock_mr"
+          enabled: true
+          csv_file: "./data/mockMR/mock_pulsars.csv"
+          penalty_value: -99999.0
+          N_masses_evaluation: 200
+    """
+
+    type: Literal["mock_mr"] = Field(
+        default="mock_mr", description="Likelihood type identifier"
+    )
+    csv_file: str = Field(
+        description="Path to CSV file containing mock pulsar data (required)"
+    )
+    penalty_value: float = Field(
+        default=-99999.0,
+        description="Log-likelihood penalty for mass exceeding M_TOV",
+    )
+    N_masses_evaluation: int = Field(
+        default=200,
+        gt=0,
+        description="Number of mass points for numerical integration",
+    )
+
+    @field_validator("csv_file")
+    @classmethod
+    def validate_csv_file(cls, v: str) -> str:
+        """Warn if CSV file does not exist (may be resolved later)."""
+        from pathlib import Path
+        if not Path(v).exists():
+            logger.warning(f"CSV file '{v}' does not exist (may be resolved at runtime)")
+        return v
+
+
 # Discriminated union of all likelihood types
 LikelihoodConfig = Annotated[
     Union[
@@ -736,6 +780,7 @@ LikelihoodConfig = Annotated[
         GammaConstraintsLikelihoodConfig,
         DeprecatedConstraintsLikelihoodConfig,
         REXLikelihoodConfig,
+        MockMRLikelihoodConfig,
         ZeroLikelihoodConfig,
     ],
     Discriminator("type"),

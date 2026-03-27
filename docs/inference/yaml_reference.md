@@ -353,6 +353,36 @@ Constrain neutron star masses using radio pulsar timing measurements.
 
 ::::
 
+### Mock Observations
+
+Evaluate deterministic skewed correlated posteriors for mock pulsars using CSV data.
+
+
+::::{dropdown} **Mock Mass-Radius Likelihood (type: "mock_mr")**
+
+```yaml
+- type: "mock_mr"
+  enabled: true
+  parameters:
+    csv_file: "./data/mockMR/mock_pulsars.csv"  # Path to CSV file with mock pulsar data (required)
+    penalty_value: -99999.0  # Penalty for mass exceeding M_TOV (optional, default: -99999.0)
+    N_masses_evaluation: 200  # Number of mass points for integration (optional, default: 200)
+```
+
+**Field Details:**
+
+- **`csv_file`** (`str`) - Path to CSV file containing mock pulsar data with columns: Mass_Center_Noise, Radius_Center_Noise, Std_Mass, Std_Radius, Covariance, Skew_Mass, Skew_Radius
+- **`penalty_value`** (`float`, default: `-99999.0`) - Log-likelihood penalty for masses exceeding TOV maximum mass
+- **`N_masses_evaluation`** (`int`, default: `200`) - Number of mass points for deterministic numerical integration
+
+
+
+**Description:**
+
+Evaluates deterministic skewed correlated posteriors for mock pulsars. Loads data from a CSV file with per-pulsar covariance matrices and skewness parameters. Integrates probability density over a uniform mass grid and normalizes by the number of mock pulsars.
+
+::::
+
 ### Nuclear Theory Constraints
 
 Constrain the low-density EOS using nuclear theory calculations and laboratory measurements.
