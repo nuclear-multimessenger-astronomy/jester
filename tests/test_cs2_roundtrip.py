@@ -77,7 +77,7 @@ class TestCS2Roundtrip:
         metamodel_params = {
             "nsat": 0.16,
             "nmin_MM_nsat": 0.75,
-            "nmax_nsat": 6.0,
+            "nmax_nsat": 3.0,
             "ndat": 200,
             "crust_name": "DH",
             "max_n_crust_nsat": 0.5,
@@ -135,7 +135,7 @@ class TestCS2Roundtrip:
         metamodel_params = {
             "nsat": 0.16,
             "nmin_MM_nsat": 0.75,
-            "nmax_nsat": 6.0,
+            "nmax_nsat": 3.0,
             "ndat": 200,
             "crust_name": "DH",
             "max_n_crust_nsat": 0.5,
@@ -184,7 +184,7 @@ class TestCS2Roundtrip:
         metamodel_params = {
             "nsat": 0.16,
             "nmin_MM_nsat": 0.75,
-            "nmax_nsat": 2.0,  # Limited range to avoid acausal regions
+            "nmax_nsat": 3.0,  # Limited range to avoid acausal regions
             "ndat": 200,
             "crust_name": "DH",
             "max_n_crust_nsat": 0.5,
