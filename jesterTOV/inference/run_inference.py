@@ -827,7 +827,7 @@ def main(config_path: str) -> None:
 
     # Run postprocessing if enabled
     if config.postprocessing.enabled:
-        logger.info("\n" + "=" * 60)
+        logger.info("=" * 60)
         logger.info("Running postprocessing...")
         logger.info("=" * 60)
         from jesterTOV.inference.postprocessing.postprocessing import generate_all_plots
