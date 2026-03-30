@@ -191,7 +191,6 @@ class MultimessengerJesterTransform(PopulationJesterTransform):
         compactness_1 = mass_1 / radii_1 * solar_mass_in_meter * 1e-3
         compactness_2 = mass_2 / radii_2 * solar_mass_in_meter * 1e-3
 
-
         mej_dyn = jnp.where(
             prompt_collapse, 
             self.dynamic_mass_fitting_prompt_collapse(mass_1, mass_2, lambda_1, lambda_2), 
@@ -226,6 +225,8 @@ class MultimessengerJesterTransform(PopulationJesterTransform):
         lambda_tilde = lambda1_lambda2_to_lambda_tilde(lambda_1, lambda_2, mass_1, mass_2)
         mdyn = a*lambda_tilde*(q**(-1) -b) * jnp.exp(c/q) # this is always positive
 
+        mdyn = jnp.maximum(1e-5, mdyn)
+
         return mdyn
     
     @staticmethod
@@ -251,7 +252,7 @@ class MultimessengerJesterTransform(PopulationJesterTransform):
         )
         mdyn *= 1e-3
 
-        mdyn = jnp.maximum(0.0, mdyn)
+        mdyn = jnp.maximum(1e-5, mdyn)
 
         return mdyn
     
