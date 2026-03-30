@@ -290,7 +290,7 @@ def extract_tov_config() -> dict[str, Any]:
                 "name": "type",
                 "type": "str",
                 "default": '"gr"',
-                "description": "TOV solver type. Supported values: 'gr' (General Relativity), 'anisotropy' (post-TOV with beyond-GR corrections), and 'scalar_tensor' (scalar-tensor gravity).",
+                "description": "TOV solver type. Supported values: 'gr' (General Relativity) and 'anisotropy' (post-TOV with beyond-GR corrections). 'scalar_tensor' is planned.",
             },
             {
                 "name": "min_nsat_TOV",
@@ -647,53 +647,6 @@ def extract_likelihoods() -> list[dict[str, Any]]:
             ],
         },
         {
-            "title": "Mock Observations",
-            "description": "Evaluate deterministic skewed correlated posteriors for mock pulsars using CSV data.",
-            "likelihoods": [
-                {
-                    "title": "Mock Mass-Radius Likelihood",
-                    "type": "mock_mr",
-                    "parameters": [
-                        {
-                            "name": "csv_file",
-                            "example": '"./data/mockMR/mock_pulsars.csv"',
-                            "inline_comment": "Path to CSV file with mock pulsar data (required)",
-                        },
-                        {
-                            "name": "penalty_value",
-                            "example": "-99999.0",
-                            "inline_comment": "Penalty for mass exceeding M_TOV (optional, default: -99999.0)",
-                        },
-                        {
-                            "name": "N_masses_evaluation",
-                            "example": "200",
-                            "inline_comment": "Number of mass points for integration (optional, default: 200)",
-                        },
-                    ],
-                    "field_details": [
-                        {
-                            "name": "csv_file",
-                            "type": "str",
-                            "default": None,
-                            "description": "Path to CSV file containing mock pulsar data with columns: Mass_Center_Noise, Radius_Center_Noise, Std_Mass, Std_Radius, Covariance, Skew_Mass, Skew_Radius",
-                        },
-                        {
-                            "name": "penalty_value",
-                            "type": "float",
-                            "default": "-99999.0",
-                            "description": "Log-likelihood penalty for masses exceeding TOV maximum mass",
-                        },
-                        {
-                            "name": "N_masses_evaluation",
-                            "type": "int",
-                            "default": "200",
-                            "description": "Number of mass points for deterministic numerical integration",
-                        },
-                    ],
-                    "description_text": "Evaluates deterministic skewed correlated posteriors for mock pulsars. Loads data from a CSV file with per-pulsar covariance matrices and skewness parameters. Integrates probability density over a uniform mass grid and normalizes by the number of mock pulsars.",
-                },
-            ],
-        },        {
             "title": "Nuclear Theory Constraints",
             "description": "Constrain the low-density EOS using nuclear theory calculations and laboratory measurements.",
             "likelihoods": [
@@ -1492,7 +1445,7 @@ def extract_validation_rules() -> list[dict[str, Any]]:
         {
             "title": "TOV Configuration",
             "entries": [
-                '`type` must be `"gr"`, `"anisotropy"`, or `"scalar_tensor"`; all are available',
+                '`type` must be `"gr"` or `"anisotropy"`; `"scalar_tensor"` is planned but not yet available',
                 "`min_nsat_TOV`, `ndat_TOV`, and `nb_masses` must be positive",
             ],
         },

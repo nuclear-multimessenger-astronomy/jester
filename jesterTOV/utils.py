@@ -627,16 +627,3 @@ def locate_lowest_non_causal_point(cs2: Float[Array, "n"]) -> Int[Array, ""]:
     masked_indices = jnp.where(mask, indices, len(cs2))
     first_index = jnp.min(masked_indices)
     return jnp.where(any_ones, first_index, -1)
-
-
-def get_MR_split_index(x, y, jump_threshold=20.0):
-    N = x.shape[0]
-    ds2 = jnp.diff(x)**2 + jnp.diff(y)**2
-    
-    # Find the largest gap
-    max_idx = jnp.argmax(ds2)
-    median_ds2 = jnp.median(ds2) + 1e-12
-    is_jump = ((ds2[max_idx] > (jump_threshold * median_ds2)) & (max_idx > 0)).astype(jnp.int32)
-
-    split_idx = is_jump * (max_idx + 1) + (1 - is_jump) * N
-    return split_idx

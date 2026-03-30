@@ -16,12 +16,11 @@ from ..config.schema import (
     GammaConstraintsLikelihoodConfig,
     DeprecatedConstraintsLikelihoodConfig,
     REXLikelihoodConfig,
-    MockMRLikelihoodConfig,
     ZeroLikelihoodConfig,
 )
 from .combined import CombinedLikelihood, ZeroLikelihood
 from .gw import GWLikelihood, GWLikelihoodResampled
-from .nicer import NICERLikelihood, NICERKDELikelihood, MockMRLikelihood
+from .nicer import NICERLikelihood, NICERKDELikelihood
 from .radio import RadioTimingLikelihood
 from .chieft import ChiEFTLikelihood
 from .constraints import (
@@ -141,13 +140,6 @@ def create_likelihood(
                 low_filename=config.low_filename,
                 high_filename=config.high_filename,
                 nb_n=config.nb_n,
-            )
-
-        case MockMRLikelihoodConfig():
-            return MockMRLikelihood(
-                csv_file=config.csv_file,
-                penalty_value=config.penalty_value,
-                N_masses_evaluation=config.N_masses_evaluation,
             )
 
         case REXLikelihoodConfig():

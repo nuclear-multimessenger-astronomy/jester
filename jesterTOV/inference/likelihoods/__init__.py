@@ -2,7 +2,7 @@
 
 from .combined import CombinedLikelihood, ZeroLikelihood
 from .gw import GWLikelihood, GWLikelihoodResampled
-from .nicer import NICERLikelihood, MockMRLikelihood
+from .nicer import NICERLikelihood
 from .radio import RadioTimingLikelihood
 from .chieft import ChiEFTLikelihood
 from .rex import REXLikelihood
@@ -19,7 +19,6 @@ __all__ = [
     "GWLikelihood",
     "GWLikelihoodResampled",
     "NICERLikelihood",
-    "MockMRLikelihood",
     "RadioTimingLikelihood",
     "ChiEFTLikelihood",
     "REXLikelihood",
