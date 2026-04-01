@@ -10,9 +10,9 @@ Z_sym = UniformPrior(-2000.0, 1500.0, parameter_names=["Z_sym"])
 nbreak = UniformPrior(0.16, 0.32, parameter_names=["nbreak"])
 
 # Anisotropy TOV solver params
-gamma = UniformPrior(-0.5, 0.5, parameter_names=["gamma"])
+gamma = Fixed(0.0, parameter_names=["gamma"])
 lambda_BL = Fixed(0.0, parameter_names=["lambda_BL"])
-lambda_DY = Fixed(0.0, parameter_names=["lambda_DY"])
+lambda_DY = UniformPrior(-0.5, 0.5, parameter_names=["lambda_DY"])
 lambda_HB = Fixed(1.0, parameter_names=["lambda_HB"])
 alpha = Fixed(0.0, parameter_names=["alpha"])
 beta = Fixed(0.0, parameter_names=["beta"])
