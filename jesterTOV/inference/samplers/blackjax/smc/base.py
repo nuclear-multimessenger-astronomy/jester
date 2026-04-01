@@ -313,7 +313,11 @@ class BlackjaxSMCSampler(BlackjaxSampler):
 
         # Progress callback for live updates during sampling
         def progress_callback(
-            step: int, tempering_param: float, ess: float, acceptance: float
+            step: int,
+            tempering_param: float,
+            ess: float,
+            acceptance: float,
+            log_evidence: float,
         ) -> None:
             """Print progress update during sampling (called via io_callback)."""
             # Create progress bar
@@ -321,14 +325,20 @@ class BlackjaxSMCSampler(BlackjaxSampler):
             filled = int(tempering_param * bar_length)
             bar = "█" * filled + "░" * (bar_length - filled)
 
+            # Compute elapsed time
+            elapsed = time.time() - start_time
+            hours, remainder = divmod(int(elapsed), 3600)
+            minutes, seconds = divmod(remainder, 60)
+            elapsed_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
             # Print update
             logger.info(
                 f"Step {step:4d} | λ={tempering_param:.6f} | ESS={ess*100:5.1f}% | "
-                f"Accept={acceptance*100:5.1f}% | {bar}"
+                f"Accept={acceptance*100:5.1f}% | logZ={log_evidence:8.3f} | t={elapsed_str} | {bar}"
             )
 
         # Define loop conditions with proper type hints
-        # Carry is: (StateWithParameterOverride, key, step_count, tempering_param_history, ess_history, acceptance_history, log_evidence)
+        # Carry is: (StateWithParameterOverride, key, step_count, tempering_param_history, ess_history, acceptance_history, log_evidence, log_evidence_history)
         def cond_fn(
             carry: tuple[
                 StateWithParameterOverride,
@@ -338,9 +348,10 @@ class BlackjaxSMCSampler(BlackjaxSampler):
                 Array,
                 Array,
                 float,
+                Array,
             ]
         ) -> bool:
-            state, _, _, _, _, _, _ = carry
+            state, _, _, _, _, _, _, _ = carry
             # Cast to proper type for type checker (runtime type is correct)
             sampler_state = cast(TemperedSMCState, state.sampler_state)
             # Type checker sees this as potentially returning Array, but at runtime
@@ -356,6 +367,7 @@ class BlackjaxSMCSampler(BlackjaxSampler):
                 Array,
                 Array,
                 float,
+                Array,
             ]
         ):
 
@@ -367,6 +379,7 @@ class BlackjaxSMCSampler(BlackjaxSampler):
                 ess_history,
                 acceptance_history,
                 log_evidence,
+                log_evidence_history,
             ) = carry
             key, subkey = jax.random.split(key, 2)
             state, info = smc_alg.step(subkey, state)
@@ -394,6 +407,7 @@ class BlackjaxSMCSampler(BlackjaxSampler):
             )
             ess_history = ess_history.at[step_count].set(ess_value)
             acceptance_history = acceptance_history.at[step_count].set(acceptance_rate)
+            log_evidence_history = log_evidence_history.at[step_count].set(log_evidence)
 
             # Print progress update using io_callback
             io_callback(
@@ -403,6 +417,7 @@ class BlackjaxSMCSampler(BlackjaxSampler):
                 sampler_state.tempering_param,
                 ess_value,
                 acceptance_rate,
+                log_evidence,
             )
 
             return (
@@ -413,6 +428,7 @@ class BlackjaxSMCSampler(BlackjaxSampler):
                 ess_history,
                 acceptance_history,
                 log_evidence,
+                log_evidence_history,
             )
 
         # Run SMC with JAX while_loop
@@ -431,6 +447,7 @@ class BlackjaxSMCSampler(BlackjaxSampler):
         tempering_param_history = jnp.zeros(max_steps)
         ess_history = jnp.zeros(max_steps)
         acceptance_history = jnp.zeros(max_steps)
+        log_evidence_history = jnp.zeros(max_steps)
         log_evidence = 0.0  # Initialize log evidence accumulator
 
         init_carry = (
@@ -441,6 +458,7 @@ class BlackjaxSMCSampler(BlackjaxSampler):
             ess_history,
             acceptance_history,
             log_evidence,
+            log_evidence_history,
         )
 
         logger.info("Running SMC loop (this may take several minutes)...")
@@ -454,7 +472,8 @@ class BlackjaxSMCSampler(BlackjaxSampler):
             ess_history,
             acceptance_history,
             log_evidence,
-        ) = jax.lax.while_loop(
+            log_evidence_history,
+        ) = jax.lax.while_loop(  # type: ignore[misc]
             cond_fn, body_fn, init_carry  # type: ignore[arg-type]
         )
 
@@ -501,6 +520,7 @@ class BlackjaxSMCSampler(BlackjaxSampler):
             "tempering_param_history": tempering_param_history[:steps].tolist(),
             "ess_history": ess_history[:steps].tolist(),
             "acceptance_history": acceptance_history[:steps].tolist(),
+            "log_evidence_history": log_evidence_history[:steps].tolist(),
         }
 
     def plot_diagnostics(
