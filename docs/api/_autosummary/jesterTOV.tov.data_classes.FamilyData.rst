@@ -25,6 +25,7 @@
 
    .. autosummary::
    
+      ~FamilyData.extra
       ~FamilyData.lambdas
       ~FamilyData.log10pcs
       ~FamilyData.masses

@@ -290,7 +290,7 @@ def extract_tov_config() -> dict[str, Any]:
                 "name": "type",
                 "type": "str",
                 "default": '"gr"',
-                "description": "TOV solver type. Supported values: 'gr' (General Relativity) and 'anisotropy' (post-TOV with beyond-GR corrections). 'scalar_tensor' is planned.",
+                "description": "TOV solver type. Supported values: 'gr' (General Relativity), 'anisotropy' (post-TOV with beyond-GR corrections), and 'scalar_tensor' (scalar-tensor gravity).",
             },
             {
                 "name": "min_nsat_TOV",
@@ -1445,7 +1445,7 @@ def extract_validation_rules() -> list[dict[str, Any]]:
         {
             "title": "TOV Configuration",
             "entries": [
-                '`type` must be `"gr"` or `"anisotropy"`; `"scalar_tensor"` is planned but not yet available',
+                '`type` must be `"gr"`, `"anisotropy"`, or `"scalar_tensor"`; all are available',
                 "`min_nsat_TOV`, `ndat_TOV`, and `nb_masses` must be positive",
             ],
         },

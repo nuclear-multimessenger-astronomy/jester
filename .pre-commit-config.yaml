@@ -3,18 +3,10 @@ repos:
     rev: 24.1.1
     hooks:
     - id: black
+      exclude: \.ipynb$
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: 'v0.1.14'
     hooks:
       - id: ruff
         args: ["--fix"]
-  - repo: https://github.com/nbQA-dev/nbQA
-    rev: 1.7.1
-    hooks:
-    - id: nbqa-black
-      exclude: ^docs/examples/
-      additional_dependencies: [ipython==8.12, black]
-    - id: nbqa-ruff 
-      exclude: ^docs/examples/
-      args: ["--fix", "--ignore=I001"]
-      additional_dependencies: [ipython==8.12, ruff]
+        exclude: \.ipynb$

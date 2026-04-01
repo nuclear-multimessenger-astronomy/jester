@@ -1,0 +1,37 @@
+seed: 44
+dry_run: false
+validate_only: false
+eos:
+  type: metamodel_cse
+  ndat_metamodel: 100
+  nmax_nsat: 25.0
+  nb_CSE: 8
+  crust_name: DH
+tov:
+  type: scalar_tensor
+  min_nsat_TOV: 0.75
+  ndat_TOV: 100
+  nb_masses: 100
+prior:
+  specification_file: prior.prior
+likelihoods:
+- type: constraints_eos
+  enabled: true
+- type: chieft
+  enabled: true
+  low_filename: ../../../../jesterTOV/inference/data/chiEFT/2402.04172/low.dat
+  high_filename: ../../../../jesterTOV/inference/data/chiEFT/2402.04172/high.dat
+  nb_n: 100
+sampler:
+  type: smc-rw
+  n_particles: 2000
+  n_mcmc_steps: 10
+  target_ess: 0.9
+  random_walk_sigma: 0.1
+  output_dir: ./outdir/
+postprocessing:
+  enabled: true
+  make_cornerplot: false
+  make_massradius: true
+  make_pressuredensity: true
+debug_nans: true

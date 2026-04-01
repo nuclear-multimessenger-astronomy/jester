@@ -157,6 +157,22 @@ class TestTOVConfig:
         assert config.min_nsat_TOV == 0.75
         assert config.ndat_TOV == 100
 
+    def test_valid_scalar_tensor_tov_config(self):
+        """Test valid Scalar-Tensor TOV configuration."""
+        from pydantic import TypeAdapter
+
+        adapter = TypeAdapter(schema.TOVConfig)
+        config_dict = {
+            "type": "scalar_tensor",
+            "beta_ST": -1.0,
+            "phi_inf_tgt": 1e-3,
+            "phi_c": 1.0,
+        }
+        config = adapter.validate_python(config_dict)
+        assert isinstance(config, schema.ScalarTensorTOVConfig)
+        assert config.type == "scalar_tensor"
+        assert config.beta_ST == -1.0
+
     def test_tov_default_values(self):
         """Test that TOV default values are set correctly."""
         config = schema.GRTOVConfig()

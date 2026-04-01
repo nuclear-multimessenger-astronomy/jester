@@ -56,6 +56,42 @@ class GRTOVConfig(BaseTOVConfig):
     type: Literal["gr"] = "gr"  # type: ignore[override]  # Literal["gr"] ⊂ str
 
 
+class ScalarTensorTOVConfig(BaseTOVConfig):
+    """Configuration for the Scalar-Tensor TOV solver.
+
+    Attributes
+    ----------
+    type : Literal["scalar_tensor"]
+        TOV solver type identifier
+    beta_ST : float
+        Scalar-tensor coupling parameter beta_ST (default: 0.0)
+    phi_inf_tgt : float
+        Target asymptotic scalar field at infinity (default: 1e-3)
+    phi_c : float
+        Central scalar field value (default: 1.0)
+    calculate_tidal : bool
+        Whether to compute tidal deformability (k2 and related quantities).
+        Set to False to save computational resources when tidal calculations
+        are not needed (e.g., for M‑R constraints only). (default: True)
+    """
+
+    type: Literal["scalar_tensor"] = "scalar_tensor"  # type: ignore[override]
+
+    beta_ST: float = Field(
+        default=0.0, description="Scalar-tensor coupling parameter beta_ST"
+    )
+    phi_inf_tgt: float = Field(
+        default=1e-3, description="Target asymptotic scalar field at infinity"
+    )
+    phi_c: float = Field(default=1.0, description="Central scalar field value")
+    calculate_tidal: bool = Field(
+        default=True,
+        description="Whether to compute tidal deformability (k2 and related quantities). "
+        "Set to False to save computational resources when tidal calculations "
+        "are not needed (e.g., for M‑R constraints only).",
+    )
+
+
 class AnisotropyTOVConfig(BaseTOVConfig):
     """Configuration for the post-TOV solver with beyond-GR corrections.
 
@@ -72,7 +108,8 @@ class AnisotropyTOVConfig(BaseTOVConfig):
     type: Literal["anisotropy"] = "anisotropy"  # type: ignore[override]  # Literal["anisotropy"] ⊂ str
 
 
+# TOVConfig is a discriminated union of all available TOV solver configs.
 TOVConfig = Annotated[
-    Union[GRTOVConfig, AnisotropyTOVConfig],
+    Union[GRTOVConfig, AnisotropyTOVConfig, ScalarTensorTOVConfig],
     Discriminator("type"),
 ]

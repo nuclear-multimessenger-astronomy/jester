@@ -21,6 +21,7 @@ from jesterTOV.inference.config.schema import (
     SpectralEOSConfig,
     BaseTOVConfig,
     GRTOVConfig,
+    ScalarTensorTOVConfig,
     AnisotropyTOVConfig,
 )
 from jesterTOV.inference.likelihoods.constraints import check_all_constraints
@@ -283,12 +284,14 @@ class JesterTransform(NtoMTransform):
         """
         if isinstance(config, GRTOVConfig):
             return GRTOVSolver()
+        elif isinstance(config, ScalarTensorTOVConfig):
+            from jesterTOV.tov.scalar_tensor import ScalarTensorTOVSolver
 
+            return ScalarTensorTOVSolver(calculate_tidal=config.calculate_tidal)
         elif isinstance(config, AnisotropyTOVConfig):
             from jesterTOV.tov.anisotropy import AnisotropyTOVSolver
 
             return AnisotropyTOVSolver()
-
         else:
             raise ValueError(f"Unknown TOV solver type: {type(config).__name__}")
 
