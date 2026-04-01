@@ -207,6 +207,24 @@ class GWLikelihoodConfig(BaseLikelihoodConfig):
         min_length=1,
     )
 
+    @field_validator("events")
+    @classmethod
+    def validate_unique_event_names(cls, v: list[GWEventConfig]) -> list[GWEventConfig]:
+        """Ensure all GW event names are unique."""
+        names = [event.name for event in v]
+        seen: set[str] = set()
+        duplicates: list[str] = []
+        for name in names:
+            if name in seen:
+                duplicates.append(name)
+            seen.add(name)
+        if duplicates:
+            raise ValueError(
+                f"Duplicate GW event names found: {sorted(set(duplicates))}. "
+                "Each event must have a unique name."
+            )
+        return v
+
     penalty_value: float = Field(
         default=0.0,
         description="Log-likelihood penalty returned when M > M_TOV (default: 0.0, i.e. no penalty)",
@@ -264,10 +282,21 @@ class GWResampledLikelihoodConfig(BaseLikelihoodConfig):
     @field_validator("events")
     @classmethod
     def validate_events(cls, v: list[dict[str, str]]) -> list[dict[str, str]]:
-        """Validate event structure."""
+        """Validate event structure and uniqueness."""
+        seen: set[str] = set()
+        duplicates: list[str] = []
         for i, event in enumerate(v):
             if "name" not in event:
                 raise ValueError(f"Event {i} missing required 'name' field")
+            name = event["name"]
+            if name in seen:
+                duplicates.append(name)
+            seen.add(name)
+        if duplicates:
+            raise ValueError(
+                f"Duplicate GW event names found: {sorted(set(duplicates))}. "
+                "Each event must have a unique name."
+            )
         return v
 
 
@@ -337,24 +366,36 @@ class NICERLikelihoodConfig(BaseLikelihoodConfig):
     @field_validator("pulsars")
     @classmethod
     def validate_pulsars(cls, v: list[dict[str, str]]) -> list[dict[str, str]]:
-        """Validate pulsar structure."""
+        """Validate pulsar structure and uniqueness."""
+        seen: set[str] = set()
+        duplicates: list[str] = []
         for i, pulsar in enumerate(v):
             if "name" not in pulsar:
                 raise ValueError(f"Pulsar {i} missing required 'name' field")
 
+            name = pulsar["name"]
+            if name in seen:
+                duplicates.append(name)
+            seen.add(name)
+
             # Warn if model directories not provided (will fail at runtime)
             if "amsterdam_model_dir" not in pulsar:
                 logger.warning(
-                    f"Pulsar {i} ({pulsar['name']}) missing 'amsterdam_model_dir'. "
+                    f"Pulsar {i} ({name}) missing 'amsterdam_model_dir'. "
                     "NICERLikelihood.__init__ will raise ValueError at runtime. "
                     "Preset model paths are not yet implemented."
                 )
             if "maryland_model_dir" not in pulsar:
                 logger.warning(
-                    f"Pulsar {i} ({pulsar['name']}) missing 'maryland_model_dir'. "
+                    f"Pulsar {i} ({name}) missing 'maryland_model_dir'. "
                     "NICERLikelihood.__init__ will raise ValueError at runtime. "
                     "Preset model paths are not yet implemented."
                 )
+        if duplicates:
+            raise ValueError(
+                f"Duplicate NICER pulsar names found: {sorted(set(duplicates))}. "
+                "Each pulsar must have a unique name."
+            )
         return v
 
 
@@ -412,10 +453,16 @@ class NICERKDELikelihoodConfig(BaseLikelihoodConfig):
     @field_validator("pulsars")
     @classmethod
     def validate_pulsars(cls, v: list[dict[str, str]]) -> list[dict[str, str]]:
-        """Validate pulsar structure."""
+        """Validate pulsar structure and uniqueness."""
+        seen: set[str] = set()
+        duplicates: list[str] = []
         for i, pulsar in enumerate(v):
             if "name" not in pulsar:
                 raise ValueError(f"Pulsar {i} missing required 'name' field")
+            name = pulsar["name"]
+            if name in seen:
+                duplicates.append(name)
+            seen.add(name)
             # Both sample files are required for KDE approach
             if "amsterdam_samples_file" not in pulsar:
                 raise ValueError(
@@ -425,6 +472,11 @@ class NICERKDELikelihoodConfig(BaseLikelihoodConfig):
                 raise ValueError(
                     f"Pulsar {i} missing required 'maryland_samples_file' field"
                 )
+        if duplicates:
+            raise ValueError(
+                f"Duplicate NICER pulsar names found: {sorted(set(duplicates))}. "
+                "Each pulsar must have a unique name."
+            )
         return v
 
 
