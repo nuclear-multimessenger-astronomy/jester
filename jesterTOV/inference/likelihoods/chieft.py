@@ -171,9 +171,9 @@ class ChiEFTLikelihood(LikelihoodBase):
         ----------
         params : dict[str, Float | Array]
             Dictionary containing EOS quantities from the transform. Required keys:
-            - "n" : Baryon number density grid (geometric units)
-            - "p" : Pressure values on density grid (geometric units)
-            - "nbreak" : Breaking density where CSE begins (fm⁻³)
+            - "n" : Baryon number density grid (geometric units, i.e. fm⁻³ × ``utils.fm_inv3_to_geometric``)
+            - "p" : Pressure values on density grid (geometric units, i.e. MeV/fm³ × ``utils.MeV_fm_inv3_to_geometric``)
+            - "nbreak" : Breaking density where CSE begins (fm⁻³, physical units)
 
         Returns
         -------
@@ -184,33 +184,44 @@ class ChiEFTLikelihood(LikelihoodBase):
 
         Notes
         -----
-        The integration is performed from 0.75 n_sat to
-        ``min(nbreak, n_max_nsat)`` using nb_n equally spaced points. The
-        upper limit is capped at the maximum density covered by the chiEFT
-        data (2.0 n_sat for the default Koehn et al. 2025 bands) to avoid
-        integrating over the flat constant extrapolation that ``jnp.interp``
-        would produce beyond the data range, which has no physical meaning.
-        A warning is printed at runtime whenever truncation is applied.
+        All density arithmetic inside this method is performed in units of
+        n_sat (saturation density = 0.16 fm⁻³).  Input quantities are
+        converted at the start:
 
-        Unit conversions are applied automatically:
-        - Input densities converted from geometric to fm⁻³ units
-        - Input pressures converted from geometric to MeV/fm³ units
+        - ``nbreak`` [fm⁻³] → ``nbreak / 0.16`` [n_sat]
+        - ``n`` [geometric] → ``n / fm_inv3_to_geometric / 0.16`` [n_sat]
+        - ``p`` [geometric] → ``p / MeV_fm_inv3_to_geometric`` [MeV/fm³]
+
+        The integration runs from 0.75 n_sat (lower limit of chiEFT validity)
+        to ``min(nbreak, n_max_nsat)`` [n_sat] using ``nb_n`` equally spaced
+        points. The upper limit is capped at ``n_max_nsat`` (2.0 n_sat for the
+        default Koehn et al. 2025 bands) to avoid integrating over the flat
+        constant extrapolation that ``jnp.interp`` produces beyond the data
+        range, which has no physical meaning. If ``nbreak`` falls below
+        0.75 n_sat the upper limit is clamped to ``0.75 + 1e-8`` n_sat to
+        prevent a degenerate integration range.
         """
         # Get relevant parameters
         n, p = params["n"], params["p"]
         nbreak = params["nbreak"]
 
-        # Convert to nsat for convenience
-        nbreak = nbreak / 0.16
-        n = n / utils.fm_inv3_to_geometric / 0.16
-        p = p / utils.MeV_fm_inv3_to_geometric
+        # Convert all densities to n_sat units (n_sat = 0.16 fm^-3).
+        # nbreak arrives in fm^-3 (physical); n arrives in geometric units.
+        # Pressures are converted from geometric to MeV/fm^3.
+        nbreak = nbreak / 0.16  # fm^-3 → n_sat
+        n = n / utils.fm_inv3_to_geometric / 0.16  # geometric → n_sat
+        p = p / utils.MeV_fm_inv3_to_geometric  # geometric → MeV/fm^3
 
         # Cap the integration at the maximum density covered by the chiEFT data.
         # Beyond n_max_nsat the data ends and jnp.interp returns a flat
         # (constant) extrapolation that has no physical meaning.
+        # Both nbreak and n_max_nsat are in n_sat units at this point.
         n_upper = jnp.minimum(nbreak, self.n_max_nsat)
 
-        # Lower limit is at 0.75 nsat
+        # Guard against a degenerate integration range when nbreak < 0.75 n_sat.
+        n_upper = jnp.maximum(n_upper, 0.75 + 1e-8)
+
+        # Build density grid in n_sat units: lower limit is 0.75 n_sat.
         this_n_array = jnp.linspace(0.75, n_upper, self.nb_n)
         dn = this_n_array.at[1].get() - this_n_array.at[0].get()
         low_p = self.EFT_low(this_n_array)
@@ -228,7 +239,9 @@ class ChiEFTLikelihood(LikelihoodBase):
             return return_value
 
         f_array = f(sample_p, low_p, high_p)
-        prefactor = 1 / (n_upper - 0.75 * 0.16)
+        # Normalise by the integration width (in n_sat units).
+        # n_upper and 0.75 are both in n_sat units here.
+        prefactor = 1 / (n_upper - 0.75)
         log_likelihood = prefactor * jnp.sum(f_array) * dn
 
         return log_likelihood
