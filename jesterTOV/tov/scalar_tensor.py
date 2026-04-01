@@ -298,7 +298,16 @@ def _tov_ode_iter_tidal(h, y, eos):
 
 @functools.partial(jax.jit, static_argnames=["max_iterations", "calculate_tidal"])
 def _compiled_tov_solve(
-    pc, beta_ST, phi_inf_target, phi0, ps, hs, es, dloge_dlogps, max_iterations=100, calculate_tidal=True
+    pc,
+    beta_ST,
+    phi_inf_target,
+    phi0,
+    ps,
+    hs,
+    es,
+    dloge_dlogps,
+    max_iterations=100,
+    calculate_tidal=True,
 ):
     eos_dict = {
         "p": ps,
@@ -541,6 +550,7 @@ def _compiled_tov_solve(
                 compute_branch_no_tidal,
                 operand=None,
             )
+
         return lax.cond(returnNAN, nan_branch, branch_fun, operand=None)
 
     (

@@ -88,7 +88,7 @@ class ScalarTensorTOVConfig(BaseTOVConfig):
         default=True,
         description="Whether to compute tidal deformability (k2 and related quantities). "
         "Set to False to save computational resources when tidal calculations "
-        "are not needed (e.g., for M‑R constraints only)."
+        "are not needed (e.g., for M‑R constraints only).",
     )
 
 
