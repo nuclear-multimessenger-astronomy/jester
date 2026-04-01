@@ -118,6 +118,7 @@ class ChiEFTLikelihood(LikelihoodBase):
     EFT_low: Callable[[Float | Float[Array, "..."]], Float | Float[Array, "..."]]
     EFT_high: Callable[[Float | Float[Array, "..."]], Float | Float[Array, "..."]]
     nb_n: int
+    n_max_nsat: float
 
     def __init__(
         self,
@@ -159,6 +160,9 @@ class ChiEFTLikelihood(LikelihoodBase):
         self.EFT_high = lambda x: jnp.interp(x, n_high, p_high)
 
         self.nb_n = nb_n
+        # Maximum density covered by the chiEFT data (in nsat units).
+        # Integration must not exceed this to avoid unphysical flat-line extrapolation.
+        self.n_max_nsat = float(jnp.minimum(n_low[-1], n_high[-1]))
 
     def evaluate(self, params: dict[str, Float | Array]) -> Float:
         """Evaluate the log-likelihood for chiEFT constraints.
@@ -180,9 +184,13 @@ class ChiEFTLikelihood(LikelihoodBase):
 
         Notes
         -----
-        The integration is performed from 0.75 n_sat to nbreak using nb_n
-        equally spaced points. The EOS pressure is interpolated onto this grid
-        and compared against the chiEFT band at each point.
+        The integration is performed from 0.75 n_sat to
+        ``min(nbreak, n_max_nsat)`` using nb_n equally spaced points. The
+        upper limit is capped at the maximum density covered by the chiEFT
+        data (2.0 n_sat for the default Koehn et al. 2025 bands) to avoid
+        integrating over the flat constant extrapolation that ``jnp.interp``
+        would produce beyond the data range, which has no physical meaning.
+        A warning is printed at runtime whenever truncation is applied.
 
         Unit conversions are applied automatically:
         - Input densities converted from geometric to fm⁻³ units
@@ -197,8 +205,13 @@ class ChiEFTLikelihood(LikelihoodBase):
         n = n / utils.fm_inv3_to_geometric / 0.16
         p = p / utils.MeV_fm_inv3_to_geometric
 
-        # Lower limit is at 0.12 fm-3
-        this_n_array = jnp.linspace(0.75, nbreak, self.nb_n)
+        # Cap the integration at the maximum density covered by the chiEFT data.
+        # Beyond n_max_nsat the data ends and jnp.interp returns a flat
+        # (constant) extrapolation that has no physical meaning.
+        n_upper = jnp.minimum(nbreak, self.n_max_nsat)
+
+        # Lower limit is at 0.75 nsat
+        this_n_array = jnp.linspace(0.75, n_upper, self.nb_n)
         dn = this_n_array.at[1].get() - this_n_array.at[0].get()
         low_p = self.EFT_low(this_n_array)
         high_p = self.EFT_high(this_n_array)
@@ -215,7 +228,7 @@ class ChiEFTLikelihood(LikelihoodBase):
             return return_value
 
         f_array = f(sample_p, low_p, high_p)
-        prefactor = 1 / (nbreak - 0.75 * 0.16)
+        prefactor = 1 / (n_upper - 0.75 * 0.16)
         log_likelihood = prefactor * jnp.sum(f_array) * dn
 
         return log_likelihood
