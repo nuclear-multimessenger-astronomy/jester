@@ -1,0 +1,44 @@
+seed: 42
+dry_run: false
+validate_only: false
+
+eos:
+  type: metamodel_cse
+  ndat_metamodel: 100
+  nmax_nsat: 25.0
+  nb_CSE: 8
+  crust_name: DH
+
+tov:
+  type: gr
+  min_nsat_TOV: 0.75
+  ndat_TOV: 100
+  nb_masses: 100
+
+prior:
+  specification_file: prior.prior
+
+likelihoods:
+  - type: constraints_eos
+    enabled: true
+  - type: mock_mr
+    enabled: true
+    json_file: ./mock_observations.json
+    N_masses_evaluation: 100
+    N_masses_batch_size: 20
+    seed: 42
+
+sampler:
+  type: smc-rw
+  n_particles: 2000
+  n_mcmc_steps: 10
+  target_ess: 0.9
+  random_walk_sigma: 0.1
+  output_dir: ./outdir/
+
+postprocessing:
+  enabled: true
+  make_cornerplot: true
+  make_massradius: true
+  make_pressuredensity: true
+  make_histograms: false

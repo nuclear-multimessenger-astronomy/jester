@@ -729,6 +729,67 @@ def extract_likelihoods() -> list[dict[str, Any]]:
                 },
             ],
         },
+        {
+            "title": "Mock Mass-Radius",
+            "description": "Synthetic bivariate Gaussian mass-radius observations for testing and mock-data studies.",
+            "likelihoods": [
+                {
+                    "title": "Mock Mass-Radius Likelihood",
+                    "type": "mock_mr",
+                    "parameters": [
+                        {
+                            "name": "type",
+                            "example": '"mock_mr"',
+                            "default": '"mock_mr"',
+                            "inline_comment": "Likelihood type identifier",
+                            "blank_line_after": False,
+                        },
+                        {
+                            "name": "json_file",
+                            "example": '"./mock_observations.json"',
+                            "default": None,
+                            "inline_comment": "Path to JSON file with mock observations",
+                            "blank_line_after": False,
+                        },
+                        {
+                            "name": "penalty_value",
+                            "example": "0.0",
+                            "default": "0.0",
+                            "inline_comment": "Log-likelihood penalty when sampled mass exceeds M_TOV",
+                            "blank_line_after": False,
+                        },
+                        {
+                            "name": "N_masses_evaluation",
+                            "example": "100",
+                            "default": "100",
+                            "inline_comment": "Number of mass samples for Monte-Carlo likelihood integration",
+                            "blank_line_after": False,
+                        },
+                        {
+                            "name": "N_masses_batch_size",
+                            "example": "20",
+                            "default": "20",
+                            "inline_comment": "Batch size for jax.lax.map processing",
+                            "blank_line_after": False,
+                        },
+                        {
+                            "name": "seed",
+                            "example": "42",
+                            "default": "42",
+                            "inline_comment": "Random seed for reproducible mass pre-sampling",
+                            "blank_line_after": False,
+                        },
+                    ],
+                    "description_text": (
+                        "Constrains the M-R relation using synthetic bivariate Gaussian observations "
+                        "loaded from a JSON file. Each entry defines a mock pulsar measurement with "
+                        "mean mass and radius, their standard deviations, and the Pearson correlation. "
+                        "One likelihood per observation is created. The JSON file must be a list of "
+                        "objects with keys: name, mean_mass, mean_radius, std_mass, std_radius, correlation."
+                    ),
+                },
+            ],
+        },
     ]
 
     return categories

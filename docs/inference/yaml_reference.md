@@ -488,6 +488,34 @@ Returns zero log-likelihood (uniform likelihood) for all EOS configurations. Use
 
 ::::
 
+### Mock Mass-Radius
+
+Synthetic bivariate Gaussian mass-radius observations for testing and mock-data studies.
+
+
+::::{dropdown} **Mock Mass-Radius Likelihood (type: "mock_mr")**
+
+```yaml
+- type: "mock_mr"
+  enabled: true
+  parameters:
+    type: "mock_mr"  # Likelihood type identifier
+    json_file: "./mock_observations.json"  # Path to JSON file with mock observations
+    penalty_value: 0.0  # Log-likelihood penalty when sampled mass exceeds M_TOV
+    N_masses_evaluation: 100  # Number of mass samples for Monte-Carlo likelihood integration
+    N_masses_batch_size: 20  # Batch size for jax.lax.map processing
+    seed: 42  # Random seed for reproducible mass pre-sampling
+```
+
+
+
+
+**Description:**
+
+Constrains the M-R relation using synthetic bivariate Gaussian observations loaded from a JSON file. Each entry defines a mock pulsar measurement with mean mass and radius, their standard deviations, and the Pearson correlation. One likelihood per observation is created. The JSON file must be a list of objects with keys: name, mean_mass, mean_radius, std_mass, std_radius, correlation.
+
+::::
+
 
 ---
 

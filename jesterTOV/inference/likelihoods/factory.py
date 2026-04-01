@@ -1,5 +1,6 @@
 r"""Factory functions for creating likelihoods from configuration"""
 
+import json
 from pathlib import Path
 
 from ..config.schema import (
@@ -17,6 +18,7 @@ from ..config.schema import (
     DeprecatedConstraintsLikelihoodConfig,
     REXLikelihoodConfig,
     ZeroLikelihoodConfig,
+    MockMassRadiusLikelihoodConfig,
 )
 from .combined import CombinedLikelihood, ZeroLikelihood
 from .gw import GWLikelihood, GWLikelihoodResampled
@@ -310,6 +312,29 @@ def create_combined_likelihood(
                         penalty_value=config.penalty_value,
                     )
                     likelihoods.append(radio_likelihood)
+
+            # Special handling for mock M-R likelihoods: create one likelihood per observation
+            case MockMassRadiusLikelihoodConfig():
+                from .mock_mr import MockMassRadiusLikelihood
+
+                json_path = Path(config.json_file).resolve()
+                with open(json_path) as f:
+                    observations = json.load(f)
+
+                for obs in observations:
+                    mock_likelihood = MockMassRadiusLikelihood(
+                        psr_name=obs["name"],
+                        mean_mass=float(obs["mean_mass"]),
+                        mean_radius=float(obs["mean_radius"]),
+                        std_mass=float(obs["std_mass"]),
+                        std_radius=float(obs["std_radius"]),
+                        correlation=float(obs["correlation"]),
+                        penalty_value=config.penalty_value,
+                        N_masses_evaluation=config.N_masses_evaluation,
+                        N_masses_batch_size=config.N_masses_batch_size,
+                        seed=config.seed,
+                    )
+                    likelihoods.append(mock_likelihood)
 
             case _:
                 # For other likelihoods, use standard creation

@@ -774,6 +774,84 @@ class ZeroLikelihoodConfig(BaseLikelihoodConfig):
     )
 
 
+class MockMassRadiusLikelihoodConfig(BaseLikelihoodConfig):
+    """Mock mass-radius likelihood configuration.
+
+    Constrains the M-R relation using one or more synthetic bivariate Gaussian
+    observations read from a JSON file.  Each entry in the JSON file describes
+    a mock pulsar measurement with a mean mass and radius, their standard
+    deviations, and the Pearson correlation between the two quantities.
+
+    The JSON file must be a list of objects with the following keys:
+
+    - ``name`` (str) — pulsar identifier, e.g. ``"PSR0"``
+    - ``mean_mass`` (float) — mean mass (:math:`M_\\odot`)
+    - ``mean_radius`` (float) — mean radius (km)
+    - ``std_mass`` (float) — standard deviation of mass (:math:`M_\\odot`)
+    - ``std_radius`` (float) — standard deviation of radius (km)
+    - ``correlation`` (float) — Pearson correlation, strictly in (-1, 1)
+
+    Examples
+    --------
+    .. code-block:: yaml
+
+        - type: "mock_mr"
+          enabled: true
+          json_file: "./mock_observations.json"
+          N_masses_evaluation: 100
+          seed: 42
+
+    The corresponding ``mock_observations.json`` should look like:
+
+    .. code-block:: json
+
+        [
+          {
+            "name": "PSR0",
+            "mean_mass": 1.4,
+            "mean_radius": 12.0,
+            "std_mass": 0.1,
+            "std_radius": 0.1,
+            "correlation": 0.1
+          }
+        ]
+    """
+
+    type: Literal["mock_mr"] = Field(
+        default="mock_mr", description="Likelihood type identifier"
+    )
+
+    json_file: str = Field(
+        description=(
+            "Path to a JSON file containing the list of mock mass-radius observations. "
+            "Each entry must have: name, mean_mass, mean_radius, std_mass, std_radius, correlation."
+        )
+    )
+
+    penalty_value: float = Field(
+        default=0.0,
+        description="Log-likelihood penalty when the sampled mass exceeds M_TOV (default: 0.0, i.e. no penalty)",
+    )
+
+    N_masses_evaluation: int = Field(
+        default=100,
+        gt=0,
+        description="Number of mass samples pre-drawn for Monte-Carlo likelihood integration",
+    )
+
+    N_masses_batch_size: int = Field(
+        default=20,
+        gt=0,
+        description="Batch size for jax.lax.map processing of mass samples",
+    )
+
+    seed: int = Field(
+        default=42,
+        ge=0,
+        description="Random seed for reproducible mass pre-sampling",
+    )
+
+
 # Discriminated union of all likelihood types
 LikelihoodConfig = Annotated[
     Union[
@@ -789,6 +867,7 @@ LikelihoodConfig = Annotated[
         DeprecatedConstraintsLikelihoodConfig,
         REXLikelihoodConfig,
         ZeroLikelihoodConfig,
+        MockMassRadiusLikelihoodConfig,
     ],
     Discriminator("type"),
 ]
