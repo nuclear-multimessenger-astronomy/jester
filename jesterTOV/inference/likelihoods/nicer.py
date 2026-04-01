@@ -231,7 +231,7 @@ class NICERLikelihood(LikelihoodBase):
         
         # Boundary 1: Find valid min and max mass for this segment
         seg1_min = m_eos_1[0]
-        seg1_max = jnp.max(jnp.where(m_eos_1 == jnp.inf, -jnp.inf, m_eos_1))
+        seg1_max = jnp.max(jnp.where(m_eos_1 == jnp.inf, self.penalty_value, m_eos_1))
 
         # Segment 2
         m_eos_2 = jnp.where(mask2, masses_EOS, jnp.inf)
@@ -241,7 +241,7 @@ class NICERLikelihood(LikelihoodBase):
 
         # Boundary 2: Find valid min and max mass for this segment
         seg2_min = m_eos_2[0]
-        seg2_max = jnp.max(jnp.where(m_eos_2 == jnp.inf, -jnp.inf, m_eos_2))
+        seg2_max = jnp.max(jnp.where(m_eos_2 == jnp.inf, self.penalty_value, m_eos_2))
 
         def process_sample_amsterdam(mass: Float, m_eos: Array, r_eos: Array, max_m_tov: Float, seg_min: Float, seg_max: Float) -> Float:
             radius = jnp.interp(mass, m_eos, r_eos)
@@ -250,7 +250,7 @@ class NICERLikelihood(LikelihoodBase):
             
             # Do not extrapolate: zero probability mask for extrapolated points, so no need for weighing
             in_segment = (mass >= seg_min) & (mass <= seg_max)
-            logpdf = jnp.where(in_segment, logpdf, -jnp.inf)
+            logpdf = jnp.where(in_segment, logpdf, self.penalty_value)
             
             penalty = jnp.where(mass > max_m_tov, self.penalty_value, 0.0)
             return logpdf + penalty
@@ -262,7 +262,7 @@ class NICERLikelihood(LikelihoodBase):
             
             # Zero probability mask for extrapolated points, so no need for weighing
             in_segment = (mass >= seg_min) & (mass <= seg_max)
-            logpdf = jnp.where(in_segment, logpdf, -jnp.inf)
+            logpdf = jnp.where(in_segment, logpdf, self.penalty_value)
             
             penalty = jnp.where(mass > max_m_tov, self.penalty_value, 0.0)
             return logpdf + penalty
@@ -461,7 +461,7 @@ class NICERKDELikelihood(LikelihoodBase):
         
         # Boundary 1: Find valid min and max mass for this segment
         seg1_min = m_eos_1[0]
-        seg1_max = jnp.max(jnp.where(m_eos_1 == jnp.inf, -jnp.inf, m_eos_1))
+        seg1_max = jnp.max(jnp.where(m_eos_1 == jnp.inf, self.penalty_value, m_eos_1))
 
         # Segment 2
         m_eos_2 = jnp.where(mask2, masses_EOS, jnp.inf)
@@ -471,7 +471,7 @@ class NICERKDELikelihood(LikelihoodBase):
 
         # Boundary 2: Find valid min and max mass for this segment
         seg2_min = m_eos_2[0]
-        seg2_max = jnp.max(jnp.where(m_eos_2 == jnp.inf, -jnp.inf, m_eos_2))
+        seg2_max = jnp.max(jnp.where(m_eos_2 == jnp.inf, self.penalty_value, m_eos_2))
 
         # Split key for Amsterdam and Maryland sampling
         key_amsterdam, key_maryland = jax.random.split(key)
@@ -534,7 +534,7 @@ class NICERKDELikelihood(LikelihoodBase):
 
             # Do not extrapolate: zero probability mask for extrapolated points
             in_segment = (mass >= seg_min) & (mass <= seg_max)
-            logpdf = jnp.where(in_segment, logpdf, -jnp.inf)
+            logpdf = jnp.where(in_segment, logpdf, self.penalty_value)
 
             # Penalty for mass exceeding Mtov
             penalty = jnp.where(mass > max_m_tov, self.penalty_value, 0.0)
@@ -574,7 +574,7 @@ class NICERKDELikelihood(LikelihoodBase):
 
             # Zero probability mask for extrapolated points
             in_segment = (mass >= seg_min) & (mass <= seg_max)
-            logpdf = jnp.where(in_segment, logpdf, -jnp.inf)
+            logpdf = jnp.where(in_segment, logpdf, self.penalty_value)
 
             # Penalty for mass exceeding Mtov
             penalty = jnp.where(mass > max_m_tov, self.penalty_value, 0.0)
