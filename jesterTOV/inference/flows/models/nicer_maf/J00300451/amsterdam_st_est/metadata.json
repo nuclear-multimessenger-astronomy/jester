@@ -7,18 +7,18 @@
   ],
   "filepath": "../../../../../data/NICER/J00300451_amsterdam_ST_EST_NICER_only_Riley2019.npz",
   "flow_type": "masked_autoregressive_flow",
-  "num_epochs": 1600,
+  "num_epochs": 3000,
   "learning_rate": 0.0001,
   "max_patience": 500,
   "val_prop": 0.2,
   "standardize": true,
   "standardization_method": "zscore",
   "data_mean": [
-    1.4021710572633428,
-    13.071124841476394
+    1.4553513322002138,
+    13.812454681076058
   ],
   "data_std": [
-    0.20897615919835533,
-    1.6240109158369562
+    0.16647825282668202,
+    1.15179261961841
   ]
 }

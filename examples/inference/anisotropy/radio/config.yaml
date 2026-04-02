@@ -36,6 +36,6 @@ sampler:
   output_dir: ./outdir/
 postprocessing:
   enabled: true
-  make_cornerplot: false
+  make_cornerplot: true
   make_massradius: true
   make_pressuredensity: true

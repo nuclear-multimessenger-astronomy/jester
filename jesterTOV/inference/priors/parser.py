@@ -54,7 +54,12 @@ def parse_prior_file(
 
     - Include all NEP parameters (``_sat`` and ``_sym`` parameters)
     - Include ``nbreak`` only if ``nb_CSE > 0``
-    - Add CSE grid parameters (``n_CSE_i_u``, ``cs2_CSE_i``) if ``nb_CSE > 0``
+    - Add CSE grid parameters (``n_CSE_i_u``, ``cs2_CSE_i``) if ``nb_CSE > 0``,
+      **unless** those parameters are already defined in the prior file — either
+      as :class:`~jesterTOV.inference.base.prior.Fixed` entries (pinned to a
+      constant) or as custom sampled priors with user-specified bounds.  This
+      allows partial or full fixing of the CSE grid while leaving other CSE
+      parameters free.
 
     Parameters
     ----------
@@ -143,17 +148,22 @@ def parse_prior_file(
             # Include any other parameters not handled by special cases
             prior_list.append(prior)
 
-    # Add CSE grid parameters programmatically if nb_CSE > 0
+    # Add CSE grid parameters programmatically if nb_CSE > 0.
+    # Skip any parameter that the user has already provided — either as a
+    # Fixed entry (already in fixed_params) or as a custom sampled prior
+    # (already added to prior_list via the loop above).
     if nb_CSE > 0:
         for i in range(nb_CSE):
-            # Add n_CSE_i_u parameters (uniform [0, 1])
-            prior_list.append(UniformPrior(0.0, 1.0, parameter_names=[f"n_CSE_{i}_u"]))
-            # Add cs2_CSE_i parameters (uniform [0, 1])
-            prior_list.append(UniformPrior(0.0, 1.0, parameter_names=[f"cs2_CSE_{i}"]))
+            for param_name in [f"n_CSE_{i}_u", f"cs2_CSE_{i}"]:
+                if param_name not in fixed_params and param_name not in sampled_priors:
+                    prior_list.append(
+                        UniformPrior(0.0, 1.0, parameter_names=[param_name])
+                    )
 
-        # Add final cs2 parameter for the grid point at nmax
-        # This gives us nb_CSE grid points + 1 final point at nmax
-        prior_list.append(UniformPrior(0.0, 1.0, parameter_names=[f"cs2_CSE_{nb_CSE}"]))
+        # Final cs2 parameter for the grid point at nmax
+        final_cs2_name = f"cs2_CSE_{nb_CSE}"
+        if final_cs2_name not in fixed_params and final_cs2_name not in sampled_priors:
+            prior_list.append(UniformPrior(0.0, 1.0, parameter_names=[final_cs2_name]))
 
     if len(prior_list) == 0:
         raise ValueError(

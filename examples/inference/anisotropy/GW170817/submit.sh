@@ -6,7 +6,7 @@
 #SBATCH -t 03:00:00
 #SBATCH --gpus-per-node=1
 #SBATCH --cpus-per-gpu=1
-#SBATCH --mem-per-gpu=40G
+#SBATCH --mem-per-gpu=20G
 #SBATCH --output="./outdir/log_smc_rw.out"
 #SBATCH --job-name="SMC-RW-anisotropy-GW170817"
 

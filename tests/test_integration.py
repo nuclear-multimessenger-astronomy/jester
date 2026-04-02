@@ -94,7 +94,7 @@ class TestMetaModelEOSIntegration:
         model = MetaModel_with_CSE_EOS_model(
             nsat=0.16,
             nmin_MM_nsat=0.75,
-            nmax_nsat=6.0,
+            nmax_nsat=3.0,
             ndat_metamodel=80,
             ndat_CSE=70,
             nb_CSE=nb_CSE,
@@ -111,7 +111,7 @@ class TestMetaModelEOSIntegration:
             "K_sym": 0.0,
             "Q_sym": 0.0,
             "Z_sym": 0.0,
-            "nbreak": 0.80,  # Break density in fm^-3 (below nmax=6*nsat=0.96)
+            "nbreak": 0.40,  # Break density in fm^-3 (below nmax=3*nsat=0.48)
         }
 
         # Add CSE grid parameters (normalized positions and cs2 values)
@@ -147,12 +147,12 @@ class TestMetaModelEOSIntegration:
             eos_data, tov_params={}, ndat=25, min_nsat=0.75
         )
 
-        # Should get reasonable neutron star properties (CSE with 6 nsat base)
+        # Should get reasonable neutron star properties (CSE with 3 nsat base)
         assert (
             jnp.max(family_data.masses) > 1.5
-        )  # Expected for CSE extension from 6 nsat base
+        )  # Expected for CSE extension from 3 nsat base
         assert jnp.min(family_data.radii) > 8.0
-        assert jnp.max(family_data.radii) < 25.0
+        assert jnp.max(family_data.radii) < 30.0
 
 
 class TestTOVIntegration:

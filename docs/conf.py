@@ -21,6 +21,7 @@ extensions = [
     "sphinx.ext.viewcode",
     "sphinx.ext.intersphinx",
     "sphinx.ext.githubpages",
+    "matplotlib.sphinxext.plot_directive",
     "myst_parser",
     "nbsphinx",
     "sphinx_copybutton",

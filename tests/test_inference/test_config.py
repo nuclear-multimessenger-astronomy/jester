@@ -794,6 +794,122 @@ class TestGWEventConfig:
                 events=[{"name": "GW170817", "model_dir": "./my_flow"}],  # type: ignore[arg-type]
             )
 
+    def test_gw_likelihood_duplicate_event_names_fail(self):
+        """GWLikelihoodConfig raises ValidationError for duplicate event names."""
+        with pytest.raises(ValidationError, match="Duplicate GW event names"):
+            schema.GWLikelihoodConfig(
+                events=[
+                    schema.GWEventConfig(name="GW170817"),
+                    schema.GWEventConfig(name="GW170817"),
+                ]
+            )
+
+    def test_gw_likelihood_unique_event_names_ok(self):
+        """GWLikelihoodConfig accepts multiple events with unique names."""
+        config = schema.GWLikelihoodConfig(
+            events=[
+                schema.GWEventConfig(name="GW170817"),
+                schema.GWEventConfig(name="GW190425"),
+            ]
+        )
+        assert len(config.events) == 2
+
+    def test_gw_resampled_duplicate_event_names_fail(self):
+        """GWResampledLikelihoodConfig raises ValidationError for duplicate event names."""
+        with pytest.raises(ValidationError, match="Duplicate GW event names"):
+            schema.GWResampledLikelihoodConfig(
+                events=[
+                    {"name": "GW170817"},
+                    {"name": "GW170817"},
+                ]
+            )
+
+    def test_gw_resampled_unique_event_names_ok(self):
+        """GWResampledLikelihoodConfig accepts multiple events with unique names."""
+        config = schema.GWResampledLikelihoodConfig(
+            events=[
+                {"name": "GW170817"},
+                {"name": "GW190425"},
+            ]
+        )
+        assert len(config.events) == 2
+
+
+class TestNICERDuplicateNames:
+    """Tests for duplicate name validation in NICER likelihood configs."""
+
+    def test_nicer_duplicate_pulsar_names_fail(self):
+        """NICERLikelihoodConfig raises ValidationError for duplicate pulsar names."""
+        with pytest.raises(ValidationError, match="Duplicate NICER pulsar names"):
+            schema.NICERLikelihoodConfig(
+                pulsars=[
+                    {
+                        "name": "J0030",
+                        "amsterdam_model_dir": "./am",
+                        "maryland_model_dir": "./md",
+                    },
+                    {
+                        "name": "J0030",
+                        "amsterdam_model_dir": "./am2",
+                        "maryland_model_dir": "./md2",
+                    },
+                ]
+            )
+
+    def test_nicer_unique_pulsar_names_ok(self):
+        """NICERLikelihoodConfig accepts multiple pulsars with unique names."""
+        config = schema.NICERLikelihoodConfig(
+            pulsars=[
+                {
+                    "name": "J0030",
+                    "amsterdam_model_dir": "./am",
+                    "maryland_model_dir": "./md",
+                },
+                {
+                    "name": "J0740",
+                    "amsterdam_model_dir": "./am2",
+                    "maryland_model_dir": "./md2",
+                },
+            ]
+        )
+        assert len(config.pulsars) == 2
+
+    def test_nicer_kde_duplicate_pulsar_names_fail(self):
+        """NICERKDELikelihoodConfig raises ValidationError for duplicate pulsar names."""
+        with pytest.raises(ValidationError, match="Duplicate NICER pulsar names"):
+            schema.NICERKDELikelihoodConfig(
+                pulsars=[
+                    {
+                        "name": "J0030",
+                        "amsterdam_samples_file": "./am.npz",
+                        "maryland_samples_file": "./md.npz",
+                    },
+                    {
+                        "name": "J0030",
+                        "amsterdam_samples_file": "./am2.npz",
+                        "maryland_samples_file": "./md2.npz",
+                    },
+                ]
+            )
+
+    def test_nicer_kde_unique_pulsar_names_ok(self):
+        """NICERKDELikelihoodConfig accepts multiple pulsars with unique names."""
+        config = schema.NICERKDELikelihoodConfig(
+            pulsars=[
+                {
+                    "name": "J0030",
+                    "amsterdam_samples_file": "./am.npz",
+                    "maryland_samples_file": "./md.npz",
+                },
+                {
+                    "name": "J0740",
+                    "amsterdam_samples_file": "./am2.npz",
+                    "maryland_samples_file": "./md2.npz",
+                },
+            ]
+        )
+        assert len(config.pulsars) == 2
+
 
 @pytest.mark.integration
 class TestConfigIntegration:

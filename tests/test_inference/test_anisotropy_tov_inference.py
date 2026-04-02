@@ -43,7 +43,7 @@ def _nep_priors() -> list[UniformPrior]:
 
 
 def _eos_config() -> MetamodelEOSConfig:
-    return MetamodelEOSConfig(type="metamodel", ndat_metamodel=100, nmax_nsat=25.0)
+    return MetamodelEOSConfig(type="metamodel", ndat_metamodel=100, nmax_nsat=3.0)
 
 
 _NEP_PARAMS: dict[str, float] = {
