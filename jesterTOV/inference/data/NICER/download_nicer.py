@@ -224,13 +224,36 @@ def process_maryland_data() -> list[Path]:
 
 
 def parse_riley2019_mr_file(filepath: Path) -> Tuple[np.ndarray, np.ndarray, Dict]:
-    """Parse Riley et al. 2019 M-R files.
+    """Parse Riley et al. 2019 M-R files and resample to equal-weight posterior.
 
-    Format: weight, -2*log(L), mass (Msun), radius (km)
+    The M_R.txt files are raw MultiNest chains with format:
+        col 0: importance weight
+        col 1: -2 * log(likelihood)
+        col 2: mass [Msun]
+        col 3: radius [km]
+
+    Many rows are dead points with low or zero weight that reflect the prior
+    rather than the posterior.  We importance-resample using the weights to
+    obtain a proper equal-weight posterior sample.
+
+    Note: investigation in internal-jester-review/nicer_check showed that
+    ST_PST is the headline model matching Riley+2019 (M=1.34, R=12.71 km),
+    while ST_U and ST_S give anomalous results and should be used with caution.
     """
     data = np.loadtxt(filepath, comments="#")
-    mass = data[:, 2]
-    radius = data[:, 3]
+    weights = data[:, 0]
+    mass_all = data[:, 2]
+    radius_all = data[:, 3]
+
+    # Importance-resample to equal-weight posterior
+    rng = np.random.default_rng(seed=42)
+    w_norm = weights / weights.sum()
+    n_resample = min(
+        MAX_SAMPLES if MAX_SAMPLES is not None else len(weights), len(weights)
+    )
+    idx = rng.choice(len(weights), size=n_resample, replace=True, p=w_norm)
+    mass = mass_all[idx]
+    radius = radius_all[idx]
 
     model = filepath.parent.name
     metadata: Dict = {
@@ -240,11 +263,15 @@ def parse_riley2019_mr_file(filepath: Path) -> Tuple[np.ndarray, np.ndarray, Dic
         "hotspot_model": model,
         "data_used": "NICER-only",
         "n_samples": len(mass),
-        "weighted": True,
+        "weighted": False,
+        "resampled_from_weights": True,
         "source_file": filepath.name,
         "zenodo_record": "https://zenodo.org/records/3524457",
         "paper": "Riley et al. 2019 (ApJL 887 L21)",
-        "format": "weight, -2*log(L), mass (Msun), radius (km)",
+        "format": (
+            "equal-weight resampled from MultiNest chain "
+            "(original format: weight, -2*log(L), mass, radius)"
+        ),
     }
     return radius, mass, metadata
 

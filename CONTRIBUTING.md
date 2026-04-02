@@ -52,6 +52,23 @@ uv run sphinx-build -W --keep-going docs docs/_build/html
 open docs/_build/html/index.html  # macOS
 ```
 
+> **Note — `.. plot::` directive caching:** Sphinx caches the output of `.. plot::` directives
+> and only regenerates them when the **Python script file** changes, not when any data files
+> it reads change. If you update a data file (e.g. an `.npz` posterior file) that an embedded
+> plot script reads, you must force regeneration manually:
+>
+> ```bash
+> # Clear the cached plot output for a specific page, then rebuild
+> rm -rf docs/_build/html/plot_directive/overview/likelihoods/
+> uv run sphinx-build docs docs/_build/html
+> ```
+>
+> Alternatively, touch the script file to trigger a rebuild:
+> ```bash
+> touch docs/overview/likelihoods/nicer_mr_plot.py
+> uv run sphinx-build docs docs/_build/html
+> ```
+
 ## Contributing New Features
 
 We have detailed step-by-step guides for adding the most common new features:
