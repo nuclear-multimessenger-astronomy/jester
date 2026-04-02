@@ -1,7 +1,9 @@
 """Tests for inference likelihood system (base, factory, specific likelihoods)."""
 
 import pytest
+import jax
 import jax.numpy as jnp
+from unittest.mock import MagicMock, patch
 
 from jesterTOV.inference.config import schema
 from jesterTOV.inference.likelihoods import factory
@@ -820,3 +822,194 @@ class TestLikelihoodIntegration:
         result = combined.evaluate(params)
         # Should sum both penalties
         assert result == -2e10
+
+
+def _make_mock_flow() -> MagicMock:
+    """Create a mock Flow with realistic sample/log_prob behaviour."""
+    flow = MagicMock()
+    # sample returns (N, 2) array of (mass, radius) pairs
+    flow.sample.side_effect = lambda k, shape: jax.random.uniform(
+        k,
+        shape=(*shape, 2),
+        minval=jnp.array([1.0, 10.0]),
+        maxval=jnp.array([2.5, 14.0]),
+    )
+    # log_prob returns a scalar
+    flow.log_prob.return_value = jnp.array(-2.5)
+    return flow
+
+
+class TestNICERLikelihoodGroups:
+    """Tests that NICERLikelihood handles one or both analysis groups correctly."""
+
+    def _make_params(self) -> dict:
+        masses = jnp.linspace(1.0, 2.5, 50)
+        radii = jnp.linspace(13.0, 11.0, 50)
+        return {"masses_EOS": masses, "radii_EOS": radii}
+
+    def test_raises_when_neither_group_provided(self):
+        """NICERLikelihood must raise if both model dirs are None."""
+        from jesterTOV.inference.likelihoods.nicer import NICERLikelihood
+
+        with pytest.raises(ValueError, match="At least one"):
+            NICERLikelihood("J0437", amsterdam_model_dir=None, maryland_model_dir=None)
+
+    def test_amsterdam_only_initialization(self):
+        """Amsterdam-only: flow is loaded and masses are pre-sampled."""
+        from jesterTOV.inference.likelihoods.nicer import NICERLikelihood
+
+        mock_flow = _make_mock_flow()
+
+        with patch(
+            "jesterTOV.inference.flows.flow.Flow.from_directory", return_value=mock_flow
+        ):
+            likelihood = NICERLikelihood(
+                "J0437",
+                amsterdam_model_dir="/fake/amsterdam",
+                maryland_model_dir=None,
+                N_masses_evaluation=10,
+                seed=42,
+            )
+
+        assert likelihood.amsterdam_flow is mock_flow
+        assert likelihood.maryland_flow is None
+        assert likelihood.amsterdam_fixed_mass_samples is not None
+        assert likelihood.maryland_fixed_mass_samples is None
+        assert likelihood.amsterdam_fixed_mass_samples.shape == (10,)
+
+    def test_maryland_only_initialization(self):
+        """Maryland-only: flow is loaded and masses are pre-sampled."""
+        from jesterTOV.inference.likelihoods.nicer import NICERLikelihood
+
+        mock_flow = _make_mock_flow()
+
+        with patch(
+            "jesterTOV.inference.flows.flow.Flow.from_directory", return_value=mock_flow
+        ):
+            likelihood = NICERLikelihood(
+                "J0614",
+                amsterdam_model_dir=None,
+                maryland_model_dir="/fake/maryland",
+                N_masses_evaluation=10,
+                seed=42,
+            )
+
+        assert likelihood.amsterdam_flow is None
+        assert likelihood.maryland_flow is mock_flow
+        assert likelihood.amsterdam_fixed_mass_samples is None
+        assert likelihood.maryland_fixed_mass_samples is not None
+        assert likelihood.maryland_fixed_mass_samples.shape == (10,)
+
+    def test_both_groups_initialization(self):
+        """Both groups: both flows are loaded and masses pre-sampled."""
+        from jesterTOV.inference.likelihoods.nicer import NICERLikelihood
+
+        mock_amsterdam = _make_mock_flow()
+        mock_maryland = _make_mock_flow()
+
+        with patch(
+            "jesterTOV.inference.flows.flow.Flow.from_directory",
+            side_effect=[mock_amsterdam, mock_maryland],
+        ):
+            likelihood = NICERLikelihood(
+                "J0030",
+                amsterdam_model_dir="/fake/amsterdam",
+                maryland_model_dir="/fake/maryland",
+                N_masses_evaluation=10,
+                seed=42,
+            )
+
+        assert likelihood.amsterdam_flow is mock_amsterdam
+        assert likelihood.maryland_flow is mock_maryland
+        assert likelihood.amsterdam_fixed_mass_samples is not None
+        assert likelihood.maryland_fixed_mass_samples is not None
+
+    def test_amsterdam_only_evaluate_returns_finite(self):
+        """Amsterdam-only evaluate returns a finite log-likelihood."""
+        from jesterTOV.inference.likelihoods.nicer import NICERLikelihood
+
+        mock_flow = _make_mock_flow()
+
+        with patch(
+            "jesterTOV.inference.flows.flow.Flow.from_directory", return_value=mock_flow
+        ):
+            likelihood = NICERLikelihood(
+                "J0437",
+                amsterdam_model_dir="/fake/amsterdam",
+                maryland_model_dir=None,
+                N_masses_evaluation=10,
+                N_masses_batch_size=5,
+                seed=42,
+            )
+
+        result = likelihood.evaluate(self._make_params())
+
+        assert jnp.isfinite(result), f"Expected finite log-likelihood, got {result}"
+
+    def test_maryland_only_evaluate_returns_finite(self):
+        """Maryland-only evaluate returns a finite log-likelihood."""
+        from jesterTOV.inference.likelihoods.nicer import NICERLikelihood
+
+        mock_flow = _make_mock_flow()
+
+        with patch(
+            "jesterTOV.inference.flows.flow.Flow.from_directory", return_value=mock_flow
+        ):
+            likelihood = NICERLikelihood(
+                "J0614",
+                amsterdam_model_dir=None,
+                maryland_model_dir="/fake/maryland",
+                N_masses_evaluation=10,
+                N_masses_batch_size=5,
+                seed=42,
+            )
+
+        result = likelihood.evaluate(self._make_params())
+
+        assert jnp.isfinite(result), f"Expected finite log-likelihood, got {result}"
+
+    def test_single_group_equals_that_group_logL(self):
+        """Single-group result equals the per-group log-mean (no averaging dilution)."""
+        from jesterTOV.inference.likelihoods.nicer import NICERLikelihood
+
+        mock_amsterdam = _make_mock_flow()
+        mock_maryland = _make_mock_flow()
+
+        with patch(
+            "jesterTOV.inference.flows.flow.Flow.from_directory",
+            side_effect=[mock_amsterdam],
+        ):
+            lhood_amsterdam_only = NICERLikelihood(
+                "J0030",
+                amsterdam_model_dir="/fake/amsterdam",
+                maryland_model_dir=None,
+                N_masses_evaluation=10,
+                N_masses_batch_size=5,
+                seed=42,
+            )
+
+        with patch(
+            "jesterTOV.inference.flows.flow.Flow.from_directory",
+            side_effect=[mock_amsterdam, mock_maryland],
+        ):
+            lhood_both = NICERLikelihood(
+                "J0030",
+                amsterdam_model_dir="/fake/amsterdam",
+                maryland_model_dir="/fake/maryland",
+                N_masses_evaluation=10,
+                N_masses_batch_size=5,
+                seed=42,
+            )
+
+        params = self._make_params()
+        result_single = lhood_amsterdam_only.evaluate(params)
+        result_both = lhood_both.evaluate(params)
+
+        # With a constant mock log_prob=-2.5, single-group result == both-groups result
+        # because logsumexp([x, x]) - log(2) == x
+        assert jnp.isfinite(result_single)
+        assert jnp.isfinite(result_both)
+        assert jnp.allclose(result_single, result_both, atol=1e-5), (
+            f"Single-group ({result_single:.4f}) != both-groups ({result_both:.4f}) "
+            "for constant mock log_prob"
+        )
