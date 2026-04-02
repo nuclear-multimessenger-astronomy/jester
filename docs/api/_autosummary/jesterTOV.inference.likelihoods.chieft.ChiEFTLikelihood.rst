@@ -33,5 +33,6 @@
       ~ChiEFTLikelihood.EFT_low
       ~ChiEFTLikelihood.EFT_high
       ~ChiEFTLikelihood.nb_n
+      ~ChiEFTLikelihood.n_max_nsat
    
    
