@@ -24,13 +24,13 @@ likelihoods:
   - type: mock_mr
     enabled: true
     json_file: ./mock_observations.json
-    N_masses_evaluation: 100
-    N_masses_batch_size: 20
+    N_masses_evaluation: 1000
+    N_masses_batch_size: 1000
     seed: 42
 
 sampler:
   type: smc-rw
-  n_particles: 2000
+  n_particles: 5000
   n_mcmc_steps: 10
   target_ess: 0.9
   random_walk_sigma: 0.1
@@ -41,4 +41,4 @@ postprocessing:
   make_cornerplot: true
   make_massradius: true
   make_pressuredensity: true
-  make_histograms: false
+  make_histograms: true
