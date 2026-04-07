@@ -12,3 +12,11 @@ This page will cover:
 * Free parameters and priors
 * Usage examples
 * API reference: :class:`jesterTOV.eos.metamodel.MetaModel_EOS_model`
+
+The metamodel parametrization is described in Refs. :cite:`Margueron:2017eqc` and
+:cite:`Margueron:2017lup`.
+
+.. rubric:: References
+
+.. bibliography::
+   :filter: docname in docnames

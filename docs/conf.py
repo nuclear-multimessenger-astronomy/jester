@@ -28,7 +28,11 @@ extensions = [
     "sphinx_autodoc_typehints",
     "sphinxcontrib.mermaid",
     "sphinx_design",
+    "sphinxcontrib.bibtex",
 ]
+
+bibtex_bibfiles = ["references.bib"]
+bibtex_default_style = "unsrt"
 
 templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "CLAUDE.md"]

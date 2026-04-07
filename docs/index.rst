@@ -18,7 +18,7 @@ See the :doc:`overview` guide for detailed explanations.
 .. grid:: 2
     :class-container: component-grid
 
-    .. grid-item:: 🧮 :doc:`EOS Models <overview/eos>`
+    .. grid-item:: 🧮 :doc:`EOS models <overview/eos>`
 
        Parametrize the equation of state of nuclear matter
 
@@ -26,7 +26,7 @@ See the :doc:`overview` guide for detailed explanations.
        - :doc:`Metamodel + CSE <overview/eos/metamodel_cse>`
        - :doc:`Spectral expansion <overview/eos/spectral>`
 
-    .. grid-item:: ⚙️ :doc:`TOV Solvers <overview/tov_solvers>`
+    .. grid-item:: ⚙️ :doc:`TOV solvers <overview/tov_solvers>`
 
        Integrate neutron star structure equations
 
@@ -34,7 +34,7 @@ See the :doc:`overview` guide for detailed explanations.
        - :doc:`Modified gravity theories <overview/tov/scalar_tensor>`
        - :doc:`Pressure anisotropy <overview/tov/anisotropy>`
 
-    .. grid-item:: 🔭 :doc:`Likelihood Constraints <overview/likelihoods>`
+    .. grid-item:: 🔭 :doc:`Likelihood constraints <overview/likelihoods>`
 
        Multi-messenger astronomical observations
 
@@ -80,13 +80,19 @@ Contents
    :maxdepth: 2
    :caption: Overview
 
-   overview
+   overview/eos
+   overview/tov_solvers
+   overview/likelihoods
+   overview/samplers
 
 .. toctree::
    :maxdepth: 2
    :caption: Examples
 
-   examples/index
+   examples/eos_tov/eos_tov
+   examples/eos_tov/automatic_differentiation
+   examples/eos_tov/eos_STtov
+   examples/inference/result
 
 .. toctree::
    :maxdepth: 2

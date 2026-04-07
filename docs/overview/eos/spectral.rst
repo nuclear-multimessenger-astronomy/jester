@@ -1,6 +1,6 @@
 .. _eos-spectral:
 
-Spectral Decomposition
+Spectral decomposition
 ======================
 
 [Placeholder: Detailed explanation of the Spectral EOS parametrization]
