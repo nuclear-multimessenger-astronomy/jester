@@ -84,6 +84,12 @@ class MetaModel_with_peakCSE_EOS_model(Interpolate_EOS_model):
             MetaModel_EOS_model.__init__ : Base meta-model parameters
             construct_eos : Method that defines peakCSE parameters and break density
         """
+        if max_nbreak_nsat is not None and not (0 < max_nbreak_nsat <= nmax_nsat):
+            raise ValueError(
+                f"max_nbreak_nsat must satisfy 0 < max_nbreak_nsat <= nmax_nsat, "
+                f"got max_nbreak_nsat={max_nbreak_nsat}, nmax_nsat={nmax_nsat}."
+            )
+
         self.nmax = nmax_nsat * nsat
         self.ndat_CSE = ndat_CSE
         self.nsat = nsat
@@ -188,25 +194,26 @@ class MetaModel_with_peakCSE_EOS_model(Interpolate_EOS_model):
                 )
             )
         )
-        # Compute n, p, e for peakCSE (number densities in unit of fm^-3)
+        # Compute n, p, e for peakCSE (number densities in unit of fm^-3).
+        # n_CSE starts at nbreak (same as the last point of n_metamodel), so we drop
+        # index 0 when concatenating to avoid a duplicate density value at nbreak.
         n_CSE = jnp.logspace(
             jnp.log10(params["nbreak"]), jnp.log10(self.nmax), num=self.ndat_CSE
         )
         cs2_CSE = cs2_extension_function(n_CSE)
 
-        # We add a very small number to avoid problems with duplicates below
-        mu_CSE = mu_break * jnp.exp(utils.cumtrapz(cs2_CSE / n_CSE, n_CSE)) + 1e-6
-        p_CSE = p_break + utils.cumtrapz(cs2_CSE * mu_CSE, n_CSE) + 1e-6
-        e_CSE = e_break + utils.cumtrapz(mu_CSE, n_CSE) + 1e-6
+        mu_CSE = mu_break * jnp.exp(utils.cumtrapz(cs2_CSE / n_CSE, n_CSE))
+        p_CSE = p_break + utils.cumtrapz(cs2_CSE * mu_CSE, n_CSE)
+        e_CSE = e_break + utils.cumtrapz(mu_CSE, n_CSE)
 
-        # Combine metamodel and CSE data
-        n = jnp.concatenate((n_metamodel, n_CSE))
-        p = jnp.concatenate((p_metamodel, p_CSE))
-        e = jnp.concatenate((e_metamodel, e_CSE))
+        # Combine metamodel and CSE data, skipping the first CSE point (= nbreak)
+        # which duplicates the last metamodel point.
+        n = jnp.concatenate((n_metamodel, n_CSE[1:]))
+        p = jnp.concatenate((p_metamodel, p_CSE[1:]))
+        e = jnp.concatenate((e_metamodel, e_CSE[1:]))
 
-        # TODO: let's decide whether we want to save cs2 and mu or just use them for computation and then discard them.
-        mu = jnp.concatenate((mu_metamodel, mu_CSE))
-        cs2 = jnp.concatenate((cs2_metamodel, cs2_CSE))
+        mu = jnp.concatenate((mu_metamodel, mu_CSE[1:]))
+        cs2 = jnp.concatenate((cs2_metamodel, cs2_CSE[1:]))
 
         ns, ps, hs, es, dloge_dlogps = self.interpolate_eos(n, p, e)
 
