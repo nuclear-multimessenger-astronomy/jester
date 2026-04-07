@@ -226,10 +226,9 @@ class MetaModel_with_peakCSE_EOS_model(Interpolate_EOS_model):
         Returns
         -------
         list[str]
-            NEP parameters + nbreak + peakCSE-specific parameters:
-            ["E_sat", "K_sat", "Q_sat", "Z_sat", "E_sym", "L_sym", "K_sym", "Q_sym", "Z_sym",
-             "nbreak", "gaussian_peak", "gaussian_mu", "gaussian_sigma",
-             "logit_growth_rate", "logit_midpoint"]
+            The 9 NEP parameters (E_sat, K_sat, Q_sat, Z_sat, E_sym, L_sym, K_sym, Q_sym,
+            Z_sym), plus nbreak, gaussian_peak, gaussian_mu, gaussian_sigma,
+            logit_growth_rate, and logit_midpoint.
         """
         return [
             "E_sat",
