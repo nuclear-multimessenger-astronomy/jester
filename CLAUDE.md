@@ -4,6 +4,8 @@ This file provides guidance to Claude Code when working with the JESTER reposito
 
 ## IMPORTANT GUIDELINES
 
+**Contributing guide**: `CONTRIBUTING.md` at the repo root is the authoritative reference for development workflow, PR requirements, and how to add new EOS models, TOV solvers, and likelihoods. Always consult it when working on new features or before opening a PR.
+
 **Testing Philosophy**: When tests fail, investigate root causes rather than modifying tests to pass.
 
 **Examples**: In the examples, you will sometimes find `submit.sh` files for submitting the tests on a cluster. These might have hardcoded paths etc, but ignore those: these files are just intended as an example and they should not be judged so rigourously as the source code.
@@ -13,6 +15,8 @@ This file provides guidance to Claude Code when working with the JESTER reposito
 **Documentation Style**: Write clear, concise documentation in full sentences as if by a human researcher. Avoid LLM-like verbosity.
 
 **Documentation Maintenance**: When making changes to source code (adding/removing/renaming classes, functions, or modules), check if API reference documentation needs updating. Module overview pages in `docs/api/` should list all public classes/functions. See `docs/CLAUDE.md` for detailed documentation guidelines. In case a major refactoring is done, changing the layout of the repo, then we have to check the API references automatic docs building is up to date.
+
+**Sphinx warnings are errors**: CI runs `sphinx-build -W --keep-going`, which turns every Sphinx warning into a build failure that blocks merging. After any documentation or docstring change, always verify locally with `uv run sphinx-build -W --keep-going docs docs/_build/html` before committing. Common pitfalls: unexpected indentation in docstrings (e.g. a `:` followed by a more-indented line), inline bracket-wrapped lists in return descriptions, and missing or malformed cross-references.
 
 **Math Formatting in Docstrings**: All mathematical expressions in docstrings must use Sphinx/reStructuredText formatting for proper rendering in documentation:
 - Use `:math:` role for inline math: `:math:`\Gamma(x)`
