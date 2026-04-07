@@ -45,12 +45,14 @@ uv run pre-commit run --all-files
 # Build docs locally
 uv run sphinx-build docs docs/_build/html
 
-# Build in strict mode (same as CI)
+# Build in strict mode (same as CI) — ALWAYS run this before opening a PR
 uv run sphinx-build -W --keep-going docs docs/_build/html
 
 # Open in browser
 open docs/_build/html/index.html  # macOS
 ```
+
+> **Sphinx warnings are treated as errors in CI.** The `-W` flag used by the CI pipeline turns every Sphinx warning (undefined references, unexpected indentation, missing docstrings, etc.) into a hard build failure. A PR cannot be merged if the docs build fails. Always run the strict-mode build locally before pushing to catch issues early — it is much faster to fix a warning locally than to iterate on CI.
 
 > **Note — `.. plot::` directive caching:** Sphinx caches the output of `.. plot::` directives
 > and only regenerates them when the **Python script file** changes, not when any data files
@@ -218,7 +220,7 @@ For new EOS/TOV/Likelihood features:
 ### What Reviewers (and CI/CD pipeline) Look For
 
 - All tests pass (including type checking)
-- Documentation builds without warnings
+- **Documentation builds without warnings** — Sphinx runs with `-W` in CI so any warning blocks the merge. Run `uv run sphinx-build -W --keep-going docs docs/_build/html` locally before pushing.
 - Code follows project conventions (see `CLAUDE.md`)
 - Comprehensive tests covering edge cases
 - Clear commit messages
