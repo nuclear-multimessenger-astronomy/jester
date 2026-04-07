@@ -28,10 +28,6 @@ class GWLikelihoodResampled(LikelihoodBase):
         Name of the GW event (e.g., "GW170817")
     model_dir : str
         Path to directory containing the trained normalizing flow model
-    log_prior_m1m2: Callable, optional
-        log-prior function that was used in the GW inference for the source frame masses m1, m2.
-        Should be jax-compatible and take m1, m2 as two separate arguments.
-        If None, will simply default to 0 (flat prior).
     penalty_value : float, optional
         Penalty value for samples where masses exceed Mtov (default: 0.0, i.e. no penalty)
     N_masses_evaluation : int, optional
@@ -253,7 +249,6 @@ class GWLikelihood(LikelihoodBase):
         self,
         event_name: str,
         model_dir: str,
-        log_prior_m1m2: Callable | None = None,
         penalty_value: float = 0.0,
         N_masses_evaluation: int = 2000,
         N_masses_batch_size: int = 1000,
@@ -266,11 +261,6 @@ class GWLikelihood(LikelihoodBase):
         self.N_masses_evaluation = N_masses_evaluation
         self.N_masses_batch_size = N_masses_batch_size
         self.seed = seed
-
-        # setup m1 m2 prior
-        if log_prior_m1m2 is None:
-            log_prior_m1m2 = lambda m1, m2: 0
-        self.log_prior_m1m2 = jax.jit(log_prior_m1m2)
 
         # Load Flow model for this event
         logger.info(f"Loading NF model for {event_name} from {model_dir}")
@@ -343,10 +333,6 @@ class GWLikelihood(LikelihoodBase):
             ml_sample = jnp.array([m1, m2, lambda_1, lambda_2])
             logpdf = self.flow.log_prob(ml_sample)
 
-            # subtract the prior
-            logprior = self.log_prior_m1m2(m1, m2)
-            logpdf_gw -= logprior
-
             # Penalties for masses exceeding Mtov
             penalty_m1 = jnp.where(m1 > mtov, self.penalty_value, 0.0)
             penalty_m2 = jnp.where(m2 > mtov, self.penalty_value, 0.0)
@@ -384,6 +370,10 @@ class PopulationGWLikelihood(LikelihoodBase):
         Name of the GW event (e.g., "GW170817")
     model_dir : str
         Path to directory containing the trained normalizing flow model
+    logprior_m1m2: Callable, optional
+        log-prior function that was used in the GW inference for the source frame masses m1, m2.
+        Should be jax-compatible and take m1, m2 as two separate arguments.
+        If None, will simply default to 0 (flat prior).
     penalty_value : float, optional
         Penalty value for samples where masses exceed Mtov (default: 0.0, i.e. no penalty)
     N_masses_batch_size : int, optional
@@ -400,9 +390,6 @@ class PopulationGWLikelihood(LikelihoodBase):
         Path to directory containing the trained normalizing flow model
     population: callable
         A population function that provides m1, m2 samples from the population model.
-    pop_random_key: PRNGKey
-        Random key with which the m1, m2 samples from the population will be generated. 
-        Exists to make the likelihood evaluation deterministic.
     penalty_value : float
         Penalty value for samples where masses exceed Mtov
     N_masses_batch_size : int
@@ -427,6 +414,7 @@ class PopulationGWLikelihood(LikelihoodBase):
         self,
         event_name: str,
         model_dir: str,
+        logprior_m1m2: Callable | None = None,
         penalty_value: float = 0.0,
         N_masses_batch_size: int = 1000,
         seed: int = 42,
@@ -437,6 +425,11 @@ class PopulationGWLikelihood(LikelihoodBase):
         self.penalty_value = penalty_value
         self.N_masses_batch_size = N_masses_batch_size
         self.seed = seed
+
+        # setup m1 m2 prior
+        if logprior_m1m2 is None:
+            logprior_m1m2 = lambda m1, m2: 0
+        self.logprior_m1m2 = jax.jit(logprior_m1m2)
 
         # Load Flow model for this event
         logger.info(f"Loading NF model for {event_name} from {model_dir}")
@@ -496,6 +489,10 @@ class PopulationGWLikelihood(LikelihoodBase):
             # Evaluate log_prob on single sample
             ml_sample = jnp.array([m1, m2, lambda_1, lambda_2])
             logpdf = self.flow.log_prob(ml_sample)
+
+            # subtract the prior
+            logprior = self.logprior_m1m2(m1, m2)
+            logpdf -= logprior
 
             # Penalties for masses exceeding Mtov
             penalty_m1 = jnp.where(m1 > mtov, self.penalty_value, 0.0)
