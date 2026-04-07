@@ -7,6 +7,7 @@ import jax.numpy as jnp
 from jesterTOV.inference.config.schema import (
     MetamodelEOSConfig,
     MetamodelCSEEOSConfig,
+    MetamodelPeakCSEEOSConfig,
     SpectralEOSConfig,
     GRTOVConfig,
 )
@@ -75,6 +76,55 @@ class TestJesterTransform:
 
         assert transform is not None
         assert "SpectralDecomposition_EOS_model" in transform.get_eos_type()
+
+    def test_from_config_metamodel_peak_cse(self):
+        """Test creating MetaModel+peakCSE transform via from_config."""
+        eos_config = MetamodelPeakCSEEOSConfig(
+            type="metamodel_peak_cse",
+            ndat_metamodel=100,
+            nmax_nsat=25.0,
+            ndat_CSE=100,
+            crust_name="DH",
+        )
+        tov_config = GRTOVConfig(
+            type="gr",
+            min_nsat_TOV=0.75,
+            ndat_TOV=100,
+        )
+
+        transform = JesterTransform.from_config(eos_config, tov_config)
+
+        assert transform is not None
+        assert "MetaModel_with_peakCSE_EOS_model" in transform.get_eos_type()
+        assert transform.ndat_TOV == 100
+
+    def test_get_parameter_names_metamodel_peak_cse(self):
+        """Test that MetaModel+peakCSE transform reports correct parameter names."""
+        eos_config = MetamodelPeakCSEEOSConfig(type="metamodel_peak_cse")
+        tov_config = GRTOVConfig()
+
+        transform = JesterTransform.from_config(eos_config, tov_config)
+        param_names = transform.get_parameter_names()
+
+        expected_params = [
+            "E_sat",
+            "K_sat",
+            "Q_sat",
+            "Z_sat",
+            "E_sym",
+            "L_sym",
+            "K_sym",
+            "Q_sym",
+            "Z_sym",
+            "nbreak",
+            "gaussian_peak",
+            "gaussian_mu",
+            "gaussian_sigma",
+            "logit_growth_rate",
+            "logit_midpoint",
+        ]
+        for param in expected_params:
+            assert param in param_names, f"Missing parameter: {param}"
 
     def test_invalid_eos_type_fails(self):
         """Test that unknown EOS config type raises ValueError at runtime."""
@@ -265,6 +315,37 @@ class TestJesterTransformIntegration:
         assert max_mass > 1.0, f"Maximum mass {max_mass} too low"
 
         # CSE should allow higher maximum masses than MetaModel alone
+        assert max_mass < 3.5, f"Maximum mass {max_mass} too high - likely unphysical"
+
+    @pytest.mark.slow
+    def test_metamodel_peak_cse_forward_realistic_params(self, realistic_nep_stiff):
+        """Test MetaModel+peakCSE forward transform with realistic parameters."""
+        eos_config = MetamodelPeakCSEEOSConfig(
+            type="metamodel_peak_cse",
+            ndat_metamodel=100,
+            nmax_nsat=25.0,
+            ndat_CSE=100,
+        )
+        tov_config = GRTOVConfig(ndat_TOV=100)
+
+        transform = JesterTransform.from_config(eos_config, tov_config)
+
+        params = realistic_nep_stiff.copy()
+        params["nbreak"] = 0.24
+        params["gaussian_peak"] = 0.3
+        params["gaussian_mu"] = 0.5
+        params["gaussian_sigma"] = 0.15
+        params["logit_growth_rate"] = 5.0
+        params["logit_midpoint"] = 1.5
+
+        result = transform.forward(params)
+
+        assert "masses_EOS" in result
+        assert "radii_EOS" in result
+        assert "Lambdas_EOS" in result
+
+        max_mass = jnp.max(result["masses_EOS"])
+        assert max_mass > 1.0, f"Maximum mass {max_mass} too low"
         assert max_mass < 3.5, f"Maximum mass {max_mass} too high - likely unphysical"
 
     def test_transform_preserves_input_parameters(self, realistic_nep_stiff):

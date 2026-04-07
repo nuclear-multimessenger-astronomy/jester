@@ -19,6 +19,7 @@ from .config.parser import load_config
 from .config.schema import (
     InferenceConfig,
     MetamodelCSEEOSConfig,
+    MetamodelPeakCSEEOSConfig,
     BaseMetamodelEOSConfig,
     GWLikelihoodConfig,
     GWEventConfig,
@@ -119,6 +120,8 @@ def setup_prior(config: InferenceConfig) -> tuple[CombinePrior, dict[str, float]
 
     # Determine conditional parameters
     nb_CSE = config.eos.nb_CSE if isinstance(config.eos, MetamodelCSEEOSConfig) else 0
+    # peakCSE uses nbreak as a core parameter (not gated by nb_CSE)
+    include_nbreak = isinstance(config.eos, MetamodelPeakCSEEOSConfig)
 
     # Check if GW or NICER likelihoods are enabled (both need _random_key)
     # Note: the default `gw` and `nicer` likelihoods do NOT need
@@ -133,6 +136,7 @@ def setup_prior(config: InferenceConfig) -> tuple[CombinePrior, dict[str, float]
     parsed = parse_prior_file(
         config.prior.specification_file,
         nb_CSE=nb_CSE,
+        include_nbreak=include_nbreak,
     )
     prior = parsed.prior
     fixed_params = parsed.fixed_params
@@ -719,6 +723,9 @@ def main(config_path: str) -> None:
     logger.info(f"EOS type: {config.eos.type}")
     if isinstance(config.eos, MetamodelCSEEOSConfig):
         logger.info(f"  nb_CSE: {config.eos.nb_CSE}")
+        if config.eos.max_nbreak_nsat is not None:
+            logger.info(f"  max_nbreak_nsat: {config.eos.max_nbreak_nsat:.4f} n_sat")
+    if isinstance(config.eos, MetamodelPeakCSEEOSConfig):
         if config.eos.max_nbreak_nsat is not None:
             logger.info(f"  max_nbreak_nsat: {config.eos.max_nbreak_nsat:.4f} n_sat")
     if isinstance(config.eos, BaseMetamodelEOSConfig):

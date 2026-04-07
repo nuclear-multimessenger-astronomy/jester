@@ -32,6 +32,7 @@ class ParsedPrior:
 def parse_prior_file(
     prior_file: Union[str, Path],
     nb_CSE: int = 0,
+    include_nbreak: bool = False,
 ) -> ParsedPrior:
     """Parse .prior file (Python format) and return a :class:`ParsedPrior`.
 
@@ -140,9 +141,9 @@ def parse_prior_file(
         # Always include NEP parameters (_sat and _sym)
         if param_name.endswith("_sat") or param_name.endswith("_sym"):
             prior_list.append(prior)
-        # Include nbreak only if nb_CSE > 0
+        # Include nbreak if nb_CSE > 0 or if explicitly requested (e.g. for peakCSE)
         elif param_name == "nbreak":
-            if nb_CSE > 0:
+            if nb_CSE > 0 or include_nbreak:
                 prior_list.append(prior)
         else:
             # Include any other parameters not handled by special cases

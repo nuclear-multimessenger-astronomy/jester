@@ -104,6 +104,26 @@ class MetamodelCSEEOSConfig(BaseMetamodelEOSConfig):
         return v
 
 
+class MetamodelPeakCSEEOSConfig(BaseMetamodelEOSConfig):
+    """Configuration for MetaModel with peakCSE extension.
+
+    Attributes
+    ----------
+    type : Literal["metamodel_peak_cse"]
+        EOS type identifier
+    ndat_CSE : int
+        Number of density grid points for the peakCSE region (default: 100)
+    max_nbreak_nsat : float | None
+        Maximum allowed breaking density in units of nsat (default: None,
+        meaning no upper bound beyond the prior). If specified, the metamodel
+        grid is only computed up to this density, which can speed up inference.
+    """
+
+    type: Literal["metamodel_peak_cse"] = "metamodel_peak_cse"
+    ndat_CSE: int = 100
+    max_nbreak_nsat: float | None = None
+
+
 class SpectralEOSConfig(BaseEOSConfig):
     r"""Configuration for Spectral Decomposition EOS.
 
@@ -151,6 +171,11 @@ class SpectralEOSConfig(BaseEOSConfig):
 
 # Discriminated union of all EOS types
 EOSConfig = Annotated[
-    Union[MetamodelEOSConfig, MetamodelCSEEOSConfig, SpectralEOSConfig],
+    Union[
+        MetamodelEOSConfig,
+        MetamodelCSEEOSConfig,
+        MetamodelPeakCSEEOSConfig,
+        SpectralEOSConfig,
+    ],
     Discriminator("type"),
 ]
