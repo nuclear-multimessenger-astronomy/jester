@@ -12,6 +12,21 @@ Reference documentation sources (local development only):
 
 When discussing something in long-form, use full sentences and not a list of bullet points with short sentences. Make it easy to read and clear for new users!
 
+## Plot Scripts
+
+**Use LaTeX rendering in all docs plot scripts** for publication-quality typography:
+
+```python
+import matplotlib.pyplot as plt
+plt.rcParams.update({
+    "text.usetex": True,
+    "font.family": "serif",
+    "font.serif": ["Computer Modern"],
+})
+```
+
+This requires a working LaTeX installation with `texlive-latex-base`, `texlive-latex-extra`, `dvipng`, and `cm-super` — all available in the CI environment (see `.github/workflows/ci.yml`).
+
 ## Documentation Workflow
 
 **IMPORTANT**: When working on documentation changes, pause after making initial changes and let the user review before proceeding. Documentation is user-facing and requires careful review.

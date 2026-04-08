@@ -52,6 +52,11 @@ uv run sphinx-build -W --keep-going docs docs/_build/html
 open docs/_build/html/index.html  # macOS
 ```
 
+One can also use `sphinx-autobuild` to automatically build the documentation on any edit, to quickly check and iterate:
+```bash
+uv run sphinx-autobuild docs docs/_build/html
+```
+
 > **Sphinx warnings are treated as errors in CI.** The `-W` flag used by the CI pipeline turns every Sphinx warning (undefined references, unexpected indentation, missing docstrings, etc.) into a hard build failure. A PR cannot be merged if the docs build fails. Always run the strict-mode build locally before pushing to catch issues early — it is much faster to fix a warning locally than to iterate on CI.
 
 > **Note — `.. plot::` directive caching:** Sphinx caches the output of `.. plot::` directives

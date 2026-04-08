@@ -19,6 +19,13 @@ Metamodel with speed-of-sound extrapolation to high densities.
 
 :doc:`eos/metamodel_cse`
 
+Metamodel + peakCSE
+-------------------
+
+Metamodel with a Gaussian-peaked speed-of-sound extrapolation to high densities.
+
+:doc:`eos/metamodel_peakcse`
+
 Spectral Decomposition
 ----------------------
 
@@ -31,4 +38,5 @@ Spectral Decomposition
 
    eos/metamodel
    eos/metamodel_cse
+   eos/metamodel_peakcse
    eos/spectral

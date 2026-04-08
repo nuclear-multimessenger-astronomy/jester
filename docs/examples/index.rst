@@ -1,3 +1,5 @@
+:orphan:
+
 This section contains Jupyter notebook examples demonstrating JESTER's core functionality for equation of state modeling and TOV solving.
 
 Basic Examples

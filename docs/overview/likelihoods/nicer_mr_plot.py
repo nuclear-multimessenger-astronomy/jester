@@ -10,6 +10,12 @@ One representative analysis is chosen per pulsar:
   - PSR J0437-4715  — Amsterdam CST+PDT, Choudhury et al. 2024
   - PSR J0614-3329  — Amsterdam ST+PDT, Dittmann et al. 2025
   - PSR J0740+6620  — Amsterdam gamma NICER+XMM, Salmi et al. 2024
+
+.. developer note::
+   Use LaTeX rendering (``text.usetex = True``) in all docs plot scripts for
+   publication-quality typography.  Requires a working LaTeX installation with
+   the ``texlive-latex-base``, ``texlive-latex-extra``, ``dvipng``, and
+   ``cm-super`` packages, which are available in the CI environment.
 """
 
 from pathlib import Path
@@ -18,6 +24,15 @@ import jax
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.stats import gaussian_kde
+
+# Use LaTeX rendering for publication-quality text
+plt.rcParams.update(
+    {
+        "text.usetex": True,
+        "font.family": "serif",
+        "font.serif": ["Computer Modern"],
+    }
+)
 
 # Locate the trained flow models relative to the installed package
 import jesterTOV
@@ -140,7 +155,7 @@ for i, cfg in enumerate(PSR_CONFIGS):
     # Invisible proxy artist for the pulsar legend
     ax.fill_between([], [], color=color, alpha=0.6, label=cfg["label"])
 
-ax.set_xlabel("Radius [km]", fontsize=12)
+ax.set_xlabel(r"Radius [km]", fontsize=12)
 ax.set_ylabel(r"Mass [$M_\odot$]", fontsize=12)
 ax.set_xlim(8.0, 16.0)
 ax.set_ylim(1.0, 2.5)
