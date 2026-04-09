@@ -18,9 +18,11 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
     Meta-model equation of state for nuclear matter.
 
     This class implements the meta-modeling approach for nuclear equation of state
-    as described in Margueron et al. (Phys. Rev. C 103, 045803, 2021). The EOS
+    as described in Somasundaram et al. (Phys. Rev. C 103, 045803, 2021). The EOS
     is constructed by combining a realistic crust model with a meta-model for
     core densities based on nuclear empirical parameters (NEPs).
+
+    For a more detailed introduction into the metamodel approach, see Margueron et al. (Phys.Rev.C 97 (2018) 2, 025805).
 
     The meta-model uses a kinetic + potential energy decomposition:
 
@@ -30,7 +32,8 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
     where :math:`\delta = (n_n - n_p)/n` is the isospin asymmetry parameter.
 
     The kinetic part is based on a Thomas-Fermi gas with relativistic corrections,
-    while the potential part uses a polynomial expansion around saturation density :math:`n_0`.
+    while the potential part uses a polynomial expansion around saturation density :math:`n_{\rm{sat}}`,
+    taking into account non-quadratic contributions to the symmetry energy.
     """
 
     def __init__(
@@ -67,7 +70,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         implementation combines a realistic crust model with a meta-model description
         of the core using nuclear empirical parameters (NEPs).
 
-        **Reference:** Margueron et al., Phys. Rev. C 103, 045803 (2021)
+        **Reference:** Somasundaram et al., Phys. Rev. C 103, 045803 (2021)
 
         **Physical Framework:**
         The meta-model decomposes the energy density as:
@@ -175,7 +178,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             * (3 * jnp.pi**2 * self.nsat / 2) ** (2 / 3)
         )
 
-        # v_sat is defined in equations (22) - (26) in the Margueron et al. paper
+        # These coefficients are defined in Eq. (B3) of Somasundaram et al
         self.v_sat_0_no_NEP = -self.t_sat * (
             1 + self.kappa_sat + self.kappa_sat2 + self.kappa_sat3
         )
@@ -335,7 +338,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         coefficient_sat = coefficient_sat / factorial(index_sat)
         coefficient_sym = coefficient_sym / factorial(index_sym)
 
-        # Potential energy (v_sat is defined in equations (22) - (26) in the Margueron et al. paper)
+        # Potential energy: see Appendix B of Somasundaram et al. for details
         v_sat = jnp.array(
             [
                 E_sat + self.v_sat_0_no_NEP,
@@ -346,7 +349,6 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             ]
         )
 
-        # v_sym2 is defined in equations (27) to (31) in the Margueron et al. paper
         v_sym2 = jnp.array(
             [
                 E_sym + self.v_sym2_0_no_NEP,
@@ -445,15 +447,18 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
     #################
 
     def u(self, x: Array, b: Array, alpha: Int):
+        "Defined right after equation (40) in Margueron et al. Note that Somasundaram et al. has more than 1 b parameter, compared to Margueron et al., but the definition of u is similar."
         return 1 - ((-3 * x) ** (self.N + 1 - alpha) * jnp.exp(-b * (1 + 3 * x)))
 
     def compute_x(self, n: Array):
+        "Defined right before equation (2) in Margueron et al."
         return (n - self.nsat) / (3 * self.nsat)
 
     def compute_b(self, delta: Array | float):
         return self.b_sat + self.b_sym * delta**2
 
     def compute_f_1(self, delta: Array | float):
+        "Equation (14) in Margueron et al."
         return (1 + delta) ** (5 / 3) + (1 - delta) ** (5 / 3)
 
     def compute_f_star(self, delta: Array | float):
@@ -471,6 +476,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             self.kappa_sat3 - self.kappa_sym3 * delta
         ) * (1 - delta) ** (5 / 3)
 
+    # TODO: we can probably remove the for loop, since these are all arrays anyways
     def compute_v(self, v_sat: Array, v_sym2: Array, delta: Array | float) -> Array:
         return jnp.array(
             [
