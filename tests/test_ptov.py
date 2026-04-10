@@ -49,9 +49,6 @@ class TestAnisotropyTOVSolver:
                 "lambda_BL": 0.0,
                 "lambda_DY": 0.0,
                 "lambda_HB": 1.0,
-                "gamma": 0.0,
-                "alpha": 10.0,
-                "beta": 0.3,
             },
         )
 
@@ -69,9 +66,6 @@ class TestAnisotropyTOVSolver:
             "lambda_BL": 0.1,
             "lambda_DY": 0.05,
             "lambda_HB": 1.2,
-            "gamma": 0.02,
-            "alpha": 10.0,
-            "beta": 0.3,
         }
 
         solution = post_solver.solve(sample_eos_data_post, pc, mg_params)
@@ -99,33 +93,21 @@ class TestAnisotropyTOVSolver:
                 "lambda_BL": 0.0,
                 "lambda_DY": 0.0,
                 "lambda_HB": 1.0,
-                "gamma": 0.0,
-                "alpha": 10.0,
-                "beta": 0.3,
             },  # GR case
             {
                 "lambda_BL": 0.1,
                 "lambda_DY": 0.0,
                 "lambda_HB": 1.0,
-                "gamma": 0.0,
-                "alpha": 10.0,
-                "beta": 0.3,
             },  # Brans-Dicke
             {
                 "lambda_BL": 0.0,
                 "lambda_DY": 0.05,
                 "lambda_HB": 1.0,
-                "gamma": 0.0,
-                "alpha": 10.0,
-                "beta": 0.3,
             },  # dCS
             {
                 "lambda_BL": 0.0,
                 "lambda_DY": 0.0,
                 "lambda_HB": 1.1,
-                "gamma": 0.0,
-                "alpha": 10.0,
-                "beta": 0.3,
             },  # Horndeski
         ]
 
@@ -163,9 +145,6 @@ class TestAnisotropyTOVSolver:
             "lambda_BL": 0.1,
             "lambda_DY": 0.05,
             "lambda_HB": 1.2,
-            "gamma": 0.02,
-            "alpha": 10.0,
-            "beta": 0.3,
         }
 
         # Solve multiple times
@@ -192,9 +171,6 @@ class TestAnisotropyTOVPhysicalConsistency:
             "lambda_BL": 0.1,
             "lambda_DY": 0.05,
             "lambda_HB": 1.2,
-            "gamma": 0.02,
-            "alpha": 10.0,
-            "beta": 0.3,
         }
 
         pressure_indices = range(15, 35, 5)
@@ -238,9 +214,6 @@ class TestAnisotropyTOVPhysicalConsistency:
             "lambda_BL": 0.0,
             "lambda_DY": 0.0,
             "lambda_HB": 1.0,
-            "gamma": 0.0,
-            "alpha": 10.0,
-            "beta": 0.3,
         }
 
         # Modified gravity case
@@ -248,9 +221,6 @@ class TestAnisotropyTOVPhysicalConsistency:
             "lambda_BL": 0.2,
             "lambda_DY": 0.1,
             "lambda_HB": 1.1,
-            "gamma": 0.05,
-            "alpha": 10.0,
-            "beta": 0.3,
         }
 
         try:
@@ -280,9 +250,6 @@ def test_post_solver_parameter_sweep(sample_eos_data_post, lambda_BL, lambda_DY)
         "lambda_BL": lambda_BL,
         "lambda_DY": lambda_DY,
         "lambda_HB": 1.0,
-        "gamma": 0.0,
-        "alpha": 10.0,
-        "beta": 0.3,
     }
 
     try:
@@ -305,7 +272,6 @@ def test_post_solver_parameter_sweep(sample_eos_data_post, lambda_BL, lambda_DY)
         ("lambda_BL", 0.1),
         ("lambda_DY", 0.05),
         ("lambda_HB", 1.1),
-        ("gamma", 0.02),
     ],
 )
 def test_post_solver_individual_mg_params(sample_eos_data_post, mg_param, value):
@@ -318,9 +284,6 @@ def test_post_solver_individual_mg_params(sample_eos_data_post, mg_param, value)
         "lambda_BL": 0.0,
         "lambda_DY": 0.0,
         "lambda_HB": 1.0,
-        "gamma": 0.0,
-        "alpha": 10.0,
-        "beta": 0.3,
     }
     mg_params[mg_param] = value
 

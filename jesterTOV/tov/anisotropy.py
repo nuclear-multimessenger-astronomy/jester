@@ -20,7 +20,7 @@ from jesterTOV.tov.base import TOVSolverBase
 from jesterTOV.tov.data_classes import EOSData, TOVSolution
 
 
-def _sigma_func(p, e, m, r, lambda_BL, lambda_DY, lambda_HB, gamma, alpha, beta):
+def _sigma_func(p, e, m, r, lambda_BL, lambda_DY, lambda_HB):
     r"""
     Compute the non-GR correction term sigma for post-TOV equations.
 
@@ -33,7 +33,6 @@ def _sigma_func(p, e, m, r, lambda_BL, lambda_DY, lambda_HB, gamma, alpha, beta)
     - **Bowers-and-Liang**: :math:`\sigma_{\mathrm{BL}} = -\frac{\lambda_{\mathrm{BL}}\epsilon^2 r^2}{3}\left(1 + \frac{3p}{\epsilon}\right)\frac{\left(1 + \frac{p}{\epsilon}\right)}{\left(1 - \frac{2M}{r}\right)}`
     - **Horvat et al.**: :math:`\sigma_{\mathrm{DY}} = \lambda_{\mathrm{DY}} \frac{2m}{r} p`
     - **Cosenza et al.**: :math:`\sigma_{\mathrm{HB}} = -(\frac{1}{\lambda_{\mathrm{HB}}} - 1) \frac{r}{2} \frac{dp}{dr}`
-    - **Post-Newtonian**: :math:`\sigma_{\mathrm{PN}} = \gamma \frac{2m}{r} p \tanh(\alpha(\frac{m}{r} - \beta))`
 
     Parameters
     ----------
@@ -51,12 +50,6 @@ def _sigma_func(p, e, m, r, lambda_BL, lambda_DY, lambda_HB, gamma, alpha, beta)
         Doneva-Yazadjiev coupling parameter
     lambda_HB : float
         Herrera-Barreto coupling parameter
-    gamma : float
-        Post-Newtonian amplitude parameter
-    alpha : float
-        Post-Newtonian steepness parameter
-    beta : float
-        Post-Newtonian transition point parameter
 
     Returns
     -------
@@ -72,8 +65,6 @@ def _sigma_func(p, e, m, r, lambda_BL, lambda_DY, lambda_HB, gamma, alpha, beta)
     sigma += -lambda_BL * r * r / 3.0 * (e + 3.0 * p) * (e + p) * A
     sigma += lambda_DY * 2.0 * m / r * p
     sigma += -(1.0 / lambda_HB - 1.0) * r / 2.0 * dpdr
-    # post-Newtonian modification
-    sigma += gamma * 2.0 * m / r * p * jnp.tanh(alpha * (m / r - beta))
     return sigma
 
 
@@ -117,9 +108,6 @@ def _tov_ode(h, y, eos):
         eos["lambda_BL"],
         eos["lambda_DY"],
         eos["lambda_HB"],
-        eos["gamma"],
-        eos["alpha"],
-        eos["beta"],
     )
     dsigmadp_fn = jax.grad(_sigma_func, argnums=0)  # Gradient w.r.t. p
     dsigmade_fn = jax.grad(_sigma_func, argnums=1)  # Gradient w.r.t. e
@@ -131,9 +119,6 @@ def _tov_ode(h, y, eos):
         eos["lambda_BL"],
         eos["lambda_DY"],
         eos["lambda_HB"],
-        eos["gamma"],
-        eos["alpha"],
-        eos["beta"],
     )
     dsigmadp += dedp * dsigmade_fn(
         p,
@@ -143,9 +128,6 @@ def _tov_ode(h, y, eos):
         eos["lambda_BL"],
         eos["lambda_DY"],
         eos["lambda_HB"],
-        eos["gamma"],
-        eos["alpha"],
-        eos["beta"],
     )
 
     A = 1.0 / (1.0 - 2.0 * m / r)
@@ -235,7 +217,6 @@ class AnisotropyTOVSolver(TOVSolverBase):
         - Bowers-and-Liang corrections (lambda_BL)
         - Horvat et al. corrections (lambda_DY)
         - Cosenza et al. corrections (lambda_HB)
-        - Post-Newtonian corrections (gamma, alpha, beta)
     """
 
     def solve(
@@ -266,9 +247,6 @@ class AnisotropyTOVSolver(TOVSolverBase):
         lambda_BL = tov_params["lambda_BL"]
         lambda_DY = tov_params["lambda_DY"]
         lambda_HB = tov_params["lambda_HB"]
-        gamma = tov_params["gamma"]
-        alpha = tov_params["alpha"]
-        beta = tov_params["beta"]
 
         # Convert EOSData to dictionary for ODE solver
         eos_dict = {
@@ -280,9 +258,6 @@ class AnisotropyTOVSolver(TOVSolverBase):
             "lambda_BL": lambda_BL,
             "lambda_DY": lambda_DY,
             "lambda_HB": lambda_HB,
-            "gamma": gamma,
-            "alpha": alpha,
-            "beta": beta,
         }
 
         # Extract EOS arrays
@@ -335,9 +310,9 @@ class AnisotropyTOVSolver(TOVSolverBase):
 
     def get_required_parameters(self) -> list[str]:
         """
-        Post-TOV requires 6 additional theory parameters.
+        Post-TOV requires 3 additional theory parameters.
 
         Returns:
-            list[str]: ["lambda_BL", "lambda_DY", "lambda_HB", "gamma", "alpha", "beta"]
+            list[str]: ["lambda_BL", "lambda_DY", "lambda_HB"]
         """
-        return ["lambda_BL", "lambda_DY", "lambda_HB", "gamma", "alpha", "beta"]
+        return ["lambda_BL", "lambda_DY", "lambda_HB"]
