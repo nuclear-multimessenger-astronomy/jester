@@ -271,9 +271,6 @@ class TestTOVIntegration:
             "lambda_BL": 0.0,
             "lambda_DY": 0.0,
             "lambda_HB": 1.0,
-            "gamma": 0.0,
-            "alpha": 10.0,
-            "beta": 0.3,
         }
         post_solution = post_solver.solve(eos_data, pc, post_params)
         M_post, R_post, k2_post = post_solution.M, post_solution.R, post_solution.k2
