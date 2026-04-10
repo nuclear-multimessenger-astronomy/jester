@@ -291,6 +291,131 @@ class Flow:
 
         return log_p
 
+class ConditionalFlow(Flow): 
+
+
+    def __init__(
+        self,
+        flow: AbstractDistribution,
+        metadata: Dict[str, Any],
+        flow_kwargs: Dict[str, Any],
+    ):
+        """
+        Initialize Flow wrapper.
+
+        Args:
+            flow: Trained flowjax flow model
+            metadata: Training metadata
+            flow_kwargs: Flow architecture kwargs
+        """
+
+        super().__init__(flow, metadata, flow_kwargs)
+
+        if self.standardization_method=="zscore":
+            self.cond_data_mean = jnp.array(metadata["cond_data_mean"])
+            self.cond_data_std = jnp.array(metadata["cond_data_std"])
+
+        elif self.standardization_method=="minmax":
+            self.cond_data_min = jnp.array(metadata["cond_data_min"])
+            self.cond_data_max = jnp.array(metadata["cond_data_max"])
+            self.cond_data_range = self.cond_data_max - self.cond_data_min
+
+    def standardize_cond_data(self, data: Array) -> Array:
+
+        if self.standardization_method == "zscore":
+            return (data - self.cond_data_mean) / self.cond_data_mean
+        else:
+            return (data - self.cond_data_min) / self.cond_data_range
+
+    
+    @classmethod
+    def from_directory(cls, output_dir: str) -> "ConditionalFlow":
+        """
+        Load a trained conditinal flow from a directory.
+
+        Args:
+            output_dir: Directory containing flow_weights.eqx, flow_kwargs.json, metadata.json
+
+        Returns:
+            ConditionalFlow instance with loaded model and metadata
+
+        """
+        # Load the flow model and metadata
+        flow_model, metadata = load_model(output_dir)
+
+        # Load kwargs
+        kwargs_path = os.path.join(output_dir, "flow_kwargs.json")
+        with open(kwargs_path, "r") as f:
+            flow_kwargs = json.load(f)
+
+        return cls(flow_model, metadata, flow_kwargs)
+
+    def log_prob(self, x: Array, y: Array) -> Array:
+        """
+        Evaluate log probability of samples under the flow.
+
+        If standardization was used, input data is automatically standardized
+        before evaluation and Jacobian correction is applied. If not, operations
+        are identity (no-op).
+
+        The Jacobian correction accounts for the change of variables:
+        - Z-score: log p(x|y) = log p(x_std|y_std) - sum(log(std))
+        - Min-max: log p(x|y) = log p(x_std|y_std) - sum(log(max - min))
+        - None: log p(x|y) = log p(x_std|y_std) (no correction)
+
+        Args:
+            x: Data in original scale, shape (n_samples, n_features).
+               JAX array.
+            y: Conditional parameter, shape (n_samples, cond_dim).
+
+        Returns:
+            Log probabilities as JAX array, shape (n_samples,)
+
+        Example:
+            >>> data = jnp.array([[1.4, 1.3, 100, 200]])
+            >>> log_prob = flow.log_prob(data)
+        """
+        # Standardize input (method-dependent or identity)
+        x_std = self.standardize_input(x)
+        y_std = self.standardize_cond_data(y)
+
+        # Evaluate log probability in standardized space
+        log_p = self.flow.log_prob(x_std, y_std)
+
+        # Account for Jacobian of inverse transformation
+        if self.standardization_method == "zscore":
+            # Z-score: log |det J| = sum(log(std))
+            log_det_jacobian = -jnp.sum(jnp.log(self.data_std))
+        else:
+            # Min-max or none: log |det J| = sum(log(range))
+            # If standardization disabled (range=1), log_det_jacobian = 0
+            log_det_jacobian = -jnp.sum(jnp.log(self.data_range))
+
+        log_p = log_p + log_det_jacobian
+
+        return log_p
+
+    def sample(self, key: Array, shape: Tuple[int, ...], y: Array) -> Array:
+        """
+        Sample from the conditional flow and return in original scale.
+
+        If standardization was used during training, samples are automatically
+        converted back to the original scale using the inverse transformation
+        (z-score or min-max). If not, the transformation is identity (no-op).
+
+        Args:
+            key: JAX random key (jax.Array)
+            shape: Shape of samples to generate (e.g., (1000,) for 1000 samples)
+            y: Conditional parameters (Array)
+        Returns:
+            Samples in original scale as JAX array of shape (*shape, y.shape[0], n_features)
+        """
+
+        samples = self.flow.sample(key, shape, condition=y)
+
+        samples = self.destandardize_output(samples)
+
+        return samples
 
 def create_transformer(
     transformer_type: str = "affine",
