@@ -1,5 +1,7 @@
 r"""Multimessenger event likelihood implementations"""
 
+from typing import Callable
+
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
@@ -21,7 +23,7 @@ class MultiMessengerLikelihood(LikelihoodBase):
 
     1. Passing population parameters to a population model and generating (m1, m2) pairs.
     2. Interpolate Λ1, Λ2 from the candidate EOS at
-       the generated mass points, evaluate GW flow log_prob on (m1, m2, Λ1_EOS, Λ2_EOS),
+       the generated mass points, evaluate GW likelihood on (m1, m2, Λ1_EOS, Λ2_EOS),
        apply penalties for masses exceeding Mtov, and average over all (m1, m2) pairs.
     3. Determine and log10_mej_dyn and log10_mej_wind from the EOS, m1, m2 using some fitting formulae,
        and evaluate EM flow log_prob one (log10_mej_dyn, log10_mej_wind).
@@ -35,6 +37,10 @@ class MultiMessengerLikelihood(LikelihoodBase):
         Path to directory containing the trained normalizing flow for the GW posterior
     dir_em : str
         Path to directory containing the trained normalizing flow for the EM posterior
+    logprior_m1m2: Callable, optional
+        log-prior function that was used in the GW inference for the source frame masses m1, m2.
+        Should be jax-compatible and take m1, m2 as two separate arguments.
+        If None, will simply default to 0 (flat prior).
     penalty_value : float, optional
         Penalty value for samples where masses exceed Mtov (default: 0.0, i.e. no penalty)
     N_masses_batch_size : int, optional
@@ -81,7 +87,7 @@ class MultiMessengerLikelihood(LikelihoodBase):
         event_name: str,
         dir_gw: str,
         dir_em: str,
-        zeta: float,
+        logprior_m1m2: Callable | None = None,
         penalty_value: float = 0.0,
         N_masses_batch_size: int = 1000,
         seed: int = 42,
@@ -94,13 +100,22 @@ class MultiMessengerLikelihood(LikelihoodBase):
         self.N_masses_batch_size = N_masses_batch_size
         self.seed = seed
 
-        self.zeta = zeta
+        # setup m1 m2 prior
+        if logprior_m1m2 is None:
+            logprior_m1m2 = lambda m1, m2: 0
+        self.logprior_m1m2 = jax.jit(logprior_m1m2)
 
         # Load Flow model for this event
         logger.info(f"Loading NF for GW posterior {event_name} from {dir_gw}.")
         self.flow_gw = Flow.from_directory(dir_gw)
-        logger.info(f"Loading NF for EM posterior {event_name} from {dir_em}.")
-        self.flow_em = Flow.from_directory(dir_em)
+        logger.info(f"Loading EM posterior {event_name} from {dir_em}.")
+        posterior = jnp.load(dir_em)
+        hist, bins = jnp.histogram(posterior["log10_mej_dyn"], bins=jnp.linspace(-4, -1.3, 14), density=True)
+        bins = 0.5*(bins[1:] + bins[:-1])
+        log_hist = jnp.log(hist)
+
+        log_hist = jnp.maximum(log_hist, -200)
+        self.flow_em = lambda x: jnp.interp(x, bins, log_hist, left=-200, right=-200) # Flow.from_directory(dir_em)
         logger.info(f"Loaded NFs for {event_name}.")
 
 
@@ -129,11 +144,10 @@ class MultiMessengerLikelihood(LikelihoodBase):
         Lambdas_EOS: Float[Array, " n_points"] = params["Lambdas_EOS"]
         mtov: Float = jnp.max(masses_EOS)
 
-        log10_mej_wind = jnp.log10(self.zeta) +  params["log10_mdisk"]
         mm_samples = jnp.array([params["masses_1_pop"],
                                 params["masses_2_pop"],
                                 params["log10_mej_dyn"],
-                                log10_mej_wind]).T
+                                params["log10_mdisk"]]).T
         
 
 
@@ -157,24 +171,28 @@ class MultiMessengerLikelihood(LikelihoodBase):
             m1 = sample[0]
             m2 = sample[1]
             log10_mej_dyn = sample[2]
-            log10_mej_wind = sample[3]
+            log10_mdisk = sample[3]
 
 
             # Interpolate lambdas from candidate EOS
             lambda_1 = jnp.interp(m1, masses_EOS, Lambdas_EOS, right=1.0)
             lambda_2 = jnp.interp(m2, masses_EOS, Lambdas_EOS, right=1.0)
 
-            # Evaluate GW log_prob on single sample
+            # Evaluate GW log_posterior on single sample
             gw_sample = jnp.array([m1, m2, lambda_1, lambda_2])
             logpdf_gw = self.flow_gw.log_prob(gw_sample)
+
+            # subtract the prior
+            logprior = self.logprior_m1m2(m1, m2)
+            logpdf_gw -= logprior
 
             # Penalties for masses exceeding Mtov
             penalty_m1 = jnp.where(m1 > mtov, self.penalty_value, 0.0)
             penalty_m2 = jnp.where(m2 > mtov, self.penalty_value, 0.0)
             
             # Evaluate log
-            em_sample = jnp.array([log10_mej_dyn, log10_mej_wind])
-            logpdf_em = self.flow_em.log_prob(em_sample)
+            em_sample = jnp.array([log10_mej_dyn, log10_mdisk])
+            logpdf_em = self.flow_em(log10_mej_dyn)
 
             # Return log prob + penalties for this sample
             return logpdf_gw + penalty_m1 + penalty_m2 + logpdf_em
