@@ -542,11 +542,11 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
     if config.cond_dim:
         logger.info("[1.5/5] Loading conditional samples...")
 
-        if not config.cond_parameter_names:
+        if len(config.cond_parameter_names) != config.cond_dim:
             raise ValueError(
-                f"If conditional dimension is set, " 
-                  "you also need to provide conditional "
-                  "parameter_names."
+                  f"If conditional dimension is set, " 
+                  f"you also need to provide {config.cond_dim} conditional "
+                  f"parameter names. You provided {len(config.cond_parameter_names)}."
             )
 
         cond_samples, cond_samples_metadata = load_posterior(
@@ -556,6 +556,7 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
         )
 
         # Standardize data if requested
+        original_cond_samples = cond_samples.copy()
         cond_data_statistics = None
         if config.standardize:
             cond_samples, cond_data_statistics = standardize_data(
@@ -563,7 +564,7 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
                 config.standardization_method,
             )
 
-
+        original_data = np.hstack((original_data, original_cond_samples))
         data = (data, cond_samples)
 
     # Create flow
@@ -649,7 +650,7 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
             metadata["data_bounds_max"] = data_statistics["max"].tolist()
     
     # Add conditional data statistics to metadata if standardization was used
-    if cond_data_statistics:
+    if config.cond_dim:
         if config.standardization_method == "zscore":
             metadata["cond_data_mean"] = cond_data_statistics["mean"].tolist()
             metadata["cond_data_std"] = cond_data_statistics["std"].tolist()
@@ -673,9 +674,15 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
     if config.plot_corner:
         try:
             # Sample from trained flow
-            n_plot_samples = min(10_000, data.shape[0])
-            flow_samples = trained_flow.sample(sample_key, (n_plot_samples,))
-            flow_samples_np = np.array(flow_samples)
+            n_plot_samples = min(10_000, original_data.shape[0])
+            if config.cond_dim:
+                flow_samples = trained_flow.sample(sample_key, condition=cond_samples)
+                flow_samples_np = np.hstack((flow_samples, original_data[:, -config.cond_dim:]))
+                labels = [*config.parameter_names, *config.cond_parameter_names]
+            else:
+                flow_samples = trained_flow.sample(sample_key, (n_plot_samples,))
+                flow_samples_np = np.array(flow_samples)
+                labels = parameter_names
 
             # Inverse transform samples if data was standardized
             if config.standardize and data_statistics is not None:
@@ -692,7 +699,7 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
             # Use original_data for corner plot comparison
             # Update labels based on parameter names
             plot_corner(
-                original_data, flow_samples_np, corner_path, labels=parameter_names
+                original_data, flow_samples_np, corner_path, labels=labels
             )
         except Exception as e:
             logger.warning(

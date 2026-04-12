@@ -323,7 +323,7 @@ class ConditionalFlow(Flow):
     def standardize_cond_data(self, data: Array) -> Array:
 
         if self.standardization_method == "zscore":
-            return (data - self.cond_data_mean) / self.cond_data_mean
+            return (data - self.cond_data_mean) / self.cond_data_std
         else:
             return (data - self.cond_data_min) / self.cond_data_range
 
@@ -411,6 +411,7 @@ class ConditionalFlow(Flow):
             Samples in original scale as JAX array of shape (*shape, y.shape[0], n_features)
         """
 
+        y_std = self.standardize_cond_data(y_std)
         samples = self.flow.sample(key, shape, condition=y)
 
         samples = self.destandardize_output(samples)
