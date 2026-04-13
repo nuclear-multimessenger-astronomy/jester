@@ -680,7 +680,7 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
             if config.cond_dim:
                 # get flow samples and untransform them
                 n_cond = cond_samples.shape[0]
-                flow_samples = trained_flow.sample(sample_key, (n_cond,), condition=cond_samples) # generate one sample per condition point
+                flow_samples = trained_flow.sample(sample_key, (1,), condition=cond_samples) # generate one sample per condition point
                 flow_samples_np = np.array(flow_samples)
                 if config.standardize and data_statistics is not None:
                     if config.standardization_method == "zscore":
