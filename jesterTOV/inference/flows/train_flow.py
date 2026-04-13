@@ -675,25 +675,39 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
         try:
             # Sample from trained flow
             n_plot_samples = min(10_000, original_data.shape[0])
+
             if config.cond_dim:
-                flow_samples = trained_flow.sample(sample_key, condition=cond_samples)
-                flow_samples_np = np.hstack((flow_samples, original_data[:, -config.cond_dim:]))
+                # get flow samples and untransform them
+                flow_samples = trained_flow.sample(sample_key, (1,), condition=cond_samples)
+                flow_samples_np = np.array(flow_samples)
+                if config.standardize and data_statistics is not None:
+                    if config.standardization_method == "zscore":
+                        flow_samples_np = inverse_standardize_data_zscore(
+                            flow_samples_np, data_statistics
+                        )
+                    else:  # minmax
+                        flow_samples_np = inverse_standardize_data_minmax(
+                            flow_samples_np, data_statistics
+                        )
+                # stack together with conditional data for plot
+                flow_samples_np = np.hstack((flow_samples_np.reshape(-1, 1), original_data[:, -config.cond_dim:]))
                 labels = [*config.parameter_names, *config.cond_parameter_names]
+
             else:
                 flow_samples = trained_flow.sample(sample_key, (n_plot_samples,))
                 flow_samples_np = np.array(flow_samples)
                 labels = parameter_names
 
-            # Inverse transform samples if data was standardized
-            if config.standardize and data_statistics is not None:
-                if config.standardization_method == "zscore":
-                    flow_samples_np = inverse_standardize_data_zscore(
-                        flow_samples_np, data_statistics
-                    )
-                else:  # minmax
-                    flow_samples_np = inverse_standardize_data_minmax(
-                        flow_samples_np, data_statistics
-                    )
+                # Inverse transform samples if data was standardized
+                if config.standardize and data_statistics is not None:
+                    if config.standardization_method == "zscore":
+                        flow_samples_np = inverse_standardize_data_zscore(
+                            flow_samples_np, data_statistics
+                        )
+                    else:  # minmax
+                        flow_samples_np = inverse_standardize_data_minmax(
+                            flow_samples_np, data_statistics
+                        )
 
             corner_path = os.path.join(figures_dir, "corner.png")
             # Use original_data for corner plot comparison
