@@ -16,7 +16,7 @@ It describes nuclear matter with different isoscalar (is) density
 
    n_0 = n_n + n_p
 
-and isovector (iv) density
+(which we will also denote simply by :math:`n` below) and isovector (iv) density
 
 .. math::
    :label: n_1
@@ -73,6 +73,29 @@ The figure below shows an example of the energy per nucleon :math:`E/A` for symm
    :math:`K_\mathrm{sat} = 230\,\mathrm{MeV}`,
    :math:`E_\mathrm{sym} = 32\,\mathrm{MeV}`,
    :math:`L_\mathrm{sym} = 60\,\mathrm{MeV}`).
+
+Before continuining the discussion of the metamodel we provide a few relations that are helpful for the discussion above when reading the ``jester`` metamodel source.
+First, one can observe that
+
+.. math::
+   :label: n_over_nsat
+   
+   \frac{n}{n_{\rm{sat}}} = 1 + 3x
+
+Second, by introducing the proton fraction 
+
+.. math::
+   :label: def_proton_fraction
+   
+   Y_p = n_p/n
+
+one can also easily show that
+
+.. math::
+   :label: delta_proton_fraction
+   
+   \delta = 1 - 2 Y_p
+
 
 Kinetic energy
 ---------------
