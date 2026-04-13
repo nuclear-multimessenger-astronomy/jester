@@ -331,7 +331,7 @@ class ConditionalFlow(Flow):
     @classmethod
     def from_directory(cls, output_dir: str) -> "ConditionalFlow":
         """
-        Load a trained conditinal flow from a directory.
+        Load a trained conditional flow from a directory.
 
         Args:
             output_dir: Directory containing flow_weights.eqx, flow_kwargs.json, metadata.json
@@ -367,13 +367,15 @@ class ConditionalFlow(Flow):
             x: Data in original scale, shape (n_samples, n_features).
                JAX array.
             y: Conditional parameter, shape (n_samples, cond_dim).
+                JAX array.
 
         Returns:
             Log probabilities as JAX array, shape (n_samples,)
 
         Example:
             >>> data = jnp.array([[1.4, 1.3, 100, 200]])
-            >>> log_prob = flow.log_prob(data)
+            >>> y = jnp.array([[2.0, 3.0]])
+            >>> log_prob = flow.log_prob(data, y=y)
         """
         # Standardize input (method-dependent or identity)
         x_std = self.standardize_input(x)
