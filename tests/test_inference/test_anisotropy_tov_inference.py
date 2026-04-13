@@ -128,8 +128,8 @@ class TestAnisotropyTOVTransformFactory:
         assert isinstance(transform.tov_solver, AnisotropyTOVSolver)
 
     def test_anisotropy_required_parameters(self):
-        """AnisotropyTOVSolver.get_required_parameters() must return all 6 coupling params."""
-        expected = ["lambda_BL", "lambda_DY", "lambda_HB", "gamma", "alpha", "beta"]
+        """AnisotropyTOVSolver.get_required_parameters() must return all 3 coupling params."""
+        expected = ["lambda_BL", "lambda_DY", "lambda_HB"]
         assert AnisotropyTOVSolver().get_required_parameters() == expected
 
     def test_transform_parameter_names_include_anisotropy_params(self):
@@ -152,7 +152,7 @@ class TestAnisotropyTOVTransformFactory:
         ]:
             assert nep in required
         # All anisotropy params are now required
-        for p in ["lambda_BL", "lambda_DY", "lambda_HB", "gamma", "alpha", "beta"]:
+        for p in ["lambda_BL", "lambda_DY", "lambda_HB"]:
             assert p in required
 
 
@@ -171,20 +171,17 @@ class TestAnisotropyParameterValidation:
         return config
 
     def test_neps_only_prior_fails_for_anisotropy(self):
-        """Prior with only 9 NEPs raises ValueError since all 6 anisotropy params are required."""
+        """Prior with only 9 NEPs raises ValueError since all 3 anisotropy params are required."""
         prior = CombinePrior(_nep_priors())  # type: ignore[arg-type]
         with pytest.raises(ValueError, match="missing params"):
             setup_transform(self._make_config(), prior=prior)
 
     def test_neps_plus_all_anisotropy_params_succeeds(self):
-        """Prior with 9 NEPs + all 6 anisotropy params passes validation."""
+        """Prior with 9 NEPs + all 3 anisotropy params passes validation."""
         priors = _nep_priors() + [
             UniformPrior(0.0, 0.2, parameter_names=["lambda_BL"]),
             UniformPrior(0.0, 0.1, parameter_names=["lambda_DY"]),
             UniformPrior(0.9, 1.1, parameter_names=["lambda_HB"]),
-            UniformPrior(-0.1, 0.1, parameter_names=["gamma"]),
-            UniformPrior(5.0, 15.0, parameter_names=["alpha"]),
-            UniformPrior(0.1, 0.5, parameter_names=["beta"]),
         ]
         prior = CombinePrior(priors)  # type: ignore[arg-type]
         transform = setup_transform(self._make_config(), prior=prior)
@@ -223,9 +220,6 @@ class TestAnisotropyKwargsPassthrough:
             "lambda_BL": 0.0,
             "lambda_DY": 0.0,
             "lambda_HB": 1.0,
-            "gamma": 0.0,
-            "alpha": 10.0,
-            "beta": 0.3,
         }
         aniso_sol = AnisotropyTOVSolver().solve(eos_data, pc, gr_params)
 
@@ -242,37 +236,30 @@ class TestAnisotropyKwargsPassthrough:
             "lambda_BL": 0.1,
             "lambda_DY": 0.05,
             "lambda_HB": 1.0,
-            "gamma": 0.0,
-            "alpha": 10.0,
-            "beta": 0.3,
         }
         aniso_sol = AnisotropyTOVSolver().solve(eos_data, pc, mg_params)
 
         diff = float(abs(gr_sol.M - aniso_sol.M) / gr_sol.M)
         assert diff > 1e-6, "Non-GR corrections should shift the mass"
 
-    def test_transform_forward_passes_gamma(self):
-        """construct_eos_and_solve_tov must pass gamma from the param dict to the solver."""
+    def test_transform_forward_passes_lambda_DY(self):
+        """construct_eos_and_solve_tov must pass lambda_DY from the param dict to the solver."""
         transform = JesterTransform.from_config(
             eos_config=_eos_config(),
             tov_config=AnisotropyTOVConfig(type="anisotropy"),
         )
 
-        # Run transform with gamma=0 (GR limit) vs small non-zero gamma
-        # All 6 anisotropy params are required
+        # Run transform with lambda_DY=0 (GR limit) vs non-zero lambda_DY
         base_aniso = {
             "lambda_BL": 0.0,
-            "lambda_DY": 0.0,
             "lambda_HB": 1.0,
-            "alpha": 10.0,
-            "beta": 0.3,
         }
         result_gr = transform.construct_eos_and_solve_tov(
-            {**_NEP_PARAMS, **base_aniso, "gamma": 0.0}
+            {**_NEP_PARAMS, **base_aniso, "lambda_DY": 0.0}
         )
         result_mg = transform.construct_eos_and_solve_tov(
-            {**_NEP_PARAMS, **base_aniso, "gamma": 0.05}
+            {**_NEP_PARAMS, **base_aniso, "lambda_DY": 0.1}
         )
 
         mass_diff = jnp.max(jnp.abs(result_gr["masses_EOS"] - result_mg["masses_EOS"]))
-        assert float(mass_diff) > 1e-6, "gamma should shift the M-R family"
+        assert float(mass_diff) > 1e-6, "lambda_DY should shift the M-R family"
