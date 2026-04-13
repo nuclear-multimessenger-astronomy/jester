@@ -542,16 +542,17 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
     if config.cond_dim:
         logger.info("[1.5/5] Loading conditional samples...")
 
-        if len(config.cond_parameter_names) != config.cond_dim:
+        cond_parameter_names = config.cond_parameter_names or []
+        if len(cond_parameter_names) != config.cond_dim:
             raise ValueError(
                   f"If conditional dimension is set, " 
                   f"you also need to provide {config.cond_dim} conditional "
-                  f"parameter names. You provided {len(config.cond_parameter_names)}."
+                  f"parameter names. You provided {len(cond_parameter_names)}."
             )
 
         cond_samples, cond_samples_metadata = load_posterior(
             config.posterior_file, 
-            parameter_names=config.cond_parameter_names,
+            parameter_names=cond_parameter_names,
             max_samples=config.max_samples
         )
 
@@ -690,7 +691,9 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
                             flow_samples_np, data_statistics
                         )
                 # stack together with conditional data for plot
-                flow_samples_np = np.hstack((flow_samples_np.reshape(-1, 1), original_data[:, -config.cond_dim:]))
+                flow_samples_np = np.hstack(
+                    (flow_samples_np.reshape(-1, len(config.parameter_names)), original_data[:, -config.cond_dim:])
+                )
                 labels = [*config.parameter_names, *config.cond_parameter_names]
 
             else:
