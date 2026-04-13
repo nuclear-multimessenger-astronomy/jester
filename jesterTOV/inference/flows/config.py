@@ -40,7 +40,11 @@ class FlowTrainingConfig(BaseModel):
     invert : bool
         Whether to invert the flow (default: True)
     cond_dim : int | None
-        Conditional dimension for conditional flows (default: None)
+        If set, a conditional flow will be trained. 
+        cond_dim is the dimension for the conditional data. 
+        In this case, `conditional_parameter_names` needs to be provided as well (default: None)
+    cond_parameter_names: list[str] | None
+        List of parameter names that are the conditional data (default: None)
     max_samples : int
         Maximum number of samples to use for training (default: 50,000)
     seed : int
@@ -84,6 +88,7 @@ class FlowTrainingConfig(BaseModel):
     flow_layers: int = 1
     invert: bool = True
     cond_dim: int | None = None
+    cond_parameter_names: list[str] | None = None
     max_samples: int = 50_000
     seed: int = 0
     plot_corner: bool = True
