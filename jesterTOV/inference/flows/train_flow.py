@@ -651,7 +651,7 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
             metadata["data_bounds_max"] = data_statistics["max"].tolist()
     
     # Add conditional data statistics to metadata if standardization was used
-    if config.cond_dim:
+    if config.cond_dim and cond_data_statistics is not None:
         if config.standardization_method == "zscore":
             metadata["cond_data_mean"] = cond_data_statistics["mean"].tolist()
             metadata["cond_data_std"] = cond_data_statistics["std"].tolist()
@@ -679,7 +679,8 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
 
             if config.cond_dim:
                 # get flow samples and untransform them
-                flow_samples = trained_flow.sample(sample_key, (1,), condition=cond_samples)
+                n_cond = cond_samples.shape[0]
+                flow_samples = trained_flow.sample(sample_key, (n_cond,), condition=cond_samples) # generate one sample per condition point
                 flow_samples_np = np.array(flow_samples)
                 if config.standardize and data_statistics is not None:
                     if config.standardization_method == "zscore":
@@ -692,7 +693,7 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
                         )
                 # stack together with conditional data for plot
                 flow_samples_np = np.hstack(
-                    (flow_samples_np.reshape(-1, len(config.parameter_names)), original_data[:, -config.cond_dim:])
+                    (flow_samples_np.reshape(-1, len(config.parameter_names)), original_data[:n_cond, -config.cond_dim:])
                 )
                 labels = [*config.parameter_names, *config.cond_parameter_names]
 
