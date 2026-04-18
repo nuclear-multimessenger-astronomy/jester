@@ -32,7 +32,7 @@ extensions = [
 ]
 
 bibtex_bibfiles = ["references.bib"]
-bibtex_default_style = "unsrt"
+bibtex_default_style = "alpha"
 
 templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "CLAUDE.md"]
