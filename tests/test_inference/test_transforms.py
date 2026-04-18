@@ -438,3 +438,101 @@ class TestSpectralTransform:
             "Spectral transform must include 'n_gamma_violations' for "
             "ConstraintGammaLikelihood to work correctly"
         )
+
+
+class TestNTOV:
+    """Tests for n_TOV computation in JesterTransform."""
+
+    @pytest.mark.slow
+    def test_n_TOV_present_in_output(self, realistic_nep_stiff):
+        """Test that n_TOV is present in transform output."""
+        eos_config = MetamodelEOSConfig(type="metamodel", ndat_metamodel=50, nb_CSE=0)
+        tov_config = GRTOVConfig(ndat_TOV=50)
+        transform = JesterTransform.from_config(eos_config, tov_config)
+
+        result = transform.forward(realistic_nep_stiff)
+
+        assert "n_TOV" in result, "n_TOV must be present in transform output"
+
+    @pytest.mark.slow
+    def test_n_TOV_is_scalar(self, realistic_nep_stiff):
+        """Test that n_TOV is a scalar (not an array)."""
+        eos_config = MetamodelEOSConfig(type="metamodel", ndat_metamodel=50, nb_CSE=0)
+        tov_config = GRTOVConfig(ndat_TOV=50)
+        transform = JesterTransform.from_config(eos_config, tov_config)
+
+        result = transform.forward(realistic_nep_stiff)
+
+        n_tov = result["n_TOV"]
+        assert (
+            jnp.ndim(n_tov) == 0
+        ), f"n_TOV should be scalar, got shape {jnp.shape(n_tov)}"
+
+    @pytest.mark.slow
+    def test_n_TOV_is_positive(self, realistic_nep_stiff):
+        """Test that n_TOV is positive for a valid EOS."""
+        eos_config = MetamodelEOSConfig(type="metamodel", ndat_metamodel=50, nb_CSE=0)
+        tov_config = GRTOVConfig(ndat_TOV=50)
+        transform = JesterTransform.from_config(eos_config, tov_config)
+
+        result = transform.forward(realistic_nep_stiff)
+
+        assert float(result["n_TOV"]) > 0.0, "n_TOV must be positive for valid EOS"
+
+    @pytest.mark.slow
+    def test_n_TOV_exceeds_MTOV_central_density(self, realistic_nep_stiff):
+        """Test that n_TOV is physically reasonable.
+
+        n_TOV should be the density at the central pressure of MTOV.
+        For realistic neutron stars, this should be 2-8 n_sat in geometric units.
+        """
+        from jesterTOV import utils
+
+        eos_config = MetamodelEOSConfig(type="metamodel", ndat_metamodel=50, nb_CSE=0)
+        tov_config = GRTOVConfig(ndat_TOV=50)
+        transform = JesterTransform.from_config(eos_config, tov_config)
+
+        result = transform.forward(realistic_nep_stiff)
+
+        n_TOV_nsat = float(result["n_TOV"]) / utils.fm_inv3_to_geometric / 0.16
+        # Typical MTOV central density is between 2 and 8 n_sat
+        assert (
+            1.0 < n_TOV_nsat < 10.0
+        ), f"n_TOV = {n_TOV_nsat:.2f} n_sat is outside expected range [1, 10] n_sat"
+
+    @pytest.mark.slow
+    def test_n_TOV_stored_in_hdf5(self, realistic_nep_stiff, tmp_path):
+        """Test that n_TOV is stored and retrieved from HDF5 results."""
+        import numpy as np
+        from jesterTOV.inference.result import InferenceResult
+
+        eos_config = MetamodelEOSConfig(type="metamodel", ndat_metamodel=50, nb_CSE=0)
+        tov_config = GRTOVConfig(ndat_TOV=50)
+        transform = JesterTransform.from_config(eos_config, tov_config)
+
+        result = transform.forward(realistic_nep_stiff)
+        n_TOV_val = float(result["n_TOV"])
+
+        # Build a minimal InferenceResult with n_TOV
+        posterior = {
+            "log_prob": np.array([-10.0]),
+            "masses_EOS": np.array([[1.4, 2.0]]),
+            "radii_EOS": np.array([[12.0, 11.0]]),
+            "Lambdas_EOS": np.array([[500.0, 100.0]]),
+            "n": np.array([[0.1, 0.5]]),
+            "p": np.array([[1.0, 10.0]]),
+            "e": np.array([[100.0, 500.0]]),
+            "cs2": np.array([[0.1, 0.4]]),
+            "n_TOV": np.array([n_TOV_val]),
+        }
+        metadata = {"sampler": "flowmc", "n_samples": 1}
+        inference_result = InferenceResult(
+            sampler_type="flowmc", posterior=posterior, metadata=metadata
+        )
+
+        filepath = tmp_path / "results.h5"
+        inference_result.save(filepath)
+
+        loaded = InferenceResult.load(filepath)
+        assert "n_TOV" in loaded.posterior
+        assert np.isclose(loaded.posterior["n_TOV"][0], n_TOV_val)

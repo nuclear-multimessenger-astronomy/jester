@@ -16,6 +16,7 @@ from jesterTOV.inference.postprocessing.postprocessing import (
     make_mass_radius_plot,
     make_pressure_density_plot,
     make_cs2_plot,
+    make_parameter_histograms,
 )
 from jesterTOV.inference.result import InferenceResult
 
@@ -61,6 +62,7 @@ class TestLoadEOSData:
             "p": np.random.rand(2, 50),
             "e": np.random.rand(2, 50),
             "cs2": np.random.rand(2, 50),
+            "n_TOV": np.array([1e45, 2e45]),  # geometric units
         }
         metadata = {
             "sampler": "flowmc",
@@ -87,11 +89,13 @@ class TestLoadEOSData:
         assert "pressures" in data  # renamed from p
         assert "energies" in data  # renamed from e
         assert "cs2" in data
+        assert "n_TOV" in data
         assert "log_prob" in data
 
         # Verify shapes preserved (note: densities/pressures have unit conversions applied)
         assert data["masses"].shape == (2, 100)
         assert data["densities"].shape == (2, 50)
+        assert data["n_TOV"].shape == (2,)  # scalar per sample
 
     def test_load_eos_data_file_not_found(self, temp_dir):
         """Test that load_eos_data raises FileNotFoundError for missing file."""
@@ -211,6 +215,7 @@ class TestPlotGeneration:
             "pressures": np.random.uniform(1.0, 100.0, (n_samples, n_eos_points)),
             "energies": np.random.uniform(1.0, 500.0, (n_samples, n_eos_points)),
             "cs2": np.random.uniform(0.0, 1.0, (n_samples, n_eos_points)),
+            "n_TOV": np.random.uniform(2.5, 6.0, n_samples),  # in n_sat units
             "log_prob": np.random.uniform(-50.0, -10.0, n_samples),
             # Use "prior_params" as returned by load_eos_data (not "nep_params")
             "prior_params": {
@@ -327,6 +332,103 @@ class TestPlotGeneration:
 
         plt.close("all")
 
+    def test_make_parameter_histograms_n_TOV(self, mock_data, temp_dir):
+        """Test that make_parameter_histograms creates n_TOV histogram when n_TOV present."""
+        make_parameter_histograms(data=mock_data, prior_data=None, outdir=str(temp_dir))
+
+        expected_file = temp_dir / "n_TOV_histogram.pdf"
+        assert (
+            expected_file.exists()
+        ), "n_TOV histogram should be created when n_TOV is in data"
+
+        plt.close("all")
+
+    def test_make_parameter_histograms_without_n_TOV(self, mock_data, temp_dir):
+        """Test that make_parameter_histograms works without n_TOV (backwards compat)."""
+        data_without_n_TOV = {k: v for k, v in mock_data.items() if k != "n_TOV"}
+        make_parameter_histograms(
+            data=data_without_n_TOV, prior_data=None, outdir=str(temp_dir)
+        )
+
+        # n_TOV histogram should NOT be created
+        assert not (temp_dir / "n_TOV_histogram.pdf").exists()
+        # But other histograms should still be created
+        assert (temp_dir / "MTOV_histogram.pdf").exists()
+
+        plt.close("all")
+
+    def test_pressure_density_plot_uses_n_TOV_for_truncation(self, temp_dir):
+        """Test that p(n) curves are truncated at n_TOV."""
+        n_samples = 5
+        n_eos_points = 100
+        # Densities from 0 to 8 n_sat
+        densities = np.tile(np.linspace(0, 8, n_eos_points), (n_samples, 1))
+        pressures = np.tile(np.linspace(0.1, 1000, n_eos_points), (n_samples, 1))
+        n_TOV = np.full(n_samples, 3.0)  # truncate at 3 n_sat
+
+        data = {
+            "masses": np.random.uniform(1.0, 2.5, (n_samples, n_eos_points)),
+            "radii": np.random.uniform(10.0, 15.0, (n_samples, n_eos_points)),
+            "lambdas": np.random.uniform(100.0, 1000.0, (n_samples, n_eos_points)),
+            "densities": densities,
+            "pressures": pressures,
+            "n_TOV": n_TOV,
+            "log_prob": np.full(n_samples, -10.0),
+            "prior_params": {},
+        }
+
+        make_pressure_density_plot(data=data, prior_data=None, outdir=str(temp_dir))
+        assert (temp_dir / "pressure_density_plot.pdf").exists()
+        plt.close("all")
+
+    def test_cs2_plot_uses_n_TOV_for_truncation(self, temp_dir):
+        """Test that cs2(n) curves are truncated at n_TOV."""
+        n_samples = 5
+        n_eos_points = 100
+        densities = np.tile(np.linspace(0, 8, n_eos_points), (n_samples, 1))
+        cs2 = np.tile(np.linspace(0.0, 0.8, n_eos_points), (n_samples, 1))
+        n_TOV = np.full(n_samples, 3.0)
+
+        data = {
+            "masses": np.random.uniform(1.0, 2.5, (n_samples, n_eos_points)),
+            "radii": np.random.uniform(10.0, 15.0, (n_samples, n_eos_points)),
+            "lambdas": np.random.uniform(100.0, 1000.0, (n_samples, n_eos_points)),
+            "densities": densities,
+            "cs2": cs2,
+            "n_TOV": n_TOV,
+            "log_prob": np.full(n_samples, -10.0),
+            "prior_params": {},
+        }
+
+        make_cs2_plot(data=data, prior_data=None, outdir=str(temp_dir))
+        assert (temp_dir / "cs2_density_plot.pdf").exists()
+        plt.close("all")
+
+    def test_plots_skip_invalid_n_TOV_zero(self, temp_dir):
+        """Test that samples with n_TOV=0 (failed computation) are skipped."""
+        n_samples = 5
+        n_eos_points = 100
+        densities = np.tile(np.linspace(0, 8, n_eos_points), (n_samples, 1))
+        pressures = np.tile(np.linspace(0.1, 1000, n_eos_points), (n_samples, 1))
+        # One sample has n_TOV=0 (nan_to_num fallback for failed EOS)
+        n_TOV = np.array([3.0, 0.0, 4.0, 3.5, 2.5])
+
+        data = {
+            "masses": np.random.uniform(1.0, 2.5, (n_samples, n_eos_points)),
+            "radii": np.random.uniform(10.0, 15.0, (n_samples, n_eos_points)),
+            "lambdas": np.random.uniform(100.0, 1000.0, (n_samples, n_eos_points)),
+            "densities": densities,
+            "pressures": pressures,
+            "n_TOV": n_TOV,
+            "log_prob": np.full(n_samples, -10.0),
+            "prior_params": {},
+        }
+
+        # Should not crash; the zero-n_TOV sample is silently skipped
+        make_pressure_density_plot(data=data, prior_data=None, outdir=str(temp_dir))
+        assert (temp_dir / "pressure_density_plot.pdf").exists()
+        plt.close("all")
+
 
 class TestPlotErrorHandling:
     """Test error handling in plotting functions."""
@@ -379,6 +481,7 @@ class TestIntegrationWithInferenceResult:
             "p": np.random.uniform(0.1, 500, (n_samples, n_eos)),
             "e": np.random.uniform(1, 1000, (n_samples, n_eos)),
             "cs2": np.random.uniform(0.0, 1.0, (n_samples, n_eos)),
+            "n_TOV": np.random.uniform(1e45, 5e45, n_samples),
         }
 
         metadata = {
