@@ -386,6 +386,11 @@ class JesterTransform(NtoMTransform):
             extra_constraints=eos_data.extra_constraints,
         )
 
+        # n_TOV: maximum density inside a NS, reached at MTOV.
+        pc_TOV = jnp.power(10.0, family_data.log10pcs[-1])
+        n_TOV = jnp.interp(pc_TOV, eos_data.ps, eos_data.ns)
+        result["n_TOV"] = jnp.nan_to_num(n_TOV, nan=0.0, posinf=0.0, neginf=0.0)
+
         return result
 
     def _create_return_dict(

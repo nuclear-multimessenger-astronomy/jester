@@ -167,6 +167,10 @@ def load_eos_data(outdir: str) -> Dict[str, np.ndarray]:
     p = p / utils.MeV_fm_inv3_to_geometric
     e = e / utils.MeV_fm_inv3_to_geometric
 
+    n_TOV = result.posterior.get("n_TOV", None)
+    if n_TOV is not None:
+        n_TOV = n_TOV / utils.fm_inv3_to_geometric / 0.16  # convert to n_sat
+
     log_prob = result.posterior["log_prob"]
 
     # Load prior parameters directly from saved parameter names (no magic!)
@@ -186,7 +190,7 @@ def load_eos_data(outdir: str) -> Dict[str, np.ndarray]:
             "No parameter_names found in metadata. Cornerplot may be empty. This may occur if results were saved with an older version of JESTER."
         )
 
-    output = {
+    output: Dict[str, Any] = {
         "masses": m,
         "radii": r,
         "lambdas": l,
@@ -197,6 +201,8 @@ def load_eos_data(outdir: str) -> Dict[str, np.ndarray]:
         "log_prob": log_prob,
         "prior_params": prior_params,  # General key for all parameters
     }
+    if n_TOV is not None:
+        output["n_TOV"] = n_TOV
 
     return output
 
@@ -1017,7 +1023,7 @@ def make_pressure_density_plot(
     if prior_data is not None:
         n_prior, p_prior = prior_data["densities"], prior_data["pressures"]
         for i in range(len(n_prior)):
-            mask = (n_prior[i] > 0.5) * (n_prior[i] < 6.0)
+            mask = n_prior[i] > 0.5
             plt.plot(
                 n_prior[i][mask],
                 p_prior[i][mask],
@@ -1030,6 +1036,7 @@ def make_pressure_density_plot(
     # Plot posterior with probability coloring
     m, r, l = data["masses"], data["radii"], data["lambdas"]
     n, p = data["densities"], data["pressures"]
+    n_TOV = data.get("n_TOV", None)
     log_prob = data["log_prob"]
     nb_samples = np.shape(m)[0]
 
@@ -1068,11 +1075,19 @@ def make_pressure_density_plot(
             bad_counter += 1
             continue
 
+        # n_TOV == 0 means the computation failed (nan_to_num fallback in transform)
+        if n_TOV is not None and n_TOV[i] <= 0.0:
+            bad_counter += 1
+            continue
+
         # Get color and plot
         normalized_value = norm(prob[i])
         color = cmap(normalized_value)
 
-        mask = (n[i] > 0.5) * (n[i] < 6.0)
+        if n_TOV is not None:
+            mask = (n[i] > 0.5) * (n[i] <= n_TOV[i])
+        else:
+            mask = n[i] > 0.5
         plt.plot(
             n[i][mask],
             p[i][mask],
@@ -1091,7 +1106,7 @@ def make_pressure_density_plot(
             p_inj = injection_data["p"]
             logger.info(f"Plotting injection EOS with {len(n_inj)} curves")
             for i in range(len(n_inj)):
-                mask = (n_inj[i] > 0.5) * (n_inj[i] < 6.0)
+                mask = n_inj[i] > 0.5
                 plt.plot(
                     n_inj[i][mask],
                     p_inj[i][mask],
@@ -1108,7 +1123,8 @@ def make_pressure_density_plot(
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
     plt.yscale("log")
-    plt.xlim(0.5, 6.0)
+    # NOTE: we limit at 6 nsat since that is where most interesting things happen
+    plt.xlim(left=0.5, right=6.0)
 
     # Add legend for prior and/or injection
     if prior_data is not None or injection_data is not None:
@@ -1173,7 +1189,7 @@ def make_cs2_plot(
     if prior_data is not None:
         n_prior, cs2_prior = prior_data["densities"], prior_data["cs2"]
         for i in range(len(n_prior)):
-            mask = (n_prior[i] > 0.5) * (n_prior[i] < 6.0)
+            mask = n_prior[i] > 0.5
             plt.plot(
                 n_prior[i][mask],
                 cs2_prior[i][mask],
@@ -1186,6 +1202,7 @@ def make_cs2_plot(
     # Plot posterior with probability coloring
     m, r, l = data["masses"], data["radii"], data["lambdas"]
     n, cs2 = data["densities"], data["cs2"]
+    n_TOV = data.get("n_TOV", None)
     log_prob = data["log_prob"]
     nb_samples = np.shape(m)[0]
 
@@ -1224,11 +1241,19 @@ def make_cs2_plot(
             bad_counter += 1
             continue
 
+        # n_TOV == 0 means the computation failed (nan_to_num fallback in transform)
+        if n_TOV is not None and n_TOV[i] <= 0.0:
+            bad_counter += 1
+            continue
+
         # Get color and plot
         normalized_value = norm(prob[i])
         color = cmap(normalized_value)
 
-        mask = (n[i] > 0.5) * (n[i] < 6.0)
+        if n_TOV is not None:
+            mask = (n[i] > 0.5) * (n[i] <= n_TOV[i])
+        else:
+            mask = n[i] > 0.5
         plt.plot(
             n[i][mask],
             cs2[i][mask],
@@ -1247,7 +1272,7 @@ def make_cs2_plot(
             cs2_inj = injection_data["cs2"]
             logger.info(f"Plotting injection EOS with {len(n_inj)} curves")
             for i in range(len(n_inj)):
-                mask = (n_inj[i] > 0.5) * (n_inj[i] < 6.0)
+                mask = n_inj[i] > 0.5
                 plt.plot(
                     n_inj[i][mask],
                     cs2_inj[i][mask],
@@ -1263,7 +1288,8 @@ def make_cs2_plot(
     ylabel = r"$c_s^2$" if TEX_ENABLED else "cs2"
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
-    plt.xlim(0.5, 6.0)
+    # NOTE: we limit at 6 nsat since that is where most interesting things happen
+    plt.xlim(left=0.5, right=6.0)
     plt.ylim(0.0, 1.2)  # Speed of sound squared should be between 0 and 1 (c=1)
 
     # Add legend for prior and/or injection
@@ -1299,6 +1325,7 @@ def make_cs2_plot(
 
 
 # TODO: Fill histograms between the credible interval edges and not fill outside of it
+# TODO: Would be cool to see prior_data actually being used (we never do that) or just completely gone in a future PR
 def make_parameter_histograms(
     data: Dict[str, Any],
     prior_data: Optional[Dict[str, Any]],
@@ -1330,6 +1357,7 @@ def make_parameter_histograms(
         [np.interp(1.4, mass, lambda_arr) for mass, lambda_arr in zip(m, l)]
     )
     p3nsat_list = np.array([np.interp(3.0, dens, press) for dens, press in zip(n, p)])
+    n_TOV_list = data.get("n_TOV", None)
 
     # Calculate prior parameters if available
     prior_params = {}
@@ -1354,6 +1382,8 @@ def make_parameter_histograms(
         prior_params["p3nsat"] = np.array(
             [np.interp(3.0, dens, press) for dens, press in zip(n_prior, p_prior)]
         )
+        if "n_TOV" in prior_data:
+            prior_params["n_TOV"] = prior_data["n_TOV"]
 
     # Calculate injection parameters if available
     injection_params = {}
@@ -1372,6 +1402,9 @@ def make_parameter_histograms(
             n_inj, p_inj = injection_data["n"], injection_data["p"]
             injection_params["p3nsat"] = np.interp(3.0, n_inj[0], p_inj[0])
 
+        if "n_TOV" in injection_data:
+            injection_params["n_TOV"] = injection_data["n_TOV"][0]
+
     # Define parameters to plot (without fixed ranges)
     if TEX_ENABLED:
         parameters = {
@@ -1383,6 +1416,11 @@ def make_parameter_histograms(
                 "xlabel": r"$p(3n_{\rm{sat}})$ [MeV fm$^{-3}$]",
             },
         }
+        if n_TOV_list is not None:
+            parameters["n_TOV"] = {
+                "values": n_TOV_list,
+                "xlabel": r"$n_{\rm{TOV}}$ [$n_{\rm{sat}}$]",
+            }
     else:
         parameters = {
             "MTOV": {"values": MTOV_list, "xlabel": "M_TOV [M_sun]"},
@@ -1390,6 +1428,11 @@ def make_parameter_histograms(
             "Lambda14": {"values": Lambda14_list, "xlabel": "Lambda_1.4"},
             "p3nsat": {"values": p3nsat_list, "xlabel": "p(3n_sat) [MeV fm^-3]"},
         }
+        if n_TOV_list is not None:
+            parameters["n_TOV"] = {
+                "values": n_TOV_list,
+                "xlabel": "n_TOV [n_sat]",
+            }
 
     for param_name, param_data in parameters.items():
         plt.figure(figsize=figsize_horizontal)
