@@ -1022,8 +1022,11 @@ def make_pressure_density_plot(
     # Plot prior first (background)
     if prior_data is not None:
         n_prior, p_prior = prior_data["densities"], prior_data["pressures"]
+        n_TOV_prior = prior_data.get("n_TOV", None)
         for i in range(len(n_prior)):
             mask = n_prior[i] > 0.5
+            if n_TOV_prior is not None:
+                mask = mask & (n_prior[i] <= n_TOV_prior[i])
             plt.plot(
                 n_prior[i][mask],
                 p_prior[i][mask],
@@ -1188,8 +1191,11 @@ def make_cs2_plot(
     # Plot prior first (background)
     if prior_data is not None:
         n_prior, cs2_prior = prior_data["densities"], prior_data["cs2"]
+        n_TOV_prior = prior_data.get("n_TOV", None)
         for i in range(len(n_prior)):
             mask = n_prior[i] > 0.5
+            if n_TOV_prior is not None:
+                mask = mask & (n_prior[i] <= n_TOV_prior[i])
             plt.plot(
                 n_prior[i][mask],
                 cs2_prior[i][mask],
@@ -1357,7 +1363,12 @@ def make_parameter_histograms(
         [np.interp(1.4, mass, lambda_arr) for mass, lambda_arr in zip(m, l)]
     )
     p3nsat_list = np.array([np.interp(3.0, dens, press) for dens, press in zip(n, p)])
-    n_TOV_list = data.get("n_TOV", None)
+    _n_TOV_raw = data.get("n_TOV", None)
+    n_TOV_list = (
+        np.array(_n_TOV_raw)[np.array(_n_TOV_raw) > 0.0]
+        if _n_TOV_raw is not None
+        else None
+    )
 
     # Calculate prior parameters if available
     prior_params = {}
@@ -1383,7 +1394,8 @@ def make_parameter_histograms(
             [np.interp(3.0, dens, press) for dens, press in zip(n_prior, p_prior)]
         )
         if "n_TOV" in prior_data:
-            prior_params["n_TOV"] = prior_data["n_TOV"]
+            _n_TOV_prior_raw = np.array(prior_data["n_TOV"])
+            prior_params["n_TOV"] = _n_TOV_prior_raw[_n_TOV_prior_raw > 0.0]
 
     # Calculate injection parameters if available
     injection_params = {}

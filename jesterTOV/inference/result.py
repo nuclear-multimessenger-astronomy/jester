@@ -380,6 +380,7 @@ class InferenceResult:
             "p",
             "e",
             "cs2",
+            "n_TOV",
         }
         param_samples = {
             k: v for k, v in self.posterior.items() if k not in exclude_keys
@@ -507,6 +508,7 @@ class InferenceResult:
                 "p",
                 "e",
                 "cs2",
+                "n_TOV",
             }
             sampler_specific_keys = {"weights", "ess", "logL", "logL_birth"}
 
@@ -774,6 +776,7 @@ class InferenceResult:
                 "p",
                 "e",
                 "cs2",
+                "n_TOV",
                 "_sampler_specific",
             }
         ]
