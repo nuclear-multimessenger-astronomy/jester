@@ -422,7 +422,16 @@ class InferenceResult:
 
         # Add transformed outputs to posterior (EOS quantities only, not input parameters)
         # Filter out input parameters from transformed_samples to avoid overwriting full posterior arrays
-        eos_keys = {"masses_EOS", "radii_EOS", "Lambdas_EOS", "n", "p", "e", "cs2"}
+        eos_keys = {
+            "masses_EOS",
+            "radii_EOS",
+            "Lambdas_EOS",
+            "n",
+            "p",
+            "e",
+            "cs2",
+            "n_TOV",
+        }
         eos_only = {k: v for k, v in transformed_samples.items() if k in eos_keys}
         self.add_derived_eos(eos_only)
 
