@@ -16,6 +16,8 @@ from jax.scipy.special import logsumexp
 from jesterTOV.inference.base.likelihood import LikelihoodBase
 from jesterTOV.logging_config import get_logger
 
+from jesterTOV.inference.flows.flow import Flow
+
 logger = get_logger("jester")
 
 
@@ -110,26 +112,17 @@ class NICERLikelihood(LikelihoodBase):
                 f"provided for {psr_name}."
             )
 
-        # Import Flow here to avoid circular imports
-        from jesterTOV.inference.flows.flow import Flow
-
         key = jax.random.key(seed)
         key_amsterdam, key_maryland = jax.random.split(key)
 
-        # Load Amsterdam flow and pre-sample masses if provided
         if amsterdam_model_dir is not None:
-            logger.info(
-                f"Loading Amsterdam flow for {psr_name} from {amsterdam_model_dir}"
+            self.amsterdam_flow, self.amsterdam_fixed_mass_samples = (
+                self._load_flow_and_presample(
+                    amsterdam_model_dir, key_amsterdam, "Amsterdam"
+                )
             )
-            self.amsterdam_flow: Flow | None = Flow.from_directory(amsterdam_model_dir)
-            amsterdam_samples = self.amsterdam_flow.sample(
-                key_amsterdam, (N_masses_evaluation,)
-            )
-            self.amsterdam_fixed_mass_samples: Float[Array, "n_samples"] | None = (
-                amsterdam_samples[:, 0]
-            )
-            logger.info(
-                f"Pre-sampled Amsterdam mass range: "
+            print(
+                f"Amsterdam flow loaded for {psr_name}. Pre-sampled mass range: "
                 f"[{jnp.min(self.amsterdam_fixed_mass_samples):.3f}, "
                 f"{jnp.max(self.amsterdam_fixed_mass_samples):.3f}] Msun"
             )
@@ -137,20 +130,14 @@ class NICERLikelihood(LikelihoodBase):
             self.amsterdam_flow = None
             self.amsterdam_fixed_mass_samples = None
 
-        # Load Maryland flow and pre-sample masses if provided
         if maryland_model_dir is not None:
-            logger.info(
-                f"Loading Maryland flow for {psr_name} from {maryland_model_dir}"
+            self.maryland_flow, self.maryland_fixed_mass_samples = (
+                self._load_flow_and_presample(
+                    maryland_model_dir, key_maryland, "Maryland"
+                )
             )
-            self.maryland_flow: Flow | None = Flow.from_directory(maryland_model_dir)
-            maryland_samples = self.maryland_flow.sample(
-                key_maryland, (N_masses_evaluation,)
-            )
-            self.maryland_fixed_mass_samples: Float[Array, "n_samples"] | None = (
-                maryland_samples[:, 0]
-            )
-            logger.info(
-                f"Pre-sampled Maryland mass range: "
+            print(
+                f"Maryland flow loaded for {psr_name}. Pre-sampled mass range: "
                 f"[{jnp.min(self.maryland_fixed_mass_samples):.3f}, "
                 f"{jnp.max(self.maryland_fixed_mass_samples):.3f}] Msun"
             )
@@ -158,15 +145,37 @@ class NICERLikelihood(LikelihoodBase):
             self.maryland_flow = None
             self.maryland_fixed_mass_samples = None
 
-        groups = [
-            g
-            for g, d in [
-                ("Amsterdam", amsterdam_model_dir),
-                ("Maryland", maryland_model_dir),
+        self.active_groups: list[tuple[Flow, Float[Array, "n_samples"]]] = [
+            (flow, samples)
+            for flow, samples in [
+                (self.amsterdam_flow, self.amsterdam_fixed_mass_samples),
+                (self.maryland_flow, self.maryland_fixed_mass_samples),
             ]
-            if d is not None
+            if flow is not None and samples is not None
         ]
-        logger.info(f"Loaded normalizing flows for {psr_name}: {', '.join(groups)}")
+
+        logger.info(
+            f"Loaded {len(self.active_groups)} normalizing flow(s) for {psr_name}"
+        )
+
+    def _load_flow_and_presample(
+        self,
+        model_dir: str,
+        key: Array,
+        group_name: str,
+    ) -> tuple[Flow, Float[Array, "n_samples"]]:
+        from jesterTOV.inference.flows.flow import Flow
+
+        logger.info(f"Loading {group_name} flow for {self.psr_name} from {model_dir}")
+        flow = Flow.from_directory(model_dir)
+        mass_samples: Float[Array, "n_samples"] = flow.sample(
+            key, (self.N_masses_evaluation,)
+        )[:, 0]
+        logger.info(
+            f"Pre-sampled {group_name} mass range: "
+            f"[{jnp.min(mass_samples):.3f}, {jnp.max(mass_samples):.3f}] Msun"
+        )
+        return flow, mass_samples
 
     def _get_preset_model_path(self, psr_name: str, group: str) -> str:
         """
@@ -220,61 +229,28 @@ class NICERLikelihood(LikelihoodBase):
         Float
             Log likelihood value for this NICER observation
         """
-        # Extract parameters
         masses_EOS: Float[Array, " n_points"] = params["masses_EOS"]
         radii_EOS: Float[Array, " n_points"] = params["radii_EOS"]
         mtov: Float = jnp.max(masses_EOS)
 
-        # Compute log-likelihood for each available group
-        group_logLs = []
-
-        if (
-            self.amsterdam_flow is not None
-            and self.amsterdam_fixed_mass_samples is not None
-        ):
-            amsterdam_flow = self.amsterdam_flow
-
-            def process_sample_amsterdam(mass: Float) -> Float:
+        def compute_group_logL(
+            flow: Flow, mass_samples: Float[Array, "n_samples"]
+        ) -> Float:
+            def process_sample(mass: Float) -> Float:
                 radius = jnp.interp(mass, masses_EOS, radii_EOS)
                 mr_point = jnp.array([[mass, radius]])  # Shape: (1, 2)
-                logpdf = amsterdam_flow.log_prob(mr_point)
-                penalty = jnp.where(mass > mtov, self.penalty_value, 0.0)
-                return logpdf + penalty
+                logpdf = flow.log_prob(mr_point)
+                return logpdf + jnp.where(mass > mtov, self.penalty_value, 0.0)
 
-            amsterdam_logprobs = jax.lax.map(
-                process_sample_amsterdam,
-                self.amsterdam_fixed_mass_samples,
-                batch_size=self.N_masses_batch_size,
+            logprobs = jax.lax.map(
+                process_sample, mass_samples, batch_size=self.N_masses_batch_size
             )
-            N_amsterdam = amsterdam_logprobs.shape[0]
-            group_logLs.append(logsumexp(amsterdam_logprobs) - jnp.log(N_amsterdam))
+            return logsumexp(logprobs) - jnp.log(logprobs.shape[0])
 
-        if (
-            self.maryland_flow is not None
-            and self.maryland_fixed_mass_samples is not None
-        ):
-            maryland_flow = self.maryland_flow
-
-            def process_sample_maryland(mass: Float) -> Float:
-                radius = jnp.interp(mass, masses_EOS, radii_EOS)
-                mr_point = jnp.array([[mass, radius]])  # Shape: (1, 2)
-                logpdf = maryland_flow.log_prob(mr_point)
-                penalty = jnp.where(mass > mtov, self.penalty_value, 0.0)
-                return logpdf + penalty
-
-            maryland_logprobs = jax.lax.map(
-                process_sample_maryland,
-                self.maryland_fixed_mass_samples,
-                batch_size=self.N_masses_batch_size,
-            )
-            N_maryland = maryland_logprobs.shape[0]
-            group_logLs.append(logsumexp(maryland_logprobs) - jnp.log(N_maryland))
-
-        # Average over all available groups (equal weights)
-        n_groups = len(group_logLs)
-        log_likelihood = logsumexp(jnp.array(group_logLs)) - jnp.log(float(n_groups))
-
-        return log_likelihood
+        group_logLs = jnp.stack(
+            [compute_group_logL(flow, samples) for flow, samples in self.active_groups]
+        )
+        return logsumexp(group_logLs) - jnp.log(float(group_logLs.shape[0]))
 
 
 class NICERKDELikelihood(LikelihoodBase):
@@ -439,80 +415,25 @@ class NICERKDELikelihood(LikelihoodBase):
             self.maryland_masses[maryland_indices]
         )
 
-        def process_sample_amsterdam(mass: Float) -> Float:
-            """
-            Process a single Amsterdam mass sample
+        def compute_group_logL(
+            posterior_kde: gaussian_kde, mass_samples: Float[Array, "n_samples"]
+        ) -> Float:
+            def process_sample(mass: Float) -> Float:
+                radius = jnp.interp(mass, masses_EOS, radii_EOS)
+                mr_point = jnp.array([[mass], [radius]])  # Shape: (2, 1)
+                logpdf = posterior_kde.logpdf(mr_point)
+                return logpdf + jnp.where(mass > mtov, self.penalty_value, 0.0)
 
-            Parameters
-            ----------
-            mass : Float
-                Sampled mass value
+            logprobs = jax.lax.map(
+                process_sample, mass_samples, batch_size=self.N_masses_batch_size
+            )
+            return logsumexp(logprobs) - jnp.log(logprobs.shape[0])
 
-            Returns
-            -------
-            Float
-                Log probability from Amsterdam KDE including penalty
-            """
-            # Interpolate radius from EOS
-            radius = jnp.interp(mass, masses_EOS, radii_EOS)
-
-            # Evaluate Amsterdam KDE at (mass, radius)
-            mr_point = jnp.array([[mass], [radius]])  # Shape: (2, 1)
-            logpdf = self.amsterdam_posterior.logpdf(mr_point)
-
-            # Penalty for mass exceeding Mtov
-            penalty = jnp.where(mass > mtov, self.penalty_value, 0.0)
-
-            return logpdf + penalty
-
-        def process_sample_maryland(mass: Float) -> Float:
-            """
-            Process a single Maryland mass sample
-
-            Parameters
-            ----------
-            mass : Float
-                Sampled mass value
-
-            Returns
-            -------
-            Float
-                Log probability from Maryland KDE including penalty
-            """
-            # Interpolate radius from EOS
-            radius = jnp.interp(mass, masses_EOS, radii_EOS)
-
-            # Evaluate Maryland KDE at (mass, radius)
-            mr_point = jnp.array([[mass], [radius]])  # Shape: (2, 1)
-            logpdf = self.maryland_posterior.logpdf(mr_point)
-
-            # Penalty for mass exceeding Mtov
-            penalty = jnp.where(mass > mtov, self.penalty_value, 0.0)
-
-            return logpdf + penalty
-
-        # Use jax.lax.map with batching for memory-efficient processing
-        amsterdam_logprobs = jax.lax.map(
-            process_sample_amsterdam,
-            amsterdam_mass_samples,
-            batch_size=self.N_masses_batch_size,
+        logL_amsterdam = compute_group_logL(
+            self.amsterdam_posterior, amsterdam_mass_samples
+        )
+        logL_maryland = compute_group_logL(
+            self.maryland_posterior, maryland_mass_samples
         )
 
-        maryland_logprobs = jax.lax.map(
-            process_sample_maryland,
-            maryland_mass_samples,
-            batch_size=self.N_masses_batch_size,
-        )
-
-        # Average over all samples for each group (log-mean = logsumexp - log(N))
-        N_amsterdam = amsterdam_logprobs.shape[0]
-        N_maryland = maryland_logprobs.shape[0]
-        logL_amsterdam = logsumexp(amsterdam_logprobs) - jnp.log(N_amsterdam)
-        logL_maryland = logsumexp(maryland_logprobs) - jnp.log(N_maryland)
-
-        # Average the two groups (equal weights, log-mean = logsumexp - log(2))
-        log_likelihood = logsumexp(
-            jnp.array([logL_amsterdam, logL_maryland])
-        ) - jnp.log(2.0)
-
-        return log_likelihood
+        return logsumexp(jnp.array([logL_amsterdam, logL_maryland])) - jnp.log(2.0)
