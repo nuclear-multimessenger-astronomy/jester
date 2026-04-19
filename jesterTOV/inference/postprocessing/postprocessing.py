@@ -329,6 +329,38 @@ def load_injection_eos(
         return None
 
 
+def _split_into_monotone_branches(
+    masses: np.ndarray, lambdas: np.ndarray
+) -> list[tuple[int, int]]:
+    """Split a mass-Lambda curve into monotone-decreasing segments.
+
+    A branch break is detected wherever Lambda increases as mass increases,
+    which signals that the stored curve contains two interleaved stable branches
+    (the "third family" / twin-star scenario arising from a fold-back in M(pc)).
+
+    Parameters
+    ----------
+    masses : np.ndarray
+        Mass array (monotone increasing, uniform grid).
+    lambdas : np.ndarray
+        Tidal deformability array on the same grid.
+
+    Returns
+    -------
+    list of (start, end) index pairs
+        Each pair defines a half-open slice ``masses[start:end]`` that is
+        monotone decreasing in Lambda. Always contains at least one segment.
+    """
+    segments: list[tuple[int, int]] = []
+    start = 0
+    for j in range(1, len(lambdas)):
+        if lambdas[j] > lambdas[j - 1]:
+            segments.append((start, j))
+            start = j
+    segments.append((start, len(masses)))
+    return segments
+
+
 def report_credible_interval(
     values: np.ndarray, hdi_prob: float = HDI_PROB, verbose: bool = False
 ) -> tuple:
@@ -567,19 +599,33 @@ def make_mass_radius_plot(
         f"Plotting {len(valid_indices)} M-R curves (excluded {bad_counter} invalid samples)..."
     )
 
-    # Second pass: plot only valid samples
+    # Second pass: plot only valid samples, splitting multi-branch curves
+    n_unstable_mr = 0
     for i in valid_indices:
-        # Get color based on probability
         normalized_value = norm(prob[i])
         color = cmap(normalized_value)
 
-        plt.plot(
-            r[i],
-            m[i],
-            color=color,
-            alpha=1.0,
-            rasterized=True,
-            zorder=1e10 + normalized_value,
+        branches = _split_into_monotone_branches(m[i], l[i])
+        if len(branches) > 1:
+            n_unstable_mr += 1
+        for start, end in branches:
+            plt.plot(
+                r[i][start:end],
+                m[i][start:end],
+                color=color,
+                alpha=1.0,
+                rasterized=True,
+                zorder=1e10 + normalized_value,
+            )
+
+    if n_unstable_mr > 0:
+        pct = 100.0 * n_unstable_mr / len(valid_indices)
+        logger.warning(
+            f"{n_unstable_mr}/{len(valid_indices)} ({pct:.1f}%) samples had an "
+            "unstable part (multi-branch) in their NS solution. These samples are not "
+            "accounted for properly during inference; the plot shows each stable branch "
+            "separately. If this percentage is low, the impact on the posterior is "
+            "negligible."
         )
 
     # Plot injection EOS if provided (on top of everything else)
@@ -740,19 +786,33 @@ def make_mass_lambda_plot(
         f"Plotting {len(valid_indices)} M-Lambda curves (excluded {bad_counter} invalid samples)..."
     )
 
-    # Second pass: plot only valid samples
+    # Second pass: plot only valid samples, splitting multi-branch curves
+    n_unstable_ml = 0
     for i in valid_indices:
-        # Get color based on probability
         normalized_value = norm(prob[i])
         color = cmap(normalized_value)
 
-        plt.plot(
-            m[i],
-            l[i],
-            color=color,
-            alpha=1.0,
-            rasterized=True,
-            zorder=1e10 + normalized_value,
+        branches = _split_into_monotone_branches(m[i], l[i])
+        if len(branches) > 1:
+            n_unstable_ml += 1
+        for start, end in branches:
+            plt.plot(
+                m[i][start:end],
+                l[i][start:end],
+                color=color,
+                alpha=1.0,
+                rasterized=True,
+                zorder=1e10 + normalized_value,
+            )
+
+    if n_unstable_ml > 0:
+        pct = 100.0 * n_unstable_ml / len(valid_indices)
+        logger.warning(
+            f"{n_unstable_ml}/{len(valid_indices)} ({pct:.1f}%) samples had an "
+            "unstable part (multi-branch) in their NS solution. These samples are not "
+            "accounted for properly during inference; the plot shows each stable branch "
+            "separately. If this percentage is low, the impact on the posterior is "
+            "negligible."
         )
 
     # Plot injection EOS if provided (on top of everything else)
