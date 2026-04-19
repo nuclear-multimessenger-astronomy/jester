@@ -2,11 +2,12 @@ r"""Gravitational wave event likelihood implementations"""
 
 import jax
 import jax.numpy as jnp
-from jaxtyping import Array, Float
+from jaxtyping import Array, Float, Int
 from jax.scipy.special import logsumexp
 
 from jesterTOV.inference.base.likelihood import LikelihoodBase
 from jesterTOV.inference.flows.flow import Flow
+from jesterTOV import utils
 from jesterTOV.logging_config import get_logger
 
 logger = get_logger("jester")
@@ -302,41 +303,40 @@ class GWLikelihood(LikelihoodBase):
         # Extract EOS parameters (no _random_key needed!)
         masses_EOS: Float[Array, " n_points"] = params["masses_EOS"]
         Lambdas_EOS: Float[Array, " n_points"] = params["Lambdas_EOS"]
+        branch_ids_EOS: Int[Array, " n_points"] = params["branch_ids_EOS"]  # type: ignore[assignment]
         mtov: Float = jnp.max(masses_EOS)
 
+        flow = self.flow
+
         def process_sample(sample: Float[Array, " 2"]) -> Float:
-            """
-            Process a single pre-sampled mass pair
-
-            Note: jax.lax.map with batch_size applies function to individual
-            elements. The batch_size parameter is for compilation optimization.
-
-            Parameters
-            ----------
-            sample : Float[Array, " 2"]
-                Pre-sampled mass pair [m1, m2]
-
-            Returns
-            -------
-            Float
-                Log probability including penalties for this sample
-            """
+            """Process a single pre-sampled mass pair with multi-branch support."""
             m1 = sample[0]
             m2 = sample[1]
 
-            # Interpolate lambdas from candidate EOS
-            lambda_1 = jnp.interp(m1, masses_EOS, Lambdas_EOS, right=1.0)
-            lambda_2 = jnp.interp(m2, masses_EOS, Lambdas_EOS, right=1.0)
+            lambdas_b1, in_range_1 = utils.interp_family_multi_branch(
+                m1, masses_EOS, Lambdas_EOS, branch_ids_EOS
+            )
+            lambdas_b2, in_range_2 = utils.interp_family_multi_branch(
+                m2, masses_EOS, Lambdas_EOS, branch_ids_EOS
+            )
 
-            # Evaluate log_prob on single sample
-            ml_sample = jnp.array([m1, m2, lambda_1, lambda_2])
-            logpdf = self.flow.log_prob(ml_sample)
+            # Static double loop over all N_MAX_BRANCHES² (b1, b2) combinations
+            combo_logpdfs = []
+            combo_valid = []
+            for b1 in range(utils.N_MAX_BRANCHES):
+                for b2 in range(utils.N_MAX_BRANCHES):
+                    ml = jnp.array([m1, m2, lambdas_b1[b1], lambdas_b2[b2]])
+                    combo_logpdfs.append(flow.log_prob(ml))
+                    combo_valid.append(in_range_1[b1] & in_range_2[b2])
+
+            logpdfs = jnp.stack(combo_logpdfs)
+            valid = jnp.stack(combo_valid)
+            n_valid = jnp.maximum(jnp.sum(valid.astype(float)), 1.0)
+            logpdf = logsumexp(jnp.where(valid, logpdfs, -jnp.inf)) - jnp.log(n_valid)
 
             # Penalties for masses exceeding Mtov
             penalty_m1 = jnp.where(m1 > mtov, self.penalty_value, 0.0)
             penalty_m2 = jnp.where(m2 > mtov, self.penalty_value, 0.0)
-
-            # Return log prob + penalties for this sample
             return logpdf + penalty_m1 + penalty_m2
 
         # Use jax.lax.map with batching for memory-efficient processing

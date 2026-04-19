@@ -10,10 +10,11 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from jax.scipy.stats import gaussian_kde
-from jaxtyping import Array, Float
+from jaxtyping import Array, Float, Int
 from jax.scipy.special import logsumexp
 
 from jesterTOV.inference.base.likelihood import LikelihoodBase
+from jesterTOV import utils
 from jesterTOV.logging_config import get_logger
 
 logger = get_logger("jester")
@@ -223,6 +224,7 @@ class NICERLikelihood(LikelihoodBase):
         # Extract parameters
         masses_EOS: Float[Array, " n_points"] = params["masses_EOS"]
         radii_EOS: Float[Array, " n_points"] = params["radii_EOS"]
+        branch_ids_EOS: Int[Array, " n_points"] = params["branch_ids_EOS"]  # type: ignore[assignment]
         mtov: Float = jnp.max(masses_EOS)
 
         # Compute log-likelihood for each available group
@@ -235,9 +237,15 @@ class NICERLikelihood(LikelihoodBase):
             amsterdam_flow = self.amsterdam_flow
 
             def process_sample_amsterdam(mass: Float) -> Float:
-                radius = jnp.interp(mass, masses_EOS, radii_EOS)
-                mr_point = jnp.array([[mass, radius]])  # Shape: (1, 2)
-                logpdf = amsterdam_flow.log_prob(mr_point)
+                radii_per_branch, in_range = utils.interp_family_multi_branch(
+                    mass, masses_EOS, radii_EOS, branch_ids_EOS
+                )
+                logpdfs = jax.vmap(
+                    lambda r: amsterdam_flow.log_prob(jnp.array([[mass, r]]))
+                )(radii_per_branch)
+                masked = jnp.where(in_range, logpdfs, -jnp.inf)
+                n_valid = jnp.maximum(jnp.sum(in_range.astype(float)), 1.0)
+                logpdf = logsumexp(masked) - jnp.log(n_valid)
                 penalty = jnp.where(mass > mtov, self.penalty_value, 0.0)
                 return logpdf + penalty
 
@@ -256,9 +264,15 @@ class NICERLikelihood(LikelihoodBase):
             maryland_flow = self.maryland_flow
 
             def process_sample_maryland(mass: Float) -> Float:
-                radius = jnp.interp(mass, masses_EOS, radii_EOS)
-                mr_point = jnp.array([[mass, radius]])  # Shape: (1, 2)
-                logpdf = maryland_flow.log_prob(mr_point)
+                radii_per_branch, in_range = utils.interp_family_multi_branch(
+                    mass, masses_EOS, radii_EOS, branch_ids_EOS
+                )
+                logpdfs = jax.vmap(
+                    lambda r: maryland_flow.log_prob(jnp.array([[mass, r]]))
+                )(radii_per_branch)
+                masked = jnp.where(in_range, logpdfs, -jnp.inf)
+                n_valid = jnp.maximum(jnp.sum(in_range.astype(float)), 1.0)
+                logpdf = logsumexp(masked) - jnp.log(n_valid)
                 penalty = jnp.where(mass > mtov, self.penalty_value, 0.0)
                 return logpdf + penalty
 

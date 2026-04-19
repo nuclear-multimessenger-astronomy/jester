@@ -845,7 +845,8 @@ class TestNICERLikelihoodGroups:
     def _make_params(self) -> dict:
         masses = jnp.linspace(1.0, 2.5, 50)
         radii = jnp.linspace(13.0, 11.0, 50)
-        return {"masses_EOS": masses, "radii_EOS": radii}
+        branch_ids = jnp.zeros(50, dtype=jnp.int32)  # single stable branch
+        return {"masses_EOS": masses, "radii_EOS": radii, "branch_ids_EOS": branch_ids}
 
     def test_raises_when_neither_group_provided(self):
         """NICERLikelihood must raise if both model dirs are None."""

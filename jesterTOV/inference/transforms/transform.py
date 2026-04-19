@@ -3,7 +3,7 @@ r"""Unified transform for EOS parameters to neutron star observables."""
 from typing import Any
 
 import jax.numpy as jnp
-from jaxtyping import Array, Float
+from jaxtyping import Array, Float, Int
 
 from jesterTOV.eos.base import Interpolate_EOS_model
 from jesterTOV.eos.metamodel import (
@@ -125,7 +125,13 @@ class JesterTransform(NtoMTransform):
             sampled_eos = [p for p in self.eos_params if p not in self.fixed_params]
             sampled_tov = [p for p in self.tov_params if p not in self.fixed_params]
             input_names = sampled_eos + sampled_tov
-            output_names = ["logpc_EOS", "masses_EOS", "radii_EOS", "Lambdas_EOS"]
+            output_names = [
+                "logpc_EOS",
+                "masses_EOS",
+                "radii_EOS",
+                "Lambdas_EOS",
+                "branch_ids_EOS",
+            ]
             name_mapping = (input_names, output_names)
 
         # Set keep_names (default: all input names)
@@ -377,6 +383,7 @@ class JesterTransform(NtoMTransform):
             masses_EOS=family_data.masses,
             radii_EOS=family_data.radii,
             Lambdas_EOS=family_data.lambdas,
+            branch_ids_EOS=family_data.branch_ids,
             ns=eos_data.ns,
             ps=eos_data.ps,
             hs=eos_data.hs,
@@ -387,7 +394,8 @@ class JesterTransform(NtoMTransform):
         )
 
         # n_TOV: maximum density inside a NS, reached at MTOV.
-        pc_TOV = jnp.power(10.0, family_data.log10pcs[-1])
+        # Use argmax(masses) to locate MTOV in pc-sorted storage.
+        pc_TOV = jnp.power(10.0, family_data.log10pcs[jnp.argmax(family_data.masses)])
         n_TOV = jnp.interp(pc_TOV, eos_data.ps, eos_data.ns)
         result["n_TOV"] = jnp.nan_to_num(n_TOV, nan=0.0, posinf=0.0, neginf=0.0)
 
@@ -399,6 +407,7 @@ class JesterTransform(NtoMTransform):
         masses_EOS: Float[Array, " n"],
         radii_EOS: Float[Array, " n"],
         Lambdas_EOS: Float[Array, " n"],
+        branch_ids_EOS: Int[Array, " n"],
         ns: Float[Array, " n"],
         ps: Float[Array, " n"],
         hs: Float[Array, " n"],
@@ -423,6 +432,8 @@ class JesterTransform(NtoMTransform):
             Neutron star radii
         Lambdas_EOS : Float[Array, " n"]
             Tidal deformabilities
+        branch_ids_EOS : Int[Array, " n"]
+            Stable-branch labels (``N_MAX_BRANCHES`` = unstable sentinel)
         ns : Float[Array, " n"]
             Number densities
         ps : Float[Array, " n"]
@@ -458,6 +469,7 @@ class JesterTransform(NtoMTransform):
             "masses_EOS": masses_EOS_clean,
             "radii_EOS": radii_EOS_clean,
             "Lambdas_EOS": Lambdas_EOS_clean,
+            "branch_ids_EOS": branch_ids_EOS,
             # EOS quantities
             "n": ns,
             "p": ps,

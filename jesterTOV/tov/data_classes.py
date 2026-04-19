@@ -6,7 +6,7 @@ No additional dependencies required beyond JAX and jaxtyping.
 """
 
 from typing import Any, NamedTuple, Optional
-from jaxtyping import Float, Array
+from jaxtyping import Float, Int, Array
 
 
 class EOSData(NamedTuple):
@@ -46,14 +46,28 @@ class TOVSolution(NamedTuple):
 
 
 class FamilyData(NamedTuple):
-    """
+    r"""
     Mass-radius-tidal family curves in physical units.
 
-    Represents a sequence of neutron star solutions across different
-    central pressures, forming M-R-Λ curves for inference.
+    Points are stored sorted by central pressure :math:`p_c` (ascending).
+    This guarantees that masses are strictly monotone within any contiguous
+    run of the same ``branch_ids`` value, which is required for safe
+    branch-wise interpolation.
+
+    ``branch_ids`` encodes which stable branch each point belongs to:
+
+    - Values ``0, 1, ..., N_MAX_BRANCHES-1``: point is on that stable branch.
+    - Value ``N_MAX_BRANCHES``: sentinel indicating an unstable configuration.
+
+    Use :func:`jesterTOV.utils.interp_family_multi_branch` to interpolate
+    observables (radii, tidal deformabilities) at a given mass while correctly
+    handling multiple stable branches.
     """
 
     log10pcs: Float[Array, "ndat"]  # Log10 central pressure [geometric units]
     masses: Float[Array, "ndat"]  # Masses [M_sun]
     radii: Float[Array, "ndat"]  # Radii [km]
     lambdas: Float[Array, "ndat"]  # Dimensionless tidal deformability
+    branch_ids: Int[
+        Array, "ndat"
+    ]  # Stable-branch label (N_MAX_BRANCHES = unstable sentinel)

@@ -12,7 +12,7 @@ systems commonly used in neutron star physics.
 from jax import vmap
 import jax.numpy as jnp
 from functools import partial
-from jaxtyping import Array, Float, Int
+from jaxtyping import Array, Bool, Float, Int
 from interpax._spline import interp1d as interpax_interp1d
 
 from diffrax import diffeqsolve, ODETerm, Tsit5, SaveAt, PIDController
@@ -396,6 +396,122 @@ def calculate_rest_mass_density(e: Float[Array, "n"], p: Float[Array, "n"]):
     )
 
     return solution.ys
+
+
+N_MAX_BRANCHES: int = 4
+"""Maximum number of stable stellar branches supported (covers phase-transition EOS scenarios)."""
+
+
+def detect_stable_segments(pc: Float[Array, "n"], m: Float[Array, "n"]) -> tuple[
+    Int[Array, "N_MAX_BRANCHES"],
+    Int[Array, "N_MAX_BRANCHES"],
+    Bool[Array, "N_MAX_BRANCHES"],
+]:  # noqa: F821
+    r"""
+    Find up to :data:`N_MAX_BRANCHES` contiguous stable segments where :math:`dM/dp_c > 0`.
+
+    Inputs must be sorted by central pressure ``pc``.
+
+    Parameters
+    ----------
+    pc : Float[Array, "n"]
+        Central pressures (sorted ascending).
+    m : Float[Array, "n"]
+        Masses at each central pressure.
+
+    Returns
+    -------
+    starts : Int[Array, "N_MAX_BRANCHES"]
+        Index of the first data point in each stable segment.
+        Padded entries use ``n-1``.
+    ends : Int[Array, "N_MAX_BRANCHES"]
+        Index of the last data point (inclusive) in each stable segment.
+        Padded entries use ``n-1``.
+    masks : Bool[Array, "N_MAX_BRANCHES"]
+        ``True`` for valid segments, ``False`` for padded (absent) entries.
+    """
+    n = m.shape[0]
+    dm = jnp.diff(m)
+    is_stable = dm > 0  # length n-1; is_stable[i] means m[i+1] > m[i]
+
+    # Pad both sides with False to detect rising/falling edges
+    padded = jnp.concatenate([jnp.array([False]), is_stable, jnp.array([False])])
+    diff = padded[1:].astype(jnp.int32) - padded[:-1].astype(jnp.int32)  # length n
+
+    starts = jnp.where(diff == 1, size=N_MAX_BRANCHES, fill_value=n - 1)[0]
+    ends = jnp.where(diff == -1, size=N_MAX_BRANCHES, fill_value=n - 1)[0]
+    masks: Bool[Array, "N_MAX_BRANCHES"] = ends > starts  # type: ignore[assignment]
+    return starts, ends, masks
+
+
+def interp_family_multi_branch(
+    query_mass: Float,
+    masses: Float[Array, "ndat"],
+    values: Float[Array, "ndat"],
+    branch_ids: Int[Array, "ndat"],
+) -> tuple[Float[Array, "N_MAX_BRANCHES"], Bool[Array, "N_MAX_BRANCHES"]]:  # noqa: F821
+    r"""
+    Interpolate ``values`` at ``query_mass`` for each stable branch independently.
+
+    Uses the fill trick to construct a globally monotone mass array per branch,
+    allowing :func:`jnp.interp` to operate correctly within each stable segment
+    without contamination from other branches.
+
+    Parameters
+    ----------
+    query_mass : Float
+        Mass value to query.
+    masses : Float[Array, "ndat"]
+        Mass array (pc-sorted, may contain multiple stable branches).
+    values : Float[Array, "ndat"]
+        Values to interpolate (e.g. radii or tidal deformabilities).
+    branch_ids : Int[Array, "ndat"]
+        Branch label per point. Values ``0..N_MAX_BRANCHES-1`` denote stable
+        branches; ``N_MAX_BRANCHES`` is the sentinel for unstable points.
+
+    Returns
+    -------
+    interpolated : Float[Array, "N_MAX_BRANCHES"]
+        Interpolated value for each branch (0.0 when branch is absent or
+        ``query_mass`` is outside that branch's range).
+    in_range : Bool[Array, "N_MAX_BRANCHES"]
+        ``True`` if ``query_mass`` falls within branch ``b``'s mass range.
+    """
+    ndat = masses.shape[0]
+    idx = jnp.arange(ndat)
+
+    results = []
+    in_ranges = []
+
+    for b in range(N_MAX_BRANCHES):
+        mask_b = branch_ids == b
+
+        # Range check — inf/-inf guards absent branches (in_range_b → False)
+        m_min_b = jnp.min(jnp.where(mask_b, masses, jnp.inf))
+        m_max_b = jnp.max(jnp.where(mask_b, masses, -jnp.inf))
+        in_range_b: Bool = (query_mass >= m_min_b) & (query_mass <= m_max_b)  # type: ignore[assignment]
+
+        # Fill trick: build globally monotone xp for jnp.interp within branch b
+        start_b = jnp.argmax(mask_b)  # first True index (0 when absent — guarded)
+        last_b = ndat - 1 - jnp.argmax(mask_b[::-1])  # last True index
+        has_b = jnp.any(mask_b)
+        m_first = jnp.where(has_b, masses[start_b], 0.0)
+        m_last = jnp.where(has_b, masses[last_b], 0.0)
+
+        eps = 1e-10
+        fill_before = m_first - (start_b - idx) * eps
+        fill_after = m_last + (idx - last_b) * eps
+        m_mono_b = jnp.where(
+            idx < start_b, fill_before, jnp.where(idx > last_b, fill_after, masses)
+        )
+
+        val_b = jnp.interp(query_mass, m_mono_b, values)
+        results.append(val_b)
+        in_ranges.append(in_range_b)
+
+    interpolated: Float[Array, "N_MAX_BRANCHES"] = jnp.stack(results)  # type: ignore[assignment]
+    in_range_arr: Bool[Array, "N_MAX_BRANCHES"] = jnp.stack(in_ranges)  # type: ignore[assignment]
+    return interpolated, in_range_arr
 
 
 def locate_lowest_non_causal_point(cs2: Float[Array, "n"]) -> Int[Array, ""]:

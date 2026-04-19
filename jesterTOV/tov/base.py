@@ -8,7 +8,7 @@ whether for General Relativity, modified gravity, or scalar-tensor theories.
 from abc import ABC, abstractmethod
 import jax
 import jax.numpy as jnp
-from jaxtyping import Float, Array
+from jaxtyping import Float, Int, Array
 
 from jesterTOV.tov.data_classes import EOSData, TOVSolution, FamilyData
 from jesterTOV import utils
@@ -185,43 +185,49 @@ class TOVSolverBase(ABC):
         ndat: int,
     ) -> FamilyData:
         """
-        Shared post-processing: unit conversion, compactness limits, interpolation.
+        Shared post-processing: unit conversion, pc-sorting, and branch labelling.
+
+        Stores all ``ndat`` points sorted by central pressure with each point
+        labelled by its stable-branch index (or the unstable sentinel
+        ``N_MAX_BRANCHES``).  No mass-grid interpolation is applied; the raw
+        pc-sorted data are used directly for multi-branch interpolation.
 
         Args:
             pcs: Central pressures [geometric units]
             masses: Masses [geometric units]
             radii: Radii [geometric units]
             k2s: Love numbers [dimensionless]
-            ndat: Number of points for output grid
+            ndat: Number of points (static Python int)
 
         Returns:
-            FamilyData: Processed family curves in physical units
+            FamilyData: Processed family curves in physical units, pc-sorted
         """
-        # Calculate compactness
         compactness = masses / radii
-
-        # Convert to physical units
         masses_solar = masses / utils.solar_mass_in_meter
         radii_km = radii / 1e3
-
-        # Calculate tidal deformability
         lambdas = 2.0 / 3.0 * k2s * jnp.power(compactness, -5.0)
 
-        # Limit masses to be below MTOV (removes unstable branch)
-        pcs_lim, masses_lim, radii_lim, lambdas_lim = utils.limit_by_MTOV(
-            pcs, masses_solar, radii_km, lambdas
-        )
+        # Sort by central pressure (ascending)
+        sort_idx = jnp.argsort(pcs)
+        pcs_s = pcs[sort_idx]
+        ms_s = masses_solar[sort_idx]
+        rs_s = radii_km[sort_idx]
+        ls_s = lambdas[sort_idx]
 
-        # Get a mass grid and interpolate, since we might have some duplicate points
-        mass_grid = jnp.linspace(jnp.min(masses_lim), jnp.max(masses_lim), ndat)
-        radii_interp = jnp.interp(mass_grid, masses_lim, radii_lim)
-        lambdas_interp = jnp.interp(mass_grid, masses_lim, lambdas_lim)
-        pcs_interp = jnp.interp(mass_grid, masses_lim, pcs_lim)
-        log10pcs = jnp.log10(pcs_interp)
+        # Detect stable segments and assign branch labels
+        starts, ends, masks = utils.detect_stable_segments(pcs_s, ms_s)
+        idx: Int[Array, "ndat"] = jnp.arange(ndat)  # type: ignore[assignment]
+        branch_ids: Int[Array, "ndat"] = jnp.full(  # type: ignore[assignment]
+            ndat, utils.N_MAX_BRANCHES, dtype=jnp.int32
+        )
+        for b in range(utils.N_MAX_BRANCHES):
+            in_b = (idx >= starts[b]) & (idx <= ends[b]) & masks[b]
+            branch_ids = jnp.where(in_b, b, branch_ids)
 
         return FamilyData(
-            log10pcs=log10pcs,
-            masses=mass_grid,
-            radii=radii_interp,
-            lambdas=lambdas_interp,
+            log10pcs=jnp.log10(pcs_s),
+            masses=ms_s,
+            radii=rs_s,
+            lambdas=ls_s,
+            branch_ids=branch_ids,
         )
