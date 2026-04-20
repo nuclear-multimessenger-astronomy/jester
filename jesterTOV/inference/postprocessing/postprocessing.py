@@ -1266,6 +1266,10 @@ def make_parameter_histograms(
 
     for param_name, param_info in parameters.items():
         values = param_info["values"]
+        if values is None or len(values) == 0:
+            logger.warning(f"Skipping histogram for {param_name}: no data.")
+            continue
+
         plt.figure(figsize=figsize_horizontal)
 
         hdi = az.hdi(values, hdi_prob=HDI_PROB)
@@ -1278,16 +1282,35 @@ def make_parameter_histograms(
         x_min = hdi_low - 0.25 * hdi_width
         x_max = hdi_high + 0.25 * hdi_width
 
-        kde = gaussian_kde(values)
-        x = np.linspace(x_min, x_max, 1000)
-        y = kde(x)
-
-        # Full KDE line, fill only within HDI
-        plt.plot(x, y, color=COLORS_DICT["posterior"], lw=3.0, label="Posterior")
-        hdi_mask: list[bool] = list((x >= hdi_low) & (x <= hdi_high))
-        plt.fill_between(
-            x, y, where=hdi_mask, alpha=0.3, color=COLORS_DICT["posterior"]
-        )
+        kde_ok = len(values) > 1 and float(np.std(values)) > 0.0
+        if kde_ok:
+            try:
+                kde = gaussian_kde(values)
+                x = np.linspace(x_min, x_max, 1000)
+                y = kde(x)
+                plt.plot(
+                    x, y, color=COLORS_DICT["posterior"], lw=3.0, label="Posterior"
+                )
+                hdi_mask: list[bool] = list((x >= hdi_low) & (x <= hdi_high))
+                plt.fill_between(
+                    x, y, where=hdi_mask, alpha=0.3, color=COLORS_DICT["posterior"]
+                )
+            except Exception:
+                kde_ok = False
+                logger.warning(
+                    f"KDE failed for {param_name}; falling back to histogram."
+                )
+        if not kde_ok:
+            logger.warning(
+                f"Skipping KDE for {param_name}: insufficient or degenerate data "
+                f"(n={len(values)}, std={float(np.std(values)) if len(values) > 0 else 0:.4g})."
+            )
+            plt.axvline(
+                median,
+                color=COLORS_DICT["posterior"],
+                lw=3.0,
+                label="Posterior (median)",
+            )
 
         if param_name in injection_params:
             inj_value = injection_params[param_name]
