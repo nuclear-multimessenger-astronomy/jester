@@ -335,7 +335,7 @@ class TestPlotGeneration:
 
     def test_make_parameter_histograms_n_TOV(self, mock_data, temp_dir):
         """Test that make_parameter_histograms creates n_TOV histogram when n_TOV present."""
-        make_parameter_histograms(data=mock_data, prior_data=None, outdir=str(temp_dir))
+        make_parameter_histograms(data=mock_data, outdir=str(temp_dir))
 
         expected_file = temp_dir / "n_TOV_histogram.pdf"
         assert (
@@ -347,9 +347,7 @@ class TestPlotGeneration:
     def test_make_parameter_histograms_without_n_TOV(self, mock_data, temp_dir):
         """Test that make_parameter_histograms works without n_TOV (backwards compat)."""
         data_without_n_TOV = {k: v for k, v in mock_data.items() if k != "n_TOV"}
-        make_parameter_histograms(
-            data=data_without_n_TOV, prior_data=None, outdir=str(temp_dir)
-        )
+        make_parameter_histograms(data=data_without_n_TOV, outdir=str(temp_dir))
 
         # n_TOV histogram should NOT be created
         assert not (temp_dir / "n_TOV_histogram.pdf").exists()

@@ -471,11 +471,21 @@ class TestNTOV:
     @pytest.mark.slow
     def test_n_TOV_is_positive(self, realistic_nep_stiff):
         """Test that n_TOV is positive for a valid EOS."""
-        eos_config = MetamodelEOSConfig(type="metamodel", ndat_metamodel=50, nb_CSE=0)
+        eos_config = MetamodelCSEEOSConfig(ndat_metamodel=50, nb_CSE=8)
         tov_config = GRTOVConfig(ndat_TOV=50)
         transform = JesterTransform.from_config(eos_config, tov_config)
 
-        result = transform.forward(realistic_nep_stiff)
+        # Add CSE parameters to NEP params
+        params = realistic_nep_stiff.copy()
+        params["nbreak"] = 0.24  # Breaking density
+
+        # Add CSE grid parameters (uniform [0,1])
+        for i in range(8):
+            params[f"n_CSE_{i}_u"] = 0.5  # Uniform grid spacing
+            params[f"cs2_CSE_{i}"] = 0.3  # cs^2 values
+        params["cs2_CSE_8"] = 0.3  # Final cs2
+
+        result = transform.forward(params)
 
         assert float(result["n_TOV"]) > 0.0, "n_TOV must be positive for valid EOS"
 
@@ -488,11 +498,23 @@ class TestNTOV:
         """
         from jesterTOV import utils
 
-        eos_config = MetamodelEOSConfig(type="metamodel", ndat_metamodel=50, nb_CSE=0)
+        eos_config = MetamodelCSEEOSConfig(
+            type="metamodel_cse", ndat_metamodel=50, nb_CSE=8
+        )
         tov_config = GRTOVConfig(ndat_TOV=50)
         transform = JesterTransform.from_config(eos_config, tov_config)
 
-        result = transform.forward(realistic_nep_stiff)
+        # Add CSE parameters to NEP params
+        params = realistic_nep_stiff.copy()
+        params["nbreak"] = 0.24  # Breaking density
+
+        # Add CSE grid parameters (uniform [0,1])
+        for i in range(8):
+            params[f"n_CSE_{i}_u"] = 0.5  # Uniform grid spacing
+            params[f"cs2_CSE_{i}"] = 0.3  # cs^2 values
+        params["cs2_CSE_8"] = 0.3  # Final cs2
+
+        result = transform.forward(params)
 
         n_TOV_nsat = float(result["n_TOV"]) / utils.fm_inv3_to_geometric / 0.16
         # Typical MTOV central density is between 2 and 8 n_sat
