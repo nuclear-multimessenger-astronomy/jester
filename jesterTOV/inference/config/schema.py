@@ -127,6 +127,8 @@ class PostprocessingConfig(JesterBaseModel):
         Generate parameter histograms (default: True)
     make_cs2 : bool
         Generate cs2-density plot (default: True)
+    make_contours : bool
+        Generate radii and pressure credible-interval contour plots (default: False)
     prior_dir : str | None
         Directory containing prior samples for comparison (default: None)
     injection_eos_path : str | None
@@ -151,6 +153,7 @@ class PostprocessingConfig(JesterBaseModel):
     make_pressuredensity: bool = True
     make_histograms: bool = True
     make_cs2: bool = True
+    make_contours: bool = False
     prior_dir: str | None = None
     injection_eos_path: str | None = None
 

@@ -1288,6 +1288,14 @@ def extract_postprocessing() -> list[dict[str, Any]]:
             "description": "Generate speed-of-sound as function of density",
         },
         {
+            "name": "make_contours",
+            "type": "bool",
+            "default": "false",
+            "example": "false",
+            "inline_comment": "Generate radii and pressure credible-interval contour plots",
+            "description": "Generate radii vs mass and pressure vs density credible-interval contour plots",
+        },
+        {
             "name": "prior_dir",
             "type": "str | None",
             "default": "null",
