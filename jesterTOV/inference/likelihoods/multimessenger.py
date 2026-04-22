@@ -8,7 +8,7 @@ from jaxtyping import Array, Float
 from jax.scipy.special import logsumexp
 
 from jesterTOV.inference.base.likelihood import LikelihoodBase
-from jesterTOV.inference.flows.flow import Flow
+from jesterTOV.inference.flows.flow import Flow, ConditionalFlow
 from jesterTOV.logging_config import get_logger
 
 logger = get_logger("jester")
@@ -88,6 +88,7 @@ class MultiMessengerLikelihood(LikelihoodBase):
         dir_gw: str,
         dir_em: str,
         logprior_m1m2: Callable | None = None,
+        zeta: float | None = None,
         penalty_value: float = 0.0,
         N_masses_batch_size: int = 1000,
         seed: int = 42,
@@ -105,17 +106,83 @@ class MultiMessengerLikelihood(LikelihoodBase):
             logprior_m1m2 = lambda m1, m2: 0
         self.logprior_m1m2 = jax.jit(logprior_m1m2)
 
-        # Load Flow model for this event
+        # Load GW posterior flow for this event
         logger.info(f"Loading NF for GW posterior {event_name} from {dir_gw}.")
         self.flow_gw = Flow.from_directory(dir_gw)
-        logger.info(f"Loading EM posterior {event_name} from {dir_em}.")
-        posterior = jnp.load(dir_em)
-        hist, bins = jnp.histogram(posterior["log10_mej_dyn"], bins=jnp.linspace(-4, -1.3, 14), density=True)
-        bins = 0.5*(bins[1:] + bins[:-1])
-        log_hist = jnp.log(hist)
 
-        log_hist = jnp.maximum(log_hist, -200)
-        self.flow_em = lambda x: jnp.interp(x, bins, log_hist, left=-200, right=-200) # Flow.from_directory(dir_em)
+        # Setup EM posterior flwo for this event
+        logger.info(f"Loading EM posterior {event_name} from {dir_em}.")
+        if dir_em.endswith("posterior.npz"):
+            # only use log10_mej_dyn in this case
+            posterior = jnp.load(dir_em)
+            hist, bins = jnp.histogram(posterior["log10_mej_dyn"], bins=jnp.linspace(-4, -1.3, 14), density=True)
+            bins = 0.5*(bins[1:] + bins[:-1])
+            log_hist = jnp.log(hist)
+            log_hist = jnp.maximum(log_hist, -200)
+
+            def em_likelihood(em_sample):
+
+                log10_mej_dyn = jnp.maximum(em_sample[0], bins[0])
+
+                dyn_ejecta_prob = jnp.log(
+                    jnp.interp(log10_mej_dyn, bins, log_hist, left=-200, right=-200)
+                )
+
+                return dyn_ejecta_prob
+        
+        elif dir_em.endswith("nf"):
+            # this is interpreted that there is a conditional flow on the wind ejecta
+            posterior_file = "/".join(dir_em.split("/")[:-1]) + "/posterior.npz"
+            posterior = jnp.load(posterior_file)
+            hist, bins = jnp.histogram(posterior["log10_mej_dyn"], bins=jnp.linspace(-4, -1.3, 14), density=True)
+            bins = 0.5*(bins[1:] + bins[:-1])
+            log_hist = jnp.log(hist)
+            log_hist = jnp.maximum(log_hist, -200)
+
+            self.cflow_wind = ConditionalFlow.from_directory(dir_em)
+
+            if zeta is None:
+                u = jnp.linspace(0, 1, 10)
+
+                def em_likelihood(em_sample):
+
+                    log10_mej_dyn = jnp.maximum(em_sample[0], bins[0])
+                    log10_mdisk = jnp.maximum(em_sample[1], -3.9)
+
+                    dyn_ejecta_prob = jnp.interp(log10_mej_dyn, bins, log_hist, left=-200, right=-200)
+
+                    log10_mej_wind_arr = -4 + u * (log10_mdisk + 4)
+
+                    log_pdf = self.cflow_wind.log_prob(
+                        x=log10_mej_wind_arr.reshape(-1, 1), 
+                        y=jnp.full((14,1), em_sample[0])
+                    )
+
+                    wind_ejecta_prob = jnp.log(
+                        jnp.mean(jnp.exp(log_pdf))
+                    )
+
+                    return dyn_ejecta_prob + wind_ejecta_prob
+            else:
+                self.log10_zeta = jnp.log10(zeta)
+
+                def em_likelihood(em_sample):
+                    
+                    log10_mej_dyn, log10_mdisk = em_sample[0], em_sample[1]
+
+                    dyn_ejecta_prob = jnp.interp(log10_mej_dyn, bins, log_hist, left=-200, right=-200)
+
+                    log10_mej_wind = self.log10_zeta + log10_mdisk
+                    log10_mej_wind = jnp.maximum(-3.9, log10_mej_wind)
+
+                    wind_ejecta_prob = self.cflow_wind.log_prob(x=log10_mej_wind, y=log10_mej_dyn)
+
+                    return dyn_ejecta_prob + wind_ejecta_prob
+
+
+        
+        self.flow_em = jax.jit(em_likelihood)
+
         logger.info(f"Loaded NFs for {event_name}.")
 
 
@@ -192,7 +259,7 @@ class MultiMessengerLikelihood(LikelihoodBase):
             
             # Evaluate log
             em_sample = jnp.array([log10_mej_dyn, log10_mdisk])
-            logpdf_em = self.flow_em(log10_mej_dyn)
+            logpdf_em = self.flow_em(em_sample)
 
             # Return log prob + penalties for this sample
             return logpdf_gw + penalty_m1 + penalty_m2 + logpdf_em
