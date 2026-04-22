@@ -141,44 +141,27 @@ class MultiMessengerLikelihood(LikelihoodBase):
 
             self.cflow_wind = ConditionalFlow.from_directory(dir_em)
 
-            if zeta is None:
-                u = jnp.linspace(0, 1, 10)
+            u = jnp.linspace(0, 1, 10)
 
-                def em_likelihood(em_sample):
+            def em_likelihood(em_sample):
 
-                    log10_mej_dyn = jnp.maximum(em_sample[0], bins[0])
-                    log10_mdisk = jnp.maximum(em_sample[1], -3.9)
+                log10_mej_dyn = jnp.maximum(em_sample[0], bins[0])
+                log10_mdisk = jnp.maximum(em_sample[1], -3.9)
 
-                    dyn_ejecta_prob = jnp.interp(log10_mej_dyn, bins, log_hist, left=-200, right=-200)
+                dyn_ejecta_prob = jnp.interp(log10_mej_dyn, bins, log_hist, left=-200, right=-200)
 
-                    log10_mej_wind_arr = -4 + u * (log10_mdisk + 4)
+                log10_mej_wind_arr = -4 + u * (log10_mdisk + 4)
 
-                    log_pdf = self.cflow_wind.log_prob(
+                log_pdf = self.cflow_wind.log_prob(
                         x=log10_mej_wind_arr.reshape(-1, 1), 
                         y=jnp.full((14,1), em_sample[0])
-                    )
+                )
 
-                    wind_ejecta_prob = jnp.log(
-                        jnp.mean(jnp.exp(log_pdf))
-                    )
+                wind_ejecta_prob = jnp.log(
+                    jnp.mean(jnp.exp(log_pdf))
+                )
 
-                    return dyn_ejecta_prob + wind_ejecta_prob
-            else:
-                self.log10_zeta = jnp.log10(zeta)
-
-                def em_likelihood(em_sample):
-                    
-                    log10_mej_dyn, log10_mdisk = em_sample[0], em_sample[1]
-
-                    dyn_ejecta_prob = jnp.interp(log10_mej_dyn, bins, log_hist, left=-200, right=-200)
-
-                    log10_mej_wind = self.log10_zeta + log10_mdisk
-                    log10_mej_wind = jnp.maximum(-3.9, log10_mej_wind)
-
-                    wind_ejecta_prob = self.cflow_wind.log_prob(x=log10_mej_wind, y=log10_mej_dyn)
-
-                    return dyn_ejecta_prob + wind_ejecta_prob
-
+                return dyn_ejecta_prob + wind_ejecta_prob
 
         
         self.flow_em = jax.jit(em_likelihood)
