@@ -17,6 +17,7 @@ from jesterTOV.inference.postprocessing.postprocessing import (
     make_pressure_density_plot,
     make_cs2_plot,
     make_parameter_histograms,
+    _split_into_monotone_branches,
 )
 from jesterTOV.inference.result import InferenceResult
 
@@ -334,7 +335,7 @@ class TestPlotGeneration:
 
     def test_make_parameter_histograms_n_TOV(self, mock_data, temp_dir):
         """Test that make_parameter_histograms creates n_TOV histogram when n_TOV present."""
-        make_parameter_histograms(data=mock_data, prior_data=None, outdir=str(temp_dir))
+        make_parameter_histograms(data=mock_data, outdir=str(temp_dir))
 
         expected_file = temp_dir / "n_TOV_histogram.pdf"
         assert (
@@ -346,9 +347,7 @@ class TestPlotGeneration:
     def test_make_parameter_histograms_without_n_TOV(self, mock_data, temp_dir):
         """Test that make_parameter_histograms works without n_TOV (backwards compat)."""
         data_without_n_TOV = {k: v for k, v in mock_data.items() if k != "n_TOV"}
-        make_parameter_histograms(
-            data=data_without_n_TOV, prior_data=None, outdir=str(temp_dir)
-        )
+        make_parameter_histograms(data=data_without_n_TOV, outdir=str(temp_dir))
 
         # n_TOV histogram should NOT be created
         assert not (temp_dir / "n_TOV_histogram.pdf").exists()
@@ -520,3 +519,107 @@ class TestIntegrationWithInferenceResult:
         assert (temp_dir / "cs2_density_plot.pdf").exists()
 
         plt.close("all")
+
+
+class TestSplitIntoMonotoneBranches:
+    """Tests for the multi-branch detection helper."""
+
+    def test_monotone_decreasing_returns_one_segment(self):
+        """Smooth Lambda(M) with no increases → single segment covering all data."""
+        masses = np.array([0.5, 0.8, 1.1, 1.4, 1.7, 2.0])
+        lambdas = np.array([2000.0, 800.0, 300.0, 120.0, 50.0, 20.0])
+        branches = _split_into_monotone_branches(masses, lambdas)
+        assert len(branches) == 1
+        assert branches[0] == (0, 6)
+
+    def test_single_lambda_increase_splits_into_two_branches(self):
+        """One Lambda increase mid-curve → two branches."""
+        masses = np.array([0.5, 0.8, 1.1, 1.2, 1.5, 1.8])
+        lambdas = np.array([2000.0, 800.0, 300.0, 1500.0, 400.0, 100.0])
+        branches = _split_into_monotone_branches(masses, lambdas)
+        assert len(branches) == 2
+        assert branches[0] == (0, 3)
+        assert branches[1] == (3, 6)
+
+    def test_multiple_lambda_increases_many_branches(self):
+        """Multiple Lambda increases → multiple branches."""
+        masses = np.linspace(0.5, 2.0, 10)
+        lambdas = np.array(
+            [1000.0, 500.0, 800.0, 200.0, 600.0, 100.0, 300.0, 50.0, 80.0, 20.0]
+        )
+        branches = _split_into_monotone_branches(masses, lambdas)
+        assert len(branches) > 2
+        assert branches[0][0] == 0
+        assert branches[-1][1] == len(masses)
+
+    def test_constant_lambda_returns_one_segment(self):
+        """Flat Lambda → no increases → single segment."""
+        masses = np.linspace(0.5, 2.0, 5)
+        lambdas = np.ones(5) * 500.0
+        branches = _split_into_monotone_branches(masses, lambdas)
+        assert len(branches) == 1
+
+    def test_all_segments_cover_full_range(self):
+        """Branch segments are contiguous and cover the full array without gaps."""
+        masses = np.linspace(0.5, 2.0, 20)
+        rng = np.random.default_rng(42)
+        lambdas = np.cumsum(rng.uniform(-200, 100, 20)) + 2000.0
+        branches = _split_into_monotone_branches(masses, lambdas)
+        assert branches[0][0] == 0
+        assert branches[-1][1] == len(masses)
+        for k in range(len(branches) - 1):
+            assert branches[k][1] == branches[k + 1][0]
+
+    def test_plot_runs_without_error_when_unstable(self, tmp_path):
+        """make_mass_radius_plot runs cleanly when multi-branch samples are present."""
+        n_eos = 50
+        masses_jagged = np.linspace(0.75, 2.5, n_eos)
+        lambdas_jagged = np.concatenate(
+            [
+                np.linspace(2000, 400, 25),
+                np.linspace(1500, 50, 25),
+            ]
+        )
+        radii_jagged = np.linspace(12.0, 10.0, n_eos)
+
+        masses_smooth = np.linspace(0.75, 2.5, n_eos)
+        lambdas_smooth = np.linspace(2000, 10, n_eos)
+        radii_smooth = np.linspace(12.0, 10.0, n_eos)
+
+        data = {
+            "masses": np.array([masses_jagged, masses_smooth]),
+            "radii": np.array([radii_jagged, radii_smooth]),
+            "lambdas": np.array([lambdas_jagged, lambdas_smooth]),
+            "densities": np.ones((2, n_eos)),
+            "pressures": np.ones((2, n_eos)),
+            "cs2": np.ones((2, n_eos)) * 0.3,
+            "log_prob": np.array([-10.0, -10.0]),
+            "prior_params": {},
+        }
+
+        make_mass_radius_plot(data, prior_data=None, outdir=str(tmp_path))
+        plt.close("all")
+        assert (tmp_path / "mass_radius_plot.pdf").exists()
+
+    def test_plot_runs_without_error_when_smooth(self, tmp_path):
+        """make_mass_radius_plot runs cleanly when all samples are smooth."""
+        n_eos = 50
+        n_samples = 3
+        masses = np.tile(np.linspace(0.75, 2.5, n_eos), (n_samples, 1))
+        lambdas = np.tile(np.linspace(2000, 10, n_eos), (n_samples, 1))
+        radii = np.tile(np.linspace(12.0, 10.0, n_eos), (n_samples, 1))
+
+        data = {
+            "masses": masses,
+            "radii": radii,
+            "lambdas": lambdas,
+            "densities": np.ones((n_samples, n_eos)),
+            "pressures": np.ones((n_samples, n_eos)),
+            "cs2": np.ones((n_samples, n_eos)) * 0.3,
+            "log_prob": np.full(n_samples, -10.0),
+            "prior_params": {},
+        }
+
+        make_mass_radius_plot(data, prior_data=None, outdir=str(tmp_path))
+        plt.close("all")
+        assert (tmp_path / "mass_radius_plot.pdf").exists()

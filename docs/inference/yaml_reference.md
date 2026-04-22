@@ -723,6 +723,7 @@ postprocessing:
   make_pressuredensity: true  # Generate P-ε diagram
   make_histograms: true  # Generate 1D posterior histograms
   make_cs2: true  # Generate speed-of-sound plot
+  make_contours: false  # Generate radii and pressure credible-interval contour plots
   prior_dir: null  # Optional: directory with prior samples
   injection_eos_path: null  # Optional: path to true EOS for injection studies
 ```
@@ -736,6 +737,7 @@ postprocessing:
 - **`make_pressuredensity`** (`bool`, default: `true`) - Generate pressure-energy density relation
 - **`make_histograms`** (`bool`, default: `true`) - Generate 1D marginalized posterior histograms
 - **`make_cs2`** (`bool`, default: `true`) - Generate speed-of-sound as function of density
+- **`make_contours`** (`bool`, default: `false`) - Generate radii vs mass and pressure vs density credible-interval contour plots
 - **`prior_dir`** (`str | None`, default: `null`) - Directory containing prior samples for comparison
 - **`injection_eos_path`** (`str | None`, default: `null`) - Path to true EOS for injection studies
 
