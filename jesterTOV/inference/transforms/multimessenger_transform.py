@@ -309,5 +309,6 @@ class MultimessengerJesterTransform(PopulationJesterTransform):
         log10_mdisk = a + b * q + c * lambda_tilde * q**2
 
         log10_mdisk = jnp.minimum(log10_mdisk, -1)
+        log10_mdisk = jnp.maximum(log10_mdisk, -5)
 
         return log10_mdisk
