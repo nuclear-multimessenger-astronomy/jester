@@ -237,7 +237,7 @@ class NICERLikelihood(LikelihoodBase):
             flow: Flow, mass_samples: Float[Array, "n_samples"]
         ) -> Float:
             def process_sample(mass: Float) -> Float:
-                radius = jnp.interp(mass, masses_EOS, radii_EOS)
+                radius = jnp.interp(mass, masses_EOS, radii_EOS, right=0.0)
                 mr_point = jnp.array([[mass, radius]])  # Shape: (1, 2)
                 logpdf = flow.log_prob(mr_point)
                 return logpdf + jnp.where(mass > mtov, self.penalty_value, 0.0)
@@ -419,7 +419,7 @@ class NICERKDELikelihood(LikelihoodBase):
             posterior_kde: gaussian_kde, mass_samples: Float[Array, "n_samples"]
         ) -> Float:
             def process_sample(mass: Float) -> Float:
-                radius = jnp.interp(mass, masses_EOS, radii_EOS)
+                radius = jnp.interp(mass, masses_EOS, radii_EOS, right=0.0)
                 mr_point = jnp.array([[mass], [radius]])  # Shape: (2, 1)
                 logpdf = posterior_kde.logpdf(mr_point)
                 return logpdf + jnp.where(mass > mtov, self.penalty_value, 0.0)
