@@ -12,19 +12,19 @@ Standard TOV solver in general relativity.
 
 :doc:`tov/gr`
 
-Modified Gravity
-----------------
-
-Scalar-tensor theories and alternative gravity frameworks.
-
-:doc:`tov/scalar_tensor`
-
 Pressure Anisotropy
 -------------------
 
 Post-TOV solver including anisotropic effects.
 
 :doc:`tov/anisotropy`
+
+Modified Gravity
+----------------
+
+Scalar-tensor theories and alternative gravity frameworks.
+
+:doc:`tov/scalar_tensor`
 
 .. toctree::
    :hidden:

@@ -202,6 +202,8 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             * (-7 + 5 * self.kappa_sat - 10 * self.kappa_sat2 + 110 * self.kappa_sat3)
         )
 
+        # These are the difference between the PNM and SNM coefficients in Appendix B of Somasundaram et al,
+        # Eq. (B4) - Eq. (B3)
         self.v_sym2_0_no_NEP = (
             -self.t_sat
             * (
@@ -219,6 +221,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             )
             - self.v_nq[1]
         )
+        # NOTE the factor at the front, so the power of two is correct here
         self.v_sym2_2_no_NEP = (
             -2
             * self.t_sat
@@ -234,6 +237,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             )
             - self.v_nq[2]
         )
+        # NOTE the factor at the front, so the power of two is correct here
         self.v_sym2_3_no_NEP = (
             -2
             * self.t_sat
@@ -249,6 +253,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             )
             - self.v_nq[3]
         )
+        # NOTE the factor at the front, so the power of two is correct here
         self.v_sym2_4_no_NEP = (
             -8
             * self.t_sat
@@ -327,6 +332,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         Q_sym = NEP_dict["Q_sym"]
         Z_sym = NEP_dict["Z_sym"]
 
+        # FIXME: here and below, we should probably NOT use coefficient_sym, but rather, v_sym2
         # Add the first derivative coefficient in Esat to make it work with jax.numpy.polyval
         coefficient_sat = jnp.array([E_sat, 0.0, K_sat, Q_sat, Z_sat])
         coefficient_sym = jnp.array([E_sym, L_sym, K_sym, Q_sym, Z_sym])
@@ -532,7 +538,16 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         v: Array,
         u: Array,
     ) -> Array:
+        """
+        The pressure is computed as
 
+        .. math::
+            P(n, \delta) = n^2 \frac{\partial e(n, \delta)}{\partial n}
+
+        where the kinetic and potential energy contributions are separated. More steps about the derivation of this pressure can be found in the jester documentation.
+        """
+
+        # Contribution from
         p_kin = (
             1
             / 3
@@ -590,25 +605,17 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             )
         )
 
-        # Potential part
+        # Build the contributions from the potential part
         K_pot = 0
-        for alpha in range(2, self.N + 1):
-            x_up = (self.N + 1 - alpha - 3 * b * x) * (u[alpha] - 1)
-            x2_upp = (
-                -(self.N + 1 - alpha) * (self.N - alpha)
-                + 6 * b * x * (self.N + 1 - alpha)
-                - 9 * x**2 * b**2
-            ) * (1 - u[alpha])
 
-            K_pot = K_pot + v[alpha] / (factorial(alpha)) * x ** (alpha - 2) * (
-                alpha * (alpha - 1) * u[alpha] + 2 * alpha * x_up + x2_upp
-            )
-
+        # alpha = 0 term
         K_pot += (
             v[0]
             * (-(self.N + 1) * (self.N) + 6 * b * x * (self.N + 1) - 9 * x**2 * b**2)
             * ((-3) ** (self.N + 1) * x ** (self.N - 1) * jnp.exp(-b * (1 + 3 * x)))
         )
+
+        # alpha = 1 term
         K_pot += (
             2
             * v[1]
@@ -620,23 +627,45 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             * (-(self.N) * (self.N - 1) + 6 * b * x * (self.N) - 9 * x**2 * b**2)
             * ((-3) ** (self.N) * x ** (self.N - 1) * jnp.exp(-b * (1 + 3 * x)))
         )
+
+        # Summation over alpha >= 2 terms
+        for alpha in range(2, self.N + 1):
+            # x times u prime
+            x_up = (self.N + 1 - alpha - 3 * b * x) * (u[alpha] - 1)
+            # x squared times u double prime
+            x2_upp = (
+                -(self.N + 1 - alpha) * (self.N - alpha)
+                + 6 * b * x * (self.N + 1 - alpha)
+                - 9 * x**2 * b**2
+            ) * (1 - u[alpha])
+
+            K_pot = K_pot + v[alpha] / (factorial(alpha)) * x ** (alpha - 2) * (
+                alpha * (alpha - 1) * u[alpha] + 2 * alpha * x_up + x2_upp
+            )
+
+        # Multiply by the overall prefactor
         K_pot *= (1 + 3 * x) ** 2
 
+        # Sum the kinetic and potential contributions, and add the contribution from the pressure
         K = K_kin + K_pot + 18 / n * p
 
-        # For electron
+        # Add electron contributions
 
-        K_Fb = (3.0 * jnp.pi**2 / 2.0 * n) ** (1.0 / 3.0) * utils.hbarc
-        K_Fe = K_Fb * (1.0 - delta) ** (1.0 / 3.0)
+        K_Fe = (
+            (3.0 * jnp.pi**2 / 2.0 * n) ** (1.0 / 3.0)
+            * utils.hbarc
+            * (1.0 - delta) ** (1.0 / 3.0)
+        )
+        x_e = K_Fe / utils.m_e
+
         C = utils.m_e**4 / (8.0 * jnp.pi**2) / utils.hbarc**3
-        x = K_Fe / utils.m_e
-        f = x * (1 + 2 * x**2) * jnp.sqrt(1 + x**2) - jnp.arcsinh(x)
+        f = x_e * (1 + 2 * x_e**2) * jnp.sqrt(1 + x_e**2) - jnp.arcsinh(x_e)
 
-        e_electron = C * f
-        p_electron = -e_electron + 8.0 / 3.0 * C * x**3 * jnp.sqrt(1 + x**2)
-        K_electron = 8 * C / n * x**3 * (3 + 4 * x**2) / (
-            jnp.sqrt(1 + x**2)
-        ) - 9 / n * (e_electron + p_electron)
+        epsilon_electron = C * f
+        p_electron = -epsilon_electron + 8.0 / 3.0 * C * x_e**3 * jnp.sqrt(1 + x_e**2)
+        K_electron = 8 * C / n * x_e**3 * (3 + 4 * x_e**2) / (
+            jnp.sqrt(1 + x_e**2)
+        ) - 9 / n * (epsilon_electron + p_electron)
 
         # Sum together:
         K_tot = K + K_electron
@@ -644,7 +673,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         # Finally, get cs2:
         chi = K_tot / 9.0
 
-        total_energy_density = (e + utils.m) * n + e_electron
+        total_energy_density = (e + utils.m) * n + epsilon_electron
         total_pressure = p + p_electron
         h_tot = (total_energy_density + total_pressure) / n
 

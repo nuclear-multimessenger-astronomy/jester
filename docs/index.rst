@@ -13,7 +13,7 @@ What's in JESTER?
 -----------------
 
 JESTER combines flexible EOS parametrizations with GPU-accelerated TOV solvers and modern Bayesian samplers.
-See the :doc:`overview/eos` guide for detailed explanations.
+See the :doc:`overview/` guide for detailed explanations about what is implemented in the code.
 
 .. grid:: 2
     :class-container: component-grid
