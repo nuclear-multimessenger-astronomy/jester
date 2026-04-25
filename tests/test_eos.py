@@ -316,6 +316,35 @@ class TestMetaModelEOSModel:
         assert jnp.all(yp >= 0.0)
         assert jnp.all(yp <= 0.5)
 
+    def test_metamodel_proton_fraction_large_negative_esym(self, metamodel_params):
+        """Proton fraction is 0 when Esym turns large-negative at high density.
+
+        When |Esym| > c/4 (≈ 140 MeV at n ≈ 0.79 fm⁻³) the discriminant D > 0
+        but the cubic has no root in (0, 1).  The old complex Cardano formula
+        returned a spurious value near xp = 1 in this regime; the NR A,B-only
+        solver must return 0 via the ``a > 0`` guard.
+
+        Reference: script 10 in internal-jester-review/proton_fraction/cardano/.
+        """
+        from jax.scipy.special import factorial
+
+        model = MetaModel_EOS_model(**metamodel_params)
+
+        # NEP set that drives Esym to ≈ −140 MeV at n ≈ 0.79 fm⁻³
+        # (K_sym and Z_sym at extreme ends of prior; matches script 09/10 cases)
+        params = jnp.array([36.5, 60.0, -400.0, -1000.0, -2000.0])
+        coeff_sym = params / factorial(jnp.arange(5))
+
+        n_test = jnp.linspace(0.08, 5 * 0.16, 200)
+        xp = model.compute_proton_fraction(coeff_sym, n_test)  # type: ignore[arg-type]
+
+        assert jnp.all(jnp.isfinite(xp)), "NaN/Inf in proton fraction output"
+        assert jnp.all(xp >= 0.0), "Negative proton fraction detected"
+        assert jnp.all(xp <= 0.5), (
+            f"Proton fraction exceeds 0.5; max={float(xp.max()):.4f}. "
+            "This indicates the spurious-root bug was not fixed."
+        )
+
 
 class TestMetaModelWithCSEEOSModel:
     """Test MetaModel with CSE extension."""

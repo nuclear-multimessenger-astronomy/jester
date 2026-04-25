@@ -694,19 +694,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         c = utils.hbarc * jnp.power(3.0 * jnp.pi**2 * n, 1.0 / 3.0)
         d = -4.0 * Esym - (utils.m_n - utils.m_p)
 
-        coeffs = jnp.array(
-            [
-                a,
-                b,
-                c,
-                d,
-            ]
-        ).T
+        coeffs = jnp.stack([a, b, c, d], axis=1)
         ys = utils.cubic_root_for_proton_fraction(coeffs)
-        physical_ys = jnp.where(
-            (ys.imag == 0.0) * (ys.real >= 0.0) * (ys.real <= 1.0),
-            ys.real,
-            jnp.zeros_like(ys.real),
-        ).sum(axis=1)
-        proton_fraction = jnp.power(physical_ys, 3)
+        proton_fraction = ys**3  # type: ignore[operator]
         return proton_fraction
