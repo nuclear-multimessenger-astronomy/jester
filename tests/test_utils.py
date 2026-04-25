@@ -108,8 +108,87 @@ class TestCumtrapz:
             utils.cumtrapz(y, x)
 
 
-# NOTE: cubic_root_for_proton_fraction is tested within the EOS framework
-# where it's used for computing proton fractions, not as a standalone cubic solver
+class TestCubicRootForProtonFraction:
+    """Tests for the NR A,B-only cubic root solver used in proton fraction.
+
+    Covers the three physical regimes identified in the investigation:
+      1. Esym > 0  → one real root in (0, 1), returned correctly.
+      2. Esym < 0 (moderate, D < 0) → guard returns 0.
+      3. Esym << 0 (large negative, D > 0) → guard returns 0, not a
+         spurious root near y=1 (pre-existing bug in the Cardano formula).
+    """
+
+    def _make_coeffs(self, esym_mev: float, n_fm3: float):
+        """Build [a, b, c, d] coefficients for the beta-equilibrium cubic."""
+        a = jnp.array([8.0 * esym_mev])
+        b = jnp.array([0.0])
+        c = jnp.array([utils.hbarc * (3.0 * jnp.pi**2 * n_fm3) ** (1.0 / 3.0)])
+        d = jnp.array([-4.0 * esym_mev - (utils.m_n - utils.m_p)])
+        return jnp.stack([a, b, c, d], axis=1)  # shape [1, 4]
+
+    def test_physical_root_back_substitution(self):
+        """Root satisfies the polynomial to near machine precision when Esym > 0."""
+        esym = 32.0  # MeV, typical physical value
+        n = 0.32  # fm^-3, twice saturation density
+
+        coeffs = self._make_coeffs(esym, n)
+        y = utils.cubic_root_for_proton_fraction(coeffs)[0]
+
+        a, _, c, d = coeffs[0]
+        residual = float(jnp.abs(a * y**3 + c * y + d))
+        assert residual < 1e-8, f"back-substitution residual {residual:.2e} too large"
+
+    def test_physical_root_in_range(self):
+        """Root y = xp^(1/3) is in (0, 1) when Esym > 0."""
+        for esym in [28.0, 32.0, 45.0]:
+            for n in [0.16, 0.32, 0.64, 1.0]:
+                coeffs = self._make_coeffs(esym, n)
+                y = float(utils.cubic_root_for_proton_fraction(coeffs)[0])
+                assert 0.0 < y < 1.0, f"y={y} out of (0,1) for Esym={esym}, n={n}"
+
+    def test_moderate_negative_esym_returns_zero(self):
+        """Guard returns 0 for moderately negative Esym (unphysical regime)."""
+        # Esym = -5 MeV: a < 0, guard fires immediately
+        coeffs = self._make_coeffs(-5.0, 0.32)
+        y = float(utils.cubic_root_for_proton_fraction(coeffs)[0])
+        assert y == 0.0
+
+    def test_large_negative_esym_returns_zero(self):
+        """Guard returns 0 for large negative Esym (spurious-root regime).
+
+        When |Esym| > c/4 the discriminant D > 0 and the old Cardano formula
+        returned a spurious real root near y = 1 (xp ≈ 1).  The NR A,B-only
+        formula with the a > 0 guard must return 0 instead.
+
+        The reference case is from script 10: n ≈ 0.79 fm⁻³, Esym ≈ -140 MeV,
+        where the old code gave xp ≈ 0.9995.
+        """
+        coeffs = self._make_coeffs(-140.0, 0.79)
+        y = float(utils.cubic_root_for_proton_fraction(coeffs)[0])
+        assert y == 0.0, (
+            f"Expected y=0 for large-negative Esym but got y={y:.4f}; "
+            "old Cardano formula returned a spurious root near y=1 here"
+        )
+
+    def test_zero_esym_returns_zero(self):
+        """Guard returns 0 at the boundary Esym = 0."""
+        coeffs = self._make_coeffs(0.0, 0.32)
+        y = float(utils.cubic_root_for_proton_fraction(coeffs)[0])
+        assert y == 0.0
+
+    def test_vectorized_over_densities(self):
+        """Vectorised call (multiple density points) has no NaN/Inf."""
+        esym = 32.0
+        n_arr = jnp.linspace(0.08, 0.8, 50)
+        a = 8.0 * esym * jnp.ones_like(n_arr)
+        b = jnp.zeros_like(n_arr)
+        c = utils.hbarc * jnp.power(3.0 * jnp.pi**2 * n_arr, 1.0 / 3.0)
+        d = (-4.0 * esym - (utils.m_n - utils.m_p)) * jnp.ones_like(n_arr)
+        coeffs = jnp.stack([a, b, c, d], axis=1)
+        ys = utils.cubic_root_for_proton_fraction(coeffs)
+        assert jnp.all(jnp.isfinite(ys)), "NaN/Inf in vectorised output"  # type: ignore[arg-type]
+        assert jnp.all(ys >= 0.0)  # type: ignore[operator]
+        assert jnp.all(ys <= 1.0)  # type: ignore[operator]
 
 
 class TestLimitByMTOV:
