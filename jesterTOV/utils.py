@@ -102,16 +102,17 @@ def cubic_root_for_proton_fraction(coefficients):
     """
     a, b, c, d = coefficients
 
-    # Monic form: y³ + a_nr·y² + b_nr·y + c_nr = 0
+    # Monic form: y^3 + a y^2 + b y + c = 0
     a_nr = b / a  # = 0 for our b=0 cubic
     b_nr = c / a  # = p = c/a
     c_nr = d / a  # = q = d/a
 
+    # Convert to the expression for numerical recipes (NR) from Press et al.:
     # NR Q, R  (for b=0: Q = -p/3, R = q/2)
     Q = (a_nr**2 - 3.0 * b_nr) / 9.0
     R = (2.0 * a_nr**3 - 9.0 * a_nr * b_nr + 27.0 * c_nr) / 54.0
 
-    # A, B formula  (D = R²-Q³ > 0 guaranteed when a > 0)
+    # A, B formula  (D = R^2 - Q^3 > 0 guaranteed when a > 0)
     inner = jnp.maximum(R**2 - Q**3, 0.0)  # clamp against floating-point noise
     A = -jnp.sign(R) * jnp.cbrt(jnp.abs(R) + jnp.sqrt(inner))
     B = jnp.where(A != 0.0, Q / A, 0.0)
