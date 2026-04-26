@@ -32,7 +32,7 @@ extensions = [
 ]
 
 bibtex_bibfiles = ["references.bib"]
-bibtex_default_style = "alpha"
+bibtex_default_style = "unsrt"
 
 templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "CLAUDE.md"]
@@ -130,6 +130,7 @@ suppress_warnings = [
     "ref.python",  # Suppress ambiguous python cross-reference warnings
     "sphinx_autodoc_typehints.forward_reference",  # Suppress forward reference warnings
     "sphinx_autodoc_typehints.guarded_import",  # Suppress guarded import warnings
+    "bibtex.duplicate_label",  # Per-page bibliographies share keys across pages; labels are correct
 ]
 
 # -- Nitpicky mode configuration ---------------------------------------------

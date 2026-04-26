@@ -284,6 +284,7 @@ uv run run_jester_inference config.yaml
 2. **Citation not found**: `WARNING: Citation [citation1] is not referenced`
    - Add citation to `../jesterTOV/references.bib` or relevant docstring
    - Use correct citation format in docstrings
+   - **Citation style**: `bibtex_default_style = "unsrt"` is set in `conf.py`, which renders numeric labels `[1]`, `[2]`, etc. Do not change it to `"alpha"` (which would produce author-key labels like `[GSMR22]`).
 
 3. **Toctree reference not found**
    - Ensure file exists and is in correct location

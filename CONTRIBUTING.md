@@ -168,6 +168,7 @@ All contributions must meet these requirements:
 
 - **Docstrings** - All public functions and classes
 - **Math formatting** - Use reStructuredText `:math:` or `.. math::`
+- **Citations** - Use `sphinxcontrib.bibtex` with `:cite:` directives; the bibliography style is set to `"unsrt"` in `conf.py`, which renders numeric labels `[1]`, `[2]`, etc. Keep it that way — do not switch to `"alpha"`.
 - **User guide** - Add page to `docs/overview/` explaining the feature
 - **API reference** - Auto-generated from docstrings (check it renders correctly)
 - **Example config** - Provide working example in `examples/`

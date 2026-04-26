@@ -538,13 +538,13 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         v: Array,
         u: Array,
     ) -> Array:
-        """
+        r"""
         The pressure is computed as
 
         .. math::
             P(n, \delta) = n^2 \frac{\partial e(n, \delta)}{\partial n}
 
-        where the kinetic and potential energy contributions are separated. More steps about the derivation of this pressure can be found in the jester documentation.
+        where the kinetic and potential energy contributions are separated.
         """
 
         # Contribution from

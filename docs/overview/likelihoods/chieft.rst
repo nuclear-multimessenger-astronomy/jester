@@ -1,7 +1,7 @@
 .. _likelihood-chieft:
 
 Chiral effective field theory (ChiEFT)
-=============================
+======================================
 
 Chiral effective field theory (ChiEFT) provides theoretical constraints on the equation of state of nuclear matter at low densities, through a systematic expansion of the nuclear many-body Hamiltonian in terms of low-energy degrees of freedom (nucleons and pions). 
 The expansion is truncated at a certain order, and the Hamiltonian can be solved numerically. 
