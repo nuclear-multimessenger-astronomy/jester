@@ -60,17 +60,15 @@ class Interpolate_EOS_model(ABC):
         # rhos = utils.calculate_rest_mass_density(es, ps)
 
         hs = utils.cumtrapz(ps / (es + ps), jnp.log(ps))  # enthalpy
-        dloge_dlogps = jnp.diff(jnp.log(e)) / jnp.diff(jnp.log(p))
-        dloge_dlogps = jnp.concatenate(
-            (
-                jnp.array(
-                    [
-                        dloge_dlogps.at[0].get(),
-                    ]
-                ),
-                dloge_dlogps,
-            )
-        )
+
+        # Centered finite differences for interior points, one-sided at boundaries.
+        loge = jnp.log(e)
+        logp = jnp.log(p)
+        interior = (loge[2:] - loge[:-2]) / (logp[2:] - logp[:-2])
+        left = (loge[1] - loge[0]) / (logp[1] - logp[0])
+        right = (loge[-1] - loge[-2]) / (logp[-1] - logp[-2])
+        dloge_dlogps = jnp.concatenate([left[None], interior, right[None]])
+
         return ns, ps, hs, es, dloge_dlogps
 
     @abstractmethod
