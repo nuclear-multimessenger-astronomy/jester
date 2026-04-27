@@ -168,7 +168,7 @@ ci_handles = [
     Patch(facecolor="grey", alpha=0.50, label="68\% CI"),
     Patch(facecolor="grey", alpha=0.25, label="90\% CI"),
 ]
-legend_ci = ax.legend(handles=ci_handles, loc="upper left", framealpha=0.8, fontsize=10)
+legend_ci = ax.legend(handles=ci_handles, loc="upper left", framealpha=0.8, fontsize=16)
 ax.add_artist(legend_ci)
 
 # PSR legend (top-right)
