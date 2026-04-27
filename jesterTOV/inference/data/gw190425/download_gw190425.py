@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
-Download and process GW190425 posterior samples from LIGO DCC.
+Download and process GW190425 posterior samples.
 
 Extracts: mass_1_source, mass_2_source, lambda_1, lambda_2
 Converts detector-frame masses to source frame using bilby.
 Also downloads XP-NRTV3 samples from the neural_priors repository.
 
 Data sources:
-  https://dcc.ligo.org/P2000026/public  (GW190425)
+  https://dcc.ligo.org/P2000026/public  (GW190425, GWTC-2)
+  https://zenodo.org/records/6513631    (GWTC-2.1, cosmo and nocosmo)
   https://github.com/ThibeauWouters/neural_priors  (XP-NRTV3)
 """
 
@@ -34,6 +35,9 @@ IGNORE_CACHE: bool = False
 # Set True to also download XP-NRTV3 samples
 DOWNLOAD_XPNRTV3: bool = True
 
+# Set True to also download GWTC-2.1 posteriors from Zenodo
+DOWNLOAD_GWTC2P1: bool = True
+
 # Downsample GW posteriors to at most this many samples (None = keep all)
 MAX_SAMPLES: int | None = None
 
@@ -41,7 +45,21 @@ MAX_SAMPLES: int | None = None
 
 DATA_DIR = Path(__file__).parent
 
+# GWTC-2 DCC file (original GW190425 release)
 URL = "https://dcc.ligo.org/public/0165/P2000026/002/posterior_samples.h5"
+
+# GWTC-2.1 Zenodo files
+ZENODO_RECORD = "6513631"
+GWTC2P1_URLS: dict[str, str] = {
+    "gwtc2p1_mixed_cosmo": (
+        f"https://zenodo.org/records/{ZENODO_RECORD}/files/"
+        "IGWN-GWTC2p1-v2-GW190425_081805_PEDataRelease_mixed_cosmo.h5?download=1"
+    ),
+    "gwtc2p1_mixed_nocosmo": (
+        f"https://zenodo.org/records/{ZENODO_RECORD}/files/"
+        "IGWN-GWTC2p1-v2-GW190425_081805_PEDataRelease_mixed_nocosmo.h5?download=1"
+    ),
+}
 
 XPNRTV3_URL = "https://raw.githubusercontent.com/ThibeauWouters/neural_priors/b0ae4235f0c74a6f9e2f6cc4c3385a3ac780d4f8/final_results/GW190425/bns/default/samples.npz"
 XPNRTV3_PARAMS = ["mass_1_source", "mass_2_source", "lambda_1", "lambda_2"]
@@ -136,6 +154,8 @@ def extract_and_save(
     header: list[str],
     dataset_name: str,
     waveform_model: str,
+    data_source: str = "LIGO-P2000026",
+    source_url: str = URL,
 ) -> Path | None:
     """Extract the four required parameters and save as .npz."""
     print(f"\nExtracting parameters for '{dataset_name}'")
@@ -187,8 +207,8 @@ def extract_and_save(
         "event": "GW190425",
         "waveform_model": waveform_model,
         "dataset": dataset_name,
-        "data_source": "LIGO-P2000026",
-        "dcc_url": URL,
+        "data_source": data_source,
+        "dcc_url": source_url,
         "n_samples": len(extracted["mass_1_source"]),
         "parameters": ["mass_1_source", "mass_2_source", "lambda_1", "lambda_2"],
         "conversion_tool": "N/A" if has_source else "bilby.gw.conversion",
@@ -234,21 +254,17 @@ def download_xpnrtv3() -> None:
 
 
 # ============================================================
-# Main
+# GWTC-2.1 downloader
 # ============================================================
 
 
-def main() -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-    # Download the HDF5 file
-    h5_file = DATA_DIR / "posterior_samples.h5"
-    if IGNORE_CACHE or not h5_file.exists():
-        download_file(URL, h5_file)
-    else:
-        print(f"Cached: {h5_file.name}")
-
-    # Discover and process each posterior in the file
+def process_hdf5_file(
+    h5_file: Path,
+    output_prefix: str,
+    data_source: str,
+    source_url: str,
+) -> None:
+    """Discover and process all posteriors in a GWTC-format HDF5 file."""
     posterior_paths = find_posterior_paths(h5_file)
     print(f"\nFound {len(posterior_paths)} posteriors: {posterior_paths}")
 
@@ -262,7 +278,80 @@ def main() -> None:
         try:
             posterior, header = load_posterior_by_path(h5_file, post_path)
 
-            # Derive names: "C01:IMRPhenomPv2/posterior_samples" -> waveform="IMRPhenomPv2", variant="C01"
+            parts = post_path.split("/")
+            if ":" in parts[0]:
+                _, waveform = parts[0].split(":", 1)
+                dataset_name = f"{output_prefix}_{waveform.lower()}"
+            else:
+                dataset_name = f"{output_prefix}_{parts[0].lower()}"
+                waveform = parts[0]
+
+            extract_and_save(
+                posterior,
+                header,
+                dataset_name,
+                waveform,
+                data_source=data_source,
+                source_url=source_url,
+            )
+
+        except Exception as e:
+            print(f"  ERROR processing {post_path}: {e}")
+
+
+def download_gwtc2p1() -> None:
+    """Download and process GWTC-2.1 GW190425 posteriors from Zenodo."""
+    zenodo_source = f"Zenodo-{ZENODO_RECORD}"
+
+    for prefix, url in GWTC2P1_URLS.items():
+        print("\n" + "=" * 70)
+        print(f"GWTC-2.1: {prefix}")
+        print("=" * 70)
+
+        # The downloaded filename (without query string)
+        filename = url.split("/")[-1].split("?")[0]
+        h5_file = DATA_DIR / filename
+
+        if IGNORE_CACHE or not h5_file.exists():
+            download_file(url, h5_file)
+        else:
+            print(f"Cached: {h5_file.name}")
+
+        process_hdf5_file(h5_file, prefix, zenodo_source, url)
+
+
+# ============================================================
+# Main
+# ============================================================
+
+
+def main() -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+    # ---- GWTC-2 DCC file ----
+    print("=" * 70)
+    print("GWTC-2 (DCC P2000026)")
+    print("=" * 70)
+
+    h5_file = DATA_DIR / "posterior_samples.h5"
+    if IGNORE_CACHE or not h5_file.exists():
+        download_file(URL, h5_file)
+    else:
+        print(f"Cached: {h5_file.name}")
+
+    posterior_paths = find_posterior_paths(h5_file)
+    print(f"\nFound {len(posterior_paths)} posteriors: {posterior_paths}")
+
+    for post_path in posterior_paths:
+        if "/" not in post_path:
+            continue
+        print("\n" + "=" * 70)
+        print(f"Processing: {post_path}")
+        print("=" * 70)
+
+        try:
+            posterior, header = load_posterior_by_path(h5_file, post_path)
+
             parts = post_path.split("/")
             if ":" in parts[0]:
                 variant, waveform = parts[0].split(":", 1)
@@ -276,6 +365,11 @@ def main() -> None:
         except Exception as e:
             print(f"  ERROR processing {post_path}: {e}")
 
+    # ---- GWTC-2.1 Zenodo files ----
+    if DOWNLOAD_GWTC2P1:
+        download_gwtc2p1()
+
+    # ---- XP-NRTV3 ----
     if DOWNLOAD_XPNRTV3:
         print("\n" + "=" * 70)
         print("XP-NRTV3")

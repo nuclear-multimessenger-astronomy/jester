@@ -1,8 +1,8 @@
-# Adding a New EOS Model
+# Adding a new EOS model
 
 This guide walks through adding a new equation of state (EOS) model to JESTER. EOS models define the thermodynamic relationship between pressure, energy density, and other state variables in neutron star matter.
 
-## Architecture Overview
+## Architecture overview
 
 JESTER's modular design separates EOS models from TOV solvers and inference. All EOS models inherit from `Interpolate_EOS_model` and are automatically compatible with all TOV solvers through the unified `JesterTransform` system.
 
@@ -12,7 +12,7 @@ JESTER's modular design separates EOS models from TOV solvers and inference. All
 - Transform factory: `jesterTOV/inference/transforms/transform.py`
 - Tests: `tests/test_eos/test_your_eos.py`
 
-## Step 1: Create EOS Class
+## Step 1: Create EOS class
 
 Create your EOS model in `jesterTOV/eos/` inheriting from `Interpolate_EOS_model`:
 
@@ -93,7 +93,7 @@ class MyNewEOS(Interpolate_EOS_model):
 4. **Sound speed**: Ensure $0 \leq c_s^2 \leq 1$ (causality constraint)
 5. **Monotonicity**: Pressure and energy must be monotonically increasing with density
 
-## Step 2: Update Configuration Schema
+## Step 2: Update configuration schema
 
 Add a concrete config class for your EOS to `jesterTOV/inference/config/schemas/eos.py` and include it in the `EOSConfig` discriminated union.
 
@@ -133,7 +133,7 @@ uv run python -m jesterTOV.inference.config.generate_yaml_reference
 
 This updates `docs/inference/yaml_reference.md` with your new EOS type.
 
-## Step 3: Register in Transform Factory
+## Step 3: Register in transform factory
 
 Add your EOS to `jesterTOV/inference/transforms/transform.py` using an `isinstance` check (so pyright can narrow types correctly):
 
@@ -156,7 +156,7 @@ def _create_eos(config: BaseEOSConfig, ...) -> Interpolate_EOS_model:
 
 No need to create new transform classes—`JesterTransform` handles all EOS × TOV combinations automatically.
 
-## Step 4: Create Prior File
+## Step 4: Create prior file
 
 Create a `.prior` file for your new EOS parameters:
 
@@ -171,7 +171,7 @@ param3 = UniformPrior(100.0, 500.0, parameter_names=["param3"])
 
 **Parameter validation**: The inference system validates that all parameters in `get_required_parameters()` are present in the prior file. Missing parameters cause an error before sampling starts.
 
-## Step 5: Write Tests
+## Step 5: Write tests
 
 Create comprehensive tests in `tests/test_eos/test_my_new_eos.py`:
 
@@ -263,9 +263,9 @@ class TestMyNewEOS:
 3. **Integration tests**: Works with TOV solvers and inference
 4. **Error handling**: Missing/invalid parameters handled gracefully
 
-## Step 6: Create Example Configuration
+## Step 6: Create example configuration
 
-Create an example in `examples/inference/my_new_eos/`:
+Create an example in, e.g., `examples/inference/my_new_eos/` showing users how to use the EOS model:
 
 ```yaml
 # config.yaml
@@ -313,7 +313,7 @@ Add documentation to `docs/overview/eos/`:
 
 One-sentence description of the EOS model.
 
-## Physical Motivation
+## Physical motivation
 
 Explain the physics behind the model...
 
@@ -362,7 +362,7 @@ Before submitting a PR:
 - [ ] Code passes `uv run pyright jesterTOV/eos/`
 - [ ] Tests pass: `uv run pytest tests/test_eos/test_my_new_eos.py -v`
 
-## Common Pitfalls
+## Common pitfalls
 
 **Python control flow on JAX arrays**: Avoid `if` statements on traced values. Use `jnp.where()` instead.
 
@@ -381,14 +381,17 @@ result = jnp.where(
 )
 ```
 
+For other common pitfalls when coding in jax, check out [this page](https://docs.jax.dev/en/latest/notebooks/Common_Gotchas_in_JAX.html). 
+
 **Unit inconsistencies**: JESTER uses geometric units internally (c=G=1). Ensure your EOS returns pressures and energies in geometric units. Conversions to physical units (M☉, km) happen only in output.
 
 **EOSData field requirements**: While `mu` and `extra_constraints` are optional, `ns`, `ps`, `hs`, `es`, `dloge_dlogps`, and `cs2` are required. All must have the same array length.
 
 **Parameter naming**: Parameter names in `get_required_parameters()` must exactly match those used in prior files. Mismatches cause validation errors.
 
-## Need Help?
+## Need help?
 
 - See existing implementations: `jesterTOV/eos/metamodel/base.py`, `jesterTOV/eos/spectral/`
 - Review `jesterTOV/inference/CLAUDE.md` for inference system architecture
 - Check JAX documentation for array operations: https://jax.readthedocs.io/
+- Open a draft PR and start a conversation with the developers!

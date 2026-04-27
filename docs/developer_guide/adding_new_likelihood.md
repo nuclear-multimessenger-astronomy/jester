@@ -1,8 +1,8 @@
-# Adding a New Likelihood
+# Adding a new likelihood
 
 This guide walks through adding a new likelihood constraint to JESTER's inference system. Likelihoods encode observational constraints from multi-messenger astronomy (gravitational waves, X-ray timing, radio observations, nuclear experiments).
 
-## Architecture Overview
+## Architecture overview
 
 Likelihoods evaluate the probability of observing data given EOS parameters. All likelihoods inherit from `LikelihoodBase` and are created through a factory pattern. The inference system automatically combines multiple likelihoods with equal weighting.
 
@@ -13,7 +13,7 @@ Likelihoods evaluate the probability of observing data given EOS parameters. All
 - Data loading: `jesterTOV/inference/data/__init__.py`
 - Tests: `tests/test_inference/test_likelihoods/test_your_likelihood.py`
 
-## Step 1: Create Likelihood Class
+## Step 1: Create Likelihood class
 
 Create your likelihood in `jesterTOV/inference/likelihoods/` inheriting from `LikelihoodBase`:
 
@@ -114,7 +114,7 @@ class MyNewLikelihood(LikelihoodBase):
 4. **Transform integration**: Know what quantities `JesterTransform` provides
 5. **Return log probabilities**: Never return raw probabilities (numerical underflow)
 
-## Step 2: Add Data Loading Function
+## Step 2 (optional): Add data loading function
 
 If your likelihood requires external data, add loading to `jesterTOV/inference/data/__init__.py`:
 
@@ -149,11 +149,11 @@ def load_my_observation_data() -> dict[str, Any]:
 **Data management best practices:**
 
 - Small data (<1 MB): Include in `jesterTOV/inference/data/data_files/`
-- Large data (>1 MB): Host on Zenodo, cache locally with `get_data_path()`
+- Large data (>1 MB): Host on Zenodo, cache locally with `get_data_path()`, add files to gitignore
 - Validate data format in loading function
 - Document data provenance and references
 
-## Step 3: Update Configuration Schema
+## Step 3: Update Configuration schema
 
 Add your likelihood config class to `jesterTOV/inference/config/schemas/likelihoods.py` and extend the `LikelihoodConfig` discriminated union there:
 
@@ -196,7 +196,7 @@ Then re-export `MyNewLikelihoodConfig` from both `config/schema.py` (in the impo
 uv run python -m jesterTOV.inference.config.generate_yaml_reference
 ```
 
-## Step 4: Register in Likelihood Factory
+## Step 4: Register in Likelihood factory
 
 Add creation logic to `jesterTOV/inference/likelihoods/factory.py`:
 
@@ -226,7 +226,7 @@ def create_likelihood(
     # ... other likelihood types ...
 ```
 
-## Step 5: Write Tests
+## Step 5: Write tests
 
 Create comprehensive tests in `tests/test_inference/test_likelihoods/test_my_new_likelihood.py`:
 
@@ -373,7 +373,7 @@ K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
 4. **Configuration**: Factory correctly applies options
 5. **Integration**: Works in full inference pipeline
 
-## Step 6: Create Example Configuration
+## Step 6: Create example configuration
 
 Create an example in `examples/inference/my_new_likelihood/`:
 
@@ -492,7 +492,7 @@ Before submitting a PR:
 - [ ] Code passes `uv run pyright jesterTOV/inference/likelihoods/`
 - [ ] Tests pass: `uv run pytest tests/test_inference/test_likelihoods/test_my_new_likelihood.py -v`
 
-## Common Pitfalls
+## Common pitfalls
 
 **Not returning log probabilities**: Always return log P, never P. This avoids numerical underflow:
 
@@ -559,7 +559,7 @@ if not config.enabled:
     return None  # Or skip entirely
 ```
 
-## Advanced: Resampling Likelihoods
+## Advanced: resampling during likelihood call
 
 Some likelihoods (like GW posteriors) require resampling during MCMC. See `GWLikelihoodResampled` for an example:
 
@@ -596,4 +596,6 @@ Resampling likelihoods need special handling in the sampler to pass PRNGKey.
 - See existing implementations: `jesterTOV/inference/likelihoods/nicer.py`, `gw.py`
 - Review `jesterTOV/inference/CLAUDE.md` for inference architecture
 - Check data loading examples in `jesterTOV/inference/data/__init__.py`
+- For common pitfalls when coding in jax, check out [this page](https://docs.jax.dev/en/latest/notebooks/Common_Gotchas_in_JAX.html). 
 - For statistical model questions, consult relevant papers in `jesterTOV/references.bib`
+- Open up a draft PR and start a conversation with the developers!

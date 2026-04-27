@@ -1,8 +1,8 @@
-# Adding a New TOV Solver
+# Adding a new TOV solver
 
 This guide walks through adding a new Tolman-Oppenheimer-Volkoff (TOV) equation solver to JESTER. TOV solvers integrate the structure equations for neutron stars, computing mass-radius-tidal deformability (M-R-Λ) relationships from an equation of state.
 
-## Architecture Overview
+## Architecture overview
 
 TOV solvers are independent of specific EOS models and work with any EOS through the unified `EOSData` interface. All solvers inherit from `TOVSolverBase` and are automatically compatible with all EOS models through `JesterTransform`.
 
@@ -12,7 +12,7 @@ TOV solvers are independent of specific EOS models and work with any EOS through
 - Transform factory: `jesterTOV/inference/transforms/transform.py`
 - Tests: `tests/test_tov/test_your_solver.py`
 
-## Step 1: Create TOV Solver Class
+## Step 1: Create TOV solver class
 
 Create your solver in `jesterTOV/tov/` inheriting from `TOVSolverBase`:
 
@@ -184,7 +184,7 @@ class MyNewTOVSolver(TOVSolverBase):
 4. **Type ignores for vmap**: `vmap` batches scalar NamedTuple fields into arrays, requiring type ignores
 5. **Unit conventions**: Return masses in M☉, radii in km, Λ dimensionless
 
-## Step 2: Update Configuration Schema
+## Step 2: Update Configuration schema
 
 Add a concrete config class for your solver to `jesterTOV/inference/config/schemas/tov.py` and include it in the `TOVConfig` discriminated union. `BaseTOVConfig` already provides `min_nsat_TOV`, `ndat_TOV`, and `nb_masses`; only add solver-specific fields to your subclass:
 
@@ -218,7 +218,7 @@ Also export `MyNewTOVConfig` from `schema.py`.
 uv run python -m jesterTOV.inference.config.generate_yaml_reference
 ```
 
-## Step 3: Register in Transform Factory
+## Step 3: Register in Transform factory
 
 Add your solver to `jesterTOV/inference/transforms/transform.py` using an `isinstance` check:
 
@@ -236,7 +236,7 @@ def _create_tov_solver(config: BaseTOVConfig) -> TOVSolverBase:
         raise ValueError(f"Unknown TOV config type: {type(config).__name__}")
 ```
 
-## Step 4: Create Prior File
+## Step 4: Create Prior file
 
 If your solver requires additional parameters beyond the EOS:
 
@@ -254,7 +254,7 @@ theory_param = UniformPrior(-1.0, 1.0, parameter_names=["theory_param"])
 
 **Parameter validation**: The inference system checks that all parameters in `get_required_parameters()` are present. Missing parameters cause errors before sampling.
 
-## Step 5: Write Tests
+## Step 5: Write tests
 
 Create comprehensive tests in `tests/test_tov/test_my_new_solver.py`:
 
@@ -380,7 +380,7 @@ class TestMyNewTOVSolver:
 4. **Parameter sensitivity**: Additional parameters affect results
 5. **Convergence**: Numerical accuracy tests
 
-## Step 6: Create Example Configuration
+## Step 6: Create example configuration
 
 Create an example in `examples/inference/my_new_solver/`:
 
@@ -545,3 +545,5 @@ R_km = R_geometric  # Already in km if using correct units
 - Review BlackJAX source code and documentation for sampler best practices
 - Check Diffrax documentation: https://docs.kidger.site/diffrax/
 - Review `jesterTOV/inference/CLAUDE.md` for inference system architecture
+- For other common pitfalls when coding in jax, check out [this page](https://docs.jax.dev/en/latest/notebooks/Common_Gotchas_in_JAX.html). 
+- Open a draft PR and start a conversation with the developers!

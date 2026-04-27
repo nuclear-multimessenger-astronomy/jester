@@ -115,9 +115,13 @@ Below, we show the extracted posterior samples on the source-frame masses and ti
 GW190425
 --------
 
-The processed files live in ``jesterTOV/inference/data/gw190425/``. Seven posterior sets
-are provided, covering three waveform models and two spin-prior choices each, plus one
-additional posterior from IMRPhenomXP_NRTidalv3:
+The processed files live in ``jesterTOV/inference/data/gw190425/``. Two sets of
+posteriors are available: the original GWTC-2 release (seven posteriors covering three
+waveform models and two spin-prior choices each, plus one from IMRPhenomXP_NRTidalv3),
+and the updated GWTC-2.1 release (cosmological and non-cosmological variants from
+Zenodo record 6513631).
+
+**GWTC-2 posteriors** (P2000026; `GWOSC GWTC-2.1 v1 <https://gwosc.org/eventapi/html/GWTC-2.1-confident/GW190425/v1>`_):
 
 .. list-table::
    :header-rows: 1
@@ -156,14 +160,43 @@ additional posterior from IMRPhenomXP_NRTidalv3:
      - low
      - 25,715
 
+**GWTC-2.1 posteriors** (Zenodo 6513631; `GWOSC GWTC-2.1 v3 <https://gwosc.org/eventapi/html/GWTC-2.1-confident/GW190425/v3/>`_).
+The GWTC-2.1 release provides two variants of the mixed posterior: ``cosmo`` applies
+cosmological corrections when converting to source-frame quantities (masses already in
+source frame), while ``nocosmo`` does not (masses converted from detector frame using
+the luminosity distance). For each variant, posteriors from two waveform models are
+included:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 60 25 15
+
+   * - File
+     - Waveform
+     - Variant
+   * - ``gw190425_gwtc2p1_mixed_cosmo_imrphenomxp_nrtidalv2_posterior.npz``
+     - IMRPhenomXP_NRTidalv2
+     - cosmo
+   * - ``gw190425_gwtc2p1_mixed_cosmo_seobnrv4t_surrogate_posterior.npz``
+     - SEOBNRv4T_surrogate
+     - cosmo
+   * - ``gw190425_gwtc2p1_mixed_nocosmo_imrphenomxp_nrtidalv2_posterior.npz``
+     - IMRPhenomXP_NRTidalv2
+     - nocosmo
+   * - ``gw190425_gwtc2p1_mixed_nocosmo_seobnrv4t_surrogate_posterior.npz``
+     - SEOBNRv4T_surrogate
+     - nocosmo
+
 **Data sources:**
 
 * P2000026 — `<https://dcc.ligo.org/LIGO-P2000026/public>`_
+* Zenodo 6513631 — `<https://zenodo.org/records/6513631>`_
 * Wouters et al. (2025) — `<https://github.com/ThibeauWouters/neural_priors/tree/main/final_results/GW190425/bns/default>`_
 
 **Download script:** ``jesterTOV/inference/data/gw190425/download_gw190425.py``
 
-Run it with:
+The script downloads both the GWTC-2 DCC file and the GWTC-2.1 Zenodo files (controlled
+by the ``DOWNLOAD_GWTC2P1`` constant at the top). Run it with:
 
 .. code-block:: bash
 

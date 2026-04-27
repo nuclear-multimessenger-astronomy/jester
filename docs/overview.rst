@@ -25,17 +25,17 @@ Nested sampling: Implemented in blackjax in this specific fork
 
 flowMC (GitHub): Normalizing flow-enhanced MCMC sampling
 
-**Equation of State (EOS) Models**
+**Equation of state (EOS) models**
    Overview of EOS parametrizations available in JESTER.
 
    :doc:`overview/eos`
 
-**TOV Solvers**
+**TOV solvers**
    Introduction to Tolman-Oppenheimer-Volkoff equation solvers.
 
    :doc:`overview/tov_solvers`
 
-**Likelihood Constraints**
+**Likelihood constraints**
    Observational constraints from multi-messenger astronomy.
 
    :doc:`overview/likelihoods`
