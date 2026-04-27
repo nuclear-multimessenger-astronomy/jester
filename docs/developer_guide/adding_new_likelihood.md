@@ -190,11 +190,9 @@ LikelihoodConfig = Annotated[
 
 Then re-export `MyNewLikelihoodConfig` from both `config/schema.py` (in the import block and `__all__`) and `config/__init__.py` so it is accessible as `jesterTOV.inference.config.MyNewLikelihoodConfig`.
 
-**Regenerate YAML documentation:**
+**Update YAML documentation:**
 
-```bash
-uv run python -m jesterTOV.inference.config.generate_yaml_reference
-```
+Open `docs/inference/yaml_reference.md` and add a new entry under the appropriate **Likelihoods** category describing your new likelihood type, its fields, defaults, and a usage example. This file is maintained by hand — keep it in sync with your changes to `schemas/likelihoods.py`.
 
 ## Step 4: Register in Likelihood factory
 

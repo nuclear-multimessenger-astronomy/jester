@@ -175,11 +175,7 @@ All contributions must meet these requirements:
 
 **After schema changes:**
 
-The documentation page about settings for the config files is automatically generated to ensure it is up to date with the source code. For this, run:s
-```bash
-# Regenerate YAML reference
-uv run python -m jesterTOV.inference.config.generate_yaml_reference
-```
+Update `docs/inference/yaml_reference.md` by hand to reflect any new or changed fields. This file is the authoritative user-facing reference and is maintained manually.
 
 ### Configuration Integration
 

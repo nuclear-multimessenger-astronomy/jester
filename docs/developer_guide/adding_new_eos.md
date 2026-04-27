@@ -125,13 +125,9 @@ EOSConfig = Annotated[
 
 Also import and re-export `MyNewEOSConfig` in `schema.py` (both in the import block and in `__all__`), and in `config/__init__.py`, so it is accessible as `jesterTOV.inference.config.MyNewEOSConfig`.
 
-**Regenerate YAML documentation:**
+**Update YAML documentation:**
 
-```bash
-uv run python -m jesterTOV.inference.config.generate_yaml_reference
-```
-
-This updates `docs/inference/yaml_reference.md` with your new EOS type.
+Open `docs/inference/yaml_reference.md` and add a new subsection under **EOS Configuration** describing your new EOS type, its fields, defaults, and any requirements. This file is maintained by hand — keep it in sync with your changes to `schemas/eos.py`.
 
 ## Step 3: Register in transform factory
 

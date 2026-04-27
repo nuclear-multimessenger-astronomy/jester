@@ -31,8 +31,7 @@ class BaseSamplerConfig(JesterBaseModel):
 
     @field_validator("n_eos_samples", "log_prob_batch_size")
     @classmethod
-    def validate_base_positive(cls, v: int) -> int:
-        """Validate that value is positive."""
+    def _validate_base_positive(cls, v: int) -> int:
         if v <= 0:
             raise ValueError(f"Value must be positive, got: {v}")
         return v
@@ -91,16 +90,14 @@ class FlowMCSamplerConfig(BaseSamplerConfig):
         "output_thinning",
     )
     @classmethod
-    def validate_positive(cls, v: int) -> int:
-        """Validate that value is positive."""
+    def _validate_positive(cls, v: int) -> int:
         if v <= 0:
             raise ValueError(f"Value must be positive, got: {v}")
         return v
 
     @field_validator("learning_rate")
     @classmethod
-    def validate_positive_float(cls, v: float) -> float:
-        """Validate that learning rate is positive."""
+    def _validate_positive_float(cls, v: float) -> float:
         if v <= 0:
             raise ValueError(f"Value must be positive, got: {v}")
         return v
@@ -141,16 +138,14 @@ class BlackJAXNSAWConfig(BaseSamplerConfig):
 
     @field_validator("n_delete_frac")
     @classmethod
-    def validate_delete_frac(cls, v: float) -> float:
-        """Validate that deletion fraction is in (0, 1]."""
+    def _validate_delete_frac(cls, v: float) -> float:
         if v <= 0 or v > 1:
             raise ValueError(f"n_delete_frac must be in (0, 1], got: {v}")
         return v
 
     @field_validator("n_live", "n_target", "max_mcmc", "max_proposals")
     @classmethod
-    def validate_positive(cls, v: int) -> int:
-        """Validate that value is positive."""
+    def _validate_positive(cls, v: int) -> int:
         if v <= 0:
             raise ValueError(f"Value must be positive, got: {v}")
         return v
@@ -183,24 +178,21 @@ class SMCRandomWalkSamplerConfig(BaseSamplerConfig):
 
     @field_validator("n_particles", "n_mcmc_steps")
     @classmethod
-    def validate_positive(cls, v: int) -> int:
-        """Validate that value is positive."""
+    def _validate_positive(cls, v: int) -> int:
         if v <= 0:
             raise ValueError(f"Value must be positive, got: {v}")
         return v
 
     @field_validator("target_ess")
     @classmethod
-    def validate_fraction(cls, v: float) -> float:
-        """Validate that value is in (0, 1]."""
+    def _validate_fraction(cls, v: float) -> float:
         if v <= 0 or v > 1:
             raise ValueError(f"Value must be in (0, 1], got: {v}")
         return v
 
     @field_validator("random_walk_sigma")
     @classmethod
-    def validate_positive_float(cls, v: float) -> float:
-        """Validate that value is positive."""
+    def _validate_positive_float(cls, v: float) -> float:
         if v <= 0:
             raise ValueError(f"Value must be positive, got: {v}")
         return v
@@ -245,24 +237,21 @@ class SMCNUTSSamplerConfig(BaseSamplerConfig):
 
     @field_validator("n_particles", "n_mcmc_steps")
     @classmethod
-    def validate_positive(cls, v: int) -> int:
-        """Validate that value is positive."""
+    def _validate_positive(cls, v: int) -> int:
         if v <= 0:
             raise ValueError(f"Value must be positive, got: {v}")
         return v
 
     @field_validator("target_ess", "target_acceptance", "adaptation_rate")
     @classmethod
-    def validate_fraction(cls, v: float) -> float:
-        """Validate that value is in (0, 1]."""
+    def _validate_fraction(cls, v: float) -> float:
         if v <= 0 or v > 1:
             raise ValueError(f"Value must be in (0, 1], got: {v}")
         return v
 
     @field_validator("init_step_size", "mass_matrix_base")
     @classmethod
-    def validate_positive_float(cls, v: float) -> float:
-        """Validate that value is positive."""
+    def _validate_positive_float(cls, v: float) -> float:
         if v <= 0:
             raise ValueError(f"Value must be positive, got: {v}")
         return v

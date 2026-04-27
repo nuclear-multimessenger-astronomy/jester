@@ -80,6 +80,7 @@ autodoc_default_options = {
     "members": True,
     "undoc-members": True,
     "show-inheritance": True,
+    "exclude-members": "model_config,model_post_init",
 }
 
 # Mock imports for optional dependencies that may not be available during docs build

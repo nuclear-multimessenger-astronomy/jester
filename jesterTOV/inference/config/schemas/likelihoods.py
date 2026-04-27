@@ -131,7 +131,7 @@ class GWEventConfig(JesterBaseModel):
     )
 
     @model_validator(mode="after")
-    def validate_mode_consistency(self) -> "GWEventConfig":
+    def _validate_mode_consistency(self) -> "GWEventConfig":
         """Ensure that the three source modes are not mixed."""
         has_pretrained = self.nf_model_dir is not None
         has_bilby = self.from_bilby_result is not None
@@ -209,8 +209,9 @@ class GWLikelihoodConfig(BaseLikelihoodConfig):
 
     @field_validator("events")
     @classmethod
-    def validate_unique_event_names(cls, v: list[GWEventConfig]) -> list[GWEventConfig]:
-        """Ensure all GW event names are unique."""
+    def _validate_unique_event_names(
+        cls, v: list[GWEventConfig]
+    ) -> list[GWEventConfig]:
         names = [event.name for event in v]
         seen: set[str] = set()
         duplicates: list[str] = []
@@ -281,8 +282,7 @@ class GWResampledLikelihoodConfig(BaseLikelihoodConfig):
 
     @field_validator("events")
     @classmethod
-    def validate_events(cls, v: list[dict[str, str]]) -> list[dict[str, str]]:
-        """Validate event structure and uniqueness."""
+    def _validate_events(cls, v: list[dict[str, str]]) -> list[dict[str, str]]:
         seen: set[str] = set()
         duplicates: list[str] = []
         for i, event in enumerate(v):
@@ -365,8 +365,7 @@ class NICERLikelihoodConfig(BaseLikelihoodConfig):
 
     @field_validator("pulsars")
     @classmethod
-    def validate_pulsars(cls, v: list[dict[str, str]]) -> list[dict[str, str]]:
-        """Validate pulsar structure and uniqueness."""
+    def _validate_pulsars(cls, v: list[dict[str, str]]) -> list[dict[str, str]]:
         seen: set[str] = set()
         duplicates: list[str] = []
         for i, pulsar in enumerate(v):
@@ -452,8 +451,7 @@ class NICERKDELikelihoodConfig(BaseLikelihoodConfig):
 
     @field_validator("pulsars")
     @classmethod
-    def validate_pulsars(cls, v: list[dict[str, str]]) -> list[dict[str, str]]:
-        """Validate pulsar structure and uniqueness."""
+    def _validate_pulsars(cls, v: list[dict[str, str]]) -> list[dict[str, str]]:
         seen: set[str] = set()
         duplicates: list[str] = []
         for i, pulsar in enumerate(v):
@@ -525,10 +523,9 @@ class RadioLikelihoodConfig(BaseLikelihoodConfig):
 
     @field_validator("pulsars")
     @classmethod
-    def validate_pulsars(
+    def _validate_pulsars(
         cls, v: list[dict[str, str | float]]
     ) -> list[dict[str, str | float]]:
-        """Validate pulsar structure."""
         for i, pulsar in enumerate(v):
             required = {"name", "mass_mean", "mass_std"}
             missing = required - set(pulsar.keys())

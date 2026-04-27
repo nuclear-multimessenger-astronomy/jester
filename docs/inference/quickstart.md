@@ -1,4 +1,4 @@
-# Quick Start
+# Quick start
 
 **Get started with Bayesian EOS inference in 5 minutes**
 

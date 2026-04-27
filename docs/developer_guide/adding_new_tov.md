@@ -212,11 +212,9 @@ TOVConfig = Annotated[
 
 Also export `MyNewTOVConfig` from `schema.py`.
 
-**Regenerate YAML documentation:**
+**Update YAML documentation:**
 
-```bash
-uv run python -m jesterTOV.inference.config.generate_yaml_reference
-```
+Open `docs/inference/yaml_reference.md` and add a new subsection under **TOV Configuration** describing your new solver type, its fields, defaults, and any requirements. This file is maintained by hand — keep it in sync with your changes to `schemas/tov.py`.
 
 ## Step 3: Register in Transform factory
 

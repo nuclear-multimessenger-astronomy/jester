@@ -59,8 +59,7 @@ class MetamodelEOSConfig(BaseMetamodelEOSConfig):
 
     @field_validator("nb_CSE")
     @classmethod
-    def validate_nb_cse(cls, v: int) -> int:
-        """Validate that nb_CSE is 0 for standard metamodel."""
+    def _validate_nb_cse(cls, v: int) -> int:
         if v != 0:
             raise ValueError(
                 "nb_CSE must be 0 for type='metamodel'. "
@@ -94,8 +93,7 @@ class MetamodelCSEEOSConfig(BaseMetamodelEOSConfig):
 
     @field_validator("nb_CSE")
     @classmethod
-    def validate_nb_cse(cls, v: int) -> int:
-        """Validate that nb_CSE is positive for metamodel_cse."""
+    def _validate_nb_cse(cls, v: int) -> int:
         if v <= 0:
             raise ValueError(
                 "nb_CSE must be > 0 for type='metamodel_cse'. "
@@ -159,8 +157,7 @@ class SpectralEOSConfig(BaseEOSConfig):
 
     @field_validator("nb_CSE")
     @classmethod
-    def validate_nb_cse(cls, v: int) -> int:
-        """Validate that nb_CSE is 0 for spectral."""
+    def _validate_nb_cse(cls, v: int) -> int:
         if v != 0:
             raise ValueError(
                 "nb_CSE must be 0 for type='spectral'. "

@@ -125,7 +125,7 @@ Contents
    developer_guide/adding_new_eos
    developer_guide/adding_new_tov
    developer_guide/adding_new_likelihood
-   inference/documentation_guide
+   developer_guide/documentation_guide
    citing
 
 Indices and tables
