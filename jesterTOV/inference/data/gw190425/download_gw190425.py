@@ -281,7 +281,7 @@ def process_hdf5_file(
             parts = post_path.split("/")
             if ":" in parts[0]:
                 _, waveform = parts[0].split(":", 1)
-                dataset_name = f"{output_prefix}_{waveform.lower()}"
+                dataset_name = f"{output_prefix}_{waveform.lower().replace(':', '_')}"
             else:
                 dataset_name = f"{output_prefix}_{parts[0].lower()}"
                 waveform = parts[0]

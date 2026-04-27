@@ -1,6 +1,6 @@
-.. _eos-metamodel:
-
 .. TODO: change the f_3^* notation to f_1^{***} et cetera for f_1^*, f_1^**, f_1^***
+
+.. _eos-metamodel:
 
 Metamodel
 =========

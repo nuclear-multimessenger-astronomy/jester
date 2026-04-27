@@ -5,7 +5,7 @@ This page is the authoritative reference for all supported YAML configuration op
 
 ## Overview
 
-JESTER uses YAML configuration files validated by Pydantic models. This reference documents every supported field, its type, default value, and purpose.
+JESTER uses YAML configuration files validated by Pydantic models (see {class}`~jesterTOV.inference.config.schema.InferenceConfig`). This reference documents every supported field, its type, default value, and purpose. For a worked example from start to finish, see the {doc}`quickstart` guide. For a conceptual explanation of the full inference pipeline, see {ref}`inference-workflow`.
 
 ---
 
@@ -13,7 +13,7 @@ JESTER uses YAML configuration files validated by Pydantic models. This referenc
 
 Control runtime behavior for validation, debugging, and random seed configuration.
 
-::::{dropdown} **Configuration Options**
+::::{dropdown} **Configuration options**
 :open:
 
 ```yaml
@@ -36,11 +36,11 @@ debug_nans: false     # Enable JAX NaN debugging for numerical issues
 
 ## EOS configuration
 
-The `eos` section specifies which equation of state (EOS) parametrization to use.
+The `eos` section specifies which equation of state (EOS) parametrization to use. For a conceptual overview of all available EOS models, see {ref}`overview-eos`. Each model transforms a set of physically motivated parameters into a pressure–density relation that is then fed to the TOV solver.
 
 ### Metamodel
 
-Metamodel EOS parametrization.
+The metamodel parametrizes the EOS using nuclear empirical parameters (NEPs) around nuclear saturation density. For the physical motivation and parameter definitions, see {ref}`eos-metamodel`. The corresponding Python class is {class}`~jesterTOV.eos.metamodel.MetaModel_EOS_model`. The Pydantic config schema is {class}`~jesterTOV.inference.config.schema.MetamodelEOSConfig`.
 
 ::::{dropdown} **Metamodel configuration**
 
@@ -61,42 +61,89 @@ eos:
 
 ### Metamodel CSE
 
-Metamodel EOS parametrization with speed-of-sound extension above a breakdown density.
+The metamodel with speed-of-sound extension (CSE) replaces the metamodel above a breakdown density with a flexible speed-of-sound parametrization, allowing for more freedom at high densities. For the physical motivation and parameter definitions, see {ref}`eos-metamodel-cse`. The corresponding Python class is {class}`~jesterTOV.eos.metamodel.MetaModel_with_CSE_EOS_model`. The Pydantic config schema is {class}`~jesterTOV.inference.config.schema.MetamodelCSEEOSConfig`.
 
 ::::{dropdown} **Metamodel CSE configuration**
 
 ```yaml
 eos:
-  type: "metamodel_cse"  # Required: EOS parametrization type
-  nb_CSE: 8              # Number of CSE enforcement points (must be > 0)
-  ndat_metamodel: 100    # Number of points for EOS table
-  nmax_nsat: 25.0        # Maximum density (in units of saturation density)
-  nmin_MM_nsat: 0.75     # Minimum density for metamodel (in units of n_sat)
-  crust_name: "DH"       # Crust model: "DH", "BPS", "DH_fixed", or "SLy"
+  type: "metamodel_cse"       # Required: EOS parametrization type
+  nb_CSE: 8                   # Number of CSE enforcement points (must be > 0)
+  ndat_CSE: 100               # Number of grid points for the CSE density region
+  max_nbreak_nsat: null       # Maximum breaking density in units of n_sat (optional)
+  ndat_metamodel: 100         # Number of points for EOS table
+  nmax_nsat: 25.0             # Maximum density (in units of saturation density)
+  nmin_MM_nsat: 0.75          # Minimum density for metamodel (in units of n_sat)
+  crust_name: "DH"            # Crust model: "DH", "BPS", "DH_fixed", or "SLy"
 ```
+
+**Field Details:**
+
+- **`nb_CSE`** (`int`, default: `8`) - Number of CSE enforcement grid points (must be > 0)
+- **`ndat_CSE`** (`int`, default: `100`) - Number of density grid points for the CSE region
+- **`max_nbreak_nsat`** (`float | null`, default: `null`) - Maximum allowed breaking density in units of saturation density. If set, must be consistent with the upper bound of the `nbreak` prior.
+- **`ndat_metamodel`** (`int`, default: `100`) - Number of points for metamodel EOS table
+- **`nmax_nsat`** (`float`, default: `25.0`) - Maximum density in units of saturation density
+- **`nmin_MM_nsat`** (`float`, default: `0.75`) - Starting density for metamodel grid as fraction of saturation density
+- **`crust_name`** (`str`, default: `"DH"`) - Crust model: `"DH"`, `"BPS"`, `"DH_fixed"`, or `"SLy"`
 
 **Requirements:**
 - `nb_CSE` must be > 0 for this parametrization
 
 ::::
 
+### Metamodel PeakCSE
+
+The metamodel with peak speed-of-sound extension (PeakCSE) is a variant of the CSE parametrization that models a peak feature in the speed of sound at high densities. The corresponding Python class is {class}`~jesterTOV.eos.metamodel.MetaModel_with_PeakCSE_EOS_model`. The Pydantic config schema is {class}`~jesterTOV.inference.config.schema.MetamodelPeakCSEEOSConfig`.
+
+::::{dropdown} **Metamodel PeakCSE configuration**
+
+```yaml
+eos:
+  type: "metamodel_peak_cse"  # Required: EOS parametrization type
+  ndat_CSE: 100               # Number of grid points for the PeakCSE region
+  max_nbreak_nsat: null       # Maximum breaking density in units of n_sat (optional)
+  ndat_metamodel: 100         # Number of points for EOS table
+  nmax_nsat: 25.0             # Maximum density (in units of saturation density)
+  nmin_MM_nsat: 0.75          # Minimum density for metamodel (in units of n_sat)
+  crust_name: "DH"            # Crust model: "DH", "BPS", "DH_fixed", or "SLy"
+```
+
+**Field Details:**
+
+- **`ndat_CSE`** (`int`, default: `100`) - Number of density grid points for the PeakCSE region
+- **`max_nbreak_nsat`** (`float | null`, default: `null`) - Maximum allowed breaking density in units of saturation density. If set, the metamodel grid is only computed up to this density, which can speed up inference.
+- **`ndat_metamodel`** (`int`, default: `100`) - Number of points for metamodel EOS table
+- **`nmax_nsat`** (`float`, default: `25.0`) - Maximum density in units of saturation density
+- **`nmin_MM_nsat`** (`float`, default: `0.75`) - Starting density for metamodel grid as fraction of saturation density
+- **`crust_name`** (`str`, default: `"DH"`) - Crust model: `"DH"`, `"BPS"`, `"DH_fixed"`, or `"SLy"`
+
+::::
+
 ### Spectral
 
-Spectral decomposition parametrization compatible with LALSimulation for GW analysis.
+The spectral decomposition parametrizes the adiabatic index as a function of pressure using a series of basis functions, following Lindblom (2010). It is compatible with LALSimulation for GW analysis. For the physical motivation and parameter definitions, see {ref}`eos-spectral`. The corresponding Python class is {class}`~jesterTOV.eos.spectral.SpectralDecomposition_EOS_model`. The Pydantic config schema is {class}`~jesterTOV.inference.config.schema.SpectralEOSConfig`.
 
 ::::{dropdown} **Spectral configuration**
 
 ```yaml
 eos:
-  type: "spectral"    # Required: EOS parametrization type
-  n_points_high: 500  # Number of points for high-density spectral region
-  crust_name: "SLy"   # Must be "SLy" for LALSuite compatibility
+  type: "spectral"         # Required: EOS parametrization type
+  n_points_high: 500       # Number of points for high-density spectral region
+  crust_name: "SLy"        # Crust model (recommended "SLy" for LALSuite compatibility)
+  reparametrized: false    # Use whitened reparametrization of gamma coefficients
+  sigma_scale: 1.0         # Width scaling for reparametrized prior (only used when reparametrized: true)
 ```
 
+**Field Details:**
+
+- **`n_points_high`** (`int`, default: `500`) - Number of points for high-density spectral region
+- **`crust_name`** (`str`, default: `"DH"`) - Crust model: `"DH"`, `"BPS"`, `"DH_fixed"`, or `"SLy"`. Use `"SLy"` for LALSuite compatibility.
+- **`reparametrized`** (`bool`, default: `false`) - If `false`, sample directly in $(\gamma_0, \gamma_1, \gamma_2, \gamma_3)$. If `true`, sample in a whitened space $(\tilde{\gamma}_0, \tilde{\gamma}_1, \tilde{\gamma}_2, \tilde{\gamma}_3)$ centred on a Gaussian fit to a radio-timing inference result. Use a `MultivariateGaussianPrior` in the prior file when this is enabled.
+- **`sigma_scale`** (`float`, default: `1.0`) - Multiplicative scaling applied to the Cholesky factor to widen the prior around the radio posterior. Only used when `reparametrized: true`. Increase above 1.0 to broaden the prior.
+
 **Requirements:**
-- `crust_name` must be `"SLy"` (LALSuite compatibility requirement)
 - `nb_CSE` must be 0 (or omitted)
-- `n_points_high` defines high-density spectral region sampling (default: 500)
 
 **Recommended:**
 - Use `constraints_gamma` likelihood to bound Gamma parameters (optional but recommended)
@@ -107,25 +154,69 @@ eos:
 
 ## TOV configuration
 
-The `tov` section configures the Tolman-Oppenheimer-Volkoff equation solver used to compute neutron star structure (mass-radius-tidal deformability).
+The `tov` section configures the Tolman–Oppenheimer–Volkoff (TOV) equation solver used to compute neutron star structure (mass, radius, tidal deformability). For a conceptual overview of all available solvers, see {ref}`overview-tov`. The Pydantic base schema is {class}`~jesterTOV.inference.config.schema.BaseTOVConfig`.
 
-::::{dropdown} **TOV Solver configuration**
+Three solver types are supported: `"gr"` (standard GR), `"anisotropy"` (phenomenological parametrizations to include pressure anisotropy), and `"scalar_tensor"` (scalar-tensor gravity). All solvers share the base fields `min_nsat_TOV`, `ndat_TOV`, and `nb_masses`; the beyond-GR solvers additionally require theory parameters that must be included in the prior file.
+
+### General Relativity
+
+The standard GR TOV solver integrates the Tolman–Oppenheimer–Volkoff equations in full General Relativity. It requires no additional theory parameters. The corresponding Python class is {class}`~jesterTOV.tov.gr.GRTOVSolver`. The Pydantic config schema is {class}`~jesterTOV.inference.config.schema.GRTOVConfig`.
+
+::::{dropdown} **GR TOV Solver configuration**
 :open:
 
 ```yaml
 tov:
   type: "gr"          # TOV solver type
-  min_nsat_TOV: 0.75  # Minimum density for TOV solver (in units of n_sat)
-  ndat_TOV: 100       # Number of points for TOV integration
-  nb_masses: 100      # Number of masses for family construction
+  min_nsat_TOV: 0.75  # Minimum central density for TOV integration (in units of n_sat)
+  ndat_TOV: 100       # Number of data points for TOV integration
+  nb_masses: 100      # Number of masses for M-R-Λ family construction
 ```
 
 **Field Details:**
 
-- **`type`** (`str`, default: `"gr"`) - TOV solver type. Supported values: `"gr"` (General Relativity) and `"anisotropy"` (post-TOV with beyond-GR corrections).
+- **`type`** (`str`) - Must be `"gr"` for this solver
+- **`min_nsat_TOV`** (`float`, default: `0.75`) - Minimum central density for TOV integration in units of saturation density
+- **`ndat_TOV`** (`int`, default: `100`) - Number of data points for TOV integration
+- **`nb_masses`** (`int`, default: `100`) - Number of masses to sample when constructing the M-R-Λ family (see {class}`~jesterTOV.tov.data_classes.FamilyData`)
+
+::::
+
+### Pressure anisotropy 
+
+The anisotropy solver extends the standard TOV equations with phenomenological beyond-GR corrections through an additional sigma term in the pressure gradient equation. For the underlying physics, see {ref}`tov-anisotropy`. The corresponding Python class is {class}`~jesterTOV.tov.anisotropy.AnisotropyTOVSolver`.
+
+::::{dropdown} **Anisotropy TOV Solver configuration**
+
+```yaml
+tov:
+  type: "anisotropy"  # TOV solver type
+  min_nsat_TOV: 0.75  # Minimum central density for TOV integration (in units of n_sat)
+  ndat_TOV: 100       # Number of data points for TOV integration
+  nb_masses: 100      # Number of masses for M-R-Λ family construction
+```
+
+**Field Details:**
+
+- **`type`** (`str`) - Must be `"anisotropy"` for this solver
 - **`min_nsat_TOV`** (`float`, default: `0.75`) - Minimum central density for TOV integration in units of saturation density
 - **`ndat_TOV`** (`int`, default: `100`) - Number of data points for TOV integration
 - **`nb_masses`** (`int`, default: `100`) - Number of masses to sample when constructing the M-R-Λ family
+
+**Required prior parameters:**
+
+The following theory parameters must be included in the `.prior` file:
+
+| Parameter | Description |
+|-----------|-------------|
+| `lambda_BL` | Bowers–Liang coupling constant |
+| `lambda_DY` | Doneva–Yazadjiev (Horvat et al.) coupling constant |
+| `lambda_HB` | Herrera–Barreto (Cosenza et al.) coupling constant |
+| `gamma` | Post-Newtonian gamma coupling |
+| `alpha` | Post-Newtonian alpha coupling |
+| `beta` | Post-Newtonian beta coupling |
+
+Any subset of these parameters may be sampled; those omitted default to the GR limit (zero). Setting all coupling constants to zero recovers standard GR.
 
 ::::
 
@@ -133,7 +224,7 @@ tov:
 
 ## Prior configuration
 
-Specify prior distributions for EOS parameters using a `.prior` specification file.
+Specify prior distributions for EOS parameters using a `.prior` specification file. The prior file uses a Python-based syntax (bilby-style) and is parsed by {func}`~jesterTOV.inference.priors.parser.parse_prior_file` into a {class}`~jesterTOV.inference.base.prior.CombinePrior` object. The Pydantic config schema is {class}`~jesterTOV.inference.config.schema.PriorConfig`.
 
 ::::{dropdown} **Prior configuration**
 
@@ -146,30 +237,34 @@ prior:
 
 - **`specification_file`** (`str`, **required**) - Path to prior specification file (must end with `.prior`)
 
+Individual priors in the `.prior` file are specified as {class}`~jesterTOV.inference.base.prior.UniformPrior` instances or other prior types. See the {doc}`quickstart` for an example prior file.
+
 ::::
 
 ---
 
 ## Likelihoods
 
-The `likelihoods` section specifies observational constraints to include in the inference. Multiple likelihoods can be combined for multi-messenger analysis.
+The `likelihoods` section specifies observational constraints to include in the inference. Multiple likelihoods can be combined for multi-messenger analysis; they are assembled into a {class}`~jesterTOV.inference.likelihoods.combined.CombinedLikelihood`. For a conceptual overview of all available likelihoods and their physical motivation, see {ref}`overview-likelihoods`.
 
 ### Gravitational wave observations
 
-Constrain the EOS using gravitational wave observations of binary neutron star mergers.
+Constrain the EOS using gravitational wave observations of binary neutron star mergers. For the physics and methodology, see {ref}`likelihood-gw`.
 
 #### Standard GW likelihood (presampled)
 
-::::{dropdown} **Standard GW Likelihood (Presampled) (type: "gw")**
+::::{dropdown} **Standard GW Likelihood (presampled)**
 
 ```yaml
 - type: "gw"
   enabled: true
-  parameters:
-    events: [{"name": "GW170817", "nf_model_dir": "./NFs/GW170817"}]  # List of GW events (see GWEventConfig below)
-    N_masses_evaluation: 2000  # Number of mass samples to pre-sample (optional, default: 2000)
-    N_masses_batch_size: 1000  # Batch size for processing (optional, default: 1000)
-    seed: 42                   # Random seed for mass sampling (optional, default: 42)
+  events:                       # List of GW events (see GWEventConfig below)
+    - name: "GW170817"
+      nf_model_dir: "./NFs/GW170817"
+  penalty_value: 0.0            # Log-likelihood penalty for M > M_TOV (default: 0.0)
+  N_masses_evaluation: 2000     # Number of mass samples to pre-sample (optional, default: 2000)
+  N_masses_batch_size: 1000     # Batch size for processing (optional, default: 1000)
+  seed: 42                      # Random seed for mass sampling (optional, default: 42)
 ```
 
 **Field Details:**
@@ -185,7 +280,7 @@ Constrain the EOS using gravitational wave observations of binary neutron star m
 
 **Description:**
 
-**Default GW likelihood** (presampled version): pre-samples masses from the GW posterior for efficient evaluation. Recommended for production use.
+**Default GW likelihood** (presampled version): pre-samples masses from the GW posterior for efficient evaluation. Recommended for production use. See {class}`~jesterTOV.inference.likelihoods.gw.GWLikelihood` for the full API. For information on training flows from bilby results or NPZ files, see {doc}`training_flows`.
 
 **GWEventConfig fields** (each entry in `events`):
 
@@ -195,7 +290,7 @@ Constrain the EOS using gravitational wave observations of binary neutron star m
 | `nf_model_dir` | str\|null | null | Path to a pre-trained normalizing flow directory. Mutually exclusive with `from_bilby_result` and `from_npz_file`. |
 | `from_bilby_result` | str\|null | null | Path to a bilby result `.hdf5` file. jester will extract posterior samples and train a flow automatically. Mutually exclusive with `nf_model_dir` and `from_npz_file`. |
 | `from_npz_file` | str\|null | null | Path to an existing `.npz` file with posterior samples (`mass_1_source`, `mass_2_source`, `lambda_1`, `lambda_2`). jester will train a flow directly from this file, skipping bilby extraction. Mutually exclusive with `nf_model_dir` and `from_bilby_result`. |
-| `flow_config` | str\|null | null | Path to a `FlowTrainingConfig` YAML file for custom flow training (only valid with `from_bilby_result` or `from_npz_file`). |
+| `flow_config` | str\|null | null | Path to a {class}`~jesterTOV.inference.flows.config.FlowTrainingConfig` YAML file for custom flow training (only valid with `from_bilby_result` or `from_npz_file`). |
 | `retrain_flow` | bool | false | Force re-training even if a cached flow exists (only valid with `from_bilby_result` or `from_npz_file`). |
 
 **Examples**:
@@ -225,15 +320,17 @@ events:
 
 #### Resampled GW likelihood (legacy)
 
-::::{dropdown} **Resampled GW Likelihood (Legacy) (type: "gw_resampled")**
+::::{dropdown} **Resampled GW likelihood (legacy)**
 
 ```yaml
 - type: "gw_resampled"
   enabled: true
-  parameters:
-    events: [{"name": "GW170817", "nf_model_dir": "./NFs/GW170817"}]  # List of GW events
-    N_masses_evaluation: 20  # Number of masses per evaluation (optional, default: 20)
-    N_masses_batch_size: 10  # Batch size for sampling (optional, default: 10)
+  events:                       # List of GW events
+    - name: "GW170817"
+      nf_model_dir: "./NFs/GW170817"
+  penalty_value: 0.0            # Log-likelihood penalty for M > M_TOV (default: 0.0)
+  N_masses_evaluation: 20       # Number of masses per evaluation (optional, default: 20)
+  N_masses_batch_size: 10       # Batch size for sampling (optional, default: 10)
 ```
 
 **Field Details:**
@@ -245,26 +342,28 @@ events:
 
 **Description:**
 
-**Legacy GW likelihood**: Resamples masses from GW posterior on-the-fly during each likelihood evaluation. Slower than presampled version.
+**Legacy GW likelihood**: resamples masses from the GW posterior on-the-fly during each likelihood evaluation. Slower than the presampled version. See {class}`~jesterTOV.inference.likelihoods.gw.GWLikelihoodResampled` for the full API.
 
 ::::
 
-### X-ray observations
+### NICER observations
 
-Constrain the mass-radius relation using NICER X-ray timing observations of millisecond pulsars.
+Constrain the mass–radius relation using NICER X-ray timing observations of millisecond pulsars. For the physics and methodology, see {ref}`likelihood-nicer`.
 
 #### NICER flow likelihood (default)
 
-::::{dropdown} **NICER Flow Likelihood (DEFAULT) (type: "nicer")**
+::::{dropdown} **NICER Flow Likelihood (default)**
 
 ```yaml
 - type: "nicer"
   enabled: true
-  parameters:
-    pulsars: [{"name": "J0030", "amsterdam_model_dir": "./flows/models/nicer_maf/J0030/amsterdam", "maryland_model_dir": "./flows/models/nicer_maf/J0030/maryland"}]  # List of pulsars with flow model directories
-    N_masses_evaluation: 100  # Number of mass samples (optional, default: 100)
-    N_masses_batch_size: 20   # Batch size for processing (optional, default: 20)
-    seed: 42                  # Random seed for mass pre-sampling (optional, default: 42)
+  pulsars:                      # List of pulsars with flow model directories
+    - name: "J0030"
+      amsterdam_model_dir: "./flows/models/nicer_maf/J0030/amsterdam"
+      maryland_model_dir: "./flows/models/nicer_maf/J0030/maryland"
+  N_masses_evaluation: 100      # Number of mass samples (optional, default: 100)
+  N_masses_batch_size: 20       # Batch size for processing (optional, default: 20)
+  seed: 42                      # Random seed for mass pre-sampling (optional, default: 42)
 ```
 
 **Field Details:**
@@ -276,21 +375,23 @@ Constrain the mass-radius relation using NICER X-ray timing observations of mill
 
 **Description:**
 
-**Default NICER likelihood** using pre-trained normalizing flows on M-R posteriors. Pre-samples masses once at initialization for efficient, deterministic evaluation. Recommended for production use.
+**Default NICER likelihood** using pre-trained normalizing flows on M-R posteriors. Pre-samples masses once at initialization for efficient, deterministic evaluation. Recommended for production use. See {class}`~jesterTOV.inference.likelihoods.nicer.NICERLikelihood` for the full API. For information on training custom flows from NICER posterior samples, see {doc}`training_flows`.
 
 ::::
 
 #### NICER KDE likelihood (legacy)
 
-::::{dropdown} **NICER KDE Likelihood (LEGACY) (type: "nicer_kde")**
+::::{dropdown} **NICER KDE Likelihood (legacy)**
 
 ```yaml
 - type: "nicer_kde"
   enabled: true
-  parameters:
-    pulsars: [{"name": "J0030", "amsterdam_samples_file": "./data/NICER/J0030/amsterdam.npz", "maryland_samples_file": "./data/NICER/J0030/maryland.npz"}]  # List of pulsars with sample files
-    N_masses_evaluation: 100  # Number of masses per evaluation (optional, default: 100)
-    N_masses_batch_size: 20   # Batch size for sampling (optional, default: 20)
+  pulsars:                      # List of pulsars with sample files
+    - name: "J0030"
+      amsterdam_samples_file: "./data/NICER/J0030/amsterdam.npz"
+      maryland_samples_file: "./data/NICER/J0030/maryland.npz"
+  N_masses_evaluation: 100      # Number of masses per evaluation (optional, default: 100)
+  N_masses_batch_size: 20       # Batch size for sampling (optional, default: 20)
 ```
 
 **Field Details:**
@@ -301,23 +402,25 @@ Constrain the mass-radius relation using NICER X-ray timing observations of mill
 
 **Description:**
 
-**Legacy NICER likelihood** using kernel density estimation on M-R posterior samples. Resamples masses during each evaluation (slower, non-deterministic). For backward compatibility only — use flow-based version for new analyses.
+**Legacy NICER likelihood** using kernel density estimation on M-R posterior samples. Resamples masses during each evaluation (slower, non-deterministic). For backward compatibility only — use the flow-based version for new analyses. See {ref}`likelihood-nicer` for a comparison of the two approaches.
 
 ::::
 
 ### Radio pulsar observations
 
-Constrain neutron star masses using radio pulsar timing measurements.
+Constrain neutron star masses using radio pulsar timing measurements. For the physics and methodology, see {ref}`likelihood-radio`. The Python class is {class}`~jesterTOV.inference.likelihoods.radio.RadioTimingLikelihood`.
 
-::::{dropdown} **Radio Pulsar Likelihood (type: "radio")**
+::::{dropdown} **Radio Pulsar Likelihood**
 
 ```yaml
 - type: "radio"
   enabled: true
-  parameters:
-    pulsars: [{"name": "J0740+6620", "mass_mean": 2.08, "mass_std": 0.07}]  # List of pulsars
-    penalty_value: -1e5  # Penalty for M_TOV ≤ m_min (optional, default: -1e5)
-    nb_masses: 100       # Number of mass points (optional, default: 100)
+  pulsars:                      # List of pulsars
+    - name: "J0740+6620"
+      mass_mean: 2.08
+      mass_std: 0.07
+  penalty_value: -1e5           # Penalty for M_TOV ≤ m_min (optional, default: -1e5)
+  nb_masses: 100                # Number of mass points (optional, default: 100)
 ```
 
 **Field Details:**
@@ -334,34 +437,38 @@ Constrain the low-density EOS using nuclear theory calculations and laboratory m
 
 #### ChiEFT likelihood
 
-::::{dropdown} **ChiEFT Likelihood (type: "chieft")**
+Constrains the EOS at densities below ~2 $n_\text{sat}$ using chiral effective field theory (ChiEFT) calculations. The likelihood checks that the predicted pressure–density relation falls within the ChiEFT uncertainty bands. For the physics and the specific bands used, see {ref}`likelihood-chieft`. The Python class is {class}`~jesterTOV.inference.likelihoods.chieft.ChiEFTLikelihood`.
+
+::::{dropdown} **ChiEFT Likelihood**
 
 ```yaml
 - type: "chieft"
   enabled: true
-  parameters:
-    nb_n: 100  # Number of density points to check against bands
+  low_filename: null   # Path to lower bound ChiEFT data file (optional, default: built-in)
+  high_filename: null  # Path to upper bound ChiEFT data file (optional, default: built-in)
+  nb_n: 100            # Number of density points to check against bands
 ```
 
 **Field Details:**
 
+- **`low_filename`** (`str | null`, default: `null`) - Path to lower bound ChiEFT data file. If `null`, uses the built-in default (`data/chiEFT/2402.04172/low.dat`).
+- **`high_filename`** (`str | null`, default: `null`) - Path to upper bound ChiEFT data file. If `null`, uses the built-in default (`data/chiEFT/2402.04172/high.dat`).
 - **`nb_n`** (`int`, default: `100`) - Number of density points to evaluate against ChiEFT uncertainty bands
-
-**Description:**
-
-Constrains the EOS at densities below ~2 n_sat using chiral effective field theory calculations. The likelihood checks that the predicted pressure-density relation falls within the ChiEFT uncertainty bands.
 
 ::::
 
 #### REX likelihood
 
-::::{dropdown} **REX Likelihood (type: "rex")**
+::::{dropdown} **REX Likelihood**
+
+```{warning}
+This is not fully implemented yet.
+```
 
 ```yaml
 - type: "rex"
   enabled: true
-  parameters:
-    experiment_name: "PREX"  # Experiment: "PREX" or "CREX"
+  experiment_name: "PREX"  # Experiment: "PREX" or "CREX" (default: "PREX")
 ```
 
 **Field Details:**
@@ -370,61 +477,78 @@ Constrains the EOS at densities below ~2 n_sat using chiral effective field theo
 
 **Description:**
 
-Constrains the nuclear symmetry energy using neutron skin thickness measurements:
-- **PREX** - Lead Radius Experiment (²⁰⁸Pb)
-- **CREX** - Calcium Radius Experiment (⁴⁸Ca)
+Constrains nuclear symmetry energy parameters using neutron skin thickness measurements from electron scattering experiments. The Python class is {class}`~jesterTOV.inference.likelihoods.rex.REXLikelihood`.
+
+- **PREX** — Lead Radius Experiment (²⁰⁸Pb)
+- **CREX** — Calcium Radius Experiment (⁴⁸Ca)
 
 ::::
 
 ### Generic constraints
 
-Apply custom physics-motivated constraints on EOS and TOV observables.
+Apply custom physics-motivated constraints on EOS and TOV observables. These are implemented as likelihoods that return large negative values (i.e., zero probability) when a constraint is violated, and zero otherwise. For the base class interface, see {class}`~jesterTOV.inference.likelihoods.constraints.ConstraintEOSLikelihood`.
 
 #### EOS constraints
 
-::::{dropdown} **EOS Constraints (type: "constraints_eos")**
+::::{dropdown} **EOS constraints**
 
 ```yaml
 - type: "constraints_eos"
   enabled: true
-  parameters: {}
+  penalty_causality: -1e10  # Penalty for causality violation cs² > 1 (default: -1e10)
+  penalty_stability: -1e10  # Penalty for thermodynamic instability cs² < 0 (default: -1e10)
+  penalty_pressure: -1e10   # Penalty for non-monotonic pressure (default: -1e10)
 ```
+
+**Field Details:**
+
+- **`penalty_causality`** (`float`, default: `-1e10`) - Log-likelihood penalty applied when causality is violated ($c_s^2 > 1$)
+- **`penalty_stability`** (`float`, default: `-1e10`) - Log-likelihood penalty applied when thermodynamic stability is violated ($c_s^2 < 0$)
+- **`penalty_pressure`** (`float`, default: `-1e10`) - Log-likelihood penalty applied when pressure is non-monotonic
 
 **Description:**
 
-Apply custom constraints on equation of state properties (pressure, energy density, sound speed).
+Apply hard constraints on equation of state properties (pressure, energy density, sound speed). See {class}`~jesterTOV.inference.likelihoods.constraints.ConstraintEOSLikelihood` for the full API.
 
 ::::
 
 #### TOV constraints
 
-::::{dropdown} **TOV Constraints (type: "constraints_tov")**
+::::{dropdown} **TOV constraints**
 
 ```yaml
 - type: "constraints_tov"
   enabled: true
-  parameters: {}
+  penalty_tov: -1e10  # Penalty for TOV integration failure (default: -1e10)
 ```
+
+**Field Details:**
+
+- **`penalty_tov`** (`float`, default: `-1e10`) - Log-likelihood penalty applied when the TOV integration fails
 
 **Description:**
 
-Apply custom constraints on TOV solution properties (maximum mass, radius bounds, etc.).
+Apply hard constraints on TOV solution properties (maximum mass, radius bounds, etc.). See {class}`~jesterTOV.inference.likelihoods.constraints.ConstraintTOVLikelihood` for the full API.
 
 ::::
 
 #### Gamma constraints
 
-::::{dropdown} **Gamma Constraints (type: "constraints_gamma")**
+::::{dropdown} **Gamma constraints**
 
 ```yaml
 - type: "constraints_gamma"
   enabled: true
-  parameters: {}
+  penalty_gamma: -1e10  # Penalty for Gamma bound violation (default: -1e10)
 ```
+
+**Field Details:**
+
+- **`penalty_gamma`** (`float`, default: `-1e10`) - Log-likelihood penalty applied when any spectral Gamma parameter falls outside $[0.6, 4.5]$
 
 **Description:**
 
-Apply bounds on spectral decomposition Gamma parameters. Recommended when using `type: "spectral"` transform.
+Apply bounds on spectral decomposition Gamma parameters, enforcing causality and thermodynamic stability. Recommended when using `type: "spectral"` (see {ref}`eos-spectral`). See {class}`~jesterTOV.inference.likelihoods.constraints.ConstraintGammaLikelihood` for the full API.
 
 ::::
 
@@ -432,7 +556,7 @@ Apply bounds on spectral decomposition Gamma parameters. Recommended when using 
 
 Sample from the prior without applying observational constraints.
 
-::::{dropdown} **Zero Likelihood (type: "zero")**
+::::{dropdown} **Zero Likelihood**
 
 ```yaml
 - type: "zero"
@@ -442,7 +566,7 @@ Sample from the prior without applying observational constraints.
 
 **Description:**
 
-Returns zero log-likelihood (uniform likelihood) for all EOS configurations. Use this for prior-only sampling to explore the prior volume without observational constraints.
+Returns zero log-likelihood (uniform likelihood) for all EOS configurations. Use this for prior-only sampling to explore the prior volume without observational constraints. See {class}`~jesterTOV.inference.likelihoods.combined.ZeroLikelihood` for the full API.
 
 ::::
 
@@ -450,13 +574,91 @@ Returns zero log-likelihood (uniform likelihood) for all EOS configurations. Use
 
 ## Samplers
 
-Choose a sampling algorithm for Bayesian inference. JESTER supports four production-ready samplers with different strengths.
+Choose a sampling algorithm for Bayesian inference. JESTER supports four backends with different strengths. For a conceptual comparison, see {ref}`overview-samplers`. The sampler base class is {class}`~jesterTOV.inference.samplers.jester_sampler.JesterSampler`. All samplers produce a {class}`~jesterTOV.inference.samplers.jester_sampler.SamplerOutput` with posterior samples, log-probabilities, and metadata. The base Pydantic schema is {class}`~jesterTOV.inference.config.schema.BaseSamplerConfig`.
+
+### Sequential Monte Carlo with random walk
+
+BlackJAX SMC with adaptive tempering and Gaussian Random Walk kernel. **Production-ready and recommended for most analyses.** For a detailed explanation of the algorithm, see {ref}`sampler-smc`. The Python class is {class}`~jesterTOV.inference.samplers.blackjax.smc.random_walk.BlackJAXSMCRandomWalkSampler`. The Pydantic config schema is {class}`~jesterTOV.inference.config.schema.SMCRandomWalkSamplerConfig`.
+
+::::{dropdown} **Sequential Monte Carlo with Random Walk Configuration**
+
+```yaml
+sampler:
+  type: "smc-rw"             # Sampler type identifier
+  output_dir: "./outdir/"    # Output directory for results
+  n_eos_samples: 10000       # Number of final posterior samples
+  log_prob_batch_size: 1000  # Batch size for log-probability evaluation
+
+  n_particles: 10000         # Number of SMC particles
+  n_mcmc_steps: 1            # MCMC steps per tempering stage
+  target_ess: 0.9            # Target effective sample size (ESS) fraction
+  random_walk_sigma: 1.0     # Gaussian random walk step size
+```
+
+**Field Details:**
+
+- **`n_particles`** (`int`, default: `10000`) - Number of particles for SMC
+- **`n_mcmc_steps`** (`int`, default: `1`) - MCMC rejuvenation steps per tempering stage
+- **`target_ess`** (`float`, default: `0.9`) - Target ESS fraction for adaptive tempering (0.0–1.0)
+- **`random_walk_sigma`** (`float`, default: `1.0`) - Step size for Gaussian random walk kernel
+
+**Output:**
+- Posterior samples with equal weights
+- Effective sample size (ESS) statistics per tempering stage
+
+**When to Use:**
+- General-purpose Bayesian inference (**recommended default**)
+- Fast inference on CPU or GPU
+- When derivative information is unavailable or expensive
+
+::::
+
+### Nested sampling (BlackJAX NS-AW)
+
+BlackJAX nested sampling with acceptance walk for Bayesian evidence estimation and posterior sampling. For a detailed explanation of the algorithm, see {ref}`sampler-nested`. The Python class is {class}`~jesterTOV.inference.samplers.blackjax.nested_sampling.acceptance_walk.BlackJAXNSAWSampler`. The Pydantic config schema is {class}`~jesterTOV.inference.config.schema.BlackJAXNSAWConfig`.
+
+::::{dropdown} **Nested Sampling (BlackJAX NS-AW) Configuration (type: "blackjax-ns-aw")**
+
+```yaml
+sampler:
+  type: "blackjax-ns-aw"     # Sampler type identifier
+  output_dir: "./outdir/"    # Output directory for results
+  n_eos_samples: 10000       # Number of final posterior samples
+  log_prob_batch_size: 1000  # Batch size for log-probability evaluation
+
+  n_live: 1000               # Number of live points
+  n_delete_frac: 0.5         # Fraction of live points to delete per iteration
+  n_target: 60               # Target number of MCMC steps
+  max_mcmc: 5000             # Maximum MCMC steps per iteration
+  max_proposals: 1000        # Maximum proposals per live point update
+  termination_dlogz: 0.1     # Termination criterion (log evidence uncertainty)
+```
+
+**Field Details:**
+
+- **`n_live`** (`int`, default: `1000`) - Number of live points for nested sampling
+- **`n_delete_frac`** (`float`, default: `0.5`) - Fraction of live points to delete per iteration
+- **`n_target`** (`int`, default: `60`) - Target number of MCMC steps for acceptance walk
+- **`max_mcmc`** (`int`, default: `5000`) - Maximum MCMC steps per iteration
+- **`max_proposals`** (`int`, default: `1000`) - Maximum proposal attempts per live point update
+- **`termination_dlogz`** (`float`, default: `0.1`) - Terminate when log-evidence uncertainty < this value
+
+**Output:**
+- Log-evidence (logZ) with uncertainty estimate
+- Posterior samples with importance weights (see {class}`~jesterTOV.inference.result.InferenceResult`)
+
+**When to Use:**
+- Model comparison requiring Bayesian evidence
+- Exploring multi-modal posteriors
+- When evidence estimation is the primary goal
+
+::::
 
 ### FlowMC (normalizing flow MCMC)
 
-Normalizing flow-enhanced MCMC combining local MCMC proposals with global normalizing flow proposals.
+Normalizing flow-enhanced MCMC combining local MCMC proposals with global normalizing flow proposals. For a detailed explanation of the algorithm, see {ref}`sampler-flowmc`. The Python class is {class}`~jesterTOV.inference.samplers.flowmc.FlowMCSampler`. The Pydantic config schema is {class}`~jesterTOV.inference.config.schema.FlowMCSamplerConfig`.
 
-::::{dropdown} **FlowMC (Normalizing Flow MCMC) Configuration (type: "flowmc")**
+::::{dropdown} **FlowMC (Normalizing Flow MCMC) Configuration**
 
 ```yaml
 sampler:
@@ -479,10 +681,10 @@ sampler:
 
 **Sampling Phases:**
 
-1. **Training Phase** - `n_loop_training` loops of:
+1. **Training Phase** — `n_loop_training` loops of:
    - `n_local_steps` MCMC steps using local proposals
    - Train normalizing flow for `n_epochs` on collected samples
-2. **Production Phase** - `n_loop_production` loops of:
+2. **Production Phase** — `n_loop_production` loops of:
    - `n_local_steps` MCMC steps using local proposals
    - `n_global_steps` using normalizing flow proposals
 
@@ -493,48 +695,15 @@ sampler:
 
 ::::
 
-### Sequential Monte Carlo with random walk
-
-BlackJAX SMC with adaptive tempering and Gaussian Random Walk kernel. **Production-ready and recommended for most analyses.**
-
-::::{dropdown} **Sequential Monte Carlo with Random Walk Configuration (type: "smc-rw")**
-
-```yaml
-sampler:
-  type: "smc-rw"             # Sampler type identifier
-  output_dir: "./outdir/"    # Output directory for results
-  n_eos_samples: 10000       # Number of final posterior samples
-  log_prob_batch_size: 1000  # Batch size for log-probability evaluation
-
-  n_particles: 10000         # Number of SMC particles
-  n_mcmc_steps: 1            # MCMC steps per tempering stage
-  target_ess: 0.9            # Target effective sample size (ESS) fraction
-  random_walk_sigma: 1.0     # Gaussian random walk step size
-```
-
-**Field Details:**
-
-- **`n_particles`** (`int`, default: `10000`) - Number of particles for SMC
-- **`n_mcmc_steps`** (`int`, default: `1`) - MCMC rejuvenation steps per tempering stage
-- **`target_ess`** (`float`, default: `0.9`) - Target ESS fraction for adaptive tempering (0.0-1.0)
-- **`random_walk_sigma`** (`float`, default: `1.0`) - Step size for Gaussian random walk kernel
-
-**Output:**
-- Posterior samples with equal weights
-- Effective sample size (ESS) statistics per tempering stage
-
-**When to Use:**
-- General-purpose Bayesian inference (**recommended default**)
-- Fast inference on CPU or GPU
-- When derivative information is unavailable or expensive
-
-::::
-
 ### Sequential Monte Carlo with NUTS
 
-BlackJAX SMC with adaptive tempering and No-U-Turn Sampler (NUTS) kernel. **EXPERIMENTAL - use with caution.**
+BlackJAX SMC with adaptive tempering and No-U-Turn Sampler (NUTS) kernel. **EXPERIMENTAL — use with caution.** For a detailed explanation of the SMC framework, see {ref}`sampler-smc`. The Python class is {class}`~jesterTOV.inference.samplers.blackjax.smc.nuts.BlackJAXSMCNUTSSampler`. The Pydantic config schema is {class}`~jesterTOV.inference.config.schema.SMCNUTSSamplerConfig`.
 
-::::{dropdown} **Sequential Monte Carlo with NUTS Configuration (type: "smc-nuts")**
+::::{dropdown} **Sequential Monte Carlo with NUTS Configuration**
+
+```{warning}
+This sampler is experimental and may produce unstable results, use at own risk. Use the SMC with a random walk sampler for stable production analyses.
+```
 
 ```yaml
 sampler:
@@ -567,52 +736,11 @@ sampler:
 - Effective sample size (ESS) statistics per tempering stage
 
 **When to Use:**
-- **EXPERIMENTAL** - Not recommended for production use
+- **EXPERIMENTAL** — not recommended for production use
 - High-dimensional posteriors where gradient information helps
 - When NUTS kernel stability can be verified
 
 **Warning:** This sampler is experimental. Use SMC Random Walk for production analyses.
-
-::::
-
-### Nested sampling (BlackJAX NS-AW)
-
-BlackJAX nested sampling with acceptance walk for Bayesian evidence estimation and posterior sampling.
-
-::::{dropdown} **Nested Sampling (BlackJAX NS-AW) Configuration (type: "blackjax-ns-aw")**
-
-```yaml
-sampler:
-  type: "blackjax-ns-aw"     # Sampler type identifier
-  output_dir: "./outdir/"    # Output directory for results
-  n_eos_samples: 10000       # Number of final posterior samples
-  log_prob_batch_size: 1000  # Batch size for log-probability evaluation
-
-  n_live: 1000               # Number of live points
-  n_delete_frac: 0.5         # Fraction of live points to delete per iteration
-  n_target: 60               # Target number of MCMC steps
-  max_mcmc: 5000             # Maximum MCMC steps per iteration
-  max_proposals: 1000        # Maximum proposals per live point update
-  termination_dlogz: 0.1     # Termination criterion (log evidence uncertainty)
-```
-
-**Field Details:**
-
-- **`n_live`** (`int`, default: `1000`) - Number of live points for nested sampling
-- **`n_delete_frac`** (`float`, default: `0.5`) - Fraction of live points to delete per iteration
-- **`n_target`** (`int`, default: `60`) - Target number of MCMC steps for acceptance walk
-- **`max_mcmc`** (`int`, default: `5000`) - Maximum MCMC steps per iteration
-- **`max_proposals`** (`int`, default: `1000`) - Maximum proposal attempts per live point update
-- **`termination_dlogz`** (`float`, default: `0.1`) - Terminate when log-evidence uncertainty < this value
-
-**Output:**
-- Log-evidence (logZ) with uncertainty estimate
-- Posterior samples with importance weights
-
-**When to Use:**
-- Model comparison requiring Bayesian evidence
-- Exploring multi-modal posteriors
-- When evidence estimation is primary goal
 
 ::::
 
@@ -646,7 +774,7 @@ data_paths:
 
 **Description:**
 
-The `data_paths` section allows overriding default data file locations. If omitted, JESTER uses built-in default paths from the package installation.
+The `data_paths` section allows overriding default data file locations. If omitted, JESTER uses built-in default paths from the package installation. Data path resolution is handled by the {mod}`jesterTOV.inference.data` module.
 
 ::::
 
@@ -654,7 +782,7 @@ The `data_paths` section allows overriding default data file locations. If omitt
 
 ## Postprocessing
 
-Configure automatic plot generation and posterior analysis after inference completes.
+Configure automatic plot generation and posterior analysis after inference completes. Results are stored in HDF5 format (see {class}`~jesterTOV.inference.result.InferenceResult`) and postprocessing reads directly from that file.
 
 ::::{dropdown} **Postprocessing configuration**
 
@@ -685,6 +813,8 @@ postprocessing:
 - **`prior_dir`** (`str | None`, default: `null`) - Directory containing prior samples for comparison
 - **`injection_eos_path`** (`str | None`, default: `null`) - Path to true EOS for injection studies
 
+The Pydantic schema is {class}`~jesterTOV.inference.config.schema.PostprocessingConfig`. For an example of how to read and inspect the output file, see {doc}`../examples/inference/result`. For the full API of all postprocessing functions, see {mod}`jesterTOV.inference.postprocessing`.
+
 ::::
 
 ---
@@ -693,7 +823,7 @@ postprocessing:
 
 ### Minimal configuration (prior-only)
 
-Sample from the prior distribution without observational constraints.
+A miniam config showing how to sample from the prior distribution without observational constraints.
 
 ::::{dropdown} **Minimal Configuration (Prior-Only)**
 
@@ -721,142 +851,13 @@ sampler:
 
 ::::
 
-### Multi-messenger configuration
+### Advanced multi-messenger configuration
 
-Combine gravitational wave, X-ray, radio, and nuclear theory constraints.
-
-::::{dropdown} **Multi-Messenger configuration**
-
-```yaml
-seed: 43
-
-eos:
-  type: "metamodel_cse"
-  nb_CSE: 8
-  ndat_metamodel: 100
-  nmax_nsat: 25.0
-
-tov:
-  type: "gr"
-  min_nsat_TOV: 0.75
-  ndat_TOV: 100
-  nb_masses: 100
-
-prior:
-  specification_file: "prior.prior"
-
-likelihoods:
-  - type: "gw"
-    enabled: true
-    parameters:
-      event_name: "GW170817"
-
-  - type: "nicer"
-    enabled: true
-    parameters:
-      targets: ["J0030", "J0740"]
-      analysis_groups: ["amsterdam", "maryland"]
-
-  - type: "radio"
-    enabled: true
-    parameters:
-      psr_name: "J0740+6620"
-      mass_mean: 2.08
-      mass_std: 0.07
-
-  - type: "chieft"
-    enabled: true
-
-sampler:
-  type: "smc-rw"
-  n_particles: 10000
-  n_mcmc_steps: 1
-  target_ess: 0.9
-  output_dir: "./outdir/"
-
-postprocessing:
-  enabled: true
-  make_cornerplot: true
-  make_massradius: true
-```
-
-::::
-
-### Spectral parametrization (LALSuite-compatible)
-
-Configuration using spectral decomposition for GW analysis workflows.
-
-::::{dropdown} **Spectral Parametrization (LALSuite-Compatible)**
-
-```yaml
-seed: 43
-
-eos:
-  type: "spectral"
-  crust_name: "SLy"               # Required for spectral
-  n_points_high: 500
-
-tov:
-  type: "gr"
-  min_nsat_TOV: 0.75
-  ndat_TOV: 100
-  nb_masses: 100
-
-prior:
-  specification_file: "spectral_prior.prior"
-
-likelihoods:
-  - type: "gw"
-    enabled: true
-    parameters:
-      event_name: "GW170817"
-
-  - type: "constraints_gamma"     # Recommended for spectral
-    enabled: true
-
-sampler:
-  type: "flowmc"
-  n_chains: 20
-  n_loop_training: 3
-  n_loop_production: 5
-  output_dir: "./outdir/"
-```
-
-::::
-
----
-
-## Validation rules
-
-The configuration is validated using Pydantic. Common validation errors:
-
-::::{dropdown} **Validation Rules Details**
-
-**EOS Type Consistency:**
-- `type: "metamodel"` requires `nb_CSE: 0` (or omit the field entirely)
-- `type: "metamodel_cse"` requires `nb_CSE > 0`
-- `type: "spectral"` requires:
-  - `crust_name: "SLy"` (LALSuite compatibility)
-  - `nb_CSE: 0` (or omit the field)
-  - Recommended: Include `constraints_gamma` likelihood
-
-**TOV Configuration:**
-- `type` must be `"gr"` or `"anisotropy"`
-- `min_nsat_TOV`, `ndat_TOV`, and `nb_masses` must be positive
-
-**Prior File:**
-- `specification_file` must end with `.prior` extension
-
-**Likelihood Requirements:**
-- At least one likelihood must have `enabled: true`
-
-**Positive Value Constraints:**
-- `n_chains`, `n_loop_training`, `n_loop_production` must be > 0
-- `learning_rate` must be in range (0, 1]
-- `n_particles`, `n_live` must be > 0
-
-**Crust Models:**
-- `crust_name` must be one of: `"DH"`, `"BPS"`, `"DH_fixed"`, or `"SLy"`
-- Spectral EOS specifically requires `"SLy"`
-
-::::
+Several full configurations are available in the `examples` directory in jester:
+* `examples/inference/anisotropy`: Using the metamodel+CSE equation of state and the anisotropy solver, with several of the likelihoods available.
+* `examples/inference/blackjax-ns-aw`: Examples of the nested sampler implemented in `blackjax`
+* `examples/inference/flowmc`: Examples of the flowMC sampler
+* `examples/inference/mm_peakcse`: Examples of the metamodel+CSE analysis
+* `examples/inference/smc_random_walk`: Examples of the SMC sampler with random walk kernel
+* `examples/inference/spectral`: Examples of the spectral EOS parameterization
+* `examples/inference/spectral_reparam`: Examples of the spectral EOS parameterization, after the reparametrization described in TODO: add the new docs page once it exists

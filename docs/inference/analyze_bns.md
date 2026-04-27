@@ -47,13 +47,13 @@ However, in case you suspect the settings are suboptimal and want to pass your o
     from_npz_file: path/to/npz/file.npz
     flow_config: path/to/flow_config.yaml
 ```
-<!-- TODO: make a nice, dedicated docs page for this -->
+
 This `flow_config.yaml` file should contain the settings necessary for `FlowTrainingConfig` (see `jester/jesterTOV/inference/flows/config.py`). 
+In case you want more information on how to train your own normalizing flows and gain more control on how this is done, check out {doc}`training_flows`.
 
 After the flow has been trained, the flow weights and some metadata is saved inside the specified output directory in a subdirectory called `gw_flow_cache/`. 
 **NOTE**: If you rerun the `jester` inference and no changes have been made to the flow settings, `jester` will load in the flow and *not* retrain the flow. If you wish to retrain the flow (e.g., if you changed the dataset), then you have to remove the directory containing the flow first. 
 
-<!-- TODO: this also needs the NF docs page -->
 Once a trained flow exists, you can easily re-use it in subsequent `jester` inferences by pointing to the NF model directory containing the weights and metadata to load it into `jester`.
 ```bash
 - type: gw
@@ -71,3 +71,4 @@ You can learn more about running the `jester` inference in the following pages:
 - {doc}`quickstart` — a step-by-step guide to running your first inference
 - {doc}`yaml_reference` — full reference for all configuration options
 - {doc}`workflow` — how the inference components connect and data flows through the system
+- {doc}`training_flows` — how to train your own normalizing flows

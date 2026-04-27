@@ -5,7 +5,11 @@
 This guide explains how to run Bayesian inference with ``jester`` using a simple configuration.
 As an example, we will run inference on the {ref}`metamodel + speed-of-sound extension (CSE) <eos-metamodel-cse>` EOS parametrization, using the {ref}`GR TOV solver <tov-gr>`, and sampling the parametrization with {ref}`sequential Monte Carlo <sampler-smc>`.
 To constrain the EOS, we will use the {ref}`chiral effective field theory (chiEFT) <likelihood-chieft>` likelihood.
-This inference is fast enough to be executed locally on a laptop, making it ideal for testing whether your installation works successfully and for getting familiar with running ``jester``!
+
+
+```{note}
+No GPU? No problem! This inference is fast enough to be executed locally on a laptop!
+```
 
 
 ## Running your first inference

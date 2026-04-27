@@ -164,8 +164,8 @@ Zenodo record 6513631).
 The GWTC-2.1 release provides two variants of the mixed posterior: ``cosmo`` applies
 cosmological corrections when converting to source-frame quantities (masses already in
 source frame), while ``nocosmo`` does not (masses converted from detector frame using
-the luminosity distance). For each variant, posteriors from two waveform models are
-included:
+the luminosity distance). For each variant, posteriors from IMRPhenomPv2_NRTidal with
+both low-spin and high-spin priors are included:
 
 .. list-table::
    :header-rows: 1
@@ -174,18 +174,18 @@ included:
    * - File
      - Waveform
      - Variant
-   * - ``gw190425_gwtc2p1_mixed_cosmo_imrphenomxp_nrtidalv2_posterior.npz``
-     - IMRPhenomXP_NRTidalv2
-     - cosmo
-   * - ``gw190425_gwtc2p1_mixed_cosmo_seobnrv4t_surrogate_posterior.npz``
-     - SEOBNRv4T_surrogate
-     - cosmo
-   * - ``gw190425_gwtc2p1_mixed_nocosmo_imrphenomxp_nrtidalv2_posterior.npz``
-     - IMRPhenomXP_NRTidalv2
-     - nocosmo
-   * - ``gw190425_gwtc2p1_mixed_nocosmo_seobnrv4t_surrogate_posterior.npz``
-     - SEOBNRv4T_surrogate
-     - nocosmo
+   * - ``gw190425_gwtc2p1_mixed_cosmo_imrphenompv2_nrtidal_highspin_posterior.npz``
+     - IMRPhenomPv2_NRTidal
+     - cosmo / high-spin
+   * - ``gw190425_gwtc2p1_mixed_cosmo_imrphenompv2_nrtidal_lowspin_posterior.npz``
+     - IMRPhenomPv2_NRTidal
+     - cosmo / low-spin
+   * - ``gw190425_gwtc2p1_mixed_nocosmo_imrphenompv2_nrtidal_highspin_posterior.npz``
+     - IMRPhenomPv2_NRTidal
+     - nocosmo / high-spin
+   * - ``gw190425_gwtc2p1_mixed_nocosmo_imrphenompv2_nrtidal_lowspin_posterior.npz``
+     - IMRPhenomPv2_NRTidal
+     - nocosmo / low-spin
 
 **Data sources:**
 
