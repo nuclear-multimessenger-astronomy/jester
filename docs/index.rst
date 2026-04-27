@@ -92,7 +92,6 @@ Contents
    examples/eos_tov/eos_tov
    examples/eos_tov/automatic_differentiation
    examples/eos_tov/eos_STtov
-   examples/inference/result
 
 .. toctree::
    :maxdepth: 2
@@ -102,6 +101,7 @@ Contents
    inference/yaml_reference
    inference/workflow
    inference/analyze_bns
+   examples/inference/result
 
 .. toctree::
    :maxdepth: 2

@@ -20,4 +20,6 @@ Submodules
    jesterTOV.inference.likelihoods
    jesterTOV.inference.transforms
    jesterTOV.inference.samplers
+   jesterTOV.inference.flows
    jesterTOV.inference.result
+   jesterTOV.inference.postprocessing

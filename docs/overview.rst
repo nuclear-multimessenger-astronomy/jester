@@ -35,20 +35,20 @@ flowMC (GitHub): Normalizing flow-enhanced MCMC sampling
 
    :doc:`overview/tov_solvers`
 
-**Samplers**
-   Bayesian sampling methods for EOS inference.
-
-   :doc:`overview/samplers`
-
 **Likelihood Constraints**
    Observational constraints from multi-messenger astronomy.
 
    :doc:`overview/likelihoods`
+
+**Samplers**
+   Bayesian sampling methods for EOS inference.
+
+   :doc:`overview/samplers`
 
 .. toctree::
    :hidden:
 
    overview/eos
    overview/tov_solvers
-   overview/samplers
    overview/likelihoods
+   overview/samplers

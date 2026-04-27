@@ -131,7 +131,7 @@ For details on loading and analyzing results, see the {class}`~jesterTOV.inferen
 - ``smc_diagnostics.png``: Shows the behavior of the SMC sampler during inference.
 - ``mass_radius_plot.pdf``: Displays the mass-radius curves corresponding to the posterior EOS samples, color-coded according to the magnitude of their posterior (log-)probability.
 
-<!-- TODO: refer readers to postprocessing API NOTE: This postprocessing API reference does not exist yet and should be made first! -->
+For a full walkthrough of how to load the HDF5 result file and analyze the posterior samples, see {doc}`../examples/inference/result`.
 
 At this point, you should have successfully run your first ``jester`` inference. If you encountered any errors, please raise an issue on GitHub explaining the problem so we can fix the source code and/or this documentation.
 
