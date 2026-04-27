@@ -108,6 +108,7 @@ Contents
    inference/yaml_reference
    inference/workflow
    inference/analyze_bns
+   inference/training_flows
    examples/inference/result
 
 .. toctree::
