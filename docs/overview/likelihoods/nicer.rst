@@ -19,7 +19,6 @@ JESTER currently supports four pulsars observed by NICER:
 * **PSR J0437-4715**
 * **PSR J0614-3329**
 * **PSR J0740+6620**
-  analyses (Miller et al. 2021); NICER+XMM-Newton data.
 
 The figure below shows the mass-radius posteriors for one representative analysis
 per pulsar, with filled contours at the 68% and 90% credible intervals. 
