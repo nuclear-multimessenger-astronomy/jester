@@ -30,6 +30,8 @@ This file provides guidance to Claude Code when working with the JESTER reposito
 
 **Backwards compatibility**: There has not been a release yet, so don't worry about breaking changes for now. Focus on code quality, testing, and documentation over supporting legacy APIs!
 
+**Postprocessing plots**: Every `make_*` plot call in `generate_all_plots` (`jesterTOV/inference/postprocessing/postprocessing.py`) must be wrapped in a `try/except Exception` block so that a missing LaTeX installation or any other rendering failure does not abort the full postprocessing run. See `jesterTOV/inference/CLAUDE.md` for the required pattern. LaTeX availability is checked with `shutil.which("latex")` in `setup_matplotlib` and TeX rendering is disabled globally when it is absent.
+
 **Extending JESTER**: When users mention working on adding new components, refer them to the relevant developer guide:
 - **Adding a new EOS model**: See `docs/developer_guide/adding_new_eos.md` for complete checklist (EOS class, schema updates, factory registration, tests, documentation)
 - **Adding a new TOV solver**: See `docs/developer_guide/adding_new_tov.md` for complete checklist (solver class, schema updates, factory registration, tests, documentation)
