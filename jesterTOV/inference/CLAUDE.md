@@ -6,6 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - You do not know everything about samplers. Instead of just doing something that "seems right", please ask more information about samplers and best practices. We can provide src code. *Better to ask for help than to make wrong assumptions and write sloppy code!*
 - **blackjax**: For this, the src code is available at `/Users/Woute029/Documents/Code/projects/jester_review/blackjax`: use this to understand how to properly use blackjax samplers and best practices!
+- **Postprocessing plot functions**: Every `make_*` plot function call in `generate_all_plots` (in `postprocessing/postprocessing.py`) **must** be wrapped in a `try/except Exception` block that logs the error and continues. This ensures a missing LaTeX installation or any other rendering failure does not abort the entire postprocessing run. The pattern is:
+  ```python
+  try:
+      make_my_plot(...)
+  except Exception as e:
+      logger.error(f"Failed to create my plot: {e}")
+      logger.warning("Continuing with other plots...")
+  ```
 
 ## Module Overview
 

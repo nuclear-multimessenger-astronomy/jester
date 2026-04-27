@@ -10,6 +10,7 @@ Usage::
 """
 
 import re
+import shutil
 import sys
 import os
 import warnings
@@ -48,24 +49,30 @@ def setup_matplotlib(use_tex: bool = True) -> bool:
     """
     tex_enabled = False
     if use_tex:
-        try:
-            plt.rcParams.update(
-                {
-                    "text.usetex": True,
-                    "font.family": "serif",
-                    "font.serif": ["Computer Modern Serif"],
-                }
-            )
-            fig, ax = plt.subplots()
-            ax.text(0.5, 0.5, r"$\alpha$")
-            plt.close(fig)
-            tex_enabled = True
-            logger.info("TeX rendering enabled")
-        except Exception as e:
+        if shutil.which("latex") is None:
             warnings.warn(
-                f"TeX rendering failed ({e}). Falling back to non-TeX rendering."
+                "latex binary not found on PATH. Falling back to non-TeX rendering."
             )
             plt.rcParams.update({"text.usetex": False, "font.family": "sans-serif"})
+        else:
+            try:
+                plt.rcParams.update(
+                    {
+                        "text.usetex": True,
+                        "font.family": "serif",
+                        "font.serif": ["Computer Modern Serif"],
+                    }
+                )
+                fig, _ = plt.subplots()
+                fig.canvas.draw()
+                plt.close(fig)
+                tex_enabled = True
+                logger.info("TeX rendering enabled")
+            except Exception as e:
+                warnings.warn(
+                    f"TeX rendering failed ({e}). Falling back to non-TeX rendering."
+                )
+                plt.rcParams.update({"text.usetex": False, "font.family": "sans-serif"})
 
     plt.rcParams.update(
         {
@@ -1563,33 +1570,67 @@ def generate_all_plots(
             logger.warning("Continuing with other plots...")
 
     if make_massradius_flag:
-        make_mass_radius_plot(
-            data, prior_data, figures_dir, injection_data=injection_data
-        )
+        try:
+            make_mass_radius_plot(
+                data, prior_data, figures_dir, injection_data=injection_data
+            )
+        except Exception as e:
+            logger.error(f"Failed to create mass-radius plot: {e}")
+            logger.warning("Continuing with other plots...")
 
     if make_masslambda_flag:
-        make_mass_lambda_plot(
-            data, prior_data, figures_dir, injection_data=injection_data
-        )
+        try:
+            make_mass_lambda_plot(
+                data, prior_data, figures_dir, injection_data=injection_data
+            )
+        except Exception as e:
+            logger.error(f"Failed to create mass-Lambda plot: {e}")
+            logger.warning("Continuing with other plots...")
         if injection_data is not None:
-            make_mass_lambda_ratio_plot(data, figures_dir, injection_data)
+            try:
+                make_mass_lambda_ratio_plot(data, figures_dir, injection_data)
+            except Exception as e:
+                logger.error(f"Failed to create mass-Lambda ratio plot: {e}")
+                logger.warning("Continuing with other plots...")
 
     if make_pressuredensity_flag:
-        make_pressure_density_plot(
-            data, prior_data, figures_dir, injection_data=injection_data
-        )
+        try:
+            make_pressure_density_plot(
+                data, prior_data, figures_dir, injection_data=injection_data
+            )
+        except Exception as e:
+            logger.error(f"Failed to create pressure-density plot: {e}")
+            logger.warning("Continuing with other plots...")
 
     if make_histograms_flag:
-        make_parameter_histograms(data, figures_dir, injection_data=injection_data)
+        try:
+            make_parameter_histograms(data, figures_dir, injection_data=injection_data)
+        except Exception as e:
+            logger.error(f"Failed to create parameter histograms: {e}")
+            logger.warning("Continuing with other plots...")
 
     if make_cs2_flag:
-        make_cs2_plot(data, prior_data, figures_dir, injection_data=injection_data)
+        try:
+            make_cs2_plot(data, prior_data, figures_dir, injection_data=injection_data)
+        except Exception as e:
+            logger.error(f"Failed to create cs2 plot: {e}")
+            logger.warning("Continuing with other plots...")
 
     if make_contours_flag:
-        make_contour_radii_plot(data, prior_data, figures_dir)
-        make_contour_pressures_plot(data, figures_dir)
+        try:
+            make_contour_radii_plot(data, prior_data, figures_dir)
+        except Exception as e:
+            logger.error(f"Failed to create radii contour plot: {e}")
+            logger.warning("Continuing with other plots...")
+        try:
+            make_contour_pressures_plot(data, figures_dir)
+        except Exception as e:
+            logger.error(f"Failed to create pressures contour plot: {e}")
+            logger.warning("Continuing with other plots...")
 
-    logger.info(f"All plots generated and saved to {figures_dir}")
+    logger.info(
+        f"All plotting scripts executed and generated plots saved to {figures_dir}"
+    )
 
 
 def run_from_config(config_path: str) -> None:
