@@ -15,6 +15,12 @@ What's in ``jester``?
 ``jester`` combines flexible EOS parametrizations with GPU-accelerated TOV solvers and modern Bayesian samplers.
 See the :doc:`overview/` guide for detailed explanations about what is implemented in the code.
 
+.. image:: https://colab.research.google.com/assets/colab-badge.svg
+   :target: https://colab.research.google.com/github/nuclear-multimessenger-astronomy/jester/blob/main/examples/google_colab/GW170817_Google_Colab.ipynb
+   :alt: Open In Colab
+
+Try ``jester`` right away in your browser — no installation required!
+
 .. grid:: 2
     :class-container: component-grid
 
