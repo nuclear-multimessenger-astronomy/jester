@@ -15,15 +15,26 @@ an imprint on the gravitational waveform. The tidal deformability
 depends sensitively on the equation of state through both the radius :math:`R` and the
 Love number :math:`k_2`.
 
-JESTER currently supports two confirmed BNS events from the LIGO–Virgo catalogue:
+JESTER currently supports two confirmed BNS events from the LIGO-Virgo catalogue:
 
-* **GW170817** — the first BNS merger, detected on 17 August 2017 (Abbott et al. 2017).
+.. TODO: put proper citations here
+
+* **GW170817** — the first BNS merger (Abbott et al. 2017).
   Multiple posterior datasets are available covering both GWTC-1 and updated analyses,
-  with low-spin and high-spin prior choices.
-* **GW190425** — the second BNS event, detected on 25 April 2019 (Abbott et al. 2020).
-  Several waveform models are supported (IMRPhenomPNRT, IMRPhenomDNRT, TaylorF2).
+  with low-spin and high-spin prior choices, as well as a posterior from the
+  IMRPhenomXP_NRTidalv3 waveform model (Wouters et al. 2025).
+* **GW190425** — the second BNS event (Abbott et al. 2020).
+  Several waveform models are supported (IMRPhenomPNRT, IMRPhenomDNRT, TaylorF2,
+  IMRPhenomXP_NRTidalv3).
 
-For each event, JESTER trains a normalizing flow on the GW posterior samples.
+Posterior samples for both events are stored as compressed NumPy archives (``.npz``) under
+``jesterTOV/inference/data/``. Each file contains the four parameters required by
+the likelihood: ``mass_1_source``, ``mass_2_source``, ``lambda_1``, and ``lambda_2``,
+all in source frame (solar masses for masses, dimensionless for tidal deformabilities),
+together with a ``metadata`` dictionary recording the data source, waveform model, and
+sample count.
+
+For each dataset, JESTER has a trained normalizing flow on the GW posterior samples.
 The flow learns the joint density over component source-frame masses and tidal
 deformabilities :math:`(m_1, m_2, \Lambda_1, \Lambda_2)`, and
 :class:`~jesterTOV.inference.likelihoods.gw.GWLikelihood` evaluates the EOS
@@ -36,6 +47,64 @@ how faithfully the flow captures the posterior.
 GW170817
 --------
 
+The processed files live in ``jesterTOV/inference/data/gw170817/``. Five posterior sets
+are included, drawn from two LIGO data releases and one independent analysis:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 40 20 15 15 10
+
+   * - File
+     - Release
+     - Waveform
+     - Spin prior
+     - Samples
+   * - ``gw170817_low_spin_posterior.npz``
+     - P1800061
+     - IMRPhenomPNRT
+     - low (:math:`|\chi| \leq 0.05`)
+     - 3,952
+   * - ``gw170817_high_spin_posterior.npz``
+     - P1800061
+     - IMRPhenomPNRT
+     - high (:math:`|\chi| \leq 0.89`)
+     - 9,117
+   * - ``gw170817_gwtc1_lowspin_posterior.npz``
+     - P1800370 (GWTC-1)
+     - IMRPhenomPv2NRT
+     - low (:math:`|\chi| \leq 0.05`)
+     - 8,078
+   * - ``gw170817_gwtc1_highspin_posterior.npz``
+     - P1800370 (GWTC-1)
+     - IMRPhenomPv2NRT
+     - high
+     - 4,041
+   * - ``gw170817_xp_nrtv3.npz``
+     - Wouters et al. (2025)
+     - IMRPhenomXP_NRTidalv3
+     - low
+     - 23,138
+
+**Data sources:**
+
+* P1800061 — `<https://dcc.ligo.org/LIGO-P1800061/public>`_
+* P1800370 (GWTC-1) — `<https://dcc.ligo.org/LIGO-P1800370/public>`_
+* Wouters et al. (2025) — `<https://github.com/ThibeauWouters/neural_priors/tree/main/final_results/GW170817/bns/default>`_
+
+**Download script:** ``jesterTOV/inference/data/gw170817/download_gw170817.py``
+
+The script downloads the raw ``.dat.gz`` and ``.hdf5`` files from the LIGO Document Control
+Center, converts detector-frame masses to source frame using
+``bilby.gw.conversion.luminosity_distance_to_redshift``, and saves the four-parameter
+excerpts as ``.npz`` archives. Run it with:
+
+.. code-block:: bash
+
+   uv run python jesterTOV/inference/data/gw170817/download_gw170817.py
+
+
+Below, we show the extracted posterior samples on the source-frame masses and tidal deformabilities for the GWTC-1 posterior (data) and samples generated from the normalizing flow trained on these samples. 
+
 .. plot:: overview/likelihoods/gw_corner_gw170817.py
 
    Corner plot for GW170817 (GWTC-1, low-spin prior). Blue shows the original
@@ -46,6 +115,60 @@ GW170817
 GW190425
 --------
 
+The processed files live in ``jesterTOV/inference/data/gw190425/``. Seven posterior sets
+are provided, covering three waveform models and two spin-prior choices each, plus one
+additional posterior from IMRPhenomXP_NRTidalv3:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 42 25 18 15
+
+   * - File
+     - Waveform
+     - Spin prior
+     - Samples
+   * - ``gw190425_phenompnrt-ls_posterior.npz``
+     - IMRPhenomPNRT
+     - low spin
+     - 3,537
+   * - ``gw190425_phenompnrt-hs_posterior.npz``
+     - IMRPhenomPNRT
+     - high spin
+     - 21,673
+   * - ``gw190425_phenomdnrt-ls_posterior.npz``
+     - IMRPhenomDNRT
+     - low spin
+     - 5,778
+   * - ``gw190425_phenomdnrt-hs_posterior.npz``
+     - IMRPhenomDNRT
+     - high spin
+     - 8,676
+   * - ``gw190425_taylorf2-ls_posterior.npz``
+     - TaylorF2
+     - low spin
+     - 11,739
+   * - ``gw190425_taylorf2-hs_posterior.npz``
+     - TaylorF2
+     - high spin
+     - 16,464
+   * - ``gw190425_xp_nrtv3.npz``
+     - IMRPhenomXP_NRTidalv3
+     - low
+     - 25,715
+
+**Data sources:**
+
+* P2000026 — `<https://dcc.ligo.org/LIGO-P2000026/public>`_
+* Wouters et al. (2025) — `<https://github.com/ThibeauWouters/neural_priors/tree/main/final_results/GW190425/bns/default>`_
+
+**Download script:** ``jesterTOV/inference/data/gw190425/download_gw190425.py``
+
+Run it with:
+
+.. code-block:: bash
+
+   uv run python jesterTOV/inference/data/gw190425/download_gw190425.py
+
 .. plot:: overview/likelihoods/gw_corner_gw190425.py
 
    Corner plot for GW190425 (IMRPhenomPNRT, low-spin prior). Blue shows the
@@ -54,15 +177,21 @@ GW190425
 
 ----
 
-[Placeholder: The sections below are still to be written.]
+Loading the data
+^^^^^^^^^^^^^^^^
 
-This page will cover:
+Each ``.npz`` file can be loaded directly:
 
-* Tidal deformability measurement methodology and waveform models
-* Details of each supported event and posterior dataset
-* How posterior samples are stored and loaded (``data/gw170817/``, ``data/gw190425/``)
-* The normalizing-flow likelihood implementation (:class:`~jesterTOV.inference.likelihoods.gw.GWLikelihood`)
-* The resampling variant (:class:`~jesterTOV.inference.likelihoods.gw.GWLikelihoodResampled`)
-* Configuration in YAML files
-* Usage examples
-* References
+.. code-block:: python
+
+   import numpy as np
+
+   data = np.load("gw170817/gw170817_low_spin_posterior.npz", allow_pickle=True)
+   mass_1 = data["mass_1_source"]   # shape: (n_samples,), solar masses
+   mass_2 = data["mass_2_source"]
+   lambda_1 = data["lambda_1"]      # dimensionless
+   lambda_2 = data["lambda_2"]
+   meta = data["metadata"].item()   # dict: event, waveform_model, n_samples, …
+
+In normal usage you do not need to load the data manually. The likelihood classes
+handle the loading of the trained normalizing flow automatically when you configure the event in your YAML file -- the posterior samples are stored for reproducibility and convenience for the user. 
