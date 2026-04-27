@@ -1,11 +1,11 @@
 .. _likelihood-gw:
 
-Gravitational Wave Constraints
-===============================
+Gravitational wave constraints from binary neutron star mergers
+=================================================================
 
 .. note::
 
-   This page is a placeholder. The detailed content below is to be written soon.
+   Running some of the scripts mentioned here require an installation of ``bilby`` to convert masses to source frame. This is an optional dependency that is not listed in the JESTER repo, so you may need to install it manually with ``uv pip install bilby`` or ``uv sync --extra bilby`` in your environment.
 
 Binary neutron star (BNS) mergers observed with gravitational waves provide direct
 constraints on tidal deformability. During the inspiral phase, each neutron star is
@@ -210,21 +210,9 @@ by the ``DOWNLOAD_GWTC2P1`` constant at the top). Run it with:
 
 ----
 
-Loading the data
-^^^^^^^^^^^^^^^^
+.. admonition:: Current scope: BNS only
+   :class: important
 
-Each ``.npz`` file can be loaded directly:
-
-.. code-block:: python
-
-   import numpy as np
-
-   data = np.load("gw170817/gw170817_low_spin_posterior.npz", allow_pickle=True)
-   mass_1 = data["mass_1_source"]   # shape: (n_samples,), solar masses
-   mass_2 = data["mass_2_source"]
-   lambda_1 = data["lambda_1"]      # dimensionless
-   lambda_2 = data["lambda_2"]
-   meta = data["metadata"].item()   # dict: event, waveform_model, n_samples, …
-
-In normal usage you do not need to load the data manually. The likelihood classes
-handle the loading of the trained normalizing flow automatically when you configure the event in your YAML file -- the posterior samples are stored for reproducibility and convenience for the user. 
+   JESTER currently provides normalizing flows only for **binary neutron star (BNS)**
+   events (GW170817 and GW190425). While neutron star-black hole (NSBH) mergers such a also carry tidal information,
+   they are usually quite uninformative when it comes to the tidal posteriors. Such events are not supported yet, but might be in a future update.
