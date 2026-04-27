@@ -64,6 +64,7 @@ def setup_matplotlib(use_tex: bool = True) -> bool:
                     }
                 )
                 fig, _ = plt.subplots()
+                fig.text(0.5, 0.5, r"$x$")
                 fig.canvas.draw()
                 plt.close(fig)
                 tex_enabled = True
