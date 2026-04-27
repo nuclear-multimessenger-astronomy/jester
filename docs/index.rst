@@ -60,16 +60,16 @@ which prevents publishing to PyPI. Install the latest version by cloning the rep
 
     git clone https://github.com/nuclear-multimessenger-astronomy/jester
     cd jester
-    uv sync
+    uv pip install -e .             # Basic install for the core functionality (CPU-only)
 
 Extra dependencies can be installed as follows::
 
-    uv pip install -e
     uv pip install -e ".[cuda12]"   # For GPU support (fast sampling)
     uv pip install -e ".[dev]"      # For developers (work on documentation, run tests,...)
 
 Or using ``uv`` also as follows::
 
+    uv sync
     uv sync --extra cuda12   # For GPU support (fast sampling)
     uv sync --extra dev      # For developers (work on documentation, run tests,...)
 
@@ -77,9 +77,7 @@ To run Bayesian inference, make sure to install support for CUDA or upgrade ``ja
 `jax documentation page <https://docs.jax.dev/en/latest/installation.html>`_.
 This should work fine by specifying the appropriate extra (``.[cuda12]``) when installing with ``uv``.
 
-.. TODO: make the FAQ docs page?
-
-Having trouble running on the GPU? Check out the FAQ page here: 
+Having trouble? Check out the :doc:`developer_guide/faq`.
 
 
 Contents
@@ -122,6 +120,7 @@ Contents
    :maxdepth: 2
    :caption: Developer guide
 
+   developer_guide/faq
    developer_guide/adding_new_eos
    developer_guide/adding_new_tov
    developer_guide/adding_new_likelihood

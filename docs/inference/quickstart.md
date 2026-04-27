@@ -114,7 +114,9 @@ From the directory containing the two files specified above, the inference can b
 run_jester_inference config.yaml
 ```
 
-Note: This command is only recognized after activating the environment where `jester` was installed.
+```{note}
+This command is only recognized after activating the environment where `jester` was installed. If you have trouble, try using ``uv run run_jester_inference config.yaml`` to ensure the Python installation of the ``jester`` virtual environment is used.
+```
 
 ## Result
 

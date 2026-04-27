@@ -1,6 +1,6 @@
 .. _likelihood-nicer:
 
-NICER Constraints
+NICER constraints
 =================
 
 .. note::
@@ -15,19 +15,19 @@ equation-of-state inference.
 
 JESTER currently supports four pulsars observed by NICER:
 
-* **PSR J0030+0451** — multiple hotspot models from Amsterdam (Riley et al. 2019) and
-  Maryland (Miller et al. 2019) groups; NICER-only data.
-* **PSR J0437-4715** — Amsterdam CST+PDT analysis (Choudhury et al. 2024); NICER-only data.
-* **PSR J0614-3329** — Amsterdam ST+PDT analysis (Dittmann et al. 2025); NICER-only data.
-* **PSR J0740+6620** — Amsterdam gamma analysis (Salmi et al. 2024) and Maryland
+* **PSR J0030+0451**
+* **PSR J0437-4715**
+* **PSR J0614-3329**
+* **PSR J0740+6620**
   analyses (Miller et al. 2021); NICER+XMM-Newton data.
 
-The figure below shows the mass–radius posteriors for one representative analysis
-per pulsar, with filled contours at the 68% and 90% credible intervals.
+The figure below shows the mass-radius posteriors for one representative analysis
+per pulsar, with filled contours at the 68% and 90% credible intervals. 
+Below, we provide more details on the datasets that are available for each pulsar.
 
 .. plot:: overview/likelihoods/nicer_mr_plot.py
 
-   Mass–radius posteriors from NICER for the four supported pulsars.
+   Mass-radius posteriors from NICER for the four supported pulsars.
    Filled contours show the 68% (darker) and 90% (lighter) credible intervals
    from kernel density estimation of the published posterior samples.
    One representative analysis is plotted per pulsar.
