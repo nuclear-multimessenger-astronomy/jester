@@ -134,27 +134,27 @@ Zenodo record 6513631).
    * - ``gw190425_phenompnrt-ls_posterior.npz``
      - IMRPhenomPNRT
      - low spin
-     - 3,537
+     - 46,709
    * - ``gw190425_phenompnrt-hs_posterior.npz``
      - IMRPhenomPNRT
      - high spin
-     - 21,673
+     - 226,598
    * - ``gw190425_phenomdnrt-ls_posterior.npz``
      - IMRPhenomDNRT
      - low spin
-     - 5,778
+     - 53,945
    * - ``gw190425_phenomdnrt-hs_posterior.npz``
      - IMRPhenomDNRT
      - high spin
-     - 8,676
+     - 58,713
    * - ``gw190425_taylorf2-ls_posterior.npz``
      - TaylorF2
      - low spin
-     - 11,739
+     - 23,364
    * - ``gw190425_taylorf2-hs_posterior.npz``
      - TaylorF2
      - high spin
-     - 16,464
+     - 28,025
    * - ``gw190425_xp_nrtv3.npz``
      - IMRPhenomXP_NRTidalv3
      - low
