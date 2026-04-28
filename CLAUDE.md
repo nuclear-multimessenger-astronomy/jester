@@ -308,11 +308,18 @@ uv run pytest tests/
 
 **CI/CD Configuration**:
 - **Regular CI** (`.github/workflows/ci.yml`): Runs on every PR, skips `@slow` tests
-- **Nightly CI** (`.github/workflows/nightly.yml`): Runs daily at 2 AM UTC, includes all E2E tests
+- **Nightly CI** (`.github/workflows/nightly.yml`): Runs daily at 2 AM UTC, includes all E2E tests and executes all Jupyter notebooks under `docs/examples/` (via `notebooks` job)
+
+**Jupyter Notebooks** (`docs/examples/`):
+- All `docs/examples/**/*.ipynb` notebooks are executed nightly by the `notebooks` CI job
+- They also render into the documentation website via `nbsphinx`
+- Add new notebooks here to showcase basic functionality; they are picked up automatically
+- See `CONTRIBUTING.md` → "Jupyter Notebooks" for the full workflow
 
 **CI/CD Test Dependencies**:
 - LaTeX packages (texlive-latex-base, texlive-latex-extra, dvipng, cm-super) for matplotlib plotting tests
 - IPython (added to `[tests]` dependencies) required by fastprogress (BlackJAX transitive dependency)
+- `pandoc` installed in the `notebooks` CI job (required by `nbsphinx`/`nbconvert`)
 
 ## Code Quality Standards
 
