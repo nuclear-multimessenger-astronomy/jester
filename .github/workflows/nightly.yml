@@ -1,4 +1,4 @@
-name: Nightly E2E Tests
+name: Nightly CI
 
 on:
   schedule:
@@ -42,3 +42,46 @@ jobs:
     - name: Run full test suite with slow tests
       run: |
         uv run pytest tests/ -v --timeout=600
+
+  notebooks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v6
+      with:
+        python-version: "3.12"
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v4
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pandoc
+
+    - name: Install dependencies
+      run: |
+        uv sync --frozen --extra dev
+
+    - name: Execute notebooks
+      run: |
+        shopt -s globstar
+        notebooks=(docs/examples/**/*.ipynb)
+        for nb in "${notebooks[@]}"; do
+          echo "Executing $nb"
+          uv run jupyter nbconvert --to notebook --execute "$nb" \
+            --output "$(basename $nb .ipynb)_executed.ipynb" \
+            --output-dir /tmp/executed_notebooks \
+            --ExecutePreprocessor.timeout=600
+        done
+
+    - name: Upload executed notebooks
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: executed-notebooks
+        path: /tmp/executed_notebooks/
