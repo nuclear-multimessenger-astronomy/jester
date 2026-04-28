@@ -22,7 +22,7 @@ uv pip install -e ".[cuda12]"
 
 For more help, check out the [official JAX installation guide](https://docs.jax.dev/en/latest/installation.html). 
 
-### Sampling is slow even with a GPU installed
+### Sampling is slow even with CUDA libraries installed
 
 Even with the necessary CUDA libraries installed, JAX might sometimes struggle to detect the presence of the GPU, so that additional debugging steps need to be done. 
 When running the inference workflow, the main function of ``run_inference.py`` (which orchestrates the inference pipeline) prints the following jax function call::
@@ -44,6 +44,10 @@ In case the GPU is not found, jax will show an error/warning (but not exit the p
 ```bash
     [INFO] jester: JAX devices: [CpuDevice(id=0)]
 ```
+
+### Should I be using gradient-based samplers?
+
+In our experience, we have found that samplers that do not use gradient information, such as the sequential Monte Carlo sampler using random walk MCMC moves, give reliable and robust posteriors, and when ran on high-end GPUs, can finish sampling in a matter of minutes. Gradient-based samplers might introduce additional overhead in the `jit` compilation phase, as well as have more computationally expensive sampling steps, which might only be worth it for a select few EOS and TOV configurations. We recommend starting with the default non-gradient samplers, and only switching to gradient-based samplers if you have a specific reason to do so (e.g., you are using a very high-dimensional parameter space, or you have a very complex posterior geometry that benefits from gradient information), and leave it up to the user to experiment with different samplers and configurations to find the best fit for their specific use case.
 
 ---
 

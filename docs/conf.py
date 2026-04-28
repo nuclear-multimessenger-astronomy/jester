@@ -132,6 +132,7 @@ suppress_warnings = [
     "sphinx_autodoc_typehints.forward_reference",  # Suppress forward reference warnings
     "sphinx_autodoc_typehints.guarded_import",  # Suppress guarded import warnings
     "bibtex.duplicate_label",  # Per-page bibliographies share keys across pages; labels are correct
+    "bibtex.missing_field",  # arXiv preprints legitimately lack journal fields
 ]
 
 # -- Nitpicky mode configuration ---------------------------------------------
