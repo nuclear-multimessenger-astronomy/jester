@@ -59,9 +59,17 @@ Installation
 =============
 
 ``jester`` depends on a `specific fork of blackjax <https://github.com/handley-lab/blackjax>`_ for nested sampling support,
-which prevents publishing to PyPI. Install the latest version by cloning the repository::
+which prevents publishing to PyPI. Instead, install the latest version by cloning the repository::
 
     git clone https://github.com/nuclear-multimessenger-astronomy/jester
+
+We recommend using ``uv`` for managing the Python environment and installing the package. Once ``uv`` is installed, create a virtual environment e.g. as follows::
+
+   uv venv --python=3.12            # Specify the Python version, if desired (optional)
+   source .venv/bin/activate        # Activate the virtual environment to access the installed dependencies 
+
+The package can then be installed directly or in editable mode in case you want to modify the code or contribute to the development of ``jester``::
+
     cd jester
     uv pip install -e .             # Basic install for the core functionality (CPU-only)
 
@@ -128,7 +136,13 @@ Contents
    developer_guide/adding_new_tov
    developer_guide/adding_new_likelihood
    developer_guide/documentation_guide
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Miscellaneous
+
    citing
+   acknowledgements
 
 Indices and tables
 ==================

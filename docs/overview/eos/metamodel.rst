@@ -1,5 +1,3 @@
-.. TODO: change the f_3^* notation to f_1^{***} et cetera for f_1^*, f_1^**, f_1^***
-
 .. _eos-metamodel:
 
 Metamodel
@@ -67,6 +65,21 @@ In practice, the expansion parameter is :math:`x`, defined as:
 
 This Taylor expansion introduces the nuclear empirical parameters (NEPs) as the coefficients of the expansion, which are related to physical properties of nuclear matter at saturation density.
 Using these definitions, most equations and metamodel source code is written as function of :math:`x` and :math:`\delta` instead of :math:`n_0` and :math:`n_1`, as this makes the equations more compact and easier to read.
+Note that this implies that 
+
+.. math::
+   :label: n_over_nsat
+   
+   \frac{n}{n_{\rm{sat}}} = 1 + 3x
+
+Which is a useful relation to have when deriving the equations below. Moreover, we can also easily see that
+
+.. math::
+   :label: delta_proton_fraction
+   
+   \delta = 1 - 2 Y_p
+
+where :math:`Y_p` is the proton fraction, defined as :math:`Y_p = n_p/n`.
 
 The Taylor expansions in the original metamodel paper are given by:
 
@@ -98,42 +111,28 @@ The kinetic energy per nucleon is then given by:
 .. math::
    :label: kinetic_energy
 
-   t^{\rm{FG}}(n, \delta) = \frac{t_{\rm{sat}}^{\rm{FG}}}{2} \left( \frac{n}{n_{\rm{sat}}} \right)^{2/3} \left[ \left( 1 + \kappa_{\rm{sat}} \frac{n}{n_{\rm{sat}}} \right) f_1(\delta) + + \kappa_{\rm{sym}} \frac{n}{n_{\rm{sat}}} f_2(\delta) \right]
+   t_0(x, \delta) = \frac{t_{\rm{sat}}}{2} (1+3x)^{2/3} \big[ f^{\rm{FG}}(\delta) &+ (1+3x) f^*(\delta) \\
+   &+ (1+3x)^2 f^{**}(\delta) + (1+3x)^3 f^{***}(\delta) \big]
 
-where the constant :math:`t_{\rm{sat}}^{\rm{FG}}` is defined as
-
-.. math::
-   :label: t_sat_FG
-
-   t_{\rm{sat}}^{\rm{FG}} = \frac{3 \hbar^2}{10m} \left( \tfrac{3}{2} \pi^2 n_{\rm{sat}} \right)^{2/3}
-
-:math:`m` is the nucleonic mass, and the functions :math:`f_1`, :math:`f_2` are defined as:
+where the constant :math:`t_{\rm{sat}}` is defined as
 
 .. math::
-   :label: f_1_and_f_2
+   :label: t_sat
 
-   f_1(\delta) &= (1 + \delta)^{5/3} + (1 - \delta)^{5/3} \\
-   f_2(\delta) &= \delta \left[ (1 + \delta)^{5/3} + (1 - \delta)^{5/3} \right]
+   t_{\rm{sat}} = \frac{3 \hbar^2}{10m} \left( \tfrac{3}{2} \pi^2 n_{\rm{sat}} \right)^{2/3}
 
-In ``jester``, this is then extended to higher orders as
-
-.. TODO: need to figure out where this comes from
+:math:`m` is the nucleonic mass, and the auxiliary functions :math:`f^{\rm{FG}}`, :math:`f^*`, :math:`f^{**}`, and :math:`f^{***}` are defined as
 
 .. math::
-   :label: kinetic_energy_extended
+   :label: f_FG_and_f_star_functions
 
-   t(n, \delta) = \frac{t_{\rm{sat}}^{\rm{FG}}}{2} (1 + 3x)^{2/3} \left[ f_1 + (1 + 3x) f^{*} + (1 + 3x)^2 f^{*}_{2} + (1 + 3x)^3 f^{*}_{3} \right]
+   f^{\rm{FG}}(\delta) &= (1 + \delta)^{5/3} + (1 - \delta)^{5/3} \\
+   f^*(\delta) &= (\kappa_{{\rm sat}} + \kappa_{{\rm sym}}\delta)(1 + \delta)^{5/3} + (\kappa_{{\rm sat}} - \kappa_{{\rm sym}}\delta)(1 - \delta)^{5/3} \\
+   f^{**}(\delta) &= (\kappa_{{\rm sat},2} + \kappa_{{\rm sym},2}\delta)(1 + \delta)^{5/3} + (\kappa_{{\rm sat},2} - \kappa_{{\rm sym},2}\delta)(1 - \delta)^{5/3} \\
+   f^{***}(\delta) &= (\kappa_{{\rm sat},3} + \kappa_{{\rm sym},3}\delta)(1 + \delta)^{5/3} + (\kappa_{{\rm sat},3} - \kappa_{{\rm sym},3}\delta)(1 - \delta)^{5/3}
 
-where each of the functions :math:`f_{*}^{(j)}` are defined as
-
-.. math::
-   :label: f_star_functions
-
-   f^*(\delta) &= (\kappa_{\text{sat}} + \kappa_{\text{sym}}\delta)(1 + \delta)^{5/3} + (\kappa_{\text{sat}} - \kappa_{\text{sym}}\delta)(1 - \delta)^{5/3} \\
-   f^*_2(\delta) &= (\kappa_{\text{sat}2} + \kappa_{\text{sym}2}\delta)(1 + \delta)^{5/3} + (\kappa_{\text{sat}2} - \kappa_{\text{sym}2}\delta)(1 - \delta)^{5/3} \\
-   f^*_3(\delta) &= (\kappa_{\text{sat}3} + \kappa_{\text{sym}3}\delta)(1 + \delta)^{5/3} + (\kappa_{\text{sat}3} - \kappa_{\text{sym}3}\delta)(1 - \delta)^{5/3}
-
-
+Therefore, the kinetic energy depends on 6 additional free parameters :math:`\kappa_i`, which control the effective mass and its density dependence.
+In ``jester``, these parameters are set to zero by default, which means that the kinetic energy is modeled as a free Fermi gas without effective mass modifications, but the code does allow for these modifications to be included if desired by the user.
 
 Potential energy
 -----------------
@@ -142,75 +141,84 @@ The expansion shown in Eq. :eq:`energy_per_nucleon` is a rather simplistic model
 Indeed, as explained in detail in Sec. III in Ref. :cite:`Margueron:2017eqc`, for some choices of the NEPs, the potential energy is not zero at zero density, which is unphysical.
 This is to be expected, as the expansion in Eq. :eq:`energy_per_nucleon` is only valid around saturation density, and therefore does not necessarily incorporate the correct low-density behavior of the EOS.
 To solve this issue, the potential energy functional is slightly adjusted.
-For this, let us start by rewriting the original expansion of the potential energy shown above as follows:
+The modification proposed by :cite:`Margueron:2017eqc` and called "ELFc" is to include an additional term in the potential energy functional to describe the low-density behavior.
+
+In ``jester``, we therefore start from a different ansatz for the potential energy functional (which however is very similar to the ELFc potential ansatz), namely:
 
 .. math::
-   :label: ELFc_expansion_without_u_factor
+   :label: e_pot_ansatz_guilherme
 
-   e^{\rm{pot}}(n, \delta) = \sum_{j = 0}^N \frac{1}{j!} \left( v_{\rm{sat}} + v_{\rm{sym}} \delta^2 \right) x^j 
+   e^{\rm{pot}}(x, \delta) = \sum_{\alpha = 0}^N \frac{v_{\alpha}(\delta)}{\alpha!} x^\alpha u_{\alpha}(x, \delta) \, .
 
-Where the coefficients are related to the nuclear empirical parameters (as we discuss below in more detail).
-In our case, we truncate the expansion at order :math:`N = 4`. 
-The modification proposed by :cite:`Margueron:2017eqc` and called "ELFc" is to include an additional term in the potential energy functional to describe the low-density behavior. 
-This can equivalently also be incorporated as a multiplicative factor in the expansion above, as follows:
+In our case, we truncate the expansion at order :math:`N = 4`.
+The coefficients of the expansion are defined as 
 
 .. math::
-   :label: ELFc_expansion
+   :label: v_alpha_coefficients
 
-   e^{\rm{pot}}(n, \delta) = \sum_{j = 0}^N \frac{1}{j!} \left( v_{\rm{sat}} + v_{\rm{sym}} \delta^2 \right) x^j u_j(n, \delta)
+   v_{\alpha}(\delta) = v_{\alpha,{\rm sat}} + v_{\alpha,{\rm sym2}} \delta^2 + v_{\alpha, nq}(\delta)
 
-where the functions :math:`u_j(n, \delta)` are defined as:
+which defines the coefficients :math:`v_{\alpha,{\rm sat}}` and :math:`v_{\alpha,{\rm sym2}}` as the isoscalar and isovector contributions to the potential energy expansion coefficients, respectively, and :math:`v_{\alpha, nq}(\delta)` as the non-quadratic contributions to the potential energy expansion coefficients.
+The functions :math:`u_\alpha(x, \delta)` are defined as
 
 .. math::
-   :label: u_j_function_Margueron
+   :label: u_alpha_function
 
-   u_j(n, \delta) = 1 - (-3x)^{N + 1 - j} \exp\left( -b \frac{n}{n_{\rm{sat}}} \right)
+   u_\alpha(x, \delta) = 1 - (-3x)^{N + 1 - \alpha} e^{-b(\delta)(1 + 3x)}
 
-where the parameter :math:`b` controls the strength of the low-density modification.
+where the parameter :math:`b(\delta)` controls the strength of the low-density modification.
 This introduces an additional density-dependent term at lower densities to satisfy the zero-density limit, and drops to zero at higher densities, to conserve the behavior of the expansion introduced above at densities around and above saturation density.
-
 In practice, we follow a slight modification to this ELFc expansion, following by Ref. :cite:`Somasundaram:2020chb` and Ref. :cite:`Grams:2021lzx`.
-In Eq. :eq:`ELFc_expansion` and as defined in the original metamodel paper, a single parameter :math:`b` controls how fast the additional term drops to zero at higher densities, and Ref. :cite:`Margueron:2017eqc` suggests a value of :math:`b = 10 \ln(2) \approx 6.93`. 
-However, in ``jester``, we follow the modifications proposed by Ref. :cite:`Somasundaram:2020chb` density, and instead, define two parameters :math:`b_{\rm{sat}}` and :math:`b_{\rm{PNM}}` controlling this low-density behavior in symmetric nuclear matter and pure neutron matter, respectively.
+In Eq. :eq:`e_pot_ansatz_guilherme` and as defined in the original metamodel paper, a single parameter :math:`b` controls how fast the additional term drops to zero at higher densities.
+However, in ``jester``, we follow the modifications proposed by Ref. :cite:`Somasundaram:2020chb` and instead define two parameters :math:`b_{\rm{sat}}` and :math:`b_{\rm{sym}}` controlling this low-density behavior in symmetric nuclear matter and pure neutron matter, respectively.
 Their values for these parameters are given in Table III of Ref. :cite:`Somasundaram:2020chb`.
-Following :cite:`Grams:2021lzx` , these parameters are then used to define an asymmetry-dependent parameter :math:`b(\delta)` that is used as :math:`b` in the expansions above.
+Following :cite:`Grams:2021lzx`, these parameters are then used to define an asymmetry-dependent parameter :math:`b(\delta)` as:
 
 .. math::
-   :label: beta_function_of_delta
+   :label: b_function_of_delta
 
    b(\delta) = b_{\rm{sat}} + b_{\rm{sym}} \delta^2
 
-
-Finally, Eq. :eq:`ELFc_expansion` where :math:`b = b(\delta)` is the form of the potential energy functional used in ``jester``.
-Within this description, the mapping from the nuclear empirical parameters, which are the coefficients of the Taylor expansion, to the coefficients :math:`v_{\rm{sat}}` and :math:`v_{\rm{sym}}` is given by the expresssions in Appendix B of Ref. :cite:`Somasundaram:2020chb`.
-
-NOTE: This describes the potential energy up to quadratic order in the asymmetry parameter :math:`\delta`. ``jester`` also has support for non-quadratic contributions, as described in Ref. :cite:`Somasundaram:2020chb`. 
-
-
-Useful relations
-------------------
-
-The relations below can help guide you in the metamodel source code in ``jester``, as they can be used to rewrite some equations to other forms.
-First, note that :math:`\frac{n}{n_{\rm{sat}}}`, which appears in the exponentials of the potential energy functionals, can be rewritten to
+Within this description, the mapping from the nuclear empirical parameters, which are the coefficients of the Taylor expansion originally provided in :eq:`metamodel_expansions`, to the coefficients :math:`v_{\alpha,{\rm sat}}` and :math:`v_{\alpha,{\rm sym2}}` is given by the expressions in Appendix B of Ref. :cite:`Somasundaram:2020chb`.
+Explicitly, the isoscalar coefficients are:
 
 .. math::
-   :label: n_over_nsat
-   
-   \frac{n}{n_{\rm{sat}}} = 1 + 3x
+   :label: v_alpha_sat_coefficients
 
-Second, by introducing the proton fraction 
+   v_{0,{\rm sat}} &= E_{\rm sat} - t_{\rm sat}(1 + \kappa_{\rm sat} + \kappa_{{\rm sat},2} + \kappa_{{\rm sat},3}) \\
+   v_{1,{\rm sat}} &= -t_{\rm sat}(2 + 5\kappa_{\rm sat} + 8\kappa_{{\rm sat},2} + 11\kappa_{{\rm sat},3}) \\
+   v_{2,{\rm sat}} &= K_{\rm sat} - 2t_{\rm sat}(-1 + 5\kappa_{\rm sat} + 20\kappa_{{\rm sat},2} + 44\kappa_{{\rm sat},3}) \\
+   v_{3,{\rm sat}} &= Q_{\rm sat} - 2t_{\rm sat}(4 - 5\kappa_{\rm sat} + 40\kappa_{{\rm sat},2} + 220\kappa_{{\rm sat},3}) \\
+   v_{4,{\rm sat}} &= Z_{\rm sat} - 8t_{\rm sat}(-7 + 5\kappa_{\rm sat} - 10\kappa_{{\rm sat},2} + 110\kappa_{{\rm sat},3})
 
-.. math::
-   :label: def_proton_fraction
-   
-   Y_p = n_p/n
-
-one can also easily show that
+and the isovector coefficients (combined with the non-quadratic contributions evaluated at :math:`\delta = 1`, i.e., in pure neutron matter) are:
 
 .. math::
-   :label: delta_proton_fraction
-   
-   \delta = 1 - 2 Y_p
+   :label: v_alpha_sym2_coefficients
+
+   v_{0,{\rm sym2}} &= E_{\rm sym} - t_{\rm sat}\left[2^{2/3}(1 + \kappa_{\rm NM} + \kappa_{{\rm NM},2} + \kappa_{{\rm NM},3})\right. \\
+                   &\qquad\qquad \left. - (1 + \kappa_{\rm sat} + \kappa_{{\rm sat},2} + \kappa_{{\rm sat},3})\right] - v_{0,nq}(\delta\!=\!1) \\
+   v_{1,{\rm sym2}} &= L_{\rm sym} - t_{\rm sat}\left[2^{2/3}(2 + 5\kappa_{\rm NM} + 8\kappa_{{\rm NM},2} + 11\kappa_{{\rm NM},3})\right. \\
+                   &\qquad\qquad \left. - (2 + 5\kappa_{\rm sat} + 8\kappa_{{\rm sat},2} + 11\kappa_{{\rm sat},3})\right] - v_{1,nq}(\delta\!=\!1) \\
+   v_{2,{\rm sym2}} &= K_{\rm sym} - 2t_{\rm sat}\left[2^{2/3}(-1 + 5\kappa_{\rm NM} + 20\kappa_{{\rm NM},2} + 44\kappa_{{\rm NM},3})\right. \\
+                   &\qquad\qquad \left. - (-1 + 5\kappa_{\rm sat} + 20\kappa_{{\rm sat},2} + 44\kappa_{{\rm sat},3})\right] - v_{2,nq}(\delta\!=\!1) \\
+   v_{3,{\rm sym2}} &= Q_{\rm sym} - 2t_{\rm sat}\left[2^{2/3}(4 - 5\kappa_{\rm NM} + 40\kappa_{{\rm NM},2} + 220\kappa_{{\rm NM},3})\right. \\
+                   &\qquad\qquad \left. - (4 - 5\kappa_{\rm sat} + 40\kappa_{{\rm sat},2} + 220\kappa_{{\rm sat},3})\right] - v_{3,nq}(\delta\!=\!1) \\
+   v_{4,{\rm sym2}} &= Z_{\rm sym} - 8t_{\rm sat}\left[2^{2/3}(-7 + 5\kappa_{\rm NM} - 10\kappa_{{\rm NM},2} + 110\kappa_{{\rm NM},3})\right. \\
+                   &\qquad\qquad \left. - (-7 + 5\kappa_{\rm sat} - 10\kappa_{{\rm sat},2} + 110\kappa_{{\rm sat},3})\right] - v_{4,nq}(\delta\!=\!1)
+
+where :math:`\kappa_{\rm NM} = \kappa_{\rm sat} + \kappa_{\rm sym}`, :math:`\kappa_{{\rm NM},2} = \kappa_{{\rm sat},2} + \kappa_{{\rm sym},2}`, and :math:`\kappa_{{\rm NM},3} = \kappa_{{\rm sat},3} + \kappa_{{\rm sym},3}` are the effective mass parameters for pure neutron matter.
+Note that this introduces the neutron matter (NM) constants
+
+.. math::
+   :label: kappa_NM_constants
+
+   \kappa_{\rm NM} = \kappa_{\rm sat} + \kappa_{\rm sym} \, , \\
+   \kappa_{{\rm NM},2} = \kappa_{{\rm sat},2} + \kappa_{{\rm sym},2} \, , \\
+   \kappa_{{\rm NM},3} = \kappa_{{\rm sat},3} + \kappa_{{\rm sym},3}
+
+Therefore, on top of the NEPs, this full metamodel requires a description of the effective mass and its density dependence, which is controlled by the 6 parameters :math:`\kappa_i` introduced already above.
+On top of this, we require input for the :math:`b_{\rm{sat}}` and :math:`b_{\rm{sym}}` parameters controlling the low-density behavior of the potential energy functional. 
 
 Computing the pressure
 ------------------------
@@ -231,47 +239,47 @@ By using the above expressions and the chain rule, this can be rewritten as
    P(n, \delta) = \frac{n_{\rm{sat}}}{3} (1 + 3x)^2 \frac{\partial e}{\partial x}
 
 which makes the expression easier to compute. 
-By using the final form of Eq. :eq:`kinetic_energy_extended` as a function of :math:`x`, one can find that
+Note that here we have used that
+
+.. math::
+   :label: derivative_x_with_respect_to_n
+
+   \frac{\partial x}{\partial n} = \frac{1}{3 n_{\rm{sat}}} \, ,
+
+which is a useful relation to use in the calculations to follow.
+By using the final form of Eq. :eq:`kinetic_energy` as a function of :math:`x`, one can find that
 
 .. math::
    :label: pressure_kinetic_contribution
 
-   P_{\rm{kin}}(n, \delta) = \frac{1}{3} n_{\text{sat}} t_{\rm{sat}}^{\rm{FG}} (1 + 3x)^{5/3} \left( f_1 + \frac{5}{2}(1 + 3x)f^* + 4(1 + 3x)^2 f^*_2 + \frac{11}{2}(1 + 3x)^3 f^*_3 \right)
+   P_{\rm{kin}}(x, \delta) = \frac{1}{3} n_{\rm{sat}} t_{\rm{sat}} (1 + 3x)^{5/3} \big( f^{\rm{FG}} &+ \frac{5}{2}(1 + 3x)f^* \\ 
+    &+ 4(1 + 3x)^2 f^{**} + \frac{11}{2}(1 + 3x)^3 f^{***} \big)
 
 which is easily shown by carrying out the derivative. 
 
-For the contribution from the potential energy, we can first compute an intermediate result, namely the derivate of :math:`u_j` with respect to :math:`x`:
+For the contribution from the potential energy, we can first compute an intermediate result, namely the derivative of :math:`u_\alpha` with respect to :math:`x`, which we denote :math:`u'_\alpha`:
 
 .. math::
-   :label: duj_dx
+   :label: du_alpha_dx
 
-   \frac{\partial u_j(n, \delta)}{\partial x} = \left[ N + 1 - j - 3 bx \right] \left[ - (-3)^{N - j} x^{N + 1 - j} e^{-b (1 + 3x)} \right]
+   u'_\alpha \equiv \frac{\partial u_\alpha(x, \delta)}{\partial x} = \left[ N + 1 - \alpha - 3 b(\delta) x \right] \left[ - (-3)^{N - \alpha} x^{N + 1 - \alpha} e^{-b(\delta)(1 + 3x)} \right]
 
-From this, it is then easy to derive that 
+From this, it is then easy to derive the useful shorthand
 
 .. math::
-   :label: x_times_duj_dx
+   :label: x_times_du_alpha_dx
 
-   x \frac{\partial u_j(n, \delta)}{\partial x} = \left[ N + 1 - j - 3 bx \right] \left[ u_j - 1 \right]
+   x u'_\alpha \equiv x \frac{\partial u_\alpha(x, \delta)}{\partial x} = \left[ N + 1 - \alpha - 3 b(\delta) x \right] \left[ u_\alpha - 1 \right]
 
-which will appear in the derivative and is therefore a useful quantity to precompute. 
+which will appear in the derivative and is therefore a useful quantity to precompute.
 Having this at hand, the contribution to the pressure from the potential energy can be computed as
 
 .. math::
    :label: pressure_potential_contribution
 
-   P_{\rm{pot}}(n, \delta) = v_0 \frac{\partial u_0}{\partial x} + \sum_{j = 1}^N \frac{1}{j!} v_j \left( \frac{\partial u_j}{\partial x} x + u_j j \right) x^{j - 1} \, ,
-
-where we have defined the shorthand
-
-.. math::
-   :label: v_j_shorthand
-
-   v_j = v_{\rm{sat},j} + v_{\rm{sym},j} \delta^2
+   P_{\rm{pot}}(x, \delta) = \frac{n_{\rm{sat}}}{3}(1+3x)^2 \sum_{\alpha = 0}^N \frac{v_\alpha(\delta)}{\alpha!} x^{\alpha - 1} \left[ \alpha \, u_\alpha \, \delta_{\alpha \ge 1} + x u'_\alpha \right] \, ,
 
 With these equations at hand, the ``jester`` code for computing the pressure in the metamodel can be easily traced back.
-
-.. TODO: need to add the j label to the v's above!!!
 
 Adding electrons
 ----------------
@@ -379,24 +387,24 @@ The result for the kinetic contribution, not including the second term (which ju
 .. math::
    :label: isoscalar_compressibility_kinetic_contribution
 
-   K_{\rm{is,kin}}^{(1)}(x, \delta) = t_{\text{sat}} (1 + 3x)^{2/3} \left[ -f_1 + 5(1 + 3x)f^* + 20(1 + 3x)^2 f^*_2 + 44(1 + 3x)^3 f^*_3 \right]
+   K_{\rm{is,kin}}^{(1)}(x, \delta) = t_{\rm{sat}} (1 + 3x)^{2/3} \left[ -f^{\rm{FG}} + 5(1 + 3x)f^* + 20(1 + 3x)^2 f^{**} + 44(1 + 3x)^3 f^{***} \right]
 
 The contribution from the potential energy to the first term is given by
 
 .. math::
    :label: isoscalar_compressibility_potential_contribution
 
-   K_{\rm{is,pot}}^{(1)}(x, \delta) = (1 + 3x)^2 \sum_{j=0}^{N} \frac{v_{j}(\delta)}{j!} x^{j-2}  \left[ j(j - 1)u_{j}\delta_{j \ge 2} + 2j x u'_{j} \delta_{j \ge 1} + x^2 u''_{j} \right]\, ,
+   K_{\rm{is,pot}}^{(1)}(x, \delta) = (1 + 3x)^2 \sum_{\alpha=0}^{N} \frac{v_{\alpha}(\delta)}{\alpha!} x^{\alpha-2}  \left[ \alpha(\alpha - 1)u_{\alpha}\delta_{\alpha \ge 2} + 2\alpha x u'_{\alpha} \delta_{\alpha \ge 1} + x^2 u''_{\alpha} \right]\, ,
 
-where :math:`\delta_{j\geq a}` restricts the sum to terms with :math:`j \geq a`, and primes are shorthand for derivatives with respect to :math:`x`. 
+where :math:`\delta_{\alpha\geq a}` restricts the sum to terms with :math:`\alpha \geq a`, and primes are shorthand for derivatives with respect to :math:`x`.
 One can show the intermediate result that
 
 .. math::
-   :label: x_squared_times_second_derivative_uj
+   :label: x_squared_times_second_derivative_u_alpha
 
-   x^2 u''_{j} = \left[ -(N + 1 - j)(N - j) + 6xb(N + 1 - j) - 9x^2b^2 \right] (1 - u_{j}) \, , 
+   x^2 u''_{\alpha} = \left[ -(N + 1 - \alpha)(N - \alpha) + 6xb(\delta)(N + 1 - \alpha) - 9x^2b(\delta)^2 \right] (1 - u_{\alpha}) \, ,
 
-which helps in organizing the computations here. 
+which helps in organizing the computations here.
 
 
 :math:`\beta`-equilibrium
@@ -443,10 +451,8 @@ For the difference between the neutron and proton chemical potentials, we can us
 
    \mu_n - \mu_p = 2 \frac{\partial e(n, \delta)}{\partial \delta} = 4 \delta e_{\rm{sym}} \, .
 
-
-TODO: finish the calculation
-
-For the proton fraction :math:`Y_p`, we can use the relation between :math:`\delta` and :math:`Y_p` shown above, and ... so we find the cubic equation 
+For the proton fraction :math:`Y_p`, we can use the relation between :math:`\delta` and :math:`Y_p` shown above. 
+Filling this in and setting this equal to the electron chemical potential defined above, we can find the following cubic equation for the proton fraction:
 
 .. math::
    :label: cubic_equation_proton_fraction
