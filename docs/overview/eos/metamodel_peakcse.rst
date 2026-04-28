@@ -45,6 +45,22 @@ relations as in the CSE model (see :ref:`eos-metamodel-cse` for similar equation
    p(n) &= p_\mathrm{break} + \int_{n_\mathrm{break}}^n c_s^2(n')\,\mu(n')\,dn', \\
    \varepsilon(n) &= \varepsilon_\mathrm{break} + \int_{n_\mathrm{break}}^n \mu(n')\,dn'.
 
+The example below shows the pressure and speed of sound for a representative EOS
+with the peakCSE extension starting at :math:`n_\mathrm{break} = 2\,n_\mathrm{sat}`.
+
+.. plot:: overview/eos/metamodel_peakcse_plot.py
+
+   Pressure (top) and squared speed of sound (bottom) versus baryon number density
+   for a representative Metamodel + peakCSE EOS.
+   The grey, orange, and green shaded bands indicate the crust, the metamodel core,
+   and the peakCSE extension region, respectively.
+   The dashed grey curve in the lower panel is the logistic baseline (the Gaussian
+   term removed), showing how :math:`c_s^2` settles smoothly toward the conformal
+   limit :math:`c_s^2 = 1/3` (dotted red line).
+   Annotations mark the Gaussian peak amplitude :math:`c_{s,\mathrm{peak}}^2`,
+   its central density :math:`n_\mathrm{peak}`, and the one-sigma half-width
+   :math:`\sigma_\mathrm{peak}`.
+
 Parameters
 ----------
 
