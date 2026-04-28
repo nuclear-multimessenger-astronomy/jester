@@ -69,7 +69,9 @@ jobs:
 
     - name: Execute notebooks
       run: |
-        for nb in docs/examples/**/*.ipynb; do
+        shopt -s globstar
+        notebooks=(docs/examples/**/*.ipynb)
+        for nb in "${notebooks[@]}"; do
           echo "Executing $nb"
           uv run jupyter nbconvert --to notebook --execute "$nb" \
             --output "$(basename $nb .ipynb)_executed.ipynb" \
