@@ -167,6 +167,19 @@ All contributions must meet these requirements:
 - **API reference** - Auto-generated from docstrings (check it renders correctly)
 - **Example config** - Provide working example in `examples/`
 
+### Jupyter Notebooks
+
+`docs/examples/` is the home for Jupyter notebooks that showcase basic JESTER functionality (e.g. constructing an EOS, solving the TOV equations, using automatic differentiation). These notebooks serve a dual purpose: they are rendered into the documentation website via `nbsphinx`, and they are executed every night by the CI pipeline to verify that the code they demonstrate still runs correctly.
+
+**Adding a new notebook:**
+
+1. Place it under `docs/examples/<topic>/your_notebook.ipynb`.
+2. Add it to the relevant `toctree` in `docs/examples/index.rst` (or create a new subdirectory with its own `index.rst`).
+3. Make sure all cells produce clean output when executed top-to-bottom — the nightly CI run (`notebooks` job in `.github/workflows/nightly.yml`) picks up all `docs/examples/**/*.ipynb` files automatically.
+4. Keep runtimes reasonable (a few minutes at most); the job has a 30-minute timeout.
+
+> **Notebooks are a living contract with the user.** If a refactor breaks a notebook cell, the nightly CI will catch it the same night. Keep notebooks focused on demonstrating correct, working code rather than exploring one-off experiments — those belong in `jester-review-scripts/`.
+
 **After schema changes:**
 
 The documentation page about settings for the config files is automatically generated to ensure it is up to date with the source code. For this, run:s
