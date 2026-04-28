@@ -5,21 +5,18 @@ JAX-accelerated equation of state inference and TOV solvers
 
 ``jester`` performs Bayesian inference on neutron star equations of state using GPU-accelerated TOV solvers through ``jax``.
 
-.. note::
+.. image:: https://colab.research.google.com/assets/colab-badge.svg
+   :target: https://colab.research.google.com/github/nuclear-multimessenger-astronomy/jester/blob/main/examples/google_colab/GW170817_Google_Colab.ipynb
+   :alt: Open In Colab
 
-   **Documentation is work in progress!** Some sections may be incomplete or under active development. We appreciate your patience as we improve the documentation.
+Try ``jester`` right away in your browser and infer the neutron star equation of state from GW170817 within 15 minutes — no installation required!
+
 
 What's in ``jester``?
 -----------------------
 
 ``jester`` combines flexible EOS parametrizations with GPU-accelerated TOV solvers and modern Bayesian samplers.
 See the :doc:`overview/` guide for detailed explanations about what is implemented in the code.
-
-.. image:: https://colab.research.google.com/assets/colab-badge.svg
-   :target: https://colab.research.google.com/github/nuclear-multimessenger-astronomy/jester/blob/main/examples/google_colab/GW170817_Google_Colab.ipynb
-   :alt: Open In Colab
-
-Try ``jester`` right away in your browser — no installation required!
 
 .. grid:: 2
     :class-container: component-grid
