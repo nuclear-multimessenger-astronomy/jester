@@ -3,12 +3,12 @@
 Metamodel
 =========
 
-This page describes the metamodel EOS parametrization and its implementation in ``jester``. 
+This page describes the metamodel EOS parametrization and its implementation in ``jester``.
 
 General background
 ----------------------
 
-The metamodel, or a 'model-of-a-model', is a model for the homogeneoous nucleonic EOS, and was introduced in Refs. The metamodel parametrization is described in Refs. :cite:`Margueron:2017eqc` and :cite:`Margueron:2017lup`. 
+The metamodel, or a 'model-of-a-model', is a model for the homogeneous nucleonic EOS, introduced and described in Refs. :cite:`Margueron:2017eqc` and :cite:`Margueron:2017lup`. 
 It describes nuclear matter with different isoscalar (is) density
 
 .. math::
@@ -24,14 +24,14 @@ It describes nuclear matter with different isoscalar (is) density
    n_1 = n_n - n_p
 
 where :math:`n_n` and :math:`n_p` are the neutron and proton number densities, respectively.
-By introducing the asymmetry parameter
+We also define the asymmetry parameter
 
 .. math::
    :label: delta
 
    \delta = n_1/n_0
-   
-the two possible extreme values describing particular types of nuclear matter are:
+
+which quantifies the isospin asymmetry of nuclear matter. The two possible extreme values of :math:`\delta` describe particular types of nuclear matter:
 
 * Symmetric nuclear matter (SNM) with :math:`\delta = 0` (i.e., :math:`n_n = n_p`) and
 * Pure neutron matter (PNM) with :math:`\delta = 1` (i.e., :math:`n_p = 0`).
@@ -137,7 +137,7 @@ In ``jester``, these parameters are set to zero by default, which means that the
 Potential energy
 -----------------
 
-The expansion shown in Eq. :eq:`energy_per_nucleon` is a rather simplistic model which has some defaults. 
+The expansion shown in Eq. :eq:`energy_per_nucleon` is a rather simplistic model which has some shortcomings. 
 Indeed, as explained in detail in Sec. III in Ref. :cite:`Margueron:2017eqc`, for some choices of the NEPs, the potential energy is not zero at zero density, which is unphysical.
 This is to be expected, as the expansion in Eq. :eq:`energy_per_nucleon` is only valid around saturation density, and therefore does not necessarily incorporate the correct low-density behavior of the EOS.
 To solve this issue, the potential energy functional is slightly adjusted.
@@ -478,7 +478,7 @@ All of the physics described above has been implemented in ``jester``, but the f
 
 * The modifications due to the effective mass are ignored, such that :math:`m=m^*` in the kinetic energy expression. 
 * The non-quadratic contributions to the potential energy. 
-* In ``jester``, we take take an average nucleonic mass :math:`m = (m_n + m_p)/2` for the nucleonic mass term, instead of separately accounting for the neutron and proton mass.
+* In ``jester``, we take an average nucleonic mass :math:`m = (m_n + m_p)/2` for the nucleonic mass term, instead of separately accounting for the neutron and proton mass.
 
 In particular, the metamodel code (in :class:`jesterTOV.eos.metamodel.MetaModel_EOS_model`) has the equations implemented for them, but the ``construct_eos`` method does not currently allow the user to easily use these modifications, outside of specifying these parameters in the ``__init__`` method of the class. These modifications are controlled by parameters called ``kappa_*`` for the kinetic energy and ``v_nq`` for the potential energy, but these are set to zero by default when initializing the metamodel class, and are not exposed to downstream functions. In particular, the Bayesian inference workflow for the moment does not recognize these parameters. Future releases of ``jester`` will likely include support for these features during sampling.
 
