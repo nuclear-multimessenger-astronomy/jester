@@ -69,6 +69,18 @@ Any remaining ``NaN`` or infinite values are also replaced by this penalty to av
    Any Gaussian mass measurement — whether from pulse-profile modelling, gravitational waves, or another technique — can be incorporated.
    Moreover, Eq. :eq:`radio_likelihood` can in principle accommodate non-Gaussian mass measurements, but this is not yet implemented in ``jester`` and is left for a future release.
 
+Heavy pulsar observation
+--------------------------
+
+Practically speaking, in ``jester``, we advise to use the following mass measurements (all uncertainties are 1-sigma):
+
+* **PSR J1614-2230**: :math:`M = (1.937 \pm 0.014) M_\odot`, Refs. :cite:`Demorest:2010bx`, :cite:`Shamohammadi:2022ttx`
+* **PSR J0740+6620**: :math:`M = (2.08 \pm 0.07) M_\odot`, Refs. :cite:`Fonseca:2021wxt`. (Note that NICER also measured the mass-radius posterior of this pulsar.)
+
+Note: in the original ``jester`` paper, we also used the mass measurement of PSR J0348+0432. 
+However, in Ref. :cite:`Saffer:2024tlb`, a lower mass estimate was found for this pulsar.
+Therefore, we advise to only use the mass measurements quoted above.
+
 Further resources
 -------------------
 
