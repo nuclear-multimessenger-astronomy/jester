@@ -474,9 +474,11 @@ Implementation in ``jester``
 
 In ``jester``, at the time of writing, there are a few specifics about the implementation of the metamodel EOS parametrization that are worth noting:
 
-All of the physics described above has been implemented in ``jester``, but the following features are not readily exposed to the user or the Bayesian inference workflow:
+All of the physics described above has been implemented in ``jester``, but the following features are **not** incorporated in the metamodel or readily exposed to the user or the Bayesian inference workflow:
 
 * The modifications due to the effective mass are ignored, such that :math:`m=m^*` in the kinetic energy expression. 
+* Contributions from muons are neglected.
+* The beta-equilibrium equation is not solved, so we use an approximate relation for the proton fraction calculation.
 * The non-quadratic contributions to the potential energy. 
 * In ``jester``, we take an average nucleonic mass :math:`m = (m_n + m_p)/2` for the nucleonic mass term, instead of separately accounting for the neutron and proton mass.
 
