@@ -1,0 +1,30 @@
+{
+  "n_samples_total": 17434,
+  "n_samples_used": 17434,
+  "parameter_names": [
+    "mass_1_source",
+    "mass_2_source",
+    "lambda_1",
+    "lambda_2"
+  ],
+  "filepath": "../../../../../data/gw190425/gw190425_gwtc2p1_mixed_nocosmo_imrphenompv2_nrtidal_lowspin_posterior.npz",
+  "flow_type": "masked_autoregressive_flow",
+  "num_epochs": 1869,
+  "learning_rate": 0.0001,
+  "max_patience": 500,
+  "val_prop": 0.2,
+  "standardize": true,
+  "standardization_method": "zscore",
+  "data_mean": [
+    1.7620282104115326,
+    1.5505456500959491,
+    462.58999934027537,
+    691.6704079947067
+  ],
+  "data_std": [
+    0.08158013460970223,
+    0.06717258403061359,
+    516.3127840870351,
+    754.8335492257081
+  ]
+}

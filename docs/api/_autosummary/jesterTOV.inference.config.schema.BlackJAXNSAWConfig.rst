@@ -37,9 +37,6 @@
       ~BlackJAXNSAWConfig.schema_json
       ~BlackJAXNSAWConfig.update_forward_refs
       ~BlackJAXNSAWConfig.validate
-      ~BlackJAXNSAWConfig.validate_base_positive
-      ~BlackJAXNSAWConfig.validate_delete_frac
-      ~BlackJAXNSAWConfig.validate_positive
    
    
 

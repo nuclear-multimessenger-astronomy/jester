@@ -28,7 +28,11 @@ extensions = [
     "sphinx_autodoc_typehints",
     "sphinxcontrib.mermaid",
     "sphinx_design",
+    "sphinxcontrib.bibtex",
 ]
+
+bibtex_bibfiles = ["references.bib"]
+bibtex_default_style = "unsrt"
 
 templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "CLAUDE.md"]
@@ -76,6 +80,7 @@ autodoc_default_options = {
     "members": True,
     "undoc-members": True,
     "show-inheritance": True,
+    "exclude-members": "model_config,model_post_init",
 }
 
 # Mock imports for optional dependencies that may not be available during docs build
@@ -126,6 +131,9 @@ suppress_warnings = [
     "ref.python",  # Suppress ambiguous python cross-reference warnings
     "sphinx_autodoc_typehints.forward_reference",  # Suppress forward reference warnings
     "sphinx_autodoc_typehints.guarded_import",  # Suppress guarded import warnings
+    "bibtex.duplicate_label",  # Per-page bibliographies share keys across pages; labels are correct
+    "bibtex.duplicate_citation",  # Same citation key cited across multiple pages with shared bibliography filter
+    "bibtex.missing_field",  # arXiv preprints legitimately lack journal fields
 ]
 
 # -- Nitpicky mode configuration ---------------------------------------------

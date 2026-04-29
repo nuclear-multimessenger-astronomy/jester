@@ -1,11 +1,18 @@
-# Quick Start
+# Quick start
 
 **Get started with Bayesian EOS inference in 5 minutes**
 
 This guide explains how to run Bayesian inference with ``jester`` using a simple configuration.
 As an example, we will run inference on the {ref}`metamodel + speed-of-sound extension (CSE) <eos-metamodel-cse>` EOS parametrization, using the {ref}`GR TOV solver <tov-gr>`, and sampling the parametrization with {ref}`sequential Monte Carlo <sampler-smc>`.
 To constrain the EOS, we will use the {ref}`chiral effective field theory (chiEFT) <likelihood-chieft>` likelihood.
-This inference is fast enough to be executed locally on a laptop, making it ideal for testing whether your installation works successfully and for getting familiar with running ``jester``!
+
+```{note}
+No GPU? No problem! This inference is fast enough to be executed locally on a laptop!
+
+Want to run a more realistic inference (e.g. GW170817) in the cloud without any local setup?
+Try the Google Colab notebook:
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/nuclear-multimessenger-astronomy/jester/blob/main/examples/google_colab/GW170817_Google_Colab.ipynb)
+```
 
 
 ## Running your first inference
@@ -114,7 +121,9 @@ From the directory containing the two files specified above, the inference can b
 run_jester_inference config.yaml
 ```
 
-Note: This command is only recognized after activating the environment where `jester` was installed.
+```{note}
+This command is only recognized after activating the environment where `jester` was installed. If you have trouble, try using ``uv run run_jester_inference config.yaml`` to ensure the Python installation of the ``jester`` virtual environment is used.
+```
 
 ## Result
 
@@ -131,7 +140,7 @@ For details on loading and analyzing results, see the {class}`~jesterTOV.inferen
 - ``smc_diagnostics.png``: Shows the behavior of the SMC sampler during inference.
 - ``mass_radius_plot.pdf``: Displays the mass-radius curves corresponding to the posterior EOS samples, color-coded according to the magnitude of their posterior (log-)probability.
 
-<!-- TODO: refer readers to postprocessing API NOTE: This postprocessing API reference does not exist yet and should be made first! -->
+For a full walkthrough of how to load the HDF5 result file and analyze the posterior samples, see {doc}`../examples/inference/result`.
 
 At this point, you should have successfully run your first ``jester`` inference. If you encountered any errors, please raise an issue on GitHub explaining the problem so we can fix the source code and/or this documentation.
 
@@ -155,6 +164,19 @@ So, what's next?
    - ``jester/examples/inference/spectral`` shows how to run inference with the spectral expansion using SMC
 
 4. **Try different TOV solvers**: Unfortunately, this is still work in progress, so stay tuned!
+
+## Running inference in the cloud with Google Colab
+
+For more computationally demanding inferences — such as a full GW170817 analysis — a GPU is strongly recommended.
+If you do not have a GPU available locally, Google Colab provides free T4 GPUs in the browser, making it straightforward to run ``jester`` without any local installation.
+
+A ready-to-run notebook for the GW170817 inference is available in the repository at ``examples/google_colab/GW170817_Google_Colab.ipynb``.
+Click the badge below to open it directly:
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/nuclear-multimessenger-astronomy/jester/blob/main/examples/google_colab/GW170817_Google_Colab.ipynb)
+
+The notebook installs ``jester`` inside the Colab environment and runs the GW170817 inference end-to-end, including postprocessing.
+Hyperparameters are reduced relative to the full production settings so the run completes within about 15 minutes on a free T4 GPU.
 
 ---
 

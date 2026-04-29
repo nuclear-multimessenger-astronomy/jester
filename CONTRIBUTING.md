@@ -52,6 +52,11 @@ uv run sphinx-build -W --keep-going docs docs/_build/html
 open docs/_build/html/index.html  # macOS
 ```
 
+One can also use `sphinx-autobuild` to automatically build the documentation on any edit, to quickly check and iterate:
+```bash
+uv run sphinx-autobuild docs docs/_build/html
+```
+
 > **Sphinx warnings are treated as errors in CI.** The `-W` flag used by the CI pipeline turns every Sphinx warning (undefined references, unexpected indentation, missing docstrings, etc.) into a hard build failure. A PR cannot be merged if the docs build fails. Always run the strict-mode build locally before pushing to catch issues early — it is much faster to fix a warning locally than to iterate on CI.
 
 > **Note — `.. plot::` directive caching:** Sphinx caches the output of `.. plot::` directives
@@ -163,6 +168,7 @@ All contributions must meet these requirements:
 
 - **Docstrings** - All public functions and classes
 - **Math formatting** - Use reStructuredText `:math:` or `.. math::`
+- **Citations** - Use `sphinxcontrib.bibtex` with `:cite:` directives; the bibliography style is set to `"unsrt"` in `conf.py`, which renders numeric labels `[1]`, `[2]`, etc. Keep it that way — do not switch to `"alpha"`.
 - **User guide** - Add page to `docs/overview/` explaining the feature
 - **API reference** - Auto-generated from docstrings (check it renders correctly)
 - **Example config** - Provide working example in `examples/`
@@ -182,11 +188,7 @@ All contributions must meet these requirements:
 
 **After schema changes:**
 
-The documentation page about settings for the config files is automatically generated to ensure it is up to date with the source code. For this, run:s
-```bash
-# Regenerate YAML reference
-uv run python -m jesterTOV.inference.config.generate_yaml_reference
-```
+Update `docs/inference/yaml_reference.md` by hand to reflect any new or changed fields. This file is the authoritative user-facing reference and is maintained manually.
 
 ### Configuration Integration
 

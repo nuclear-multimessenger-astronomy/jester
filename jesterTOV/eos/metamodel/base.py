@@ -18,9 +18,11 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
     Meta-model equation of state for nuclear matter.
 
     This class implements the meta-modeling approach for nuclear equation of state
-    as described in Margueron et al. (Phys. Rev. C 103, 045803, 2021). The EOS
+    as described in Somasundaram et al. (Phys. Rev. C 103, 045803, 2021). The EOS
     is constructed by combining a realistic crust model with a meta-model for
     core densities based on nuclear empirical parameters (NEPs).
+
+    For a more detailed introduction into the metamodel approach, see Margueron et al. (Phys.Rev.C 97 (2018) 2, 025805).
 
     The meta-model uses a kinetic + potential energy decomposition:
 
@@ -30,7 +32,8 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
     where :math:`\delta = (n_n - n_p)/n` is the isospin asymmetry parameter.
 
     The kinetic part is based on a Thomas-Fermi gas with relativistic corrections,
-    while the potential part uses a polynomial expansion around saturation density :math:`n_0`.
+    while the potential part uses a polynomial expansion around saturation density :math:`n_{\rm{sat}}`,
+    taking into account non-quadratic contributions to the symmetry energy.
     """
 
     def __init__(
@@ -48,7 +51,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         b_sym: Float = 25.0,
         # density parameters
         nsat: Float = 0.16,
-        nmin_MM_nsat: Float = 0.12 / 0.16,
+        nmin_MM_nsat: Float = 0.75,
         nmax_nsat: Float = 12,
         ndat: Int = 200,
         # crust parameters
@@ -67,7 +70,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         implementation combines a realistic crust model with a meta-model description
         of the core using nuclear empirical parameters (NEPs).
 
-        **Reference:** Margueron et al., Phys. Rev. C 103, 045803 (2021)
+        **Reference:** Somasundaram et al., Phys. Rev. C 103, 045803 (2021)
 
         **Physical Framework:**
         The meta-model decomposes the energy density as:
@@ -136,7 +139,8 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         self.v_nq = jnp.array(v_nq)
         self.b_sat = b_sat
         self.b_sym = b_sym
-        self.N = 4  # TODO: this is fixed in the metamodeling papers, but we might want to extend this in the future
+        # NOTE: the expansion is truncated at N=4, consistent with Somasundaram et al. and Margueron et al.
+        self.N = 4
 
         self.nmin_MM_nsat = nmin_MM_nsat
         self.nmax_nsat = nmax_nsat
@@ -175,7 +179,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             * (3 * jnp.pi**2 * self.nsat / 2) ** (2 / 3)
         )
 
-        # v_sat is defined in equations (22) - (26) in the Margueron et al. paper
+        # These coefficients are defined in Eq. (B3) of Somasundaram et al
         self.v_sat_0_no_NEP = -self.t_sat * (
             1 + self.kappa_sat + self.kappa_sat2 + self.kappa_sat3
         )
@@ -198,6 +202,8 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             * (-7 + 5 * self.kappa_sat - 10 * self.kappa_sat2 + 110 * self.kappa_sat3)
         )
 
+        # These are the difference between the PNM and SNM coefficients in Appendix B of Somasundaram et al,
+        # Eq. (B4) - Eq. (B3)
         self.v_sym2_0_no_NEP = (
             -self.t_sat
             * (
@@ -215,6 +221,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             )
             - self.v_nq[1]
         )
+        # NOTE the factor at the front, so the power of two is correct here
         self.v_sym2_2_no_NEP = (
             -2
             * self.t_sat
@@ -230,6 +237,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             )
             - self.v_nq[2]
         )
+        # NOTE the factor at the front, so the power of two is correct here
         self.v_sym2_3_no_NEP = (
             -2
             * self.t_sat
@@ -245,6 +253,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             )
             - self.v_nq[3]
         )
+        # NOTE the factor at the front, so the power of two is correct here
         self.v_sym2_4_no_NEP = (
             -8
             * self.t_sat
@@ -289,7 +298,6 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             self.max_n_crust + 1e-5, self.nmin_MM, self.ndat_spline, endpoint=False
         )
 
-    # TODO: improve type hinting here
     def construct_eos(self, params: dict[str, float]) -> EOSData:
         r"""
         Construct the complete equation of state from nuclear empirical parameters.
@@ -324,6 +332,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         Q_sym = NEP_dict["Q_sym"]
         Z_sym = NEP_dict["Z_sym"]
 
+        # FIXME: here and below, we should probably NOT use coefficient_sym, but rather, v_sym2
         # Add the first derivative coefficient in Esat to make it work with jax.numpy.polyval
         coefficient_sat = jnp.array([E_sat, 0.0, K_sat, Q_sat, Z_sat])
         coefficient_sym = jnp.array([E_sym, L_sym, K_sym, Q_sym, Z_sym])
@@ -335,7 +344,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         coefficient_sat = coefficient_sat / factorial(index_sat)
         coefficient_sym = coefficient_sym / factorial(index_sym)
 
-        # Potential energy (v_sat is defined in equations (22) - (26) in the Margueron et al. paper)
+        # Potential energy: see Appendix B of Somasundaram et al. for details
         v_sat = jnp.array(
             [
                 E_sat + self.v_sat_0_no_NEP,
@@ -346,7 +355,6 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             ]
         )
 
-        # v_sym2 is defined in equations (27) to (31) in the Margueron et al. paper
         v_sym2 = jnp.array(
             [
                 E_sym + self.v_sym2_0_no_NEP,
@@ -368,10 +376,11 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         f_star3 = self.compute_f_star3(delta)
         v = self.compute_v(v_sat, v_sym2, delta)
         b = self.compute_b(delta)
+        u = self.compute_u(x, b)
 
         # Other quantities
-        p_metamodel = self.compute_pressure(x, f_1, f_star, f_star2, f_star3, b, v)
-        e_metamodel = self.compute_energy(x, f_1, f_star, f_star2, f_star3, b, v)
+        p_metamodel = self.compute_pressure(x, f_1, f_star, f_star2, f_star3, b, v, u)
+        e_metamodel = self.compute_energy(x, f_1, f_star, f_star2, f_star3, v, u)
 
         # Get cs2 for the metamodel
         cs2_metamodel = self.compute_cs2(
@@ -386,6 +395,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             f_star3,
             b,
             v,
+            u,
         )
 
         # Spline for speed of sound for the connection region
@@ -445,15 +455,18 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
     #################
 
     def u(self, x: Array, b: Array, alpha: Int):
+        "Defined right after equation (40) in Margueron et al. Note that Somasundaram et al. has more than 1 b parameter, compared to Margueron et al., but the definition of u is similar. For a single u value"
         return 1 - ((-3 * x) ** (self.N + 1 - alpha) * jnp.exp(-b * (1 + 3 * x)))
 
     def compute_x(self, n: Array):
+        "Defined right before equation (2) in Margueron et al."
         return (n - self.nsat) / (3 * self.nsat)
 
     def compute_b(self, delta: Array | float):
         return self.b_sat + self.b_sym * delta**2
 
     def compute_f_1(self, delta: Array | float):
+        "Equation (14) in Margueron et al."
         return (1 + delta) ** (5 / 3) + (1 - delta) ** (5 / 3)
 
     def compute_f_star(self, delta: Array | float):
@@ -471,7 +484,12 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             self.kappa_sat3 - self.kappa_sym3 * delta
         ) * (1 - delta) ** (5 / 3)
 
+    def compute_u(self, x: Array, b: Array):
+        "Computes an array of N+1 u values for all alphas"
+        return jnp.array([self.u(x, b, alpha) for alpha in range(self.N + 1)])
+
     def compute_v(self, v_sat: Array, v_sym2: Array, delta: Array | float) -> Array:
+        """Compute an array of length N+1 containing the v coefficients for the potential energy"""
         return jnp.array(
             [
                 v_sat[alpha] + v_sym2[alpha] * delta**2 + self.v_nq[alpha] * delta**4
@@ -486,10 +504,11 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         f_star: Array,
         f_star2: Array,
         f_star3: Array,
-        b: Array,
         v: Array,
+        u: Array,
     ) -> Array:
 
+        # Kinetic energy
         prefac = self.t_sat / 2 * (1 + 3 * x) ** (2 / 3)
         linear = (1 + 3 * x) * f_star
         quadratic = (1 + 3 * x) ** 2 * f_star2
@@ -497,15 +516,14 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
 
         kinetic_energy = prefac * (f_1 + linear + quadratic + cubic)
 
-        # Potential energy # TODO: a bit cumbersome, find another way, like jax tree map?
+        # Potential energy
         potential_energy = 0
-        for alpha in range(5):
-            u = self.u(x, b, alpha)
-            potential_energy += v.at[alpha].get() / (factorial(alpha)) * x**alpha * u
+        for alpha in range(self.N + 1):
+            potential_energy += v[alpha] / (factorial(alpha)) * x**alpha * u[alpha]
 
         return kinetic_energy + potential_energy
 
-    def esym(self, coefficient_sym: list, x: Array):
+    def esym(self, coefficient_sym: Array, x: Array):
         # TODO: change this to be self-consistent: see Rahul's approach for that.
         return jnp.polyval(jnp.array(coefficient_sym[::-1]), x)
 
@@ -518,9 +536,18 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         f_star3: Array,
         b: Array,
         v: Array,
+        u: Array,
     ) -> Array:
+        r"""
+        The pressure is computed as
 
-        # TODO: currently only for ELFc!
+        .. math::
+            P(n, \delta) = n^2 \frac{\partial e(n, \delta)}{\partial n}
+
+        where the kinetic and potential energy contributions are separated.
+        """
+
+        # Contribution from
         p_kin = (
             1
             / 3
@@ -535,20 +562,13 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             )
         )
 
-        # TODO: cumbersome with jnp.array, find another way
         p_pot = 0
-        for alpha in range(1, 5):
-            u = self.u(x, b, alpha)
-            fac1 = alpha * u
-            fac2 = (self.N + 1 - alpha - 3 * b * x) * (u - 1)
-            p_pot += (
-                v.at[alpha].get()
-                / (factorial(alpha))
-                * x ** (alpha - 1)
-                * (fac1 + fac2)
-            )
+        for alpha in range(1, self.N + 1):
+            fac1 = alpha * u[alpha]
+            fac2 = (self.N + 1 - alpha - 3 * b * x) * (u[alpha] - 1)
+            p_pot += v[alpha] / (factorial(alpha)) * x ** (alpha - 1) * (fac1 + fac2)
 
-        p_pot = p_pot - v.at[0].get() * (-3) ** (self.N + 1) * x**self.N * (
+        p_pot = p_pot - v[0] * (-3) ** (self.N + 1) * x**self.N * (
             self.N + 1 - 3 * b * x
         ) * jnp.exp(-b * (1 + 3 * x))
         p_pot = p_pot * (1 / 3) * self.nsat * (1 + 3 * x) ** 2
@@ -568,6 +588,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         f_star3: Array,
         b: Array,
         v: Array,
+        u: Array,
     ):
 
         ### Compute incompressibility
@@ -584,54 +605,67 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             )
         )
 
-        # Potential part
+        # Build the contributions from the potential part
         K_pot = 0
-        for alpha in range(2, self.N + 1):
-            u = 1 - ((-3 * x) ** (self.N + 1 - alpha) * jnp.exp(-b * (1 + 3 * x)))
-            x_up = (self.N + 1 - alpha - 3 * b * x) * (u - 1)
-            x2_upp = (
-                -(self.N + 1 - alpha) * (self.N - alpha)
-                + 6 * b * x * (self.N + 1 - alpha)
-                - 9 * x**2 * b**2
-            ) * (1 - u)
 
-            K_pot = K_pot + v.at[alpha].get() / (factorial(alpha)) * x ** (
-                alpha - 2
-            ) * (alpha * (alpha - 1) * u + 2 * alpha * x_up + x2_upp)
-
+        # alpha = 0 term
         K_pot += (
-            v.at[0].get()
+            v[0]
             * (-(self.N + 1) * (self.N) + 6 * b * x * (self.N + 1) - 9 * x**2 * b**2)
             * ((-3) ** (self.N + 1) * x ** (self.N - 1) * jnp.exp(-b * (1 + 3 * x)))
         )
+
+        # alpha = 1 term
         K_pot += (
             2
-            * v.at[1].get()
+            * v[1]
             * (self.N - 3 * b * x)
             * (-((-3) ** (self.N)) * x ** (self.N - 1) * jnp.exp(-b * (1 + 3 * x)))
         )
         K_pot += (
-            v.at[1].get()
+            v[1]
             * (-(self.N) * (self.N - 1) + 6 * b * x * (self.N) - 9 * x**2 * b**2)
             * ((-3) ** (self.N) * x ** (self.N - 1) * jnp.exp(-b * (1 + 3 * x)))
         )
+
+        # Summation over alpha >= 2 terms
+        for alpha in range(2, self.N + 1):
+            # x times u prime
+            x_up = (self.N + 1 - alpha - 3 * b * x) * (u[alpha] - 1)
+            # x squared times u double prime
+            x2_upp = (
+                -(self.N + 1 - alpha) * (self.N - alpha)
+                + 6 * b * x * (self.N + 1 - alpha)
+                - 9 * x**2 * b**2
+            ) * (1 - u[alpha])
+
+            K_pot = K_pot + v[alpha] / (factorial(alpha)) * x ** (alpha - 2) * (
+                alpha * (alpha - 1) * u[alpha] + 2 * alpha * x_up + x2_upp
+            )
+
+        # Multiply by the overall prefactor
         K_pot *= (1 + 3 * x) ** 2
 
+        # Sum the kinetic and potential contributions, and add the contribution from the pressure
         K = K_kin + K_pot + 18 / n * p
 
-        # For electron
+        # Add electron contributions
 
-        K_Fb = (3.0 * jnp.pi**2 / 2.0 * n) ** (1.0 / 3.0) * utils.hbarc
-        K_Fe = K_Fb * (1.0 - delta) ** (1.0 / 3.0)
+        K_Fe = (
+            (3.0 * jnp.pi**2 / 2.0 * n) ** (1.0 / 3.0)
+            * utils.hbarc
+            * (1.0 - delta) ** (1.0 / 3.0)
+        )
+        x_e = K_Fe / utils.m_e
+
         C = utils.m_e**4 / (8.0 * jnp.pi**2) / utils.hbarc**3
-        x = K_Fe / utils.m_e
-        f = x * (1 + 2 * x**2) * jnp.sqrt(1 + x**2) - jnp.arcsinh(x)
+        f = x_e * (1 + 2 * x_e**2) * jnp.sqrt(1 + x_e**2) - jnp.arcsinh(x_e)
 
-        e_electron = C * f
-        p_electron = -e_electron + 8.0 / 3.0 * C * x**3 * jnp.sqrt(1 + x**2)
-        K_electron = 8 * C / n * x**3 * (3 + 4 * x**2) / (
-            jnp.sqrt(1 + x**2)
-        ) - 9 / n * (e_electron + p_electron)
+        epsilon_electron = C * f
+        p_electron = -epsilon_electron + 8.0 / 3.0 * C * x_e**3 * jnp.sqrt(1 + x_e**2)
+        K_electron = 8 * C / n * x_e**3 * (3 + 4 * x_e**2) / (
+            jnp.sqrt(1 + x_e**2)
+        ) - 9 / n * (epsilon_electron + p_electron)
 
         # Sum together:
         K_tot = K + K_electron
@@ -639,7 +673,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         # Finally, get cs2:
         chi = K_tot / 9.0
 
-        total_energy_density = (e + utils.m) * n + e_electron
+        total_energy_density = (e + utils.m) * n + epsilon_electron
         total_pressure = p + p_electron
         h_tot = (total_energy_density + total_pressure) / n
 
@@ -647,9 +681,8 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
 
         return cs2
 
-    # TODO: change list to Array type hinting and internally usage
     def compute_proton_fraction(
-        self, coefficient_sym: list, n: Array
+        self, coefficient_sym: Array, n: Array
     ) -> Float[Array, "n_points"]:
         r"""
         Compute proton fraction from beta-equilibrium condition.
@@ -673,26 +706,13 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         Returns:
             Float[Array, "n_points"]: Proton fraction :math:`x_p = n_p/n` as a function of density.
         """
-        # TODO: the following comments should be in the doc string
-        # # chemical potential of electron -- derivation
-        # mu_e = hbarc * pow(3 * pi**2 * x * n, 1. / 3.)
-        #      = hbarc * pow(3 * pi**2 * n, 1. / 3.) * y (y = x**1./3.)
-        # mu_p - mu_n = dEdx
-        #             = -4 * Esym * (1. - 2. * x)
-        #             = -4 * Esym + 8 * Esym * y**3
-        # at beta equilibrium, the polynominal is given by
-        # mu_e(y) + dEdx(y) - (m_n - m_p) = 0
-        # p_0 = -4 * Esym - (m_n - m_p)
-        # p_1 = hbarc * pow(3 * pi**2 * n, 1. / 3.)
-        # p_2 = 0
-        # p_3 = 8 * Esym
 
-        Esym = self.esym(coefficient_sym, n)
+        esym = self.esym(coefficient_sym, n)
 
-        a = 8.0 * Esym
+        a = 8.0 * esym
         b = jnp.zeros(shape=n.shape)
         c = utils.hbarc * jnp.power(3.0 * jnp.pi**2 * n, 1.0 / 3.0)
-        d = -4.0 * Esym - (utils.m_n - utils.m_p)
+        d = -4.0 * esym - (utils.m_n - utils.m_p)
 
         coeffs = jnp.stack([a, b, c, d], axis=1)
         ys = utils.cubic_root_for_proton_fraction(coeffs)

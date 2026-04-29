@@ -372,8 +372,7 @@ jesterTOV/inference/
 ├── config/                      # YAML parsing, Pydantic validation
 │   ├── schema.py                # Thin aggregator: InferenceConfig + re-exports
 │   ├── schemas/                 # Domain-specific config sub-modules (eos, tov, likelihoods, samplers)
-│   ├── parser.py                # YAML loading functions
-│   └── generate_yaml_reference.py  # Auto-generate documentation
+│   └── parser.py                # YAML loading functions
 ├── priors/                      # Prior specification system
 │   └── parser.py                # Parse .prior files (bilby-style Python)
 ├── flows/                       # Normalizing flow utilities for GW likelihoods

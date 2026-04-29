@@ -55,10 +55,9 @@ When a user asks to change a default value (e.g. `penalty_value`), update **all*
 
 1. **`likelihoods/<name>.py`** — `__init__` signature default(s) and docstring(s)
 2. **`config/schemas/likelihoods.py`** — `Field(default=...)` and any docstring YAML example
-3. **`config/generate_yaml_reference.py`** — hardcoded `"example"` and `"default"` strings for the affected likelihood type(s); the generator does **not** read Pydantic defaults automatically
-4. **`docs/inference/yaml_reference.md`** — regenerate: `uv run python -m jesterTOV.inference.config.generate_yaml_reference`
-5. **`examples/inference/**/config.yaml`** — remove or update the now-redundant explicit value
-6. **`tests/test_inference/test_config.py`** — update any assertion on the old default
+3. **`docs/inference/yaml_reference.md`** — update the relevant field entry by hand
+4. **`examples/inference/**/config.yaml`** — remove or update the now-redundant explicit value
+5. **`tests/test_inference/test_config.py`** — update any assertion on the old default
 
 The factory (`likelihoods/factory.py`) passes `config.<field>` through, so no change needed there.
 
@@ -66,7 +65,7 @@ The factory (`likelihoods/factory.py`) passes `config.<field>` through, so no ch
 - `docs/inference_index.md` - Navigation hub
 - `docs/inference_quickstart.md` - Quick start guide
 - `docs/inference.md` - Complete reference
-- `docs/inference_yaml_reference.md` - Auto-generated YAML reference
+- `docs/inference/yaml_reference.md` - Hand-maintained YAML reference
 
 Full details in `jesterTOV/inference/CLAUDE.md`
 
@@ -89,8 +88,7 @@ jesterTOV/inference/
 │       ├── tov.py       #   BaseTOVConfig + GRTOVConfig
 │       ├── likelihoods.py #  All likelihood configs (incl. GWEventConfig)
 │       └── samplers.py  #   All sampler configs
-│   ├── parser.py        # YAML loading
-│   └── generate_yaml_reference.py  # Auto-generate docs
+│   └── parser.py        # YAML loading
 ├── priors/              # Prior specification system
 │   └── parser.py        # Parse .prior files (bilby-style Python format)
 ├── flows/               # Normalizing flow utilities for GW likelihoods
@@ -371,10 +369,7 @@ Configuration files use YAML with Pydantic validation. See `examples/inference/*
 9. `GammaConstraintsLikelihoodConfig` - Spectral gamma bounds
 10. `ZeroLikelihoodConfig` - Prior-only sampling (no data)
 
-**IMPORTANT**: When modifying any file under `config/schemas/`, regenerate YAML documentation:
-```bash
-uv run python -m jesterTOV.inference.config.generate_yaml_reference
-```
+**IMPORTANT**: When modifying any file under `config/schemas/`, update `docs/inference/yaml_reference.md` by hand to keep the user documentation in sync.
 
 ### Prior Specification
 
@@ -470,10 +465,7 @@ Transforms convert between parameter spaces. Two types:
        likelihood = MyNewLikelihood(data)
    ```
 
-5. **Regenerate YAML docs**:
-   ```bash
-   uv run python -m jesterTOV.inference.config.generate_yaml_reference
-   ```
+5. **Update YAML docs**: Open `docs/inference/yaml_reference.md` and add an entry for your new likelihood type under the appropriate category.
 
 6. **Add tests** in `tests/test_inference/test_likelihoods.py`
 
@@ -523,7 +515,7 @@ Transforms convert between parameter spaces. Two types:
    ]
    ```
 
-4. **Regenerate YAML docs** and **add tests**
+4. **Update YAML docs** (`docs/inference/yaml_reference.md`) and **add tests**
 
 **No need to create new transform classes** - `JesterTransform` handles all EOS × TOV combinations automatically!
 
@@ -580,7 +572,7 @@ Transforms convert between parameter spaces. Two types:
    ]
    ```
 
-4. **Regenerate YAML docs** and **add tests**
+4. **Update YAML docs** (`docs/inference/yaml_reference.md`) and **add tests**
 
 ### Adding a New Sampler
 
@@ -589,7 +581,7 @@ Transforms convert between parameter spaces. Two types:
 3. Add to `SAMPLER_REGISTRY` in `samplers/jester_sampler.py`
 4. Add Pydantic config to `config/schema.py`
 5. Update `SamplerConfig` discriminated union
-6. Regenerate YAML docs and add tests
+6. Update `docs/inference/yaml_reference.md` and add tests
 
 ### Testing Configuration Changes
 

@@ -1,12 +1,7 @@
 r"""Pydantic models for inference configuration validation.
 
-IMPORTANT: When you modify these schemas, regenerate the YAML reference documentation:
-
-    uv run python -m jesterTOV.inference.config.generate_yaml_reference
-
-TODO: make this automatic in CI/CD, so this note can be removed and user is not burdened with it
-
-This ensures the user documentation stays in sync with the actual validation rules.
+When you modify these schemas, update ``docs/inference/yaml_reference.md`` by hand to
+keep the user documentation in sync with the actual validation rules.
 
 Schema organisation
 -------------------
@@ -94,8 +89,7 @@ class PriorConfig(JesterBaseModel):
 
     @field_validator("specification_file")
     @classmethod
-    def validate_file_extension(cls, v: str) -> str:
-        """Validate that specification file has .prior extension."""
+    def _validate_file_extension(cls, v: str) -> str:
         if not v.endswith(".prior"):
             raise ValueError(
                 f"Prior specification file must have .prior extension, got: {v}"
@@ -211,16 +205,14 @@ class InferenceConfig(JesterBaseModel):
 
     @field_validator("likelihoods")
     @classmethod
-    def validate_likelihoods(cls, v: list[LikelihoodConfig]) -> list[LikelihoodConfig]:
-        """Validate that at least one likelihood is enabled."""
+    def _validate_likelihoods(cls, v: list[LikelihoodConfig]) -> list[LikelihoodConfig]:
         if not any(lk.enabled for lk in v):
             raise ValueError("At least one likelihood must be enabled")
         return v
 
     @field_validator("seed")
     @classmethod
-    def validate_seed(cls, v: int) -> int:
-        """Validate that seed is non-negative."""
+    def _validate_seed(cls, v: int) -> int:
         if v < 0:
             raise ValueError(f"Seed must be non-negative, got: {v}")
         return v
