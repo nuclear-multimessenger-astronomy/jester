@@ -5,6 +5,13 @@ EOS models
 
 JESTER provides multiple parametrizations for the neutron star equation of state, each with different physical assumptions and use cases.
 
+Crust
+-----
+
+Tabulated low-density crust models (BPS, DH, SLy) used as the foundation for all core parametrizations.
+
+:doc:`eos/crust`
+
 Metamodel
 ---------
 
@@ -36,6 +43,7 @@ Spectral Decomposition
 .. toctree::
    :hidden:
 
+   eos/crust
    eos/metamodel
    eos/metamodel_cse
    eos/metamodel_peakcse
