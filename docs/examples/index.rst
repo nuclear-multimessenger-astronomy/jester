@@ -16,7 +16,7 @@ Basic Examples
    :doc:`eos_tov/automatic_differentiation`
 
 **Prior predictive checks for EOS models**
-   Draws samples from the prior distributions of EOS parametrizations available in JESTER (MetaModel, MetaModel + CSE, MetaModel + peakCSE, Spectral reparametrized), solves the TOV equations for each, and plots the resulting ensemble of neutron star properties as a sanity check before inference. After this, users should be ready to dive into the full Bayesian inference workflow: get started here: :doc:`inference/quickstart`.
+   Draws samples from the prior distributions of EOS parametrizations available in JESTER (MetaModel, MetaModel + CSE, MetaModel + peakCSE, Spectral reparametrized), solves the TOV equations for each, and plots the resulting ensemble of neutron star properties as a sanity check before inference. After this, users should be ready to dive into the full Bayesian inference workflow: get started here: :doc:`../inference/quickstart`.
 
    :doc:`eos_tov/prior_predictive`
 
