@@ -51,7 +51,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         b_sym: Float = 25.0,
         # density parameters
         nsat: Float = 0.16,
-        nmin_MM_nsat: Float = 0.12 / 0.16,
+        nmin_MM_nsat: Float = 0.75,
         nmax_nsat: Float = 12,
         ndat: Int = 200,
         # crust parameters
@@ -523,7 +523,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
 
         return kinetic_energy + potential_energy
 
-    def esym(self, coefficient_sym: list, x: Array):
+    def esym(self, coefficient_sym: Array, x: Array):
         # TODO: change this to be self-consistent: see Rahul's approach for that.
         return jnp.polyval(jnp.array(coefficient_sym[::-1]), x)
 
@@ -681,9 +681,8 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
 
         return cs2
 
-    # TODO: change list to Array type hinting and internally usage
     def compute_proton_fraction(
-        self, coefficient_sym: list, n: Array
+        self, coefficient_sym: Array, n: Array
     ) -> Float[Array, "n_points"]:
         r"""
         Compute proton fraction from beta-equilibrium condition.
@@ -707,26 +706,13 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         Returns:
             Float[Array, "n_points"]: Proton fraction :math:`x_p = n_p/n` as a function of density.
         """
-        # TODO: the following comments should be in the doc string
-        # # chemical potential of electron -- derivation
-        # mu_e = hbarc * pow(3 * pi**2 * x * n, 1. / 3.)
-        #      = hbarc * pow(3 * pi**2 * n, 1. / 3.) * y (y = x**1./3.)
-        # mu_p - mu_n = dEdx
-        #             = -4 * Esym * (1. - 2. * x)
-        #             = -4 * Esym + 8 * Esym * y**3
-        # at beta equilibrium, the polynominal is given by
-        # mu_e(y) + dEdx(y) - (m_n - m_p) = 0
-        # p_0 = -4 * Esym - (m_n - m_p)
-        # p_1 = hbarc * pow(3 * pi**2 * n, 1. / 3.)
-        # p_2 = 0
-        # p_3 = 8 * Esym
 
-        Esym = self.esym(coefficient_sym, n)
+        esym = self.esym(coefficient_sym, n)
 
-        a = 8.0 * Esym
+        a = 8.0 * esym
         b = jnp.zeros(shape=n.shape)
         c = utils.hbarc * jnp.power(3.0 * jnp.pi**2 * n, 1.0 / 3.0)
-        d = -4.0 * Esym - (utils.m_n - utils.m_p)
+        d = -4.0 * esym - (utils.m_n - utils.m_p)
 
         coeffs = jnp.stack([a, b, c, d], axis=1)
         ys = utils.cubic_root_for_proton_fraction(coeffs)
