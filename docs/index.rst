@@ -1,9 +1,9 @@
 JESTER documentation
 ====================
 
-JAX-accelerated equation of state inference and TOV solvers
+*JAX-accelerated equation of state inference and TOV solvers*
 
-``jester`` performs Bayesian inference on neutron star equations of state using GPU-accelerated TOV solvers through ``jax``.
+``jester`` performs fast and accurate Bayesian inference on the neutron star equation of state (EOS) using GPU-accelerated TOV solvers and samplers through ``jax``.
 
 Try it out!
 ============
