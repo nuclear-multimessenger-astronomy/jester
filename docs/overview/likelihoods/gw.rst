@@ -194,6 +194,30 @@ Below, we show another example extracted posterior samples on the source-frame m
 
 ----
 
+Trained flows
+-------------
+
+Normalizing flows for all datasets listed above have already been trained and are shipped with JESTER — no separate training step is required. The trained models live under ``jesterTOV/inference/flows/models/gw_maf/gw170817/`` and ``jesterTOV/inference/flows/models/gw_maf/gw190425/``, with one subdirectory per dataset. When you use the :class:`~jesterTOV.inference.likelihoods.gw.GWLikelihood` without specifying a ``model_dir``, JESTER automatically loads a sensible default for each event. The defaults are:
+
+* **GW170817**: the GWTC-1 low-spin posterior (``gw170817_gwtc1_lowspin``), based on IMRPhenomPv2_NRTidal with a spin prior below 0.05.
+* **GW190425**: the discovery-paper low-spin posterior (``gw190425_phenompnrt_ls``), based on IMRPhenomPv2_NRTidal with a low-spin prior.
+
+You can override the default by passing the path to any of the trained subdirectories via the ``nf_model_dir`` argument (see :doc:`../../inference/analyze_bns`), allowing you to switch datasets or spin priors without any retraining.
+
+The default model directories are: set in ``jester/jesterTOV/inference/likelihoods/factory.py``::
+
+  GW_EVENT_PRESETS = {
+      "GW170817": "flows/models/gw_maf/gw170817/gw170817_gwtc1_lowspin",
+      "GW190425": "flows/models/gw_maf/gw190425/gw190425_phenompnrt_ls",
+  }
+
+Need more information? Check out:
+
+* :doc:`../../inference/analyze_bns`: more information on how to postprocess your GW posterior into a trained flow for ``jester`` inference
+* :doc:`../../inference/training_flows`: more details on training the flows in ``jester``
+
+----
+
 .. admonition:: Current scope: BNS only
    :class: important
 
