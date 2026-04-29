@@ -16,9 +16,11 @@ Schema Classes
    schema.BaseEOSConfig
    schema.MetamodelEOSConfig
    schema.MetamodelCSEEOSConfig
+   schema.MetamodelPeakCSEEOSConfig
    schema.SpectralEOSConfig
    schema.BaseTOVConfig
    schema.GRTOVConfig
+   schema.AnisotropyTOVConfig
    schema.PriorConfig
    schema.LikelihoodConfig
    schema.BaseSamplerConfig

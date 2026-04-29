@@ -21,6 +21,7 @@ X-ray Timing Likelihoods
    :toctree: _autosummary
 
    nicer.NICERLikelihood
+   nicer.NICERKDELikelihood
 
 Radio Pulsar Likelihoods
 -------------------------

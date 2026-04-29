@@ -15,7 +15,6 @@ Submodules
    jesterTOV.inference.run_inference
    jesterTOV.inference.base
    jesterTOV.inference.config
-   jesterTOV.inference.data
    jesterTOV.inference.priors
    jesterTOV.inference.likelihoods
    jesterTOV.inference.transforms
