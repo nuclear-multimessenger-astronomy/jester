@@ -125,7 +125,3 @@ uv run sphinx-build -W --keep-going docs docs/_build/html
 ```
 
 Common sources of warnings are unexpected indentation inside docstrings (a `:` followed by a more-indented continuation line), inline bracket-wrapped lists in return descriptions, and missing or malformed cross-references.
-
-### Math does not render in the built docs
-
-Inline math in docstrings must use reStructuredText syntax (`:math:\`expression\``) and docstrings containing LaTeX must be raw strings (`r"""`). Markdown math (`$...$`) is only supported in MyST Markdown files (`.md`), not in Python docstrings. See `jesterTOV/eos/base.py` for reference examples.

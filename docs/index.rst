@@ -109,6 +109,7 @@ Contents
 
    examples/eos_tov/eos_tov
    examples/eos_tov/automatic_differentiation
+   examples/eos_tov/prior_predictive
 
 .. toctree::
    :maxdepth: 2
