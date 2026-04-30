@@ -531,7 +531,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         return kinetic_energy + potential_energy
 
     def esym(self, v_sat: Array, v_sym2: Array, n: Array) -> Array:
-        r"""Self-consistent symmetry energy :math:`e_{\rm sym}(n)` [MeV].
+        r"""Symmetry energy :math:`e_{\rm sym}(n)` [MeV].
 
         Computed as the difference in energy per nucleon between pure neutron matter
         (:math:`\delta = 1`) and symmetric nuclear matter (:math:`\delta = 0`):
@@ -604,7 +604,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         :class:`~jesterTOV.tov.data_classes.EOSData`, which does include electrons.
         """
 
-        # Contribution from
+        # Contribution from kinetic energy
         p_kin = (
             1
             / 3
@@ -619,6 +619,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             )
         )
 
+        # Contribution from potential energy
         p_pot = 0
         for alpha in range(1, self.N + 1):
             fac1 = alpha * u[alpha]
