@@ -89,7 +89,9 @@ def energy_per_nucleon(delta_const: float) -> np.ndarray:
     b = model.compute_b(delta)
     v = model.compute_v(v_sat, v_sym2, delta)
     u = model.compute_u(x, b)
-    return np.asarray(model.compute_energy(x, f_1, f_star, f_star2, f_star3, v, u))
+    return np.asarray(
+        model.compute_energy_nucleons(x, f_1, f_star, f_star2, f_star3, v, u)
+    )
 
 
 n = np.asarray(n_vals)

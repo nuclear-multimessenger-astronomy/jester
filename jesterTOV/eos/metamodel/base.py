@@ -379,8 +379,16 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         u = self.compute_u(x, b)
 
         # Other quantities
-        p_metamodel = self.compute_pressure(x, f_1, f_star, f_star2, f_star3, b, v, u)
-        e_metamodel = self.compute_energy(x, f_1, f_star, f_star2, f_star3, v, u)
+        # NOTE: The following functions only compute pressure and energy density for the nucleonic part of the EOS
+        # The electron contribution is not added here.
+        # Instead, the electron contribution is added in the compute_cs2 function, which is then integrated
+        # to obtain the total energy density and pressure later on
+        p_metamodel = self.compute_pressure_nucleons(
+            x, f_1, f_star, f_star2, f_star3, b, v, u
+        )
+        e_metamodel = self.compute_energy_nucleons(
+            x, f_1, f_star, f_star2, f_star3, v, u
+        )
 
         # Get cs2 for the metamodel
         cs2_metamodel = self.compute_cs2(
@@ -497,7 +505,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             ]
         )
 
-    def compute_energy(
+    def compute_energy_nucleons(
         self,
         x: Array,
         f_1: Array,
@@ -507,7 +515,16 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         v: Array,
         u: Array,
     ) -> Array:
+        r"""Compute the nucleon-only energy per nucleon :math:`e(n, \delta)` [MeV].
 
+        This returns the kinetic plus potential energy per nucleon for the nuclear
+        matter part only — electrons are not included. The result is an intermediate
+        quantity passed to :meth:`compute_cs2`, which adds the electron contribution
+        before computing the sound speed. The final energy density stored in
+        :class:`~jesterTOV.tov.data_classes.EOSData` is obtained by integrating the
+        total cs2 (nucleons + electrons) via the thermodynamic identity, so it
+        consistently includes electrons.
+        """
         # Kinetic energy
         prefac = self.t_sat / 2 * (1 + 3 * x) ** (2 / 3)
         linear = (1 + 3 * x) * f_star
@@ -527,7 +544,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         # TODO: change this to be self-consistent: see Rahul's approach for that.
         return jnp.polyval(jnp.array(coefficient_sym[::-1]), x)
 
-    def compute_pressure(
+    def compute_pressure_nucleons(
         self,
         x: Array,
         f_1: Array,
@@ -538,13 +555,19 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         v: Array,
         u: Array,
     ) -> Array:
-        r"""
-        The pressure is computed as
+        r"""Compute the nucleon-only pressure [MeV fm\ :sup:`-3`].
+
+        Returns the pressure of nuclear matter (protons + neutrons) only:
 
         .. math::
-            P(n, \delta) = n^2 \frac{\partial e(n, \delta)}{\partial n}
+            P_{\rm nuc}(n, \delta) = n^2 \frac{\partial e(n, \delta)}{\partial n}
 
-        where the kinetic and potential energy contributions are separated.
+        Electrons are not included here. This is an intermediate quantity used
+        inside :meth:`compute_cs2` to evaluate the nuclear incompressibility
+        :math:`K_{\rm nuc}`. The total cs2 from :meth:`compute_cs2` adds the
+        electron incompressibility and enthalpy, and integrating that total cs2
+        via the thermodynamic identity yields the final pressure stored in
+        :class:`~jesterTOV.tov.data_classes.EOSData`, which does include electrons.
         """
 
         # Contribution from
