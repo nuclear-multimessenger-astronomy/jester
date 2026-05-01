@@ -652,6 +652,12 @@ def main(config_path: str) -> None:
     config_path : str
         Path to YAML configuration file
     """
+    # Log version info
+    from jesterTOV import get_version_info
+
+    _vi = get_version_info()
+    logger.info(f"jesterTOV version {_vi['version']} (git {_vi['git_hash']})")
+
     # Load configuration
     logger.info(f"Loading configuration from {config_path}")
     config = load_config(config_path)
