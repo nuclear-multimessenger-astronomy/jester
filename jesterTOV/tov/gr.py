@@ -165,7 +165,7 @@ class GRTOVSolver(TOVSolverBase):
     """
 
     def solve(
-        self, eos_data: EOSData, pc: float, tov_params: dict[str, float]
+        self, eos_data: EOSData, pc: float, tov_params: dict[str, float] = {}
     ) -> TOVSolution:
         r"""
         Solve TOV equations for given central pressure.
@@ -181,7 +181,7 @@ class GRTOVSolver(TOVSolverBase):
         Args:
             eos_data: EOS quantities in geometric units
             pc: Central pressure [geometric units]
-            tov_params: Not used for GR TOV (empty dict ``{}`` — no additional parameters)
+            tov_params: Not used for GR TOV (defaults to ``{}`` — no additional parameters)
 
         Returns:
             TOVSolution: Mass, radius, and Love number in geometric units.
