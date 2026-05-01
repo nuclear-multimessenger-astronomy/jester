@@ -151,9 +151,11 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
 
         if isinstance(proton_fraction, float):
             self.proton_fraction_val = proton_fraction
-            self.proton_fraction = lambda x, y: self.proton_fraction_val
+            self.proton_fraction = lambda _v_sat, _v_sym2, _n: self.proton_fraction_val
         else:
-            self.proton_fraction = lambda x, y: self.compute_proton_fraction(x, y)
+            self.proton_fraction = (
+                lambda v_sat, v_sym2, n: self.compute_proton_fraction(v_sat, v_sym2, n)
+            )
 
         # Constructions
         assert (
@@ -290,8 +292,8 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         self.nmax = nmax_nsat * self.nsat
         self.ndat = ndat
         self.nmin_MM = self.nmin_MM_nsat * self.nsat
-        self.n_metamodel = jnp.linspace(
-            self.nmin_MM, self.nmax, self.ndat, endpoint=False
+        self.n_metamodel = jnp.logspace(
+            jnp.log10(self.nmin_MM), jnp.log10(self.nmax), self.ndat, endpoint=False
         )
         self.ns_spline = jnp.append(self.ns_crust, self.n_metamodel)
         self.n_connection = jnp.linspace(
@@ -332,18 +334,6 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         Q_sym = NEP_dict["Q_sym"]
         Z_sym = NEP_dict["Z_sym"]
 
-        # FIXME: here and below, we should probably NOT use coefficient_sym, but rather, v_sym2
-        # Add the first derivative coefficient in Esat to make it work with jax.numpy.polyval
-        coefficient_sat = jnp.array([E_sat, 0.0, K_sat, Q_sat, Z_sat])
-        coefficient_sym = jnp.array([E_sym, L_sym, K_sym, Q_sym, Z_sym])
-
-        # Get the coefficents index array and get coefficients
-        index_sat = jnp.arange(len(coefficient_sat))
-        index_sym = jnp.arange(len(coefficient_sym))
-
-        coefficient_sat = coefficient_sat / factorial(index_sat)
-        coefficient_sym = coefficient_sym / factorial(index_sym)
-
         # Potential energy: see Appendix B of Somasundaram et al. for details
         v_sat = jnp.array(
             [
@@ -367,7 +357,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
 
         # Auxiliaries first
         x = self.compute_x(self.n_metamodel)
-        proton_fraction = self.proton_fraction(coefficient_sym, self.n_metamodel)
+        proton_fraction = self.proton_fraction(v_sat, v_sym2, self.n_metamodel)
         delta = 1 - 2 * proton_fraction
 
         f_1 = self.compute_f_1(delta)
@@ -428,6 +418,11 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
 
         ns, ps, hs, es, dloge_dlogps = self.interpolate_eos(n, p, e)
 
+        # Count points where symmetry energy is negative (unphysical region)
+        esym_vals = self.esym(v_sat, v_sym2, self.n_metamodel)
+        n_esym_violations = jnp.sum(esym_vals < 0.0)
+        extra_constraints = {"n_esym_violations": n_esym_violations}
+
         return EOSData(
             ns=ns,
             ps=ps,
@@ -436,7 +431,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             dloge_dlogps=dloge_dlogps,
             cs2=cs2,
             mu=mu,
-            extra_constraints=None,
+            extra_constraints=extra_constraints,
         )
 
     def get_required_parameters(self) -> list[str]:
@@ -540,9 +535,53 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
 
         return kinetic_energy + potential_energy
 
-    def esym(self, coefficient_sym: Array, x: Array):
-        # TODO: change this to be self-consistent: see Rahul's approach for that.
-        return jnp.polyval(jnp.array(coefficient_sym[::-1]), x)
+    def esym(self, v_sat: Array, v_sym2: Array, n: Array) -> Array:
+        r"""Symmetry energy :math:`e_{\rm sym}(n)` [MeV].
+
+        Computed as the difference in energy per nucleon between pure neutron matter
+        (:math:`\delta = 1`) and symmetric nuclear matter (:math:`\delta = 0`):
+
+        .. math::
+            e_{\rm sym}(n) = e(n, \delta=1) - e(n, \delta=0)
+
+        This self-consistent approach uses the full metamodel kinetic and potential
+        energy (including the u-function corrections) rather than the NEP polynomial
+        approximation, giving more accurate proton fractions especially below
+        saturation density.
+
+        Args:
+            v_sat: Potential energy coefficients for isospin-symmetric matter, shape (N+1,).
+            v_sym2: Potential energy coefficients for the isospin-asymmetric part, shape (N+1,).
+            n: Number density array [:math:`\mathrm{fm}^{-3}`].
+
+        Returns:
+            Symmetry energy at each density point [MeV].
+        """
+        x = self.compute_x(n)
+
+        # Pure neutron matter (delta = 1)
+        e_pnm = self.compute_energy_nucleons(
+            x,
+            self.compute_f_1(1.0),
+            self.compute_f_star(1.0),
+            self.compute_f_star2(1.0),
+            self.compute_f_star3(1.0),
+            self.compute_v(v_sat, v_sym2, 1.0),
+            self.compute_u(x, self.compute_b(1.0)),
+        )
+
+        # Symmetric nuclear matter (delta = 0)
+        e_snm = self.compute_energy_nucleons(
+            x,
+            self.compute_f_1(0.0),
+            self.compute_f_star(0.0),
+            self.compute_f_star2(0.0),
+            self.compute_f_star3(0.0),
+            self.compute_v(v_sat, v_sym2, 0.0),
+            self.compute_u(x, self.compute_b(0.0)),
+        )
+
+        return e_pnm - e_snm
 
     def compute_pressure_nucleons(
         self,
@@ -570,7 +609,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         :class:`~jesterTOV.tov.data_classes.EOSData`, which does include electrons.
         """
 
-        # Contribution from
+        # Contribution from kinetic energy
         p_kin = (
             1
             / 3
@@ -585,6 +624,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             )
         )
 
+        # Contribution from potential energy
         p_pot = 0
         for alpha in range(1, self.N + 1):
             fac1 = alpha * u[alpha]
@@ -705,32 +745,33 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         return cs2
 
     def compute_proton_fraction(
-        self, coefficient_sym: Array, n: Array
+        self, v_sat: Array, v_sym2: Array, n: Array
     ) -> Float[Array, "n_points"]:
         r"""
         Compute proton fraction from beta-equilibrium condition.
 
-        This method solves the beta-equilibrium condition:
+        Solves the beta-equilibrium condition:
 
         .. math::
-            \mu_e + \mu_p - \mu_n = 0
+            \mu_n - \mu_p = \mu_e
 
-        where the chemical potentials are related to the EOS through:
+        using the quadratic approximation :math:`\mu_n - \mu_p \approx 4 e_{\rm sym}(n) \delta`
+        together with the self-consistent symmetry energy from :meth:`esym`.  Protons and
+        neutrons are treated as having equal rest mass (:math:`m_n = m_p`).
 
-        .. math::
-            \mu_p - \mu_n = \frac{\partial \varepsilon}{\partial x_p} = -4 E_{\mathrm{sym}} (1 - 2x_p)
-
-        and the electron chemical potential is :math:`\mu_e = \hbar c (3\pi^2 x_p n)^{1/3}`.
+        While this does not perform an exact root-finding step, it provides a good approximation
+        that is much more efficient to evaluate during sampling than a full root-finder.
 
         Args:
-            coefficient_sym (list): Symmetry energy expansion coefficients.
-            n (Float[Array, "n_points"]): Number density [:math:`\mathrm{fm}^{-3}`].
+            v_sat: Potential energy coefficients for isospin-symmetric matter, shape (N+1,).
+            v_sym2: Potential energy coefficients for the isospin-asymmetric part, shape (N+1,).
+            n: Number density [:math:`\mathrm{fm}^{-3}`].
 
         Returns:
             Float[Array, "n_points"]: Proton fraction :math:`x_p = n_p/n` as a function of density.
         """
 
-        esym = self.esym(coefficient_sym, n)
+        esym = self.esym(v_sat, v_sym2, n)
 
         a = 8.0 * esym
         b = jnp.zeros(shape=n.shape)

@@ -532,6 +532,26 @@ Apply hard constraints on TOV solution properties (maximum mass, radius bounds, 
 
 ::::
 
+#### Symmetry energy constraints
+
+::::{dropdown} **Symmetry energy constraints**
+
+```yaml
+- type: "constraints_esym"
+  enabled: true
+  penalty_esym: -1e10  # Penalty per density point where e_sym < 0 (default: -1e10)
+```
+
+**Field Details:**
+
+- **`penalty_esym`** (`float`, default: `-1e10`) - Log-likelihood penalty applied per density grid point where the symmetry energy $e_\mathrm{sym}(n) < 0$
+
+**Description:**
+
+Penalises metamodel configurations where the symmetry energy $e_\mathrm{sym}(n) = e(n, \delta=1) - e(n, \delta=0)$ becomes negative, which is unphysical because it would imply pure neutron matter is more bound than symmetric nuclear matter. The penalty is proportional to the number of density points in violation, so a single mild excursion incurs a smaller (but still very large) penalty than a broad violation. This likelihood is only meaningful for the `metamodel`, `metamodel_cse`, and `metamodel_peakCSE` EOS types; it returns 0.0 gracefully for all other EOS parametrisations. See {class}`~jesterTOV.inference.likelihoods.constraints.ConstraintEsymLikelihood` for the full API.
+
+::::
+
 #### Gamma constraints
 
 ::::{dropdown} **Gamma constraints**

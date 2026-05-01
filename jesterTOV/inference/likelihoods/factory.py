@@ -13,6 +13,7 @@ from ..config.schema import (
     ChiEFTLikelihoodConfig,
     EOSConstraintsLikelihoodConfig,
     TOVConstraintsLikelihoodConfig,
+    EsymConstraintsLikelihoodConfig,
     GammaConstraintsLikelihoodConfig,
     DeprecatedConstraintsLikelihoodConfig,
     REXLikelihoodConfig,
@@ -26,6 +27,7 @@ from .chieft import ChiEFTLikelihood
 from .constraints import (
     ConstraintEOSLikelihood,
     ConstraintTOVLikelihood,
+    ConstraintEsymLikelihood,
     ConstraintGammaLikelihood,
 )
 from jesterTOV.logging_config import get_logger
@@ -161,6 +163,11 @@ def create_likelihood(
         case TOVConstraintsLikelihoodConfig():
             return ConstraintTOVLikelihood(
                 penalty_tov=config.penalty_tov,
+            )
+
+        case EsymConstraintsLikelihoodConfig():
+            return ConstraintEsymLikelihood(
+                penalty_esym=config.penalty_esym,
             )
 
         case GammaConstraintsLikelihoodConfig():
