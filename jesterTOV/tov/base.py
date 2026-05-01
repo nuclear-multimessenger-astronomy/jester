@@ -49,7 +49,7 @@ class TOVSolverBase(ABC):
 
     @abstractmethod
     def solve(
-        self, eos_data: EOSData, pc: float, tov_params: dict[str, float] = {}
+        self, eos_data: EOSData, pc: float, tov_params: dict[str, float]
     ) -> TOVSolution:
         r"""
         Solve TOV equations for given central pressure.
