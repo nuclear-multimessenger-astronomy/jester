@@ -647,6 +647,35 @@ class TOVConstraintsLikelihoodConfig(BaseLikelihoodConfig):
     )
 
 
+class EsymConstraintsLikelihoodConfig(BaseLikelihoodConfig):
+    """Symmetry energy constraint likelihood configuration (metamodel EOS only).
+
+    Penalises metamodel configurations where :math:`e_{\\rm sym}(n) < 0`.
+    Only applicable when using metamodel, metamodel+CSE, or metamodel+peakCSE
+    EOS parametrisations.
+
+    Examples
+    --------
+    .. code-block:: yaml
+
+        - type: "constraints_esym"
+          enabled: true
+          penalty_esym: -1e10
+    """
+
+    type: Literal["constraints_esym"] = Field(
+        default="constraints_esym", description="Likelihood type identifier"
+    )
+
+    penalty_esym: float = Field(
+        default=-1e10,
+        description=(
+            "Log-likelihood penalty per density point where the metamodel symmetry "
+            "energy e_sym(n) < 0 (unphysical region)."
+        ),
+    )
+
+
 class GammaConstraintsLikelihoodConfig(BaseLikelihoodConfig):
     """Gamma constraint likelihood configuration (spectral EOS only).
 
@@ -782,6 +811,7 @@ LikelihoodConfig = Annotated[
         ChiEFTLikelihoodConfig,
         EOSConstraintsLikelihoodConfig,
         TOVConstraintsLikelihoodConfig,
+        EsymConstraintsLikelihoodConfig,
         GammaConstraintsLikelihoodConfig,
         DeprecatedConstraintsLikelihoodConfig,
         REXLikelihoodConfig,

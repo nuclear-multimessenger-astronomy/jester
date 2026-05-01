@@ -292,8 +292,8 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
         self.nmax = nmax_nsat * self.nsat
         self.ndat = ndat
         self.nmin_MM = self.nmin_MM_nsat * self.nsat
-        self.n_metamodel = jnp.linspace(
-            self.nmin_MM, self.nmax, self.ndat, endpoint=False
+        self.n_metamodel = jnp.logspace(
+            jnp.log10(self.nmin_MM), jnp.log10(self.nmax), self.ndat, endpoint=False
         )
         self.ns_spline = jnp.append(self.ns_crust, self.n_metamodel)
         self.n_connection = jnp.linspace(
@@ -418,6 +418,11 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
 
         ns, ps, hs, es, dloge_dlogps = self.interpolate_eos(n, p, e)
 
+        # Count points where symmetry energy is negative (unphysical region)
+        esym_vals = self.esym(v_sat, v_sym2, self.n_metamodel)
+        n_esym_violations = jnp.sum(esym_vals < 0.0)
+        extra_constraints = {"n_esym_violations": n_esym_violations}
+
         return EOSData(
             ns=ns,
             ps=ps,
@@ -426,7 +431,7 @@ class MetaModel_EOS_model(Interpolate_EOS_model):
             dloge_dlogps=dloge_dlogps,
             cs2=cs2,
             mu=mu,
-            extra_constraints=None,
+            extra_constraints=extra_constraints,
         )
 
     def get_required_parameters(self) -> list[str]:

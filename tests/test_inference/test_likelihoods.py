@@ -11,6 +11,7 @@ from jesterTOV.inference.likelihoods.combined import ZeroLikelihood, CombinedLik
 from jesterTOV.inference.likelihoods.constraints import (
     ConstraintEOSLikelihood,
     ConstraintTOVLikelihood,
+    ConstraintEsymLikelihood,
     ConstraintGammaLikelihood,
     check_tov_validity,
     check_causality_violation,
@@ -321,6 +322,129 @@ class TestConstraintGammaLikelihood:
         assert result == 0.0
 
 
+class TestConstraintEsymLikelihood:
+    """Test ConstraintEsymLikelihood (symmetry energy constraint for metamodel EOS)."""
+
+    def test_constraint_esym_likelihood_valid(self):
+        """Returns 0.0 when no esym violations."""
+        likelihood = ConstraintEsymLikelihood()
+        params = {"n_esym_violations": 0.0}
+        result = likelihood.evaluate(params)
+        assert float(result) == 0.0
+
+    def test_constraint_esym_likelihood_with_violations(self):
+        """Penalty is proportional to number of violation points."""
+        likelihood = ConstraintEsymLikelihood(penalty_esym=-1e10)
+        params = {"n_esym_violations": 5.0}
+        result = likelihood.evaluate(params)
+        assert float(result) == -5e10
+
+    def test_constraint_esym_likelihood_missing_key(self):
+        """Missing key defaults to 0 → 0.0 log-likelihood."""
+        likelihood = ConstraintEsymLikelihood()
+        result = likelihood.evaluate({})
+        assert float(result) == 0.0
+
+    def test_constraint_esym_likelihood_non_metamodel_params(self):
+        """No n_esym_violations key (non-metamodel transform) → returns 0.0."""
+        likelihood = ConstraintEsymLikelihood()
+        params = {
+            "masses_EOS": jnp.array([1.4, 2.0]),
+            "radii_EOS": jnp.array([12.0, 11.0]),
+        }
+        result = likelihood.evaluate(params)
+        assert float(result) == 0.0
+
+    def test_metamodel_good_params_zero_violations(self):
+        """MetaModel with typical NEPs stores zero esym violations in extra_constraints."""
+        from jesterTOV.eos.metamodel.base import MetaModel_EOS_model
+
+        eos = MetaModel_EOS_model()
+        params = {
+            "E_sat": -16.0,
+            "K_sat": 230.0,
+            "Q_sat": 300.0,
+            "Z_sat": -500.0,
+            "E_sym": 32.0,
+            "L_sym": 60.0,
+            "K_sym": -100.0,
+            "Q_sym": 0.0,
+            "Z_sym": 0.0,
+        }
+        eos_data = eos.construct_eos(params)
+        assert eos_data.extra_constraints is not None
+        assert "n_esym_violations" in eos_data.extra_constraints
+        assert float(eos_data.extra_constraints["n_esym_violations"]) == 0.0
+
+    def test_metamodel_bad_params_nonzero_violations(self):
+        """MetaModel with pathological NEPs (very negative L_sym) gives esym < 0."""
+        from jesterTOV.eos.metamodel.base import MetaModel_EOS_model
+
+        eos = MetaModel_EOS_model()
+        params = {
+            "E_sat": -16.0,
+            "K_sat": 230.0,
+            "Q_sat": 300.0,
+            "Z_sat": -500.0,
+            "E_sym": 5.0,
+            "L_sym": -200.0,
+            "K_sym": -400.0,
+            "Q_sym": 0.0,
+            "Z_sym": 0.0,
+        }
+        eos_data = eos.construct_eos(params)
+        assert eos_data.extra_constraints is not None
+        assert float(eos_data.extra_constraints["n_esym_violations"]) > 0.0
+
+    def test_metamodel_cse_propagates_violations(self):
+        """MetaModel+CSE propagates esym violations from the inner metamodel."""
+        from jesterTOV.eos.metamodel.metamodel_CSE import MetaModel_with_CSE_EOS_model
+
+        eos = MetaModel_with_CSE_EOS_model(nb_CSE=4)
+        good_params = {
+            "E_sat": -16.0,
+            "K_sat": 230.0,
+            "Q_sat": 300.0,
+            "Z_sat": -500.0,
+            "E_sym": 32.0,
+            "L_sym": 60.0,
+            "K_sym": -100.0,
+            "Q_sym": 0.0,
+            "Z_sym": 0.0,
+            "nbreak": 0.24,
+        }
+        for i in range(4):
+            good_params[f"n_CSE_{i}_u"] = (i + 1) / 5.0
+            good_params[f"cs2_CSE_{i}"] = 0.3
+        good_params["cs2_CSE_4"] = 0.3
+
+        eos_data = eos.construct_eos(good_params)
+        assert eos_data.extra_constraints is not None
+        assert "n_esym_violations" in eos_data.extra_constraints
+        assert float(eos_data.extra_constraints["n_esym_violations"]) == 0.0
+
+    def test_full_pipeline_likelihood_evaluates(self):
+        """ConstraintEsymLikelihood evaluates correctly on metamodel extra_constraints."""
+        from jesterTOV.eos.metamodel.base import MetaModel_EOS_model
+
+        eos = MetaModel_EOS_model()
+        bad_params = {
+            "E_sat": -16.0,
+            "K_sat": 230.0,
+            "Q_sat": 300.0,
+            "Z_sat": -500.0,
+            "E_sym": 5.0,
+            "L_sym": -200.0,
+            "K_sym": -400.0,
+            "Q_sym": 0.0,
+            "Z_sym": 0.0,
+        }
+        eos_data = eos.construct_eos(bad_params)
+        likelihood = ConstraintEsymLikelihood(penalty_esym=-1e10)
+        logL = likelihood.evaluate(eos_data.extra_constraints)  # type: ignore[arg-type]
+        assert float(logL) < -1e8
+
+
 class TestConstraintTOVLikelihood:
     """Test ConstraintTOVLikelihood (TOV-level constraints only)."""
 
@@ -497,6 +621,16 @@ class TestLikelihoodFactory:
 
         assert isinstance(likelihood, ConstraintTOVLikelihood)
         assert likelihood.penalty_tov == -1e10
+
+    def test_create_constraint_esym_likelihood(self):
+        """Test creating ConstraintEsymLikelihood via factory."""
+        config = schema.EsymConstraintsLikelihoodConfig(
+            enabled=True,
+            penalty_esym=-1e10,
+        )
+        likelihood = factory.create_likelihood(config)
+        assert isinstance(likelihood, ConstraintEsymLikelihood)
+        assert likelihood.penalty_esym == -1e10
 
     def test_create_constraint_gamma_likelihood(self):
         """Test creating ConstraintGammaLikelihood via factory."""
