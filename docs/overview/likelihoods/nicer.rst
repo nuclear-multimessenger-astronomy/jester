@@ -3,10 +3,6 @@
 NICER constraints
 =================
 
-.. note::
-
-   This page is a placeholder. The detailed content below is to be written soon.
-
 NICER (Neutron star Interior Composition Explorer) is a NASA X-ray telescope on the
 International Space Station that measures X-ray pulse profiles from millisecond pulsars.
 By modelling the anisotropic X-ray emission from hot spots on the neutron star surface,
