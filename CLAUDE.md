@@ -152,7 +152,7 @@ value = array.item()  # type: ignore[union-attr]
      - Nuclear empirical parameter (NEP) based EOS
      - Reference: Margueron et al. (PRD 103, 045803, 2021)
      - Required parameters: 9 NEPs (E_sat, K_sat, Q_sat, Z_sat, E_sym, L_sym, K_sym, Q_sym, Z_sym)
-     - Combines realistic crust (BPS, DH, DH_fixed, SLy) with core meta-model
+     - Combines realistic crust (BPS, DH, SLy) with core meta-model
   2. **MetaModel_with_CSE_EOS_model** (`eos/metamodel/metamodel_CSE.py`)
      - MetaModel with Crust-core-Saturation Extension
      - Parameters: 9 NEPs + nbreak + nb_CSE grid parameters (typically 4-8)
