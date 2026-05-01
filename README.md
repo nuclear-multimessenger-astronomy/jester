@@ -5,22 +5,32 @@
 
 # JESTER
 
-JAX-accelerated equation of state inference and TOV solvers
+*JAX-accelerated equation of state inference and TOV solvers*
 
-`jester` is a package to perform inference on the equation of state (EOS) with Bayesian inference and accelerates the TOV solver calls and the entire sampling procedure by using GPU hardware through `jax`. 
+`jester` performs fast and accurate Bayesian inference on the neutron star equation of state (EOS) using GPU-accelerated TOV solvers and samplers through `jax`.
 
-Currently, `jester` supports the following EOS parametrizations:
-- **Metamodel**: Taylor expansion of the energy density.
-- **Metamodel+CSE**: Metamodel up to breakdown density (varied on-the-fly), and speed-of-sound extrapolation above the breakdown density parametrized by linear interpolation through a grid of speed of sound values.
-- **Metamodel+peakCSE**: Metamodel up to breakdown density (varied on-the-fly), and speed-of-sound extrapolation above the breakdown density parametrized to have a Gaussian peak.
-- **Spectral expansion**: 4-parameter spectral expansion from Lindblom 2010
+> [!TIP]
+> **The documentation is the best place to get started.**
+> It covers installation, examples, a full Bayesian inference guide, and the API reference.
+>
+> **[Read the full documentation →](https://nuclear-multimessenger-astronomy.github.io/jester/)**
 
-Moreover, the following samplers are supported:
-- **Sequential Monte Carlo** (Recommended): Implemented with [`blackjax`](https://github.com/blackjax-devs/blackjax)
-- **Nested sampling**: Implemented in `blackjax` in [this specific fork](https://github.com/handley-lab/blackjax)
-- **flowMC** ([GitHub](https://github.com/kazewong/flowMC)): Normalizing flow-enhanced MCMC sampling
+## Try it out
 
-📚 **[Read the full documentation →](https://nuclear-multimessenger-astronomy.github.io/jester/)**
+Try `jester` right away in your browser and infer the neutron star equation of state from GW170817 within 15 minutes — no installation required!
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/nuclear-multimessenger-astronomy/jester/blob/main/examples/google_colab/GW170817_Google_Colab.ipynb)
+
+## What's in `jester`?
+
+`jester` combines flexible EOS parametrizations with GPU-accelerated TOV solvers and modern Bayesian samplers. For full details on each component, see the [overview section of the documentation](https://nuclear-multimessenger-astronomy.github.io/jester/).
+
+| Component | Description |
+|---|---|
+| **EOS models** | Metamodel, Metamodel + CSE, Spectral expansion |
+| **TOV solvers** | General Relativity, Pressure anisotropy, Modified gravity (scalar-tensor) |
+| **Likelihoods** | Nuclear experiments (chiEFT), Radio timing, NICER mass-radius, Gravitational waves |
+| **Samplers** | Sequential Monte Carlo, Nested Sampling, FlowMC (normalizing flows) |
 
 ## Installation
 
@@ -35,8 +45,7 @@ uv sync
 Extra dependencies can be installed as follows:
 ```bash
 uv sync --extra cuda12 # For GPU support (fast sampling)
-uv sync --extra docs   # To work on documentation locally
-uv sync --extra dev    # To run tests locally
+uv sync --extra dev    # For developers (run tests, build docs)
 ```
 
 To run Bayesian inference, make sure to install support for CUDA or upgrade `jax` according to [the `jax` documentation page](https://docs.jax.dev/en/latest/installation.html):
@@ -44,113 +53,12 @@ To run Bayesian inference, make sure to install support for CUDA or upgrade `jax
 uv sync --extra cuda12
 ```
 
-## Examples
+Having trouble? Check out the [FAQ](https://nuclear-multimessenger-astronomy.github.io/jester/developer_guide/faq.html).
 
-The `examples` folder shows how to use `jester`:
-- `eos_tov`: Showing basic functionality to create an EOS from the different parametrizations supported in `jester`
-- `kde_nf_validation`: Example usage of KDE and NF methods used for the NICER and GW likelihoods
-- `inference`: Configuration files to run Bayesian inference on different likelihoods and with different samplers
+## For developers
 
-To run the `inference` examples, navigate to the desired test case (organized as `<sampler>/<likelihood>`), and run
-```bash
-run_jester_inference config.yaml
-```
-
-Take a look at the `config.yaml` files, which contain all details for `jester` to execute the inference. Note that `jester` also needs a specified prior file. 
-
-## Notes for developers
-
-### Writing source code
-
-A `CLAUDE.md` file already exists in the repo for developers that want to use Claude Code. 
-
-Running tests:
-```bash
-uv run pytest tests/
-
-uv run pytest tests/ -v -m "not slow" # avoid slower tests
-uv run pytest tests/ -v -m "not e2e"  # avoid e2e tests
-```
-
-Code quality checks:
-```bash
-# Pre-commit checks (black, ruff, nbqa)
-uv run pre-commit run --all-files
-```
-
-### Writing documentation 
-
-Make sure to install the documentation dependencies
-```bash
-uv synx --extra docs
-```
-
-Building documentation locally:
-```bash
-# Build the documentation
-uv run sphinx-build docs docs/_build/html
-
-# Or start up autobuild so the page refreshes automatically
-sphinx-autobuild docs docs/_build/html
-
-# Open in your browser
-open docs/_build/html/index.html      # macOS
-xdg-open docs/_build/html/index.html  # Linux
-```
+All development guidelines — including how to run tests, contribute code, add new EOS models, TOV solvers, or likelihoods, and how to write documentation — are in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Citing
 
-If you use `jester` in your work, please cite our paper!
-```
-@article{Wouters:2025zju,
-    author = "Wouters, Thibeau and Pang, Peter T. H. and Koehn, Hauke and Rose, Henrik and Somasundaram, Rahul and Tews, Ingo and Dietrich, Tim and Van Den Broeck, Chris",
-    title = "{Leveraging differentiable programming in the inverse problem of neutron stars}",
-    eprint = "2504.15893",
-    archivePrefix = "arXiv",
-    primaryClass = "astro-ph.HE",
-    reportNumber = "LA-UR-25-23486",
-    doi = "10.1103/v2y8-kxvx",
-    journal = "Phys. Rev. D",
-    volume = "112",
-    number = "4",
-    pages = "043037",
-    year = "2025"
-}
-```
-
-If you use the `ptov.py` module, to enabble pressure anisotropy, please cite the following paper:
-```
-@article{Pang:2025fes,
-    author = "Pang, Peter T. H. and Brown, Stephanie M. and Wouters, Thibeau and Van Den Broeck, Chris",
-    title = "{Revealing tensions in neutron star observations with pressure anisotropy}",
-    eprint = "2507.13039",
-    archivePrefix = "arXiv",
-    primaryClass = "astro-ph.HE",
-    month = "7",
-    year = "2025"
-}
-```
-
-Additionally, make sure to cite the following software papers which form the backbone of `jester`:
-```bash 
-# JAX software paper
-@article{frostig2018compiling,
-  title={Compiling machine learning programs via high-level tracing. Syst},
-  author={Frostig, Roy and Johnson, MJ and Leary, Chris},
-  journal={Mach. Learn},
-  volume={4},
-  number={9},
-  year={2018}
-}
-
-# diffrax software paper
-@misc{kidger2022neuraldifferentialequations,
-      title={On Neural Differential Equations}, 
-      author={Patrick Kidger},
-      year={2022},
-      eprint={2202.02435},
-      archivePrefix={arXiv},
-      primaryClass={cs.LG},
-      url={https://arxiv.org/abs/2202.02435}, 
-}
-```
+If you use `jester` in your work, please cite the relevant papers. See the [citing page in the documentation](https://nuclear-multimessenger-astronomy.github.io/jester/citing.html) for the full list of references.
