@@ -11,13 +11,13 @@ class BaseEOSConfig(JesterBaseModel):
 
     Attributes
     ----------
-    crust_name : Literal["DH", "BPS", "DH_fixed", "SLy"]
+    crust_name : Literal["DH", "BPS", "SLy"]
         Name of crust model to use (default: "DH")
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    crust_name: Literal["DH", "BPS", "DH_fixed", "SLy"] = "DH"
+    crust_name: Literal["DH", "BPS", "SLy"] = "DH"
 
 
 class BaseMetamodelEOSConfig(BaseEOSConfig):

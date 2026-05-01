@@ -133,19 +133,22 @@ class TestMetaModelEOSIntegration:
         assert jnp.min(n_SI) < nep_dict["nbreak"]  # Should include metamodel region
         assert jnp.max(n_SI) > nep_dict["nbreak"]  # Should include CSE region
 
-        # Check continuity at break point
+        # Check continuity at break point.
+        # break_idx is the last metamodel point (endpoint at nbreak); break_idx+1 is the
+        # first CSE point (also at nbreak). With a logspace grid spanning from crust to
+        # nbreak, the step between break_idx-1 and break_idx is large, so we compare the
+        # actual join: the metamodel endpoint vs the CSE start.
         break_idx = jnp.argmin(jnp.abs(n_SI - nep_dict["nbreak"]))
-        if break_idx > 0 and break_idx < len(eos_data.ps) - 1:
-            # Check that pressure is continuous (within numerical precision)
-            p_before = eos_data.ps[break_idx - 1]
+        if break_idx < len(eos_data.ps) - 1:
+            p_before = eos_data.ps[break_idx]
             p_after = eos_data.ps[break_idx + 1]
-            assert abs((p_after - p_before) / p_before) < 0.1  # 10% tolerance
+            assert (
+                abs((p_after - p_before) / p_before) < 0.01
+            )  # join must be nearly exact
 
         # Construct family using GRTOVSolver
         solver = GRTOVSolver()
-        family_data = solver.construct_family(
-            eos_data, tov_params={}, ndat=25, min_nsat=0.75
-        )
+        family_data = solver.construct_family(eos_data, ndat=25, min_nsat=0.75)
 
         # Should get reasonable neutron star properties (CSE with 3 nsat base)
         assert (

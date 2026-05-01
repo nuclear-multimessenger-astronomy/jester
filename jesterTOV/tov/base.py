@@ -58,7 +58,7 @@ class TOVSolverBase(ABC):
             eos_data: EOS quantities (type-safe dataclass)
             pc: Central pressure [geometric units]
             tov_params: Solver-specific parameters returned by :meth:`fetch_params`.
-                Empty dict ``{}`` for GR; populated dict for modified-gravity solvers.
+                Defaults to ``{}`` for GR; populated dict for modified-gravity solvers, anisotropy, etc.
 
         Returns:
             TOVSolution: Mass, radius, and Love number k2 [geometric units]
@@ -84,7 +84,7 @@ class TOVSolverBase(ABC):
         eos_data: EOSData,
         ndat: int,
         min_nsat: float,
-        tov_params: dict[str, float],
+        tov_params: dict[str, float] = {},
     ) -> FamilyData:
         r"""
         Construct M-R-Λ curves by solving for multiple central pressures.
@@ -98,7 +98,7 @@ class TOVSolverBase(ABC):
             min_nsat: Minimum central density in units of saturation density
                      (assumed to be 0.16 :math:`\mathrm{fm}^{-3}`)
             tov_params: Solver-specific parameters returned by :meth:`fetch_params`.
-                Empty dict ``{}`` for GR; populated dict for modified-gravity solvers.
+                Defaults to ``{}`` for GR; populated dict for modified-gravity solvers, anisotropy, etc.
 
         Returns:
             FamilyData: Mass-radius-tidal curves in physical units

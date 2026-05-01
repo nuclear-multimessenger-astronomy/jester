@@ -5,7 +5,7 @@ Gravitational wave constraints from binary neutron star mergers
 
 .. note::
 
-   Running some of the scripts mentioned here require an installation of ``bilby`` to convert masses to source frame. This is an optional dependency that is not listed in the JESTER repo, so you may need to install it manually with ``uv pip install bilby`` or ``uv sync --extra bilby`` in your environment.
+   Running some of the scripts mentioned here require an installation of ``bilby`` to convert masses to source frame. This is an optional dependency that is not listed in the JESTER repo, so you may need to install it manually with ``uv pip install bilby`` or ``uv sync --extra dev`` in your environment.
 
 Binary neutron star (BNS) mergers observed with gravitational waves provide direct constraints on tidal deformability. During the inspiral phase, each neutron star is tidally deformed by its companion's gravitational field, and this deformation leaves an imprint on the gravitational waveform. The tidal deformability :math:`\Lambda = \frac{2}{3} k_2 \left(\frac{R}{M}\right)^5` depends sensitively on the equation of state through both the radius :math:`R` and the Love number :math:`k_2`.
 

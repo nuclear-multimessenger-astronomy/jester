@@ -191,7 +191,7 @@ Save to outdir/{result_id}.h5
      - `MetaModel_EOS_model` - Nuclear empirical parameters (9 NEPs)
        - Reference: Margueron et al. (PRD 103, 045803, 2021)
        - Required: E_sat, K_sat, Q_sat, Z_sat, E_sym, L_sym, K_sym, Q_sym, Z_sym
-       - Crust options: BPS, DH, DH_fixed, SLy
+       - Crust options: BPS, DH, SLy
      - `MetaModel_with_CSE_EOS_model` - MetaModel + crust-core-saturation extension
        - Required: 9 NEPs + nbreak + nb_CSE grid parameters (typically 4-8)
      - `SpectralDecomposition_EOS_model` - Spectral representation

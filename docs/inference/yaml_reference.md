@@ -50,7 +50,7 @@ eos:
   ndat_metamodel: 100  # Number of points for EOS table
   nmax_nsat: 25.0      # Maximum density (in units of saturation density)
   nmin_MM_nsat: 0.75   # Minimum density for metamodel (in units of n_sat)
-  crust_name: "DH"     # Crust model: "DH", "BPS", "DH_fixed", or "SLy"
+  crust_name: "DH"     # Crust model: "DH", "BPS", or "SLy"
   nb_CSE: 0            # Must be 0 for standard metamodel
 ```
 
@@ -74,7 +74,7 @@ eos:
   ndat_metamodel: 100         # Number of points for EOS table
   nmax_nsat: 25.0             # Maximum density (in units of saturation density)
   nmin_MM_nsat: 0.75          # Minimum density for metamodel (in units of n_sat)
-  crust_name: "DH"            # Crust model: "DH", "BPS", "DH_fixed", or "SLy"
+  crust_name: "DH"            # Crust model: "DH", "BPS", or "SLy"
 ```
 
 **Field Details:**
@@ -85,7 +85,7 @@ eos:
 - **`ndat_metamodel`** (`int`, default: `100`) - Number of points for metamodel EOS table
 - **`nmax_nsat`** (`float`, default: `25.0`) - Maximum density in units of saturation density
 - **`nmin_MM_nsat`** (`float`, default: `0.75`) - Starting density for metamodel grid as fraction of saturation density
-- **`crust_name`** (`str`, default: `"DH"`) - Crust model: `"DH"`, `"BPS"`, `"DH_fixed"`, or `"SLy"`
+- **`crust_name`** (`str`, default: `"DH"`) - Crust model: `"DH"`, `"BPS"`, or `"SLy"`
 
 **Requirements:**
 - `nb_CSE` must be > 0 for this parametrization
@@ -106,7 +106,7 @@ eos:
   ndat_metamodel: 100         # Number of points for EOS table
   nmax_nsat: 25.0             # Maximum density (in units of saturation density)
   nmin_MM_nsat: 0.75          # Minimum density for metamodel (in units of n_sat)
-  crust_name: "DH"            # Crust model: "DH", "BPS", "DH_fixed", or "SLy"
+  crust_name: "DH"            # Crust model: "DH", "BPS", or "SLy"
 ```
 
 **Field Details:**
@@ -116,7 +116,7 @@ eos:
 - **`ndat_metamodel`** (`int`, default: `100`) - Number of points for metamodel EOS table
 - **`nmax_nsat`** (`float`, default: `25.0`) - Maximum density in units of saturation density
 - **`nmin_MM_nsat`** (`float`, default: `0.75`) - Starting density for metamodel grid as fraction of saturation density
-- **`crust_name`** (`str`, default: `"DH"`) - Crust model: `"DH"`, `"BPS"`, `"DH_fixed"`, or `"SLy"`
+- **`crust_name`** (`str`, default: `"DH"`) - Crust model: `"DH"`, `"BPS"`, or `"SLy"`
 
 ::::
 
@@ -138,7 +138,7 @@ eos:
 **Field Details:**
 
 - **`n_points_high`** (`int`, default: `500`) - Number of points for high-density spectral region
-- **`crust_name`** (`str`, default: `"DH"`) - Crust model: `"DH"`, `"BPS"`, `"DH_fixed"`, or `"SLy"`. Use `"SLy"` for LALSuite compatibility.
+- **`crust_name`** (`str`, default: `"DH"`) - Crust model: `"DH"`, `"BPS"`, or `"SLy"`. Use `"SLy"` for LALSuite compatibility.
 - **`reparametrized`** (`bool`, default: `false`) - If `false`, sample directly in $(\gamma_0, \gamma_1, \gamma_2, \gamma_3)$. If `true`, sample in a whitened space $(\tilde{\gamma}_0, \tilde{\gamma}_1, \tilde{\gamma}_2, \tilde{\gamma}_3)$ centred on a Gaussian fit to a radio-timing inference result. Use a `MultivariateGaussianPrior` in the prior file when this is enabled.
 - **`sigma_scale`** (`float`, default: `1.0`) - Multiplicative scaling applied to the Cholesky factor to widen the prior around the radio posterior. Only used when `reparametrized: true`. Increase above 1.0 to broaden the prior.
 

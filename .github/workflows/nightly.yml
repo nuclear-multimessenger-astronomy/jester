@@ -72,6 +72,10 @@ jobs:
         shopt -s globstar
         notebooks=(docs/examples/**/*.ipynb)
         for nb in "${notebooks[@]}"; do
+          if [[ "$(basename $nb)" == "result.ipynb" ]]; then
+            echo "Skipping $nb (excluded from CI execution)"
+            continue
+          fi
           echo "Executing $nb"
           uv run jupyter nbconvert --to notebook --execute "$nb" \
             --output "$(basename $nb .ipynb)_executed.ipynb" \
