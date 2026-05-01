@@ -1,6 +1,7 @@
 [![CI](https://github.com/nuclear-multimessenger-astronomy/jester/actions/workflows/ci.yml/badge.svg)](https://github.com/nuclear-multimessenger-astronomy/jester/actions/workflows/ci.yml)
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://nuclear-multimessenger-astronomy.github.io/jester/)
 [![arXiv](https://img.shields.io/badge/arXiv-2504.15893-b31b1b.svg)](https://arxiv.org/abs/2504.15893)
+[![Citations](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Finspirehep.net%2Fapi%2Fliterature%2F2915009&query=%24.metadata.citation_count&label=citations&color=blue)](https://inspirehep.net/literature/2915009)
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/nuclear-multimessenger-astronomy/jester/blob/main/examples/google_colab/GW170817_Google_Colab.ipynb)
 
 # JESTER
@@ -61,4 +62,6 @@ All development guidelines — including how to run tests, contribute code, add 
 
 ## Citing
 
-If you use `jester` in your work, please cite the relevant papers. See the [citing page in the documentation](https://nuclear-multimessenger-astronomy.github.io/jester/citing.html) for the full list of references.
+If you use `jester` in your work, please cite the relevant papers according to which parts you are using.
+
+See the [citing page in the documentation](https://nuclear-multimessenger-astronomy.github.io/jester/citing.html) for the full list of references.
