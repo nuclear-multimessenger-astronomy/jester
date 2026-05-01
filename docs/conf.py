@@ -9,8 +9,8 @@ sys.path.insert(0, str(Path("..").resolve()))
 project = "JESTER"
 copyright = "2026, jesterTOV developers"
 author = "jesterTOV developers"
-release = "0.2.0"
-version = "0.2.0"
+release = "0.2.1"
+version = "0.2.1"
 
 # -- General configuration ---------------------------------------------------
 extensions = [
