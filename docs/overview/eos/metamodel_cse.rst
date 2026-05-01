@@ -7,6 +7,9 @@ This page describes the Metamodel + CSE EOS parametrization and its implementati
 Before reading this page, it may help to first read the :ref:`eos-metamodel` page, since the CSE
 extension builds directly on top of the standard metamodel.
 
+The specific implementation follows Ref. :cite:`Koehn:2024set`.
+Moreover, you can find the datasets for this paper in `this webpage <https://multi-messenger.physik.uni-potsdam.de/eos_constraints/>`_ . 
+
 Physical motivation
 -------------------
 
