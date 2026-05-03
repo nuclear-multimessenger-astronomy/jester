@@ -59,6 +59,7 @@
       ~PostprocessingConfig.make_histograms
       ~PostprocessingConfig.make_cs2
       ~PostprocessingConfig.make_contours
+      ~PostprocessingConfig.plot_format
       ~PostprocessingConfig.prior_dir
       ~PostprocessingConfig.injection_eos_path
    

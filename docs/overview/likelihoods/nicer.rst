@@ -29,6 +29,34 @@ Below, we provide more details on the datasets that are available for each pulsa
 
 ----
 
+Likelihood
+----------
+
+For each pulsar, JESTER uses a normalizing flow trained on the published M-R posterior samples.
+The flow learns the joint density :math:`p(M, R \mid \text{data})` for a given analysis group and hotspot model.
+
+When evaluating the likelihood for a candidate EOS, the computation proceeds as follows.
+At initialization, a fixed set of :math:`N` masses :math:`M^{(i)}` is drawn once from the marginal mass distribution of the flow.
+For each EOS evaluation, the radius :math:`R_\mathrm{EOS}(M^{(i)})` is obtained by linear interpolation along the EOS M-R curve at each pre-sampled mass.
+The per-group log-likelihood is
+
+.. math::
+
+   \log \mathcal{L} = \log \left[ \frac{1}{N} \sum_{i=1}^{N}
+       p_\mathrm{flow} \!\left(M^{(i)},\, R_\mathrm{EOS}(M^{(i)})\right) \right] ,
+
+evaluated numerically as :math:`\mathrm{logsumexp}_i\!\left(\log p_\mathrm{flow}^{(i)}\right) - \log N`.
+If multiple analysis groups are used (e.g. Amsterdam and Maryland for PSR J0030+0451), the final log-likelihood averages over groups in the same way as the above equation.
+
+Mass samples that exceed :math:`M_\mathrm{TOV}` receive a large negative penalty, if enabled by the user.
+
+The pre-sampling at initialization fixes the mass grid for the entire run, which ensures deterministic and smooth likelihood evaluations — important for sampler convergence.
+
+The default implementation is :class:`~jesterTOV.inference.likelihoods.nicer.NICERLikelihood` (flow-based).
+A legacy :class:`~jesterTOV.inference.likelihoods.nicer.NICERKDELikelihood` based on kernel density estimation of the raw posterior samples is also available for comparison.
+
+----
+
 Data
 ----
 

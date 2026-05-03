@@ -20,10 +20,38 @@ The processed files live in ``jesterTOV/inference/data/gw170817/`` and ``jesterT
 
 For each dataset, JESTER has a trained normalizing flow on the GW posterior samples. The flow learns the joint density over component source-frame masses and tidal deformabilities :math:`(m_1, m_2, \Lambda_1, \Lambda_2)`, and :class:`~jesterTOV.inference.likelihoods.gw.GWLikelihood` evaluates the EOS likelihood by querying this flow. The corner plots below show the original posterior samples (blue) and samples drawn from the trained flow (red), illustrating how faithfully the flow captures the posterior.
 
-Below, we provide more information on the available datasets.
+Below, we describe how the likelihood is computed, followed by more information on the available datasets.
 The datasets can be downloaded automatically using the scripts ``jesterTOV/inference/data/gw170817/download_gw170817.py``, and ``jesterTOV/inference/data/gw190425/download_gw190425.py``, respectively.
 These scripts download the raw files from the LIGO DCC, convert detector-frame masses to source frame, and save the four-parameter excerpts as ``.npz`` archives.
 Note that the original files are gitignored, and only the processed ``.npz`` files are tracked in the repository, so you will need to run the download scripts to get the raw, complete datasets.
+
+----
+
+Likelihood
+----------
+
+For each BNS event, JESTER uses a normalizing flow trained on the published posterior samples over
+:math:`(m_1, m_2, \Lambda_1, \Lambda_2)` in the source frame.
+The flow learns the joint GW posterior density, so the likelihood of a candidate EOS is the probability that the tidal deformabilities it predicts — at the masses favoured by the GW data — are consistent with that posterior.
+
+In practice, the computation works as follows.
+At initialization, a fixed set of :math:`N` mass pairs :math:`(m_1^{(i)}, m_2^{(i)})` is drawn once from the flow's marginal mass distribution.
+For each EOS evaluation, :math:`\Lambda_1^{(i)}` and :math:`\Lambda_2^{(i)}` are obtained by linear interpolation along the candidate EOS :math:`\Lambda(M)` curve at those fixed mass points.
+The log-likelihood is then
+
+.. math::
+
+   \log \mathcal{L} = \log \left[ \frac{1}{N} \sum_{i=1}^{N}
+       p_\mathrm{flow}\!\left(m_1^{(i)},\, m_2^{(i)},\, \Lambda_1^{(i)},\, \Lambda_2^{(i)}\right) \right] , 
+
+evaluated numerically as :math:`\mathrm{logsumexp}_i\!\left( \log p_\mathrm{flow}^{(i)}\right) - \log N`.
+Mass pairs where either component exceeds :math:`M_\mathrm{TOV}` receive a large negative penalty, if enabled by the user.
+
+Fixing the mass grid at initialization ensures deterministic and smooth likelihood evaluations across all EOS candidates, which is important for sampler convergence.
+Because JAX parallelises the evaluation over all :math:`N` pairs efficiently on GPU, large :math:`N` (the default is 2000) can be used at little extra cost, making the estimator close to a proper Monte Carlo integral over the GW posterior.
+
+The default implementation is :class:`~jesterTOV.inference.likelihoods.gw.GWLikelihood`.
+A stochastic variant, :class:`~jesterTOV.inference.likelihoods.gw.GWLikelihoodResampled`, which draws fresh mass pairs at every likelihood call, is also available but not recommended for production runs.
 
 ----
 
