@@ -818,6 +818,7 @@ postprocessing:
   make_contours: false        # Generate radii and pressure credible-interval contour plots
   prior_dir: null             # Optional: directory with prior samples
   injection_eos_path: null    # Optional: path to true EOS for injection studies
+  plot_format: "pdf"          # Optional: file format for saving plots. Either 'png' or 'pdf'
 ```
 
 **Field Details:**
