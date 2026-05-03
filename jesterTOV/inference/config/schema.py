@@ -16,6 +16,8 @@ This module assembles them into the top-level :class:`InferenceConfig` and re-ex
 every name so that existing imports (``from .schema import ...``) continue to work.
 """
 
+from typing import Literal
+
 from pydantic import Field, field_validator, ConfigDict
 
 from .schemas._base import JesterBaseModel
@@ -124,6 +126,8 @@ class PostprocessingConfig(JesterBaseModel):
         Generate cs2-density plot (default: True)
     make_contours : bool
         Generate radii and pressure credible-interval contour plots (default: False)
+    plot_format : {"pdf", "png"}
+        Output file format for all plots (default: "pdf")
     prior_dir : str | None
         Directory containing prior samples for comparison (default: None)
     injection_eos_path : str | None
@@ -149,6 +153,7 @@ class PostprocessingConfig(JesterBaseModel):
     make_histograms: bool = True
     make_cs2: bool = True
     make_contours: bool = False
+    plot_format: Literal["pdf", "png"] = "pdf"
     prior_dir: str | None = None
     injection_eos_path: str | None = None
 

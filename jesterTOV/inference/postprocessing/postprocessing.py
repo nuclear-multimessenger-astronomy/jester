@@ -621,7 +621,10 @@ def _warn_unstable_branches(n_unstable: int, n_valid: int) -> None:
 
 
 def make_cornerplot(
-    data: Dict[str, Any], outdir: str, max_params: Optional[int] = None
+    data: Dict[str, Any],
+    outdir: str,
+    max_params: Optional[int] = None,
+    plot_format: str = "pdf",
 ) -> None:
     """Create a cornerplot for EOS parameters.
 
@@ -694,7 +697,7 @@ def make_cornerplot(
         smooth=1.0,
     )
 
-    save_name = os.path.join(outdir, "cornerplot.pdf")
+    save_name = os.path.join(outdir, f"cornerplot.{plot_format}")
     fig.savefig(save_name, bbox_inches="tight")
     plt.close(fig)
     logger.info(f"Cornerplot saved to {save_name}")
@@ -706,6 +709,7 @@ def make_mass_radius_plot(
     outdir: str,
     use_crest_cmap: bool = True,
     injection_data: Optional[Dict[str, Any]] = None,
+    plot_format: str = "pdf",
 ) -> None:
     """Create a mass-radius plot with posterior probability colouring.
 
@@ -783,7 +787,7 @@ def make_mass_radius_plot(
     _add_colorbar(plt.gcf(), sm)
     _add_prior_injection_legend(prior_data, injection_data, "masses_EOS")
 
-    save_name = os.path.join(outdir, "mass_radius_plot.pdf")
+    save_name = os.path.join(outdir, f"mass_radius_plot.{plot_format}")
     plt.savefig(save_name, bbox_inches="tight")
     plt.close()
     logger.info(f"Mass-radius plot saved to {save_name}")
@@ -795,6 +799,7 @@ def make_mass_lambda_plot(
     outdir: str,
     use_crest_cmap: bool = True,
     injection_data: Optional[Dict[str, Any]] = None,
+    plot_format: str = "pdf",
 ) -> None:
     r"""Create a mass-Lambda plot with posterior probability colouring.
 
@@ -872,7 +877,7 @@ def make_mass_lambda_plot(
     _add_colorbar(plt.gcf(), sm)
     _add_prior_injection_legend(prior_data, injection_data, "masses_EOS")
 
-    save_name = os.path.join(outdir, "mass_lambda_plot.pdf")
+    save_name = os.path.join(outdir, f"mass_lambda_plot.{plot_format}")
     plt.savefig(save_name, bbox_inches="tight")
     plt.close()
     logger.info(f"Mass-Lambda plot saved to {save_name}")
@@ -882,6 +887,7 @@ def make_mass_lambda_ratio_plot(
     data: Dict[str, Any],
     outdir: str,
     injection_data: Dict[str, Any],
+    plot_format: str = "pdf",
 ) -> None:
     r"""Create a mass-Lambda ratio plot relative to the injection.
 
@@ -1002,7 +1008,7 @@ def make_mass_lambda_ratio_plot(
     plt.xlim(m_min, float(np.max(m_inj_ref)))
     plt.legend(loc="upper right")
 
-    save_name = os.path.join(outdir, "mass_lambda_plot_ratio.pdf")
+    save_name = os.path.join(outdir, f"mass_lambda_plot_ratio.{plot_format}")
     plt.savefig(save_name, bbox_inches="tight")
     plt.close()
     logger.info(f"Mass-Lambda ratio plot saved to {save_name}")
@@ -1014,6 +1020,7 @@ def make_pressure_density_plot(
     outdir: str,
     use_crest_cmap: bool = True,
     injection_data: Optional[Dict[str, Any]] = None,
+    plot_format: str = "pdf",
 ) -> None:
     """Create an equation-of-state plot (pressure vs density).
 
@@ -1097,7 +1104,7 @@ def make_pressure_density_plot(
 
     _add_prior_injection_legend(prior_data, injection_data, "n", loc="upper left")
 
-    save_name = os.path.join(outdir, "pressure_density_plot.pdf")
+    save_name = os.path.join(outdir, f"pressure_density_plot.{plot_format}")
     plt.savefig(save_name, bbox_inches="tight")
     plt.close()
     logger.info(f"Pressure-density plot saved to {save_name}")
@@ -1109,6 +1116,7 @@ def make_cs2_plot(
     outdir: str,
     use_crest_cmap: bool = True,
     injection_data: Optional[Dict[str, Any]] = None,
+    plot_format: str = "pdf",
 ) -> None:
     r"""Create a speed-of-sound-squared vs density plot.
 
@@ -1192,7 +1200,7 @@ def make_cs2_plot(
 
     _add_prior_injection_legend(prior_data, injection_data, "cs2", loc="upper left")
 
-    save_name = os.path.join(outdir, "cs2_density_plot.pdf")
+    save_name = os.path.join(outdir, f"cs2_density_plot.{plot_format}")
     plt.savefig(save_name, bbox_inches="tight")
     plt.close()
     logger.info(f"cs2-density plot saved to {save_name}")
@@ -1202,6 +1210,7 @@ def make_parameter_histograms(
     data: Dict[str, Any],
     outdir: str,
     injection_data: Optional[Dict[str, Any]] = None,
+    plot_format: str = "pdf",
 ) -> None:
     """Create KDE histograms for key EOS-derived parameters.
 
@@ -1351,7 +1360,7 @@ def make_parameter_histograms(
                 f" ({credibility_pct}% credibility)"
             )
 
-        save_name = os.path.join(outdir, f"{param_name}_histogram.pdf")
+        save_name = os.path.join(outdir, f"{param_name}_histogram.{plot_format}")
         plt.savefig(save_name, bbox_inches="tight")
         plt.close()
         logger.info(f"{param_name} histogram saved to {save_name}")
@@ -1363,6 +1372,7 @@ def make_contour_radii_plot(
     outdir: str,
     m_min: float = 0.6,
     m_max: float = 2.1,
+    plot_format: str = "pdf",
 ) -> None:
     """Create a contour plot of radii vs mass.
 
@@ -1437,14 +1447,18 @@ def make_contour_radii_plot(
     plt.ylim(m_min, m_max)
     plt.legend()
 
-    save_name = os.path.join(outdir, "radii_contour_plot.pdf")
+    save_name = os.path.join(outdir, f"radii_contour_plot.{plot_format}")
     plt.savefig(save_name, bbox_inches="tight")
     plt.close()
     logger.info(f"Radii contour plot saved to {save_name}")
 
 
 def make_contour_pressures_plot(
-    data: Dict[str, Any], outdir: str, n_min: float = 0.5, n_max: float = 6.0
+    data: Dict[str, Any],
+    outdir: str,
+    n_min: float = 0.5,
+    n_max: float = 6.0,
+    plot_format: str = "pdf",
 ) -> None:
     """Create a contour plot of pressure vs density.
 
@@ -1492,7 +1506,7 @@ def make_contour_pressures_plot(
     plt.yscale("log")
     plt.legend()
 
-    save_name = os.path.join(outdir, "pressures_contour_plot.pdf")
+    save_name = os.path.join(outdir, f"pressures_contour_plot.{plot_format}")
     plt.savefig(save_name, bbox_inches="tight")
     plt.close()
     logger.info(f"Pressures contour plot saved to {save_name}")
@@ -1512,6 +1526,7 @@ def generate_all_plots(
     make_cs2_flag: bool = True,
     make_contours_flag: bool = False,
     injection_eos_path: Optional[str] = None,
+    plot_format: str = "pdf",
 ) -> None:
     """Generate selected plots for the specified output directory.
 
@@ -1537,6 +1552,8 @@ def generate_all_plots(
         Generate radii and pressure credible-interval contour plots, by default False.
     injection_eos_path : str, optional
         Path to NPZ file containing injection EOS data, by default None.
+    plot_format : str, optional
+        Output file format for all plots (``"pdf"`` or ``"png"``), by default ``"pdf"``.
     """
     logger.info(f"Generating plots for directory: {outdir}")
 
@@ -1565,7 +1582,7 @@ def generate_all_plots(
 
     if make_cornerplot_flag:
         try:
-            make_cornerplot(data, figures_dir)
+            make_cornerplot(data, figures_dir, plot_format=plot_format)
         except Exception as e:
             logger.error(f"Failed to create cornerplot: {e}")
             logger.warning("Continuing with other plots...")
@@ -1573,7 +1590,11 @@ def generate_all_plots(
     if make_massradius_flag:
         try:
             make_mass_radius_plot(
-                data, prior_data, figures_dir, injection_data=injection_data
+                data,
+                prior_data,
+                figures_dir,
+                injection_data=injection_data,
+                plot_format=plot_format,
             )
         except Exception as e:
             logger.error(f"Failed to create mass-radius plot: {e}")
@@ -1582,14 +1603,20 @@ def generate_all_plots(
     if make_masslambda_flag:
         try:
             make_mass_lambda_plot(
-                data, prior_data, figures_dir, injection_data=injection_data
+                data,
+                prior_data,
+                figures_dir,
+                injection_data=injection_data,
+                plot_format=plot_format,
             )
         except Exception as e:
             logger.error(f"Failed to create mass-Lambda plot: {e}")
             logger.warning("Continuing with other plots...")
         if injection_data is not None:
             try:
-                make_mass_lambda_ratio_plot(data, figures_dir, injection_data)
+                make_mass_lambda_ratio_plot(
+                    data, figures_dir, injection_data, plot_format=plot_format
+                )
             except Exception as e:
                 logger.error(f"Failed to create mass-Lambda ratio plot: {e}")
                 logger.warning("Continuing with other plots...")
@@ -1597,7 +1624,11 @@ def generate_all_plots(
     if make_pressuredensity_flag:
         try:
             make_pressure_density_plot(
-                data, prior_data, figures_dir, injection_data=injection_data
+                data,
+                prior_data,
+                figures_dir,
+                injection_data=injection_data,
+                plot_format=plot_format,
             )
         except Exception as e:
             logger.error(f"Failed to create pressure-density plot: {e}")
@@ -1605,26 +1636,39 @@ def generate_all_plots(
 
     if make_histograms_flag:
         try:
-            make_parameter_histograms(data, figures_dir, injection_data=injection_data)
+            make_parameter_histograms(
+                data,
+                figures_dir,
+                injection_data=injection_data,
+                plot_format=plot_format,
+            )
         except Exception as e:
             logger.error(f"Failed to create parameter histograms: {e}")
             logger.warning("Continuing with other plots...")
 
     if make_cs2_flag:
         try:
-            make_cs2_plot(data, prior_data, figures_dir, injection_data=injection_data)
+            make_cs2_plot(
+                data,
+                prior_data,
+                figures_dir,
+                injection_data=injection_data,
+                plot_format=plot_format,
+            )
         except Exception as e:
             logger.error(f"Failed to create cs2 plot: {e}")
             logger.warning("Continuing with other plots...")
 
     if make_contours_flag:
         try:
-            make_contour_radii_plot(data, prior_data, figures_dir)
+            make_contour_radii_plot(
+                data, prior_data, figures_dir, plot_format=plot_format
+            )
         except Exception as e:
             logger.error(f"Failed to create radii contour plot: {e}")
             logger.warning("Continuing with other plots...")
         try:
-            make_contour_pressures_plot(data, figures_dir)
+            make_contour_pressures_plot(data, figures_dir, plot_format=plot_format)
         except Exception as e:
             logger.error(f"Failed to create pressures contour plot: {e}")
             logger.warning("Continuing with other plots...")
@@ -1669,6 +1713,7 @@ def run_from_config(config_path: str) -> None:
     logger.info(f"Make histograms: {config.postprocessing.make_histograms}")
     logger.info(f"Make cs2: {config.postprocessing.make_cs2}")
     logger.info(f"Make contours: {config.postprocessing.make_contours}")
+    logger.info(f"Plot format: {config.postprocessing.plot_format}")
     logger.info("=" * 60)
 
     generate_all_plots(
@@ -1682,6 +1727,7 @@ def run_from_config(config_path: str) -> None:
         make_cs2_flag=config.postprocessing.make_cs2,
         make_contours_flag=config.postprocessing.make_contours,
         injection_eos_path=config.postprocessing.injection_eos_path,
+        plot_format=config.postprocessing.plot_format,
     )
 
     logger.info(
