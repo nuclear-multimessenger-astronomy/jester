@@ -854,6 +854,7 @@ def main(config_path: str) -> None:
             make_histograms_flag=config.postprocessing.make_histograms,
             make_cs2_flag=config.postprocessing.make_cs2,
             injection_eos_path=config.postprocessing.injection_eos_path,
+            plot_format=config.postprocessing.plot_format,
         )
         logger.info(f"\nPostprocessing complete! Plots saved to {outdir}")
 
