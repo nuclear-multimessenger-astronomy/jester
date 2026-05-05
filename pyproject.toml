@@ -57,7 +57,7 @@ dependencies = [
     "scipy>=1.10.0",
     "tqdm>=4.65.0",
     "zenodo-get>=1.5.0",
-    "arvi<1.1.0",
+    "arviz<1.0.0",
     "ipython>=8.0"  # Required by fastprogress (BlackJAX transitive dependency)
 ]
 
