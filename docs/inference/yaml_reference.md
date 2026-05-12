@@ -431,6 +431,30 @@ Constrain neutron star masses using radio pulsar timing measurements. For the ph
 
 ::::
 
+::::{dropdown} **Radio Pulsar KDE Likelihood**
+
+A generalization of the Gaussian radio likelihood that uses a kernel density estimate (KDE) built from posterior mass samples instead of a parametric Gaussian. The Python class is {class}`~jesterTOV.inference.likelihoods.radio.RadioKDELikelihood`.
+
+```yaml
+- type: "radio_kde"
+  enabled: true
+  pulsars:                          # List of pulsars
+    - name: "J0740+6620"
+      mass_samples_npz: "./data/J0740_mass_samples.npz"
+  m_min: 0.1                        # Lower integration bound in solar masses (optional, default: 0.1)
+  penalty_value: -1e5               # Penalty for M_TOV ≤ m_min (optional, default: -1e5)
+  nb_masses: 500                    # Quadrature points for trapezoidal integration (optional, default: 500)
+```
+
+**Field Details:**
+
+- **`pulsars`** (`list[dict]`) - List of pulsars with `name` and `mass_samples_npz` keys. The NPZ file must contain a `"mass"` array of posterior samples in solar masses.
+- **`m_min`** (`float`, default: `0.1`) - Lower integration bound in solar masses
+- **`penalty_value`** (`float`, default: `-1e5`) - Log-likelihood penalty for invalid TOV solutions (M_TOV ≤ m_min)
+- **`nb_masses`** (`int`, default: `500`) - Number of quadrature points for trapezoidal integration over [m_min, M_TOV]
+
+::::
+
 ### Nuclear theory constraints
 
 Constrain the low-density EOS using nuclear theory calculations and laboratory measurements.

@@ -25,7 +25,7 @@ PSR J0740+6620," ApJL 915, L12 (2021).
 """
 
 import jax.numpy as jnp
-from jax.scipy.stats import norm
+from jax.scipy.stats import gaussian_kde, norm
 from jaxtyping import Array, Float
 
 from jesterTOV.inference.base import LikelihoodBase
@@ -196,6 +196,133 @@ class RadioTimingLikelihood(LikelihoodBase):
 
         # Safety net: replace any remaining NaN/inf with penalty value
         # This catches edge cases not covered by the mtov check
+        log_likelihood = jnp.nan_to_num(
+            log_likelihood,
+            nan=self.penalty_value,
+            posinf=self.penalty_value,
+            neginf=self.penalty_value,
+        )
+
+        return log_likelihood
+
+
+class RadioKDELikelihood(LikelihoodBase):
+    r"""Likelihood for radio pulsar mass measurements using a KDE-based mass posterior.
+
+    This is a generalization of :class:`RadioTimingLikelihood` that replaces the
+    assumed Gaussian measurement model with a non-parametric kernel density estimate
+    (KDE) built from posterior mass samples.  The KDE represents the probability
+    distribution of the pulsar mass inferred from timing data, typically under a
+    flat prior on mass.
+
+    The marginal likelihood is:
+
+    .. math::
+        \mathcal{L}(M_{\text{TOV}} | \text{data}) =
+        \frac{1}{M_{\text{TOV}} - m_{\text{min}}}
+        \int_{m_{\text{min}}}^{M_{\text{TOV}}} \hat{p}(m) \, dm
+
+    where :math:`\hat{p}(m)` is the KDE of the mass samples.  The integral is
+    evaluated numerically using the trapezoidal rule on a fixed grid of
+    ``nb_masses`` points spanning :math:`[m_{\text{min}}, M_{\text{TOV}}]`.
+
+    Parameters
+    ----------
+    psr_name : str
+        Pulsar designation for identification (e.g., "J0740+6620").
+    kde : gaussian_kde
+        A ``jax.scipy.stats.gaussian_kde`` object built from the mass posterior
+        samples.  Constructed in the factory from the ``mass_samples_npz`` file.
+    m_min : float, optional
+        Lower bound of the integration in solar masses.  Default is 0.1.
+    penalty_value : float, optional
+        Log-likelihood penalty for invalid TOV solutions (M_TOV ≤ m_min).
+        Default is -1e5.
+    nb_masses : int, optional
+        Number of quadrature points for the trapezoidal integration.
+        Default is 500.
+
+    Attributes
+    ----------
+    psr_name : str
+        Pulsar designation.
+    kde : gaussian_kde
+        KDE of the pulsar mass posterior.
+    m_min : float
+        Integration lower bound (solar masses).
+    penalty_value : float
+        Log-likelihood penalty for invalid TOV solutions.
+    nb_masses : int
+        Number of quadrature points.
+
+    See Also
+    --------
+    RadioTimingLikelihood : Analytical Gaussian version of this likelihood.
+    """
+
+    psr_name: str
+    kde: gaussian_kde
+    m_min: float
+    penalty_value: float
+    nb_masses: int
+
+    def __init__(
+        self,
+        psr_name: str,
+        kde: gaussian_kde,
+        m_min: float = 0.1,
+        penalty_value: float = -1e5,
+        nb_masses: int = 500,
+    ) -> None:
+        super().__init__()
+        self.psr_name = psr_name
+        self.kde = kde
+        self.m_min = m_min
+        self.penalty_value = penalty_value
+        self.nb_masses = nb_masses
+
+    def evaluate(self, params: dict[str, Float | Array]) -> Float:
+        r"""Evaluate the marginalized log-likelihood using the KDE mass posterior.
+
+        Parameters
+        ----------
+        params : dict[str, Float | Array]
+            Dictionary containing TOV solution outputs from the transform.
+            Required key: ``"masses_EOS"`` — array of neutron star masses
+            (solar masses) from which the maximum M_TOV is derived.
+
+        Returns
+        -------
+        Float
+            Natural logarithm of the marginalized likelihood. Returns a large
+            negative penalty for invalid EOSs (M_TOV ≤ m_min).
+
+        Notes
+        -----
+        NaN or infinity values in the result are replaced with the penalty value.
+        """
+        masses_EOS: Float[Array, " n_points"] = params["masses_EOS"]
+        mtov: Float = jnp.max(masses_EOS)
+
+        invalid_mtov = mtov <= self.m_min
+
+        # Fixed unit grid, scaled to [m_min, mtov] at evaluation time
+        t = jnp.linspace(0.0, 1.0, self.nb_masses)
+        m_grid = self.m_min + (mtov - self.m_min) * t
+
+        # Evaluate KDE on the grid
+        kde_vals = jnp.exp(self.kde.logpdf(m_grid))
+
+        # Trapezoidal integration with uniform spacing
+        dm = (mtov - self.m_min) / (self.nb_masses - 1)
+        integral = dm * (jnp.sum(kde_vals) - 0.5 * (kde_vals[0] + kde_vals[-1]))
+
+        log_likelihood = jnp.where(
+            invalid_mtov,
+            self.penalty_value,
+            jnp.log(integral) - jnp.log(mtov - self.m_min),
+        )
+
         log_likelihood = jnp.nan_to_num(
             log_likelihood,
             nan=self.penalty_value,

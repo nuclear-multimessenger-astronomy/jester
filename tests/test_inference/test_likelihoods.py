@@ -21,7 +21,10 @@ from jesterTOV.inference.likelihoods.constraints import (
     check_gamma_bounds,
 )
 from jesterTOV.inference.likelihoods.chieft import ChiEFTLikelihood
-from jesterTOV.inference.likelihoods.radio import RadioTimingLikelihood
+from jesterTOV.inference.likelihoods.radio import (
+    RadioKDELikelihood,
+    RadioTimingLikelihood,
+)
 from jesterTOV.inference.base import LikelihoodBase
 
 
@@ -583,6 +586,58 @@ class TestRadioTimingLikelihood:
         # For a stiff EOS with max mass > 2.01, likelihood should be reasonable
         # (not a large negative penalty)
         assert result > -1000.0, f"Likelihood too negative: {result}"
+
+
+class TestRadioKDELikelihood:
+    """Test RadioKDELikelihood functionality."""
+
+    @pytest.fixture
+    def kde_likelihood(self):
+        """Create RadioKDELikelihood with synthetic mass samples."""
+        from jax.scipy.stats import gaussian_kde
+
+        # Synthetic mass samples centred on ~2.08 solar masses
+        rng = jax.random.PRNGKey(0)
+        mass_samples = 2.08 + 0.07 * jax.random.normal(rng, shape=(500,))
+        kde = gaussian_kde(mass_samples)
+        return RadioKDELikelihood(psr_name="J0740+6620", kde=kde)
+
+    @pytest.fixture
+    def mock_params(self):
+        return {"masses_EOS": jnp.linspace(1.0, 2.5, 100)}
+
+    def test_initialization(self, kde_likelihood):
+        """Test that RadioKDELikelihood stores attributes correctly."""
+        assert kde_likelihood.psr_name == "J0740+6620"
+        assert kde_likelihood.m_min == 0.1
+        assert kde_likelihood.penalty_value == -1e5
+        assert kde_likelihood.nb_masses == 500
+
+    def test_evaluate_returns_scalar(self, kde_likelihood, mock_params):
+        """Evaluate must return a scalar finite log-likelihood."""
+        result = kde_likelihood.evaluate(mock_params)
+        assert result.shape == ()
+        assert jnp.isfinite(result)
+
+    def test_evaluate_reasonable_value(self, kde_likelihood, mock_params):
+        """For an M_TOV well above the mass distribution the result should not be the penalty."""
+        result = kde_likelihood.evaluate(mock_params)
+        assert result > kde_likelihood.penalty_value + 1.0
+
+    def test_penalty_for_low_mtov(self, kde_likelihood):
+        """When M_TOV ≤ m_min the penalty value must be returned."""
+        params = {"masses_EOS": jnp.array([0.05, 0.08])}
+        result = kde_likelihood.evaluate(params)
+        assert float(result) == pytest.approx(kde_likelihood.penalty_value)
+
+    def test_sensitivity_to_mtov(self, kde_likelihood):
+        """Likelihood should increase as M_TOV covers more of the mass distribution."""
+        params_low = {"masses_EOS": jnp.linspace(1.0, 1.5, 50)}
+        params_high = {"masses_EOS": jnp.linspace(1.0, 2.5, 50)}
+        ll_low = kde_likelihood.evaluate(params_low)
+        ll_high = kde_likelihood.evaluate(params_high)
+        # Higher M_TOV → more of the posterior is included → higher integral
+        assert ll_high > ll_low
 
 
 class TestLikelihoodFactory:

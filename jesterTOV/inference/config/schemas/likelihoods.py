@@ -541,6 +541,79 @@ class RadioLikelihoodConfig(BaseLikelihoodConfig):
         return v
 
 
+class RadioKDELikelihoodConfig(BaseLikelihoodConfig):
+    """Radio pulsar timing likelihood using a KDE-based mass posterior.
+
+    Generalises the Gaussian radio likelihood by accepting posterior mass samples
+    (from an NPZ file) and building a kernel density estimate.  Each pulsar entry
+    must provide the path to an NPZ file containing a ``"mass"`` key with posterior
+    samples in solar masses.
+
+    Examples
+    --------
+    .. code-block:: yaml
+
+        - type: "radio_kde"
+          enabled: true
+          pulsars:
+            - name: "J0740+6620"
+              mass_samples_npz: "./data/J0740_mass_samples.npz"
+          m_min: 0.1
+          penalty_value: -1e5
+          nb_masses: 500
+    """
+
+    type: Literal["radio_kde"] = Field(
+        default="radio_kde", description="Likelihood type identifier"
+    )
+
+    pulsars: list[dict[str, str]] = Field(
+        description=(
+            "List of pulsars with KDE mass posteriors. Each pulsar must have "
+            "'name' and 'mass_samples_npz' keys. The NPZ file must contain a "
+            "'mass' array of posterior samples in solar masses."
+        ),
+        min_length=1,
+    )
+
+    m_min: float = Field(
+        default=0.1,
+        description="Lower integration bound in solar masses",
+    )
+
+    penalty_value: float = Field(
+        default=-1e5,
+        description="Log-likelihood penalty for invalid TOV solutions (M_TOV ≤ m_min)",
+    )
+
+    nb_masses: int = Field(
+        default=500,
+        gt=1,
+        description="Number of quadrature points for trapezoidal integration over [m_min, M_TOV]",
+    )
+
+    @field_validator("pulsars")
+    @classmethod
+    def _validate_pulsars(cls, v: list[dict[str, str]]) -> list[dict[str, str]]:
+        seen: set[str] = set()
+        duplicates: list[str] = []
+        for i, pulsar in enumerate(v):
+            required = {"name", "mass_samples_npz"}
+            missing = required - set(pulsar.keys())
+            if missing:
+                raise ValueError(f"Pulsar {i} missing required fields: {missing}")
+            name = pulsar["name"]
+            if name in seen:
+                duplicates.append(name)
+            seen.add(name)
+        if duplicates:
+            raise ValueError(
+                f"Duplicate pulsar names found: {sorted(set(duplicates))}. "
+                "Each pulsar must have a unique name."
+            )
+        return v
+
+
 class ChiEFTLikelihoodConfig(BaseLikelihoodConfig):
     """Chiral effective field theory likelihood configuration.
 
@@ -808,6 +881,7 @@ LikelihoodConfig = Annotated[
         NICERLikelihoodConfig,
         NICERKDELikelihoodConfig,
         RadioLikelihoodConfig,
+        RadioKDELikelihoodConfig,
         ChiEFTLikelihoodConfig,
         EOSConstraintsLikelihoodConfig,
         TOVConstraintsLikelihoodConfig,

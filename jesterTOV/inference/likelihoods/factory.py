@@ -10,6 +10,7 @@ from ..config.schema import (
     NICERLikelihoodConfig,
     NICERKDELikelihoodConfig,
     RadioLikelihoodConfig,
+    RadioKDELikelihoodConfig,
     ChiEFTLikelihoodConfig,
     EOSConstraintsLikelihoodConfig,
     TOVConstraintsLikelihoodConfig,
@@ -22,7 +23,7 @@ from ..config.schema import (
 from .combined import CombinedLikelihood, ZeroLikelihood
 from .gw import GWLikelihood, GWLikelihoodResampled
 from .nicer import NICERLikelihood, NICERKDELikelihood
-from .radio import RadioTimingLikelihood
+from .radio import RadioKDELikelihood, RadioTimingLikelihood
 from .chieft import ChiEFTLikelihood
 from .constraints import (
     ConstraintEOSLikelihood,
@@ -134,6 +135,12 @@ def create_likelihood(
             # This function should not be called directly for radio type
             raise RuntimeError(
                 "Radio timing likelihoods should be created via create_combined_likelihood, "
+                "not create_likelihood directly"
+            )
+
+        case RadioKDELikelihoodConfig():
+            raise RuntimeError(
+                "RadioKDE likelihoods should be created via create_combined_likelihood, "
                 "not create_likelihood directly"
             )
 
@@ -317,6 +324,30 @@ def create_combined_likelihood(
                         penalty_value=config.penalty_value,
                     )
                     likelihoods.append(radio_likelihood)
+
+            # Special handling for radio KDE likelihoods: create one likelihood per pulsar
+            case RadioKDELikelihoodConfig():
+                import jax.numpy as jnp
+                from jax.scipy.stats import gaussian_kde
+
+                for pulsar in config.pulsars:
+                    psr_name = pulsar["name"]
+                    npz_path = pulsar["mass_samples_npz"]
+
+                    import numpy as np
+
+                    data = np.load(npz_path)
+                    mass_samples = jnp.asarray(data["mass"])
+                    kde = gaussian_kde(mass_samples)
+
+                    kde_likelihood = RadioKDELikelihood(
+                        psr_name=psr_name,
+                        kde=kde,
+                        m_min=config.m_min,
+                        penalty_value=config.penalty_value,
+                        nb_masses=config.nb_masses,
+                    )
+                    likelihoods.append(kde_likelihood)
 
             case _:
                 # For other likelihoods, use standard creation
