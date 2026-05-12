@@ -47,7 +47,7 @@ dependencies = [
     "pandas>=2.0.0",
     "equinox>=0.11.0",
     "flowmc==0.4.5",
-    "blackjax @ git+https://github.com/handley-lab/blackjax@nested_sampling",
+    "blackjax @ git+https://github.com/handley-lab/blackjax.git@1e6ad99c971ba284f45c6af5931ab6f87ae9c896",
     "h5py>=3.0",
     "anesthetic>=2.0.0",
     "beartype>=0.10.0",
