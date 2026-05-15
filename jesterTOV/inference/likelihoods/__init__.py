@@ -3,6 +3,7 @@
 from .combined import CombinedLikelihood, ZeroLikelihood
 from .gw import GWLikelihood, GWLikelihoodResampled, PopulationGWLikelihood
 from .multimessenger import MultiMessengerLikelihood
+from .cosmology import CosmoMultiMessengerLikelihood
 from .nicer import NICERLikelihood
 from .radio import RadioTimingLikelihood
 from .chieft import ChiEFTLikelihood

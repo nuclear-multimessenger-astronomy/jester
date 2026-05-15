@@ -27,7 +27,13 @@ from .config.schema import (
 from .priors.parser import parse_prior_file
 from .base.prior import CombinePrior
 from .base.likelihood import LikelihoodBase
-from .transforms import JesterTransform, PopulationJesterTransform, MultimessengerJesterTransform
+from .transforms import (
+    JesterTransform, 
+    PopulationJesterTransform, 
+    MultimessengerJesterTransform, 
+    CosmoJesterTransform,
+    CombinedTransform
+)
 from .likelihoods.factory import create_combined_likelihood
 from .samplers import create_sampler, JesterSampler
 from .result import InferenceResult
@@ -227,7 +233,7 @@ def setup_transform(
             population_config=config.population,
             keep_names=keep_names,
             max_nbreak_nsat=max_nbreak_nsat,
-            fixed_params=fixed_params
+            fixed_params=fixed_params if _fixed_params else None,
         )
         
     elif config.population is not None:
@@ -248,6 +254,10 @@ def setup_transform(
             max_nbreak_nsat=max_nbreak_nsat,
             fixed_params=_fixed_params if _fixed_params else None,
         )
+
+    if config.cosmology:
+        cosmo_transform = CosmoJesterTransform(fixed_params if fixed_params else None)
+        transform = CombinedTransform([transform, cosmo_transform])
 
     # Validate that all required parameters are present.
     # get_parameter_names() already excludes fixed params, so we only need to

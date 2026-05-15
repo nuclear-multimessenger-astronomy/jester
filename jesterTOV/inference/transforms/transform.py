@@ -144,7 +144,6 @@ class JesterTransform(NtoMTransform):
             keep_names = name_mapping[0]
         self.keep_names = keep_names
 
-        self.fixed_params = fixed_params
 
         # Initialize parent NtoMTransform
         super().__init__(name_mapping)

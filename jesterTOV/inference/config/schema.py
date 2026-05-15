@@ -206,6 +206,7 @@ class InferenceConfig(JesterBaseModel):
     prior: PriorConfig
     likelihoods: list[LikelihoodConfig]
     multimessenger: bool = False
+    cosmology: bool = False
     population: PopulationConfig | None = None
     sampler: SamplerConfig
     postprocessing: PostprocessingConfig = Field(default_factory=PostprocessingConfig)

@@ -445,3 +445,35 @@ def lambda1_lambda2_to_lambda_tilde(lambda_1: Float | Array, lambda_2: Float | A
         (1 - 4 * eta)**0.5 * (1 + 9 * eta - 11 * eta**2) * lambda_minus)
     
     return lambda_tilde
+
+
+def redshift_to_luminosity_distance(redshift: Array,
+                                    H0: Float = 67.66,
+                                    Omega0: Float = 0.30966):
+    """
+    Convert redshift to luminosity distance using the standard FlatLambdaCDM formula without
+    relativistic matter.
+    
+    Parameters
+    ----------
+    redshift : Float[Array]
+        redshift values
+    H0: Float
+        Hubble constant in km/s/Mpc. Defaults to Planck18 value of 67.66 km/s/Mpc.
+    Omega0: Float
+        Matter content. Defaults to Planck18 value of 0.30966.
+
+    Returns
+    -------
+    Int[Array, ""]
+        Scalar array: Index of first non-causal point, or -1 if EOS is everywhere causal
+    """
+    def correction_factor(z: Float):
+        z_arr = jnp.linspace(0, z, 100)
+        integrand = ( Omega0* (1+z_arr)**3 + (1-Omega0) )**(-0.5)
+        return jnp.trapezoid(x=z_arr, y=integrand)
+    
+    correction = vmap(correction_factor)(redshift)
+    luminosity_distance = 1e-3 * c / H0 * (1+redshift) * correction
+    return luminosity_distance
+
