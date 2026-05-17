@@ -1,6 +1,7 @@
 r"""Cosmolgy likelihood implementations"""
 
 from typing import Callable
+from pathlib import Path
 
 import jax
 import jax.numpy as jnp
@@ -44,6 +45,16 @@ class CosmoMultiMessengerLikelihood(LikelihoodBase):
         logger.info(f"Loading NF for EM posterior {event_name} from {dir_em}.")
         self.flow_em = Flow.from_directory(dir_em)
         logger.info(f"Loaded NFs for GW and EM posterior.")
+
+        posterior_gw = jnp.load(Path(dir_gw).parent / "posterior_mm.npz")
+        hist, bins = jnp.histogram(posterior_gw["luminosity_distance"], density=True)
+        bins = 0.5 * (bins[1:] + bins[:-1])
+
+        def dL_loglikelihood(dL):
+            return (jnp.interp(dL, bins, jnp.log(hist), left=-200, right=-200))
+        
+        self.dL_likelihood = jax.jit(dL_loglikelihood)
+
 
         # Set up prior subtraction 
         if logprior_gw is None:
@@ -155,29 +166,31 @@ class CosmoMultiMessengerLikelihood(LikelihoodBase):
             lambda_2 = jnp.interp(m2, masses_EOS, Lambdas_EOS, right=1.0)
 
             # Evaluate GW log_posterior on single sample
-            m1det = (1+redshift) * m1
-            m2det = (1+redshift) * m2
-            gw_sample = jnp.array([m1det, m2det, lambda_1, lambda_2, luminosity_distance, cos_theta_jn])
+            #m1det = (1+redshift) * m1
+            #m2det = (1+redshift) * m2
+            gw_sample = jnp.array([m1, m2, lambda_1, lambda_2]) # luminosity_distance, cos_theta_jn])
             logpdf_gw = self.flow_gw.log_prob(gw_sample)
+            logpdf_gw += self.dL_likelihood(luminosity_distance)
 
             # subtract the prior
+            gw_sample = jnp.array([m1, m2, lambda_1, lambda_2, luminosity_distance, cos_theta_jn])
             logprior_gwvalue = self.logprior_gw(gw_sample)
             logpdf_gw -= logprior_gwvalue
-
+            
             # Penalties for masses exceeding Mtov
             penalty_m1 = jnp.where(m1 > mtov, self.penalty_value, 0.0)
             penalty_m2 = jnp.where(m2 > mtov, self.penalty_value, 0.0)
             
             # Evaluate log
-            em_sample = jnp.array([log10_mej_dyn, luminosity_distance, cos_theta_jn])
-            logpdf_em = self.flow_em.log_prob(em_sample)
+            # em_sample = jnp.array([log10_mej_dyn, luminosity_distance, cos_theta_jn])
+            # logpdf_em = self.flow_em.log_prob(em_sample)
 
             #subtract the prior
-            logprior_emvalue = self.logprior_em(em_sample)
-            logpdf_em -= logprior_emvalue
+            # logprior_emvalue = self.logprior_em(em_sample)
+            # logpdf_em -= logprior_emvalue
 
             # Return log prob + penalties for this sample
-            return logpdf_gw + penalty_m1 + penalty_m2 + logpdf_em
+            return logpdf_gw + penalty_m1 + penalty_m2 # + logpdf_em
         
         # Use jax.lax.map with batching for memory-efficient processing
         # Process all pre-sampled mass pairs
