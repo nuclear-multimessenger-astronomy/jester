@@ -156,9 +156,7 @@ class CosmoMultiMessengerLikelihood(LikelihoodBase):
             lambda_2 = jnp.interp(m2, masses_EOS, Lambdas_EOS, right=1.0)
 
             # Evaluate GW log_posterior on single sample
-            m1det = (1+redshift) * m1
-            m2det = (1+redshift) * m2
-            gw_sample = jnp.array([m1det, m2det, lambda_1, lambda_2, luminosity_distance])
+            gw_sample = jnp.array([m1, m2, lambda_1, lambda_2, luminosity_distance])
             logpdf_gw = self.flow_gw.log_prob(gw_sample)
 
             # subtract the prior
