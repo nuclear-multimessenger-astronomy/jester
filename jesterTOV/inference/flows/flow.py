@@ -413,8 +413,8 @@ class ConditionalFlow(Flow):
             Samples in original scale as JAX array of shape (*shape, y.shape[0], n_features)
         """
 
-        y_std = self.standardize_cond_data(y_std)
-        samples = self.flow.sample(key, shape, condition=y)
+        y_std = self.standardize_cond_data(y)
+        samples = self.flow.sample(key, shape, condition=y_std)
 
         samples = self.destandardize_output(samples)
 
