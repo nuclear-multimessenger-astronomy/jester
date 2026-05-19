@@ -131,3 +131,54 @@ def RecycledBinary(key: jax.random.PRNGKey, params: dict[str, Float], size: int)
     mass_1_source, mass_2_source = jnp.maximum(mr_samples, ms_samples), jnp.minimum(mr_samples, ms_samples)
 
     return jnp.stack([mass_1_source, mass_2_source])
+
+def massratiopowerlaw_logpdf(mass_1, mass_2, params: dict[str, Float]) -> Float:
+
+    """
+    log PDF for the MassRatioPowerLaw population model.
+
+    Parameters
+    ----------
+    mass_1: Array[size]
+        Primary source mass
+    mass_2: Array[size]
+        Secondary source mass
+    params : dict[str, Float]
+        Input parameter dictionary containing 
+            m_min: Lowest NS mass (GW170817+GW190425: 1.1)
+            m_max: Highest NS mass (GW170817+GW190424: 2.0)
+            alpha: Power law index for mass ratio (GW170817+GW190425: 2.0)
+
+    Returns
+    -------
+    Array[size]
+        logpdf of the corresponding m1, m2 values
+
+    """
+
+    m_min = params["m_min"]
+    m_max = params["m_max"]
+    alpha = params["alpha"]
+
+    normalization_constant = jnp.where(
+        alpha !=1,
+        (1+alpha) * (
+            m_max**2/2 
+            + (1+alpha)/(2*(1-alpha))*m_min**2 
+            - (m_min**(alpha+1) * m_max**(1-alpha)) / (1-alpha) 
+        )**(-1),
+        (alpha+1) * (
+            0.5 *(m_max**2 - m_min**2)
+            - m_min**(alpha+1) * jnp.log(m_max/m_min)
+        )**(-1)
+    )
+    logpdf = jnp.log(normalization_constant) + alpha * jnp.log(mass_2/mass_1)
+
+    interval_constraint = (mass_2 >= m_min) & (mass_2 <= m_max) & (mass_1 >= m_min) & (mass_1 <= m_max) & (mass_1 >= mass_2)
+    logpdf = jnp.where(
+        interval_constraint,
+        logpdf,
+        -200,
+    )
+
+    return logpdf
