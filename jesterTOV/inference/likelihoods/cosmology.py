@@ -10,9 +10,82 @@ from jax.scipy.special import logsumexp
 
 from jesterTOV.inference.base.likelihood import LikelihoodBase
 from jesterTOV.inference.flows.flow import Flow, ConditionalFlow
+from jesterTOV.utils import solar_mass_in_meter, lambda1_lambda2_to_lambda_tilde
 from jesterTOV.logging_config import get_logger
 
 logger = get_logger("jester")
+
+def dynamic_mass_fitting_prompt_collapse(
+        mass_1,
+        mass_2,
+        lambda_1,
+        lambda_2,
+        a=1.25e-4,
+        b=9.82e-1,
+        c=-2.44,
+):
+    """
+    See https://arxiv.org/pdf/2411.02342, Eq. (9)
+    """
+    q = mass_2 / mass_1
+    lambda_tilde = lambda1_lambda2_to_lambda_tilde(lambda_1, lambda_2, mass_1, mass_2)
+
+    mdyn = a*lambda_tilde*(q**(-1) -b) * jnp.exp(c/q) # this is always positive
+    mdyn = jnp.maximum(1e-5, mdyn)
+
+    return mdyn
+    
+def dynamic_mass_fitting(
+    mass_1,
+    mass_2,
+    compactness_1,
+    compactness_2,
+    a=-9.3335,
+    b=114.17,
+    c=-337.56,
+    n=1.5465,
+):
+    """
+    See https://arxiv.org/pdf/2002.07728.pdf
+    """
+    mdyn = mass_1 * (
+        a / compactness_1 + b * jnp.power(mass_2 / mass_1, n) + c * compactness_1
+    )
+    mdyn += mass_2 * (
+        a / compactness_2 + b * jnp.power(mass_1 / mass_2, n) + c * compactness_2
+    )
+    mdyn *= 1e-3
+    mdyn = jnp.maximum(1e-5, mdyn)
+    return mdyn
+
+def parameter_conversion(mass_1: Array, mass_2: Array, params: dict[str, Array]):
+
+    # Extract EOS parameters 
+    masses_EOS: Float[Array, " n_points"] = params["masses_EOS"]
+    radii_EOS: Float[Array, " n_point"] = params["radii_EOS"]
+    Lambdas_EOS: Float[Array, " n_points"] = params["Lambdas_EOS"]
+    mtov: Float = jnp.max(masses_EOS)
+    mtov: Float = jnp.max(masses_EOS)
+    m_coll = params.get("k_coll", 1.3) * mtov
+
+    # tidal deformability and radii
+    lambda_1 = jnp.interp(mass_1, masses_EOS, Lambdas_EOS)
+    lambda_2 = jnp.interp(mass_2, masses_EOS, Lambdas_EOS)
+    radii_1 = jnp.interp(mass_1, masses_EOS, radii_EOS)
+    radii_2 = jnp.interp(mass_2, masses_EOS, radii_EOS)
+    compactness_1 = mass_1 / radii_1 * solar_mass_in_meter * 1e-3
+    compactness_2 = mass_2 / radii_2 * solar_mass_in_meter * 1e-3
+
+    # ejecta masses
+    prompt_collapse = m_coll < (mass_1 + mass_2)
+    mej_dyn = jnp.where(
+        prompt_collapse,
+        dynamic_mass_fitting_prompt_collapse(mass_1, mass_2, lambda_1, lambda_2), 
+        dynamic_mass_fitting(mass_1, mass_2, compactness_1, compactness_2)
+    )
+    log10_mej_dyn = jnp.log10(mej_dyn)
+
+    return lambda_1, lambda_2, log10_mej_dyn
 
 class CosmoMultiMessengerLikelihood(LikelihoodBase):
 
@@ -20,7 +93,9 @@ class CosmoMultiMessengerLikelihood(LikelihoodBase):
         self,
         event_name: str,
         dir_gw: str,
+        dir_gw_cond: str,
         dir_em: str,
+        population_logpdf: Callable,
         N_eval: int,
         redshift_mean: float,
         redshift_sigma: float,
@@ -42,9 +117,13 @@ class CosmoMultiMessengerLikelihood(LikelihoodBase):
         # Load GW posterior flow for this event
         logger.info(f"Loading NF for GW posterior {event_name} from {dir_gw}.")
         self.flow_gw = Flow.from_directory(dir_gw)
+        self.cflow_gw = ConditionalFlow.from_directory(dir_gw_cond)
         logger.info(f"Loading NF for EM posterior {event_name} from {dir_em}.")
         self.flow_em = Flow.from_directory(dir_em)
         logger.info(f"Loaded NFs for GW and EM posterior.")
+
+        self.N_eval =  N_eval
+        self.population_logpdf = jax.jit(population_logpdf)
 
         # Set up prior subtraction 
         if logprior_gw is None:
@@ -55,36 +134,11 @@ class CosmoMultiMessengerLikelihood(LikelihoodBase):
             logprior_em = lambda x: 0
         self.logprior_em = jax.jit(logprior_em)
 
-        # setup inclination array
-        self.cos_theta_jn_arr, key = self.setup_inclination_array(key, N_eval)
-
         # setup redshift array
         key, subkey = jax.random.split(key)
-        self.redshift_arr = jax.random.normal(subkey, shape=(N_eval,)) *redshift_sigma + redshift_mean
+        self.redshift_arr = jax.random.normal(subkey, shape=(N_eval,)) * redshift_sigma + redshift_mean
 
-    def setup_inclination_array(self, key, N_eval: int):
-        """
-        This methods provides the integration array for the cos_inclination parameter
-        over which the posteriors are later marginalized.
-        """
-        
-        key, subkey = jax.random.split(key)
-        samples = self.flow_gw.sample(subkey, shape=(2000,))
-        cos_theta_jn_max = samples[:, 5].max()
-        cos_theta_jn_min = samples[:, 5].min()
-
-        cos_theta_jn_max = jnp.minimum(1, cos_theta_jn_max+0.01)
-        cos_theta_jn_min = jnp.maximum(-1, cos_theta_jn_min-0.01)
-
-        key, subkey = jax.random.split(key)
-        cos_theta_jn_arr = jax.random.uniform(
-            subkey, 
-            shape=(N_eval,),
-            minval=cos_theta_jn_min, 
-            maxval=cos_theta_jn_max
-        )
-
-        return cos_theta_jn_arr, key
+        self.key = key
 
 
     def evaluate(self, params: dict[str, Float | Array]) -> Float:
@@ -98,31 +152,36 @@ class CosmoMultiMessengerLikelihood(LikelihoodBase):
             - 'masses_EOS': Array of neutron star masses from EOS
             - 'radii_EOS': Array of neutron star radii from EOS
             - 'Lambdas_EOS': Array of tidal deformabilities from EOS
-            - 'masses_1_pop': Array of heavier NS masses sampled from the population
-            - 'masses_2_pop': Array of ligher NS sampled from the population
-            - 'log10_mej_dyn': Array of dynamical ejecta from the NS masses
-            - 'log10_mdisk': Array of disk masses from the NS masses
             - 'dL_fn_redshift_arr': x-array of redshift for the luminosity distance function
             - 'dL_fn_distance_arr': y-array of distance for the luminosity distance function
+            - population parameters
         Returns
         -------
         Float
             Log likelihood value for this GW event
         """
-        # Extract EOS parameters (no _random_key needed!)
-        masses_EOS: Float[Array, " n_points"] = params["masses_EOS"]
-        Lambdas_EOS: Float[Array, " n_points"] = params["Lambdas_EOS"]
-        mtov: Float = jnp.max(masses_EOS)
+
+        # Sample masses and inclinations from the posterior
+        mass1_det, mass2_det, cos_theta_jn = self.flow_gw.sample(self.key, (self.N_eval,)).T
+
+        # calculate population probability
+        mass_1, mass_2 = mass1_det / (1 + self.redshift_arr), mass_2 = mass2_det / (1 + self.redshift_arr)
+        all_logprobs = self.population_logpdf(mass_1, mass_2, params)
+
+        # convert to EM and GW posterior parameters
+        lambda_1, lambda_2, log10_mej_dyn = parameter_conversion(mass_1, mass_2, params)
+
+        # get luminosity distance
         luminosity_distance_arr = jnp.interp(self.redshift_arr, params["dL_fn_redshift_arr"], params["dL_fn_distance_arr"])
 
         samples = jnp.array([
-            params["masses_1_pop"],
-            params["masses_2_pop"],
-            params["log10_mej_dyn"],
-            params["log10_mdisk"],
-            self.redshift_arr,
+            mass1_det,
+            mass2_det,
+            lambda_1,
+            lambda_2,
+            log10_mej_dyn,
             luminosity_distance_arr,
-            self.cos_theta_jn_arr,
+            cos_theta_jn
         ]).T
         
 
@@ -143,33 +202,26 @@ class CosmoMultiMessengerLikelihood(LikelihoodBase):
             Float
                 Log probability including penalties for this sample
             """
-            m1 = sample[0]
-            m2 = sample[1]
-            log10_mej_dyn = sample[2]
-            log10_mdisk = sample[3]
-            redshift = sample[4]
+            m1_det= sample[0]
+            m2_det = sample[1]
+            lambda_1 = sample[2]
+            lambda_2 = sample[3]
+            log10_mej_dyn = sample[4]
             luminosity_distance = sample[5]
             cos_theta_jn = sample[6]
 
-            # Interpolate lambdas from candidate EOS
-            lambda_1 = jnp.interp(m1, masses_EOS, Lambdas_EOS, right=1.0)
-            lambda_2 = jnp.interp(m2, masses_EOS, Lambdas_EOS, right=1.0)
-
             # Evaluate GW log_posterior on single sample
-            gw_sample = jnp.array([m1, m2, lambda_1, lambda_2, luminosity_distance])
-            logpdf_gw = self.flow_gw.log_prob(gw_sample)
+            cond_sample = jnp.array([m1_det, m2_det, cos_theta_jn])
+            eval_sample = jnp.array([lambda_1, lambda_2, luminosity_distance])
+            logpdf_gw = self.cflow_gw.log_prob(eval_sample, cond_sample)
 
             # subtract the prior
-            gw_sample = jnp.array([m1, m2, lambda_1, lambda_2, luminosity_distance])
+            gw_sample = jnp.array([m1_det, m2_det, lambda_1, lambda_2, luminosity_distance, cos_theta_jn])
             logprior_gwvalue = self.logprior_gw(gw_sample)
             logpdf_gw -= logprior_gwvalue
             
-            # Penalties for masses exceeding Mtov
-            penalty_m1 = jnp.where(m1 > mtov, self.penalty_value, 0.0)
-            penalty_m2 = jnp.where(m2 > mtov, self.penalty_value, 0.0)
-            
             # Evaluate log
-            em_sample = jnp.array([log10_mej_dyn, luminosity_distance])
+            em_sample = jnp.array([log10_mej_dyn, luminosity_distance, cos_theta_jn])
             logpdf_em = self.flow_em.log_prob(em_sample)
 
             #subtract the prior
@@ -177,15 +229,15 @@ class CosmoMultiMessengerLikelihood(LikelihoodBase):
             logpdf_em -= logprior_emvalue
 
             # Return log prob + penalties for this sample
-            return logpdf_gw + penalty_m1 + penalty_m2 + logpdf_em
+            return logpdf_gw + logpdf_em
         
         # Use jax.lax.map with batching for memory-efficient processing
         # Process all pre-sampled mass pairs
-        all_logprobs = jax.lax.map(
+        all_logprobs += jax.lax.map(
             process_sample, samples, batch_size=self.N_masses_batch_size
         )
 
         # Take logsumexp over all pre-sampled mass pairs
-        log_likelihood = logsumexp(all_logprobs) - jnp.log(samples.shape[0])
+        log_likelihood = logsumexp(all_logprobs) - jnp.log(all_logprobs.shape[0])
 
         return log_likelihood

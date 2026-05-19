@@ -193,122 +193,108 @@ class MultimessengerJesterTransform(PopulationJesterTransform):
 
         mej_dyn = jnp.where(
             prompt_collapse, 
-            self.dynamic_mass_fitting_prompt_collapse(mass_1, mass_2, lambda_1, lambda_2), 
-            self.dynamic_mass_fitting(mass_1, mass_2, compactness_1, compactness_2)
+            dynamic_mass_fitting_prompt_collapse(mass_1, mass_2, lambda_1, lambda_2), 
+            dynamic_mass_fitting(mass_1, mass_2, compactness_1, compactness_2)
         )
         log10_mej_dyn = jnp.log10(mej_dyn)
        
 
         log10_mdisk = jnp.where(
             prompt_collapse,
-            self.log10_disk_mass_fitting_prompt_collapse(mass_1, mass_2, lambda_1, lambda_2),
-            self.log10_disk_mass_fitting(mass_1+mass_2, mass_1/mass_2, mtov, r16)
+            log10_disk_mass_fitting_prompt_collapse(mass_1, mass_2, lambda_1, lambda_2),
+            log10_disk_mass_fitting(mass_1+mass_2, mass_1/mass_2, mtov, r16)
         )
        
         return {"log10_mej_dyn": log10_mej_dyn, "log10_mdisk": log10_mdisk}
     
 
-    @staticmethod
-    def dynamic_mass_fitting_prompt_collapse(
-            mass_1,
-            mass_2,
-            lambda_1,
-            lambda_2,
-            a=1.25e-4,
-            b=9.82e-1,
-            c=-2.44,
-    ):
-        """
-        See https://arxiv.org/pdf/2411.02342, Eq. (9)
-        """
-        q = mass_2 / mass_1
-        lambda_tilde = lambda1_lambda2_to_lambda_tilde(lambda_1, lambda_2, mass_1, mass_2)
-        mdyn = a*lambda_tilde*(q**(-1) -b) * jnp.exp(c/q) # this is always positive
-
-        mdyn = jnp.maximum(1e-5, mdyn)
-
-        return mdyn
-    
-    @staticmethod
-    def dynamic_mass_fitting(
+def dynamic_mass_fitting_prompt_collapse(
         mass_1,
         mass_2,
-        compactness_1,
-        compactness_2,
-        a=-9.3335,
-        b=114.17,
-        c=-337.56,
-        n=1.5465,
-    ):
-        """
-        See https://arxiv.org/pdf/2002.07728.pdf
-        """
+        lambda_1,
+        lambda_2,
+        a=1.25e-4,
+        b=9.82e-1,
+        c=-2.44,
+):
+    """
+    See https://arxiv.org/pdf/2411.02342, Eq. (9)
+    """
+    q = mass_2 / mass_1
+    lambda_tilde = lambda1_lambda2_to_lambda_tilde(lambda_1, lambda_2, mass_1, mass_2)
 
-        mdyn = mass_1 * (
-            a / compactness_1 + b * jnp.power(mass_2 / mass_1, n) + c * compactness_1
-        )
-        mdyn += mass_2 * (
-            a / compactness_2 + b * jnp.power(mass_1 / mass_2, n) + c * compactness_2
-        )
-        mdyn *= 1e-3
+    mdyn = a*lambda_tilde*(q**(-1) -b) * jnp.exp(c/q) # this is always positive
+    mdyn = jnp.maximum(1e-5, mdyn)
 
-        mdyn = jnp.maximum(1e-5, mdyn)
-
-        return mdyn
+    return mdyn
     
-    @staticmethod
-    def log10_disk_mass_fitting(
-        total_mass,
-        mass_ratio,
-        MTOV,
-        R16,
-        a0=-1.725,
-        delta_a=-2.337,
-        b0=-0.564,
-        delta_b=-0.437,
-        c=0.958,
-        d=0.057,
-        beta=5.879,
-        q_trans=0.886,
-    ):
-        """
-        See https://arxiv.org/pdf/2205.08513 Eq. (22)
-        The coefficients a0, delta_a etc. have been updated since then,
-        the ones here are the correct ones.
-        The threshold mass is from https://arxiv.org/pdf/1908.05442.pdf.
-        """
-        k = -3.606 * MTOV / R16 + 2.38
-        threshold_mass = k * MTOV
-
-        xi = 0.5 * jnp.tanh(beta * (mass_ratio - q_trans))
-
-        a = a0 + delta_a * xi
-        b = b0 + delta_b * xi
-
-        log10_mdisk = a * (1 + b * jnp.tanh((c - total_mass / threshold_mass) / d))
-        log10_mdisk = jnp.maximum(-3.0, log10_mdisk)
-
-        return log10_mdisk
+def dynamic_mass_fitting(
+    mass_1,
+    mass_2,
+    compactness_1,
+    compactness_2,
+    a=-9.3335,
+    b=114.17,
+    c=-337.56,
+    n=1.5465,
+):
+    """
+    See https://arxiv.org/pdf/2002.07728.pdf
+    """
+    mdyn = mass_1 * (
+        a / compactness_1 + b * jnp.power(mass_2 / mass_1, n) + c * compactness_1
+    )
+    mdyn += mass_2 * (
+        a / compactness_2 + b * jnp.power(mass_1 / mass_2, n) + c * compactness_2
+    )
+    mdyn *= 1e-3
+    mdyn = jnp.maximum(1e-5, mdyn)
+    return mdyn
     
+def log10_disk_mass_fitting(
+    total_mass,
+    mass_ratio,
+    MTOV,
+    R16,
+    a0=-1.725,
+    delta_a=-2.337,
+    b0=-0.564,
+    delta_b=-0.437,
+    c=0.958,
+    d=0.057,
+    beta=5.879,
+    q_trans=0.886,
+):
+    """
+    See https://arxiv.org/pdf/2205.08513 Eq. (22)
+    The coefficients a0, delta_a etc. have been updated since then,
+    the ones here are the correct ones.
+    The threshold mass is from https://arxiv.org/pdf/1908.05442.pdf.
+    """
+    k = -3.606 * MTOV / R16 + 2.38
+    threshold_mass = k * MTOV
+    xi = 0.5 * jnp.tanh(beta * (mass_ratio - q_trans))
+    a = a0 + delta_a * xi
+    b = b0 + delta_b * xi
+    log10_mdisk = a * (1 + b * jnp.tanh((c - total_mass / threshold_mass) / d))
+    log10_mdisk = jnp.maximum(-3.0, log10_mdisk)
+    return log10_mdisk
 
-    @staticmethod
-    def log10_disk_mass_fitting_prompt_collapse(
-            mass_1,
-            mass_2,
-            lambda_1,
-            lambda_2,
-            a=7.70,
-            b=-13.4,
-            c=8.16e-3):
-        """
-        See https://arxiv.org/pdf/2411.02342, Eq. (11)
-        Typo for b, b=-13.4 confirmed through author correspondence
-        """
-        q = mass_2 / mass_1
-        lambda_tilde = lambda1_lambda2_to_lambda_tilde(lambda_1, lambda_2, mass_1, mass_2)
-        log10_mdisk = a + b * q + c * lambda_tilde * q**2
-
-        log10_mdisk = jnp.minimum(log10_mdisk, -1)
-        log10_mdisk = jnp.maximum(log10_mdisk, -5)
-
-        return log10_mdisk
+def log10_disk_mass_fitting_prompt_collapse(
+        mass_1,
+        mass_2,
+        lambda_1,
+        lambda_2,
+        a=7.70,
+        b=-13.4,
+        c=8.16e-3):
+    """
+    See https://arxiv.org/pdf/2411.02342, Eq. (11)
+    Typo for b, b=-13.4 confirmed through author correspondence
+    """
+    q = mass_2 / mass_1
+    lambda_tilde = lambda1_lambda2_to_lambda_tilde(lambda_1, lambda_2, mass_1, mass_2)
+    log10_mdisk = a + b * q + c * lambda_tilde * q**2
+    log10_mdisk = jnp.minimum(log10_mdisk, -1)
+    log10_mdisk = jnp.maximum(log10_mdisk, -5)
+    return log10_mdisk
