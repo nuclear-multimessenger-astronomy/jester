@@ -427,14 +427,32 @@ def bilby_adaptive_de_sampler_unit_cube(
 
         return jax.vmap(inner_kernel_closure, in_axes=(0, 0, None))
 
-    # The inner_kernel passed to build_adaptive_kernel should accept params as kwarg
-    # blackjax will do: partial(inner_kernel, params=de_params)
-    # Then call: partial_kernel(rng_keys, states, loglikelihood_0)
-    # But we need to avoid vmapping params, so we use a different approach:
-    # Return a function that extracts params from kwargs and creates the vmapped kernel on-the-fly
-    def inner_kernel_wrapper(rng_keys, states, loglikelihood_0, *, params):
+    # The inner_kernel passed to build_adaptive_kernel should accept params as kwarg.
+    # New blackjax API (2025-05): inner_kernel receives (single_rng_key, full_state,
+    # loglikelihood_0). Start particle selection moved out of delete_fn into here.
+    def inner_kernel_wrapper(rng_key, state, loglikelihood_0, *, params):
+        choice_key, sample_key = jax.random.split(rng_key)
+        particles = state.particles
+
+        # Select num_delete start particles from survivors above loglikelihood_0
+        raw_weights: jax.Array = (particles.loglikelihood > loglikelihood_0).astype(
+            jnp.float32
+        )
+        weights: jax.Array = jnp.where(
+            raw_weights.sum() > 0.0, raw_weights, jnp.ones_like(raw_weights)
+        )
+        start_idx = jax.random.choice(
+            choice_key,
+            weights.shape[0],
+            shape=(num_delete,),
+            p=weights / weights.sum(),
+            replace=True,
+        )
+        start_state = jax.tree_util.tree_map(lambda x: x[start_idx], particles)
+
         vmapped_kernel = make_vmapped_kernel(params)
-        return vmapped_kernel(rng_keys, states, loglikelihood_0)
+        sample_keys = jax.random.split(sample_key, num_delete)
+        return vmapped_kernel(sample_keys, start_state, loglikelihood_0)
 
     base_kernel_step = build_adaptive_kernel(
         delete_fn,
