@@ -78,6 +78,17 @@ NEP_PARAMS = [
     "Z_sym",
 ]
 
+SPECTRAL_PARAMS = ["gamma_0", "gamma_1", "gamma_2", "gamma_3"]
+
+PEAK_CSE_PARAMS = NEP_PARAMS + [
+    "nbreak",
+    "gaussian_peak",
+    "gaussian_mu",
+    "gaussian_sigma",
+    "logit_growth_rate",
+    "logit_midpoint",
+]
+
 
 # ============================================================================
 # FIXTURES
@@ -118,6 +129,30 @@ gamma_2 = UniformPrior(-0.6, 0.6, parameter_names=["gamma_2"])
 gamma_3 = UniformPrior(-0.02, 0.02, parameter_names=["gamma_3"])
 """
     prior_file = e2e_temp_dir / "spectral.prior"
+    prior_file.write_text(prior_content)
+    return prior_file
+
+
+@pytest.fixture
+def peak_cse_prior_file(e2e_temp_dir: Path) -> Path:
+    """Create a prior file for metamodel_peak_cse tests."""
+    prior_content = """E_sat = UniformPrior(-16.1, -15.9, parameter_names=["E_sat"])
+K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
+Q_sat = UniformPrior(-500.0, 1100.0, parameter_names=["Q_sat"])
+Z_sat = UniformPrior(-2500.0, 1500.0, parameter_names=["Z_sat"])
+E_sym = UniformPrior(28.0, 45.0, parameter_names=["E_sym"])
+L_sym = UniformPrior(10.0, 200.0, parameter_names=["L_sym"])
+K_sym = UniformPrior(-400.0, 200.0, parameter_names=["K_sym"])
+Q_sym = UniformPrior(-1000.0, 1500.0, parameter_names=["Q_sym"])
+Z_sym = UniformPrior(-2000.0, 1500.0, parameter_names=["Z_sym"])
+nbreak = UniformPrior(0.16, 0.32, parameter_names=["nbreak"])
+gaussian_peak = UniformPrior(0.1, 1.0, parameter_names=["gaussian_peak"])
+gaussian_mu = UniformPrior(0.32, 1.92, parameter_names=["gaussian_mu"])
+gaussian_sigma = UniformPrior(0.016, 0.8, parameter_names=["gaussian_sigma"])
+logit_growth_rate = UniformPrior(0.1, 1.0, parameter_names=["logit_growth_rate"])
+logit_midpoint = UniformPrior(0.32, 5.6, parameter_names=["logit_midpoint"])
+"""
+    prior_file = e2e_temp_dir / "peak_cse.prior"
     prior_file.write_text(prior_content)
     return prior_file
 
@@ -204,6 +239,37 @@ def build_chieft_config(
                 "enabled": True,
                 "nb_n": 30,  # 100 -> 30 for speed
             },
+        ],
+        "sampler": {
+            **sampler_config,
+            "output_dir": str(output_dir),
+            "n_eos_samples": 50,
+        },
+        "postprocessing": {"enabled": False},
+    }
+
+
+def build_peak_cse_prior_only_config(
+    sampler_config: dict[str, Any], prior_file: Path, output_dir: Path
+) -> dict[str, Any]:
+    """Build a metamodel_peak_cse prior-only config."""
+    return {
+        "seed": 42,
+        "dry_run": False,
+        "validate_only": False,
+        "eos": {
+            "type": "metamodel_peak_cse",
+            "ndat_CSE": 30,  # 100 -> 30 for speed
+            **{k: v for k, v in LIGHTWEIGHT_EOS.items() if k != "nb_CSE"},
+        },
+        "tov": {
+            "type": "gr",
+            **LIGHTWEIGHT_TOV,
+        },
+        "prior": {"specification_file": str(prior_file)},
+        "likelihoods": [
+            {"type": "constraints_eos", "enabled": True},
+            {"type": "zero", "enabled": True},
         ],
         "sampler": {
             **sampler_config,
@@ -334,6 +400,39 @@ def blackjax_ns_aw_chieft_config(
     """BlackJAX NS-AW config with chiEFT likelihood."""
     sampler_config = {"type": "blackjax-ns-aw", **BLACKJAX_NS_AW_LIGHTWEIGHT}
     return build_chieft_config(sampler_config, chieft_prior_file, e2e_temp_dir)
+
+
+@pytest.fixture
+def smc_rw_peak_cse_config(
+    peak_cse_prior_file: Path, e2e_temp_dir: Path
+) -> dict[str, Any]:
+    """SMC-RW config with metamodel_peak_cse EOS and prior-only likelihood."""
+    sampler_config = {"type": "smc-rw", **SMC_RW_LIGHTWEIGHT}
+    return build_peak_cse_prior_only_config(
+        sampler_config, peak_cse_prior_file, e2e_temp_dir
+    )
+
+
+@pytest.fixture
+def flowmc_peak_cse_config(
+    peak_cse_prior_file: Path, e2e_temp_dir: Path
+) -> dict[str, Any]:
+    """FlowMC config with metamodel_peak_cse EOS and prior-only likelihood."""
+    sampler_config = {"type": "flowmc", **FLOWMC_LIGHTWEIGHT}
+    return build_peak_cse_prior_only_config(
+        sampler_config, peak_cse_prior_file, e2e_temp_dir
+    )
+
+
+@pytest.fixture
+def blackjax_ns_aw_peak_cse_config(
+    peak_cse_prior_file: Path, e2e_temp_dir: Path
+) -> dict[str, Any]:
+    """BlackJAX NS-AW config with metamodel_peak_cse EOS and prior-only likelihood."""
+    sampler_config = {"type": "blackjax-ns-aw", **BLACKJAX_NS_AW_LIGHTWEIGHT}
+    return build_peak_cse_prior_only_config(
+        sampler_config, peak_cse_prior_file, e2e_temp_dir
+    )
 
 
 # ============================================================================
