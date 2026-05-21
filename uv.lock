@@ -246,7 +246,7 @@ wheels = [
 [[package]]
 name = "blackjax"
 version = "0.1.0b1.dev194+g2180e29ff"
-source = { git = "https://github.com/handley-lab/blackjax.git?rev=nested_sampling#2180e29ffb645b2c46b76c768229c7c24212446c" }
+source = { git = "https://github.com/handley-lab/blackjax.git?rev=2180e29ffb645b2c46b76c768229c7c24212446c#2180e29ffb645b2c46b76c768229c7c24212446c" }
 dependencies = [
     { name = "jax" },
     { name = "jaxlib" },
@@ -1307,7 +1307,7 @@ requires-dist = [
     { name = "astropy", marker = "extra == 'dev'", specifier = ">=5.0.0" },
     { name = "beartype", specifier = ">=0.10.0" },
     { name = "bilby", marker = "extra == 'dev'", specifier = ">=2.0.0" },
-    { name = "blackjax", git = "https://github.com/handley-lab/blackjax.git?rev=nested_sampling" },
+    { name = "blackjax", git = "https://github.com/handley-lab/blackjax.git?rev=2180e29ffb645b2c46b76c768229c7c24212446c" },
     { name = "corner", specifier = ">=2.2.0" },
     { name = "diffrax" },
     { name = "equinox", specifier = ">=0.11.0" },
