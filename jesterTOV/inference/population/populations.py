@@ -74,7 +74,10 @@ def MassRatioPowerLaw(key: jax.random.PRNGKey, params: dict[str, Float], size: i
     mass_1_source = jnp.interp(u1, cdf1_arr, m1_arr)
 
     u2 = jax.random.uniform(subkeys[2], (size,))
-    mass_2_source = (u2*(mass_1_source**3 - m_min**3) + m_min**3)**(1/3)
+    mass_2_source = (
+        u2 * (mass_1_source**(alpha+1) - m_min**(alpha+1))
+        + m_min**(alpha+1)
+        )**(1/(alpha+1))
 
     return jnp.stack([mass_1_source, mass_2_source])
 
@@ -121,16 +124,73 @@ def RecycledBinary(key: jax.random.PRNGKey, params: dict[str, Float], size: int)
     m_min = params["m_min"]
     m_max = params["m_max"]
 
-
     ms_samples = jax.random.uniform(subkeys[1], shape=(size,), minval=m_min, maxval=m_max)
 
     comp = jax.random.bernoulli(subkeys[2], shape=(size,), p=alpha)
     z = jax.random.normal(subkeys[3], shape=(size,))
-    mr_samples = jnp.where(comp, mu_1 + sigma_1 * z, mu_2 + sigma_2* z)
+    mr_samples = jnp.where(comp, mu_1 + sigma_1 * z, mu_2 + sigma_2 * z)
     
     mass_1_source, mass_2_source = jnp.maximum(mr_samples, ms_samples), jnp.minimum(mr_samples, ms_samples)
 
     return jnp.stack([mass_1_source, mass_2_source])
+
+
+def recycledbinary_logpdf(mass_1, mass_2, params: dict[str, Float]) -> Float:
+    """
+    log PDF for the RecycledBinary population model.
+
+    Parameters
+    ----------
+    mass_1: Array[size]
+        Primary source mass
+    mass_2: Array[size]
+        Secondary source mass
+    params : dict[str, Float]
+        Input parameter dictionary containing 
+            mu_1: First gaussian peak (galactic DNS: 1.34)
+            sigma_1: First gaussian width (galactic DNS: 1.47)
+            mu_2: Second gaussian peak (galactic DNS: 0.02)
+            sigma_2: Second gaussian width (galactic DNS: 0.15)
+            alpha: Relative proportions of the Gaussians (galactic DNS: 0.68)
+            m_min: Minimum mass of the slow mass (galactic DNS: 1.16)
+            m_max: Maximum mass of the slow mass (galactic DNS: 1.42)
+
+    Returns
+    -------
+    Array[size]
+        logpdf of the corresponding m1, m2 values
+
+    """
+
+    alpha = params["alpha"]
+    mu_1 = params["mu_1"]
+    mu_2 = params["mu_2"]
+    sigma_1 = params["sigma_1"]
+    sigma_2 = params["sigma_2"]
+
+    m_min = params["m_min"]
+    m_max = params["m_max"]
+
+    def double_gaussian(x):
+        first_peak = jnp.exp(-0.5 * (x-mu_1)**2 / sigma_1**2) / jnp.sqrt(2*jnp.pi*sigma_1**2)
+        second_peak = jnp.exp(-0.5 * (x-mu_2)**2 / sigma_2**2) / jnp.sqrt(2*jnp.pi*sigma_2**2)
+        return alpha * first_peak + (1-alpha) * second_peak
+
+    def uniform(x):
+        out = jnp.where(
+            (m_min <= x) & (x <= m_max),
+            1/(m_max - m_min),
+            1e-87
+        )
+        return out
+
+    logpdf = jnp.where(
+        mass_2 <= mass_1,
+        jnp.log(double_gaussian(mass_1) * uniform(mass_2) + double_gaussian(mass_2) * uniform(mass_1)),
+        -200
+    )
+
+    return logpdf
 
 def massratiopowerlaw_logpdf(mass_1, mass_2, params: dict[str, Float]) -> Float:
 
@@ -161,7 +221,7 @@ def massratiopowerlaw_logpdf(mass_1, mass_2, params: dict[str, Float]) -> Float:
     alpha = params["alpha"]
 
     normalization_constant = jnp.where(
-        alpha !=1,
+        ~jnp.isclose(alpha, 1.0),
         (1+alpha) * (
             m_max**2/2 
             + (1+alpha)/(2*(1-alpha))*m_min**2 
@@ -172,7 +232,7 @@ def massratiopowerlaw_logpdf(mass_1, mass_2, params: dict[str, Float]) -> Float:
             - m_min**(alpha+1) * jnp.log(m_max/m_min)
         )**(-1)
     )
-    logpdf = jnp.log(normalization_constant) + alpha * jnp.log(mass_2/mass_1)
+    logpdf = jnp.log(normalization_constant) + alpha * jnp.log(mass_2) - alpha * jnp.log(mass_1)
 
     interval_constraint = (mass_2 >= m_min) & (mass_2 <= m_max) & (mass_1 >= m_min) & (mass_1 <= m_max) & (mass_1 >= mass_2)
     logpdf = jnp.where(
