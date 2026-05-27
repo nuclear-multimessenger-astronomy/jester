@@ -136,9 +136,23 @@ class CosmoMultiMessengerLikelihood(LikelihoodBase):
 
         # setup redshift array
         key, subkey = jax.random.split(key)
-        self.redshift_arr = jax.random.normal(subkey, shape=(N_eval,)) * redshift_sigma + redshift_mean
+        self.redshift_arr = jax.random.normal(subkey, shape=(self.N_eval,)) * redshift_sigma + redshift_mean
 
-        self.key = key
+        self.setup_integration_arrays(key)
+
+    def setup_integration_arrays(self, key):
+
+        key, subkey = jax.random.split(key)
+        mass_1_det, mass_2_det, cos_theta_jn = self.flow_gw.sample(subkey, (self.N_eval,)).T
+
+        mass_1 = mass_1_det / (1 + self.redshift_arr)
+        mass_2 = mass_2_det / (1 + self.redshift_arr)
+
+        self.mass_1_det = mass_1_det
+        self.mass_2_det = mass_2_det
+        self.mass_1 = mass_1
+        self.mass_2 = mass_2
+        self.cos_theta_jn = cos_theta_jn
 
 
     def evaluate(self, params: dict[str, Float | Array]) -> Float:
@@ -161,30 +175,24 @@ class CosmoMultiMessengerLikelihood(LikelihoodBase):
             Log likelihood value for this GW event
         """
 
-        # Sample masses and inclinations from the posterior
-        mass1_det, mass2_det, cos_theta_jn = self.flow_gw.sample(self.key, (self.N_eval,)).T
-
-        # calculate population probability
-        mass_1, mass_2 = mass1_det / (1 + self.redshift_arr), mass_2 = mass2_det / (1 + self.redshift_arr)
-        all_logprobs = self.population_logpdf(mass_1, mass_2, params)
+        pop_logprobs = self.population_logpdf(self.mass_1, self.mass_2, params)
 
         # convert to EM and GW posterior parameters
-        lambda_1, lambda_2, log10_mej_dyn = parameter_conversion(mass_1, mass_2, params)
+        lambda_1, lambda_2, log10_mej_dyn = parameter_conversion(self.mass_1, self.mass_2, params)
 
         # get luminosity distance
         luminosity_distance_arr = jnp.interp(self.redshift_arr, params["dL_fn_redshift_arr"], params["dL_fn_distance_arr"])
 
         samples = jnp.array([
-            mass1_det,
-            mass2_det,
+            self.mass_1_det,
+            self.mass_2_det,
             lambda_1,
             lambda_2,
             log10_mej_dyn,
             luminosity_distance_arr,
-            cos_theta_jn
+            self.cos_theta_jn,
         ]).T
         
-
         def process_sample(sample: Float[Array, " 4"]) -> Float:
             """
             Process a single pre-sampled mass pair
@@ -229,14 +237,15 @@ class CosmoMultiMessengerLikelihood(LikelihoodBase):
             logpdf_em -= logprior_emvalue
 
             # Return log prob + penalties for this sample
-            return logpdf_gw + logpdf_em
+            return logpdf_gw #+ logpdf_em
         
         # Use jax.lax.map with batching for memory-efficient processing
         # Process all pre-sampled mass pairs
-        all_logprobs += jax.lax.map(
+        nf_logprobs = jax.lax.map(
             process_sample, samples, batch_size=self.N_masses_batch_size
         )
 
+        all_logprobs = nf_logprobs + pop_logprobs
         # Take logsumexp over all pre-sampled mass pairs
         log_likelihood = logsumexp(all_logprobs) - jnp.log(all_logprobs.shape[0])
 
