@@ -317,7 +317,7 @@ class CosmoMMSelectionLikelihood(LikelihoodBase):
         self.mass_2_det = mass_2_det
         self.mass_1 = mass_1
         self.mass_2 = mass_2
-        self.cos_theta_jn = cos_theta_jn
+        self.cos_theta_jn = jnp.clip(cos_theta_jn, -1, 1)
 
 
     def evaluate(self, params: dict[str, Float | Array]) -> Float:
@@ -348,8 +348,9 @@ class CosmoMMSelectionLikelihood(LikelihoodBase):
 
         # get luminosity distance
         luminosity_distance_arr = jnp.interp(self.redshift_arr, params["dL_fn_redshift_arr"], params["dL_fn_distance_arr"])
-        max_em_luminosity_distance = params["beta_1"] * self.cos_theta_jn**2 + params["beta_2"]
-        observability_mask = luminosity_distance_arr <= max_em_luminosity_distance
+
+        # calculate the bias toward high inclinations
+        incl_bias_logprobs = self.inclination_bias_function(self.cos_theta_jn, luminosity_distance_arr, params)
 
         samples = dict(
             mass_1_det=self.mass_1_det,
@@ -411,13 +412,33 @@ class CosmoMMSelectionLikelihood(LikelihoodBase):
             em_likelihood, samples, batch_size=self.N_masses_batch_size,
         )
 
-        all_logprobs = jnp.where(
-            observability_mask,
-            gw_logprobs + em_logprobs + pop_logprobs,
-            gw_logprobs + pop_logprobs
-        )
-
+        all_logprobs = gw_logprobs + em_logprobs + pop_logprobs + incl_bias_logprobs
         # Take logsumexp over all pre-sampled mass pairs
         log_likelihood = logsumexp(all_logprobs) - jnp.log(all_logprobs.shape[0])
 
         return log_likelihood
+    
+    @staticmethod
+    def inclination_bias_function(cos_theta_jn: Array, luminosity_distance: Array, params: dict[str, Array]):
+
+        u = jnp.abs(cos_theta_jn)
+
+        # determine the maximum inclination that could be observed at the corresponding luminosity distance
+        limit = jnp.sqrt(
+            jnp.clip(
+                (luminosity_distance - params["beta_1"]) / params["beta_2"],
+                0.0, 1.0,
+            )
+        )
+
+        prob = jnp.where(
+            u > limit,
+            2 * (u - limit) / (1 - limit) ** 2,
+            1e-50,
+        )
+
+        return jnp.where(
+            luminosity_distance > params["beta_1"],
+            jnp.log(prob),
+            jnp.log(1),
+        )
