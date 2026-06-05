@@ -3,6 +3,9 @@
 Scalar-Tensor TOV Solver
 ========================
 
+.. warning::
+   **Under Development!** This solver and its documentation are currently a work in progress. Expect incomplete features or breaking changes.
+
 [Placeholder: Detailed explanation of modified gravity TOV solver]
 
 This page will cover:
