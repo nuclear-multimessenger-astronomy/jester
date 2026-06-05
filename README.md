@@ -29,7 +29,7 @@ Try `jester` right away in your browser and infer the neutron star equation of s
 | Component | Description |
 |---|---|
 | **EOS models** | Metamodel, Metamodel + CSE, Spectral expansion |
-| **TOV solvers** | General Relativity, Pressure anisotropy, Modified gravity (scalar-tensor) |
+| **TOV solvers** | General Relativity, Pressure anisotropy, Modified gravity (scalar-tensor, in development) |
 | **Likelihoods** | Nuclear experiments (chiEFT), Radio timing, NICER mass-radius, Gravitational waves |
 | **Samplers** | Sequential Monte Carlo, Nested Sampling, FlowMC (normalizing flows) |
 
