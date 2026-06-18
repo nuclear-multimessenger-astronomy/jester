@@ -494,8 +494,7 @@ class RadioLikelihoodConfig(BaseLikelihoodConfig):
             - name: "J0740+6620"
               mass_mean: 2.08
               mass_std: 0.07
-          penalty_value: -1e5
-          nb_masses: 100
+          penalty_value: 0.0
     """
 
     type: Literal["radio"] = Field(
@@ -511,14 +510,8 @@ class RadioLikelihoodConfig(BaseLikelihoodConfig):
     )
 
     penalty_value: float = Field(
-        default=-1e5,
+        default=0.0,
         description="Log-likelihood penalty for invalid TOV solutions (M_TOV ≤ m_min)",
-    )
-
-    nb_masses: int = Field(
-        default=100,
-        gt=0,
-        description="Number of mass points for numerical integration of Gaussian constraint",
     )
 
     @field_validator("pulsars")
