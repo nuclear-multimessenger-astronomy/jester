@@ -21,7 +21,7 @@ likelihoods:
 - type: nicer
   enabled: true
   pulsars:
-  - name: J0740
+  - name: J0740+6620
     amsterdam_model_dir: ../../../../jesterTOV/inference/flows/models/nicer_maf/J07406620/amsterdam_gamma_nicerxmm
     maryland_model_dir: ../../../../jesterTOV/inference/flows/models/nicer_maf/J07406620/maryland_unknown_nicerxmm_rm
   N_masses_evaluation: 20

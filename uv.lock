@@ -305,8 +305,8 @@ wheels = [
 
 [[package]]
 name = "blackjax"
-version = "0.1.0b1.dev82+g1e6ad99c9"
-source = { git = "https://github.com/handley-lab/blackjax.git?rev=1e6ad99c971ba284f45c6af5931ab6f87ae9c896#1e6ad99c971ba284f45c6af5931ab6f87ae9c896" }
+version = "0.1.dev818+g8758ef11b"
+source = { git = "https://github.com/ThibeauWouters/blackjax.git?rev=jester#8758ef11be0b861bbf19fa806fe913e4d6774f50" }
 dependencies = [
     { name = "fastprogress" },
     { name = "ipython" },
@@ -1455,7 +1455,7 @@ requires-dist = [
     { name = "astropy", marker = "extra == 'dev'", specifier = ">=5.0.0" },
     { name = "beartype", specifier = ">=0.10.0" },
     { name = "bilby", marker = "extra == 'dev'", specifier = ">=2.0.0" },
-    { name = "blackjax", git = "https://github.com/handley-lab/blackjax.git?rev=1e6ad99c971ba284f45c6af5931ab6f87ae9c896" },
+    { name = "blackjax", git = "https://github.com/ThibeauWouters/blackjax.git?rev=jester" },
     { name = "corner", specifier = ">=2.2.0" },
     { name = "diffrax" },
     { name = "equinox", specifier = ">=0.11.0" },
