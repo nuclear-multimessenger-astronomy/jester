@@ -338,7 +338,7 @@ and the contribution to the isoscalar compressibility is given by
 Speed-of-sound
 ------------------
 
-For the metamodel, the sound speed in units of the speed of light :math:`c_s` is defined as
+For the metamodel, the sound speed in units of the speed of light :math:`c` is defined as
 
 .. math::
    :label: speed_of_sound
