@@ -9,6 +9,7 @@ from .flowmc import FlowMCSampler
 from .blackjax.nested_sampling import BlackJAXNSAWSampler
 from .blackjax.smc.random_walk import BlackJAXSMCRandomWalkSampler
 from .blackjax.smc.nuts import BlackJAXSMCNUTSSampler
+from .aspire_sampler import AspireSampler
 
 from ..base import LikelihoodBase, Prior, NtoMTransform
 from ..config.schema import SamplerConfig
@@ -20,6 +21,7 @@ __all__ = [
     "BlackJAXNSAWSampler",
     "BlackJAXSMCRandomWalkSampler",
     "BlackJAXSMCNUTSSampler",
+    "AspireSampler",
     "create_sampler",
 ]
 
@@ -29,6 +31,7 @@ SAMPLER_REGISTRY = {
     "blackjax-ns-aw": BlackJAXNSAWSampler,
     "smc-rw": BlackJAXSMCRandomWalkSampler,
     "smc-nuts": BlackJAXSMCNUTSSampler,
+    "aspire": AspireSampler,
 }
 
 

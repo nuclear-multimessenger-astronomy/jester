@@ -257,6 +257,83 @@ class SMCNUTSSamplerConfig(BaseSamplerConfig):
         return v
 
 
+class AspireSamplerConfig(BaseSamplerConfig):
+    r"""Configuration for the aspire posterior-reuse sampler.
+
+    Trains a normalizing flow (JAX/flowjax backend) on samples from a
+    previous jester run, then draws a new posterior via aspire's SMC or
+    importance sampler under an updated likelihood — without re-running
+    the full EOS+TOV pipeline.
+
+    Attributes
+    ----------
+    type : Literal["aspire"]
+        Sampler type identifier.
+    upstream_result_path : str
+        Path to a jester HDF5 result file (the upstream run whose samples
+        will be used to train the normalizing flow).
+    n_samples : int
+        Number of posterior samples to draw via aspire (default: 5000).
+    aspire_sampler : str
+        aspire sampler to use for posterior sampling. Options:
+        ``"smc"`` (default), ``"importance"``, ``"blackjax_smc"``.
+    n_epochs : int
+        Number of training epochs for the normalizing flow (default: 100).
+    batch_size : int
+        Mini-batch size for flow training (default: 500).
+    lr : float
+        Learning rate for flow training (default: 1e-3).
+    n_resample : int
+        Number of upstream samples to use for flow training. When the
+        upstream run used SMC (with importance weights), the samples are
+        first resampled according to those weights to produce an unweighted
+        training set of this size (default: 5000).
+    """
+
+    type: Literal["aspire"] = "aspire"
+    upstream_result_path: str = Field(
+        description="Path to jester HDF5 result file from the upstream run"
+    )
+    n_samples: int = Field(
+        default=5000,
+        gt=0,
+        description="Number of posterior samples to draw via aspire",
+    )
+    aspire_sampler: str = Field(
+        default="blackjax_smc",
+        description='aspire sampler type: "blackjax_smc" (default), "importance", or "smc"',
+    )
+    n_epochs: int = Field(
+        default=100,
+        gt=0,
+        description="Number of flow training epochs",
+    )
+    batch_size: int = Field(
+        default=500,
+        gt=0,
+        description="Mini-batch size for flow training",
+    )
+    lr: float = Field(
+        default=1e-3,
+        gt=0,
+        description="Learning rate for flow training",
+    )
+    n_resample: int = Field(
+        default=5000,
+        gt=0,
+        description="Number of upstream samples to resample for flow training",
+    )
+
+    @field_validator("upstream_result_path")
+    @classmethod
+    def _validate_h5_extension(cls, v: str) -> str:
+        if not (v.endswith(".h5") or v.endswith(".hdf5")):
+            raise ValueError(
+                f"upstream_result_path must be an HDF5 file (.h5 or .hdf5), got: {v}"
+            )
+        return v
+
+
 # Discriminated union for sampler configurations
 SamplerConfig = Annotated[
     Union[
@@ -264,6 +341,7 @@ SamplerConfig = Annotated[
         BlackJAXNSAWConfig,
         SMCRandomWalkSamplerConfig,
         SMCNUTSSamplerConfig,
+        AspireSamplerConfig,
     ],
     Discriminator("type"),
 ]

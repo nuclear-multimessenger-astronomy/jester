@@ -18,8 +18,10 @@ from ..config.schema import (
     DeprecatedConstraintsLikelihoodConfig,
     REXLikelihoodConfig,
     ZeroLikelihoodConfig,
+    GaussianTestLikelihoodConfig,
 )
 from .combined import CombinedLikelihood, ZeroLikelihood
+from .gaussian_test import GaussianTestLikelihood
 from .gw import GWLikelihood, GWLikelihoodResampled
 from .nicer import NICERLikelihood, NICERKDELikelihood
 from .radio import RadioTimingLikelihood
@@ -194,6 +196,9 @@ def create_likelihood(
 
         case ZeroLikelihoodConfig():
             return ZeroLikelihood()
+
+        case GaussianTestLikelihoodConfig():
+            return GaussianTestLikelihood(mean=config.mean, std=config.std)
 
         case _:
             raise ValueError(f"Unknown likelihood type: {config.type}")

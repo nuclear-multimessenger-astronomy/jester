@@ -793,6 +793,40 @@ class ZeroLikelihoodConfig(BaseLikelihoodConfig):
     )
 
 
+class GaussianTestLikelihoodConfig(BaseLikelihoodConfig):
+    r"""Analytical Gaussian test likelihood — no TOV solver required.
+
+    Evaluates an isotropic Gaussian log-likelihood directly on the raw
+    sampled parameters. Intended for integration tests that validate the
+    inference pipeline without the computational cost of the TOV solver.
+
+    Examples
+    --------
+    .. code-block:: yaml
+
+        - type: "gaussian_test"
+          enabled: true
+          mean:
+            gamma_0: 0.5
+            gamma_1: 0.0
+          std: 0.1
+    """
+
+    type: Literal["gaussian_test"] = Field(
+        default="gaussian_test", description="Likelihood type identifier"
+    )
+
+    mean: dict[str, float] = Field(
+        description="Mean values for each parameter (only listed parameters contribute)"
+    )
+
+    std: float = Field(
+        default=0.1,
+        gt=0,
+        description="Isotropic standard deviation (same for all dimensions)",
+    )
+
+
 # Discriminated union of all likelihood types
 LikelihoodConfig = Annotated[
     Union[
@@ -809,6 +843,7 @@ LikelihoodConfig = Annotated[
         DeprecatedConstraintsLikelihoodConfig,
         REXLikelihoodConfig,
         ZeroLikelihoodConfig,
+        GaussianTestLikelihoodConfig,
     ],
     Discriminator("type"),
 ]

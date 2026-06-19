@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code when working with the JESTER repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## IMPORTANT GUIDELINES
 
@@ -94,51 +94,6 @@ SAMPLER_REGISTRY = {
 
 ---
 
-## API Migration (January 2025 Refactoring)
-
-**construct_family moved from EOS to TOV solver:**
-```python
-# OLD: eos_tuple = eos.construct_family(...)
-# NEW:
-from jesterTOV.tov import GRTOVSolver
-eos_data = model.construct_eos(params)  # Returns EOSData NamedTuple
-solver = GRTOVSolver()
-family_data = solver.construct_family(eos_data, ndat=100, min_nsat=0.75)
-# Access: family_data.masses, family_data.radii, family_data.lambdas
-```
-
-**E_sat is now required** (was fixed at -16.0):
-- Add `E_sat = UniformPrior(-16.1, -15.9, parameter_names=["E_sat"])` to priors
-- Applies to `metamodel` and `metamodel_cse` transforms only
-
-**EOSData is NamedTuple** (8 fields):
-- Access by name: `eos_data.ns`, `eos_data.ps`, etc.
-- Do NOT unpack: ~~`ns, ps, hs, ... = eos_data`~~ (will fail - NamedTuple has 8 fields)
-- Fields: `ns`, `ps`, `hs`, `es`, `dloge_dlogps`, `cs2`, `mu` (optional), `extra_constraints` (optional)
-
-**Type ignore patterns for JAX:**
-
-Common patterns required due to JAX tracing limitations:
-
-```python
-# 1. vmap batches scalar NamedTuple fields → arrays
-masses: Float[Array, "n"] = solutions.M  # type: ignore[assignment]
-
-# 2. Diffrax with throw=False guarantees ys populated (despite Optional type)
-R = sol.ys[0][-1]  # type: ignore[index]
-
-# 3. MetaModel guarantees mu populated (but base class has Optional)
-mu: Float[Array, "n"] = eos_data.mu  # type: ignore[assignment]
-# Note: This pattern suggests Interpolate_EOS_model may need restructuring
-
-# 4. JAX array attribute access (jaxtyping doesn't understand traced attributes)
-value = array.item()  # type: ignore[union-attr]
-```
-
-**NEVER use runtime assertions in JAX-traced code** - they fail during tracing. Use type ignore with explanatory comments instead.
-
----
-
 ## Project Overview
 
 **JESTER** (**J**ax-based **E**o**S** and **T**ov solv**ER**) is a scientific computing library for neutron star physics using JAX for hardware acceleration and automatic differentiation.
@@ -177,6 +132,8 @@ value = array.item()  # type: ignore[union-attr]
   3. **ScalarTensorTOVSolver** (`tov/scalar_tensor.py`) - Scalar-tensor gravity
      - Jordan frame implementation (Brown 2023, ApJ 958 125)
      - Required parameters: beta_ST, phi_c, nu_c
+  4. **EiBI TOV solver** (`tov/eibi.py`) - Eddington-inspired Born-Infeld gravity (in progress, not yet fully integrated)
+     - Reference: Bañados & Ferreira (PRL 105, 011101, 2010)
 - Key methods:
   - `solve(eos_data, pc, **kwargs) -> TOVSolution` - Single star solution
   - `construct_family(eos_data, ndat, min_nsat, **kwargs) -> FamilyData` - M-R-Λ family curves
@@ -206,6 +163,11 @@ value = array.item()  # type: ignore[union-attr]
   - `run_inference.py` - Main orchestration
   - `result.py` - HDF5 result storage
 
+**jesterTOV/tabulated_eos/** - Pre-computed LALSuite EOS tables
+- NPZ files for named EOS models (APR4_EPP, SLy, MPA1, H4, MS1, MS1B, ENG, HQC18, etc.)
+- Used for validation and comparison against the spectral EOS implementation
+- See `tabulated_eos/generate_lalsuite_eos.py` for regenerating these files
+
 **jesterTOV/utils.py** - Utilities
 - Physical constants (c_km, G_km, Msun_km, etc.)
 - Unit conversions (geometric ↔ physical units)
@@ -230,6 +192,10 @@ value = array.item()  # type: ignore[union-attr]
   - **No factory methods needed** - JesterTransform handles all combinations
 - **ODE Integration**: Diffrax library with adaptive step size (Dopri5 + PIDController)
   - Graceful failure handling with `throw=False`
+- **JAX type-ignore patterns**: Required due to tracing limitations; always accompany with a comment
+  - `vmap` batches scalar NamedTuple fields into arrays: `# type: ignore[assignment]`
+  - Diffrax `throw=False` guarantees `ys` is populated: `# type: ignore[index]`
+  - NEVER use runtime assertions in JAX-traced code (fails during tracing)
 
 ---
 
@@ -249,6 +215,12 @@ uv pip install <package>
 ```bash
 # Run inference
 uv run run_jester_inference config.yaml
+
+# Run postprocessing on a completed inference result
+uv run run_jester_postprocessing outdir/result.h5
+
+# Train a normalizing flow on GW posterior samples
+uv run train_jester_flow flow_config.yaml
 
 # Extract GW posterior samples from a bilby result file (no bilby install needed)
 uv run jester_extract_gw_posterior_bilby result.hdf5 --output posterior.npz
