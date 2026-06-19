@@ -69,6 +69,7 @@ from .schemas.samplers import (
     BlackJAXNSAWConfig,
     SMCRandomWalkSamplerConfig,
     SMCNUTSSamplerConfig,
+    AspireSamplerConfig,
     SamplerConfig,
 )
 
@@ -263,6 +264,7 @@ __all__ = [
     "BlackJAXNSAWConfig",
     "SMCRandomWalkSamplerConfig",
     "SMCNUTSSamplerConfig",
+    "AspireSamplerConfig",
     "SamplerConfig",
     # Other
     "PriorConfig",
