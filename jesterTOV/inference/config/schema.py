@@ -58,6 +58,7 @@ from .schemas.likelihoods import (
     DeprecatedConstraintsLikelihoodConfig,
     REXLikelihoodConfig,
     ZeroLikelihoodConfig,
+    GaussianTestLikelihoodConfig,
     LikelihoodConfig,
 )
 
@@ -68,6 +69,7 @@ from .schemas.samplers import (
     BlackJAXNSAWConfig,
     SMCRandomWalkSamplerConfig,
     SMCNUTSSamplerConfig,
+    AspireSamplerConfig,
     SamplerConfig,
 )
 
@@ -254,6 +256,7 @@ __all__ = [
     "DeprecatedConstraintsLikelihoodConfig",
     "REXLikelihoodConfig",
     "ZeroLikelihoodConfig",
+    "GaussianTestLikelihoodConfig",
     "LikelihoodConfig",
     # Samplers
     "BaseSamplerConfig",
@@ -261,6 +264,7 @@ __all__ = [
     "BlackJAXNSAWConfig",
     "SMCRandomWalkSamplerConfig",
     "SMCNUTSSamplerConfig",
+    "AspireSamplerConfig",
     "SamplerConfig",
     # Other
     "PriorConfig",

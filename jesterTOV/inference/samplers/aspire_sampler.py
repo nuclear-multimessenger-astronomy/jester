@@ -24,7 +24,6 @@ from jesterTOV.logging_config import get_logger
 
 from ..base import LikelihoodBase, Prior, BijectiveTransform, NtoMTransform
 from ..base.prior import UniformPrior, CombinePrior
-from ..result import InferenceResult
 from ..config.schemas.samplers import AspireSamplerConfig
 from .jester_sampler import JesterSampler, SamplerOutput
 
@@ -117,6 +116,8 @@ class AspireSampler(JesterSampler):
             JAX random key (passed for API compatibility; aspire uses its
             own random state internally).
         """
+        from ..result import InferenceResult
+
         try:
             from aspire import Aspire
             from aspire.samples import Samples as AspireSamples
@@ -148,35 +149,48 @@ class AspireSampler(JesterSampler):
         t0_total = time.time()
 
         # ------------------------------------------------------------------
-        # 1. Load upstream result
+        # 1. Obtain training samples from upstream result or prior
         # ------------------------------------------------------------------
-        upstream = InferenceResult.load(self.config.upstream_result_path)
         param_names = self.prior.parameter_names
+        logger.info(f"Parameters ({len(param_names)}): {param_names}")
 
-        logger.info(f"Loaded {len(param_names)} parameters: {param_names}")
-
-        x_np = np.column_stack([np.asarray(upstream.posterior[p]) for p in param_names])
-        logger.info(f"Upstream samples shape: {x_np.shape}")
-
-        # ------------------------------------------------------------------
-        # 2. Resample if SMC weights are present
-        # ------------------------------------------------------------------
-        sampler_specific = upstream.posterior.get("_sampler_specific", {})
-        if isinstance(sampler_specific, dict) and "weights" in sampler_specific:
-            w = np.asarray(sampler_specific["weights"], dtype=np.float64)
-            w = w / w.sum()
-            rng = np.random.default_rng(self.seed)
-            n_resample = min(self.config.n_resample, len(w))
-            idx = rng.choice(len(w), size=n_resample, p=w, replace=True)
-            x_np = x_np[idx]
-            logger.info(
-                f"Resampled {n_resample} training samples from {len(w)} "
-                "weighted upstream particles"
+        if self.config.upstream_result_path is not None:
+            # Load samples from a previous jester run
+            upstream = InferenceResult.load(self.config.upstream_result_path)
+            x_np = np.column_stack(
+                [np.asarray(upstream.posterior[p]) for p in param_names]
             )
+            logger.info(f"Upstream samples shape: {x_np.shape}")
+
+            # Resample if SMC importance weights are present
+            sampler_specific = upstream.posterior.get("_sampler_specific", {})
+            if isinstance(sampler_specific, dict) and "weights" in sampler_specific:
+                w = np.asarray(sampler_specific["weights"], dtype=np.float64)
+                w = w / w.sum()
+                rng = np.random.default_rng(self.seed)
+                n_resample = min(self.config.n_resample, len(w))
+                idx = rng.choice(len(w), size=n_resample, p=w, replace=True)
+                x_np = x_np[idx]
+                logger.info(
+                    f"Resampled {n_resample} training samples from {len(w)} "
+                    "weighted upstream particles"
+                )
+            else:
+                n_resample = min(self.config.n_resample, len(x_np))
+                x_np = x_np[:n_resample]
+                logger.info(f"Using {n_resample} upstream samples for flow training")
         else:
-            n_resample = min(self.config.n_resample, len(x_np))
-            x_np = x_np[:n_resample]
-            logger.info(f"Using {n_resample} upstream samples for flow training")
+            # No upstream result — draw fresh samples from the prior
+            logger.info(
+                f"No upstream_result_path set — sampling {self.config.n_resample} "
+                "points from the prior to seed the normalizing flow"
+            )
+            key, key_prior = jax.random.split(key)
+            prior_dict = self.prior.sample(key_prior, self.config.n_resample)
+            x_np = np.column_stack(
+                [np.asarray(prior_dict[p]) for p in param_names]
+            )
+            logger.info(f"Prior samples shape: {x_np.shape}")
 
         # ------------------------------------------------------------------
         # 3. Build JAX-native aspire callables via vmap

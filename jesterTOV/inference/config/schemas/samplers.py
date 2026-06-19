@@ -291,8 +291,12 @@ class AspireSamplerConfig(BaseSamplerConfig):
     """
 
     type: Literal["aspire"] = "aspire"
-    upstream_result_path: str = Field(
-        description="Path to jester HDF5 result file from the upstream run"
+    upstream_result_path: str | None = Field(
+        default=None,
+        description=(
+            "Path to jester HDF5 result file from a previous run. "
+            "When None, the prior is sampled directly to seed the normalizing flow."
+        ),
     )
     n_samples: int = Field(
         default=5000,
@@ -326,8 +330,8 @@ class AspireSamplerConfig(BaseSamplerConfig):
 
     @field_validator("upstream_result_path")
     @classmethod
-    def _validate_h5_extension(cls, v: str) -> str:
-        if not (v.endswith(".h5") or v.endswith(".hdf5")):
+    def _validate_h5_extension(cls, v: str | None) -> str | None:
+        if v is not None and not (v.endswith(".h5") or v.endswith(".hdf5")):
             raise ValueError(
                 f"upstream_result_path must be an HDF5 file (.h5 or .hdf5), got: {v}"
             )
