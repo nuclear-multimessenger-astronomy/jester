@@ -11,6 +11,8 @@ rest of jester.
 
 from __future__ import annotations
 
+import logging
+import time
 from typing import Any
 
 import jax
@@ -124,10 +126,26 @@ class AspireSampler(JesterSampler):
                 "Install it from /Users/Woute029/Documents/Code/projects/31_jester_aspire/aspire/"
             ) from exc
 
+        # Bridge aspire's logger to jester's handler so SMC iteration logs appear.
+        aspire_root_logger = logging.getLogger("aspire")
+        aspire_root_logger.setLevel(logging.INFO)
+        for _handler in logger.handlers:
+            if _handler not in aspire_root_logger.handlers:
+                aspire_root_logger.addHandler(_handler)
+        aspire_root_logger.propagate = False
+
         logger.info("=" * 60)
-        logger.info("AspireSampler: loading upstream jester result")
-        logger.info(f"  upstream_result_path: {self.config.upstream_result_path}")
+        logger.info("AspireSampler: starting")
+        logger.info(f"  upstream_result_path : {self.config.upstream_result_path}")
+        logger.info(f"  n_resample           : {self.config.n_resample}")
+        logger.info(f"  flow backend         : flowjax")
+        logger.info(f"  flow n_epochs        : {self.config.n_epochs}")
+        logger.info(f"  flow batch_size      : {self.config.batch_size}")
+        logger.info(f"  flow learning_rate   : {self.config.lr}")
+        logger.info(f"  aspire sampler       : {self.config.aspire_sampler}")
+        logger.info(f"  n_samples            : {self.config.n_samples}")
         logger.info("=" * 60)
+        t0_total = time.time()
 
         # ------------------------------------------------------------------
         # 1. Load upstream result
@@ -206,32 +224,55 @@ class AspireSampler(JesterSampler):
         # ------------------------------------------------------------------
         # 5. Train flow on upstream samples
         # ------------------------------------------------------------------
-        logger.info("Training normalizing flow on upstream samples...")
+        logger.info(
+            f"Training normalizing flow: {len(x_np)} samples, "
+            f"{self.config.n_epochs} max epochs, "
+            f"batch_size={self.config.batch_size}, lr={self.config.lr}"
+        )
         training_samples = AspireSamples(
             x=jnp.array(x_np, dtype=jnp.float64),
             parameters=param_names,
         )
+        t0_flow = time.time()
         # flowjax backend uses max_epochs / learning_rate (not n_epochs / lr)
-        aspire_obj.fit(
+        flow_history = aspire_obj.fit(
             training_samples,
             max_epochs=self.config.n_epochs,
             batch_size=self.config.batch_size,
             learning_rate=self.config.lr,
         )
-        logger.info("Flow training complete")
+        dt_flow = time.time() - t0_flow
+        # Log training loss summary if history is available
+        if hasattr(flow_history, "training_loss") and flow_history.training_loss:
+            train_losses = flow_history.training_loss
+            logger.info(
+                f"Flow training complete in {dt_flow:.1f}s "
+                f"({len(train_losses)} epochs) — "
+                f"train loss: {train_losses[0]:.4f} → {train_losses[-1]:.4f}"
+            )
+        else:
+            logger.info(f"Flow training complete in {dt_flow:.1f}s")
 
         # ------------------------------------------------------------------
         # 6. Draw new posterior samples
         # ------------------------------------------------------------------
         logger.info(
             f"Sampling posterior via aspire '{self.config.aspire_sampler}' "
-            f"({self.config.n_samples} samples)..."
+            f"({self.config.n_samples} samples) — SMC iterations will be logged below..."
         )
+        t0_smc = time.time()
         posterior_aspire = aspire_obj.sample_posterior(
             n_samples=self.config.n_samples,
             sampler=self.config.aspire_sampler,
         )
-        logger.info("Posterior sampling complete")
+        dt_smc = time.time() - t0_smc
+        log_evidence_msg = ""
+        if hasattr(posterior_aspire, "log_evidence") and posterior_aspire.log_evidence is not None:
+            log_ev = float(posterior_aspire.log_evidence)
+            log_evidence_msg = f", log Z = {log_ev:.3f}"
+            if hasattr(posterior_aspire, "log_evidence_error") and posterior_aspire.log_evidence_error is not None:
+                log_evidence_msg += f" ± {float(posterior_aspire.log_evidence_error):.3f}"
+        logger.info(f"Posterior sampling complete in {dt_smc:.1f}s{log_evidence_msg}")
 
         # ------------------------------------------------------------------
         # 7. Convert to SamplerOutput
@@ -248,7 +289,7 @@ class AspireSampler(JesterSampler):
 
         metadata: dict[str, Any] = {}
         # Attach aspire importance weights if present (importance sampling)
-        if hasattr(posterior_aspire, "log_w"):
+        if hasattr(posterior_aspire, "log_w") and posterior_aspire.log_w is not None:
             metadata["log_w"] = jnp.array(np.asarray(posterior_aspire.log_w))
 
         self._output = SamplerOutput(
@@ -256,8 +297,11 @@ class AspireSampler(JesterSampler):
             log_prob=log_prob,
             metadata=metadata,
         )
+        dt_total = time.time() - t0_total
         logger.info(
-            f"AspireSampler complete — {self.config.n_samples} posterior samples"
+            f"AspireSampler complete — {self.config.n_samples} posterior samples "
+            f"in {dt_total:.1f}s total "
+            f"(flow: {dt_flow:.1f}s, SMC: {dt_smc:.1f}s)"
         )
 
     # ------------------------------------------------------------------
