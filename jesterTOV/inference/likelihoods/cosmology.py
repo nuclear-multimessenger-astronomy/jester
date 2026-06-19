@@ -58,23 +58,15 @@ def dynamic_mass_fitting(
     mdyn = jnp.maximum(1e-5, mdyn)
     return mdyn
 
-def parameter_conversion(mass_1: Array, mass_2: Array, params: dict[str, Array]):
-
-    # Extract EOS parameters 
-    masses_EOS: Float[Array, " n_points"] = params["masses_EOS"]
-    radii_EOS: Float[Array, " n_point"] = params["radii_EOS"]
-    Lambdas_EOS: Float[Array, " n_points"] = params["Lambdas_EOS"]
-    mtov: Float = jnp.max(masses_EOS)
-    mtov: Float = jnp.max(masses_EOS)
-    m_coll = params.get("k_coll", 1.3) * mtov
-
-    # tidal deformability and radii
-    lambda_1 = jnp.interp(mass_1, masses_EOS, Lambdas_EOS)
-    lambda_2 = jnp.interp(mass_2, masses_EOS, Lambdas_EOS)
-    radii_1 = jnp.interp(mass_1, masses_EOS, radii_EOS)
-    radii_2 = jnp.interp(mass_2, masses_EOS, radii_EOS)
-    compactness_1 = mass_1 / radii_1 * solar_mass_in_meter * 1e-3
-    compactness_2 = mass_2 / radii_2 * solar_mass_in_meter * 1e-3
+def convert_to_log10_mej_dyn(
+        m_coll: Float,
+        mass_1: Array,
+        compactness_1: Array,
+        lambda_1: Array,
+        mass_2: Array,
+        compactness_2: Array,
+        lambda_2: Array
+    ):
 
     # ejecta masses
     prompt_collapse = m_coll < (mass_1 + mass_2)
@@ -88,21 +80,83 @@ def parameter_conversion(mass_1: Array, mass_2: Array, params: dict[str, Array])
     return lambda_1, lambda_2, log10_mej_dyn
 
 class CosmoMultiMessengerLikelihood(LikelihoodBase):
+    """
+    Multi-messenger likelihood for a single BNS merger.
+
+    This class evaluates the likelihood for a joint inference of the EOS, 
+    mass distribution, and cosmology from an EM-bright BNS merger. 
+    The basic mechanism is as follows:
+    
+    1. Sample (m1, m2, cos_theta_jn) from the GW posterior.
+    2. Sample the redshift from the host galaxy redshift measurement.
+    3. Interpolate tidal deformabilities (Λ1, Λ2) from the EOS.
+    4. Convert the redshift to luminosity distance by using the sampled cosmology.
+    5. Evaluate the conditional probabilities p(Λ1, Λ2, dL | m1, m2, cos_theta_jn, GW)
+       through a conditional normalizing flow.
+    6. Evaluate the mass distribution function on (m1, m2)
+    7. Optional: If asked for, one can additional factor in a light curve posterior
+       by evaluating the flow p(log10_mej_dyn, dL, cos_theta_jn | EM),
+       similar to the MultiMessengerLikelihood. 
+    8. Multiply and sum everything together to get the result.
+    
+
+    Parameters
+    ----------
+    event_name : str
+        Name of the GW event (e.g., "GW170817")
+    posterior_gw : str
+        Path to an *.npz file containing the GW posterior samples. 
+        Has to include entries for mass_1, mass_2, cos_theta_jn.
+    conditional_flow_gw: str
+        Path to a conditional normalizing flow to evaluate p(Λ1, Λ2, dL | m1, m2, cos_theta_jn, GW)
+    mass_model_logpdf: Callable
+        Binary mass function that takes as input jnp Arrays for mass_1, mass_2, and then a dict 
+        with the mass model's parameters. Must be jittable.
+    redshift_mean: float
+        Measured redshift of the host galaxy.
+    redshift_sigma: float
+        Uncertainty of the redshift measurement.
+    flow_em: str
+        Path to a normalizing flow to evaluate p(log10_mej_dyn, dL, cos_theta_jn | EM). 
+        If not set, will ignore the EM contribution to the likelihood.
+    use_em: bool, optional
+        Whether to use the EM contribution to the likelihood. If False,
+        flow_em argument will be ignored. (default: True)
+    logprior_gw: Callable | None:
+        Prior used to obtain the GW posterior. 
+        Should be a function that accepts a dict with the GW parameters as keys.
+        If None, uniform priors will be assumed.
+    logprior_em: Callable | None:
+        Prior used to obtain the light curve posterior. 
+        Should be a function that accepts a dict with the EM parameters as keys.
+        If None, uniform priors will be assumed.
+    penalty_value : float, optional
+        Penalty value for samples where masses exceed Mtov (default: 0.0, i.e. no penalty)
+    N_masses_evaluation : int, optional
+        Number of samples to take from the GW posterior. 
+        Will never be larger than the number of samples in posterior_gw. (default: 2000)
+    N_masses_batch_size : int, optional
+        Batch size for processing mass samples (default: 1000)
+    key: jax.random.PRNGKey, optional
+        Random key used to initialize the samples. (default: jax.random.key(0))
+
+    """
+
 
     def __init__(
         self,
         event_name: str,
-        dir_gw: str,
-        dir_gw_cond: str,
-        dir_em: str,
-        population_logpdf: Callable,
-        N_eval: int,
+        posterior_gw: str,
+        conditional_flow_gw: str,
+        mass_model_logpdf: Callable,
         redshift_mean: float,
         redshift_sigma: float,
+        flow_em: str | None = None,
+        use_em: bool = True,
         logprior_gw: Callable | None = None,
         logprior_em: Callable | None = None,
-        use_em_data: bool = True,
         penalty_value: float = 0.0,
+        N_masses_evaluation: int = 2000,
         N_masses_batch_size: int = 1000,
         key: jax.random.PRNGKey = jax.random.key(0),
     ) -> None:
@@ -110,237 +164,143 @@ class CosmoMultiMessengerLikelihood(LikelihoodBase):
 
         super().__init__()
         self.event_name = event_name
-        self.dir_gw = dir_gw
-        self.dir_em = dir_em
+
+        self.N_masses_evaluation = N_masses_evaluation
         self.penalty_value = penalty_value
         self.N_masses_batch_size = N_masses_batch_size
 
-        # Load GW posterior flow for this event
-        logger.info(f"Loading NF for GW posterior {event_name} from {dir_gw}.")
-        self.flow_gw = Flow.from_directory(dir_gw)
-        self.cflow_gw = ConditionalFlow.from_directory(dir_gw_cond)
-        logger.info(f"Loading NF for EM posterior {event_name} from {dir_em}.")
-        self.flow_em = Flow.from_directory(dir_em)
-        logger.info(f"Loaded NFs for GW and EM posterior.")
+        # setup redshift array
+        key, subkey = jax.random.split(key)
+        normal_arr = jax.random.normal(
+            subkey, 
+            shape=(self.N_masses_evaluation,)
+        ) 
+        self.redshift_arr = normal_arr * redshift_sigma + redshift_mean
+        self.redshift_arr = jnp.clip(self.redshift_arr, 0, 100)
 
-        self.N_eval =  N_eval
-        self.population_logpdf = jax.jit(population_logpdf)
+        # set up GW posterior
+        key, subkey = jax.random.split(key)
+        self.setup_gw_likelihood(
+            posterior_gw,
+            conditional_flow_gw,
+            logprior_gw,
+            subkey
+        )
+
+        # set up mass function
+        self.mass_distribution_logpdf = jax.jit(mass_model_logpdf)
+
+        self.use_em = use_em
+        if self.use_em:
+            self.setup_em_likelihood(
+                flow_em,
+                logprior_em,
+            )
+
+
+    def setup_gw_likelihood(
+            self,
+            posterior_gw: str,
+            conditional_flow_gw: str,
+            logprior_gw: Callable | None,
+            key: jax.random.PRNGKey
+        ) -> None:
+
+        # set up integration arrays
+        posterior_gw = jnp.load(posterior_gw)
+        Nsamp = posterior_gw["mass_1"].shape[0]
+
+        if Nsamp < self.N_masses_evaluation:
+            logger.warning(f"For event {self.event_name}, N_masses_evaluation is larger than available GW posterior samples.",
+                           "Setting N_masses_evaluation from {self.N_masses_evaluation} to {Nsamp}.")
+            self.N_masses_evaluation = Nsamp
+            self.redshift_arr = self.redshift_arr[:self.N_masses_evaluation]
+
+        mask = jnp.zeros(Nsamp, dtype=bool).at[
+            jax.random.choice(key, Nsamp, (self.N_masses_evaluation,), replace=False)
+        ].set(True)
+
+        self.mass_1_det = posterior_gw["mass_1"][mask]
+        self.mass_2_det = posterior_gw["mass_2"][mask]
+        self.mass_1_source = self.mass_1_det / (1 + self.redshift_arr)
+        self.mass_2_source = self.mass_2_det / (1 + self.redshift_arr)
+        self.cos_theta_jn = posterior_gw["cos_theta_jn"][mask]
+
+        # Load GW conditional flow for this event 
+        self.cflow_gw = ConditionalFlow.from_directory(conditional_flow_gw)
+
 
         # Set up prior subtraction 
         if logprior_gw is None:
             logprior_gw = lambda x: 0
         self.logprior_gw = jax.jit(logprior_gw)
 
+        logger.info(f"Loaded GW likelihood for {self.event_name} from {posterior_gw} and {conditional_flow_gw}.")
+
+
+    def setup_em_likelihood(
+            self,
+            flow_em: str,
+            logprior_em: Callable | None,
+    ) -> None:
+        
+        # Load EM flow for this event
+        self.flow_em = Flow.from_directory(flow_em)
+
+        # Set up prior subtraction
         if logprior_em is None:
             logprior_em = lambda x: 0
         self.logprior_em = jax.jit(logprior_em)
 
-        # setup redshift array
-        key, subkey = jax.random.split(key)
-        self.redshift_arr = jax.random.normal(subkey, shape=(self.N_eval,)) * redshift_sigma + redshift_mean
-
-        self.setup_integration_arrays(key)
-        self.use_em_data = use_em_data
-
-    def setup_integration_arrays(self, key):
-
-        key, subkey = jax.random.split(key)
-        mass_1_det, mass_2_det, cos_theta_jn = self.flow_gw.sample(subkey, (self.N_eval,)).T
-
-        mass_1 = mass_1_det / (1 + self.redshift_arr)
-        mass_2 = mass_2_det / (1 + self.redshift_arr)
-
-        self.mass_1_det = mass_1_det
-        self.mass_2_det = mass_2_det
-        self.mass_1 = mass_1
-        self.mass_2 = mass_2
-        self.cos_theta_jn = cos_theta_jn
-
-
-    def evaluate(self, params: dict[str, Float | Array]) -> Float:
-        """
-        Evaluate log likelihood for given EOS parameters
-
-        Parameters
-        ----------
-        params : dict[str, Float | Array]
-            Must contain:
-            - 'masses_EOS': Array of neutron star masses from EOS
-            - 'radii_EOS': Array of neutron star radii from EOS
-            - 'Lambdas_EOS': Array of tidal deformabilities from EOS
-            - 'dL_fn_redshift_arr': x-array of redshift for the luminosity distance function
-            - 'dL_fn_distance_arr': y-array of distance for the luminosity distance function
-            - population parameters
-        Returns
-        -------
-        Float
-            Log likelihood value for this GW event
-        """
-
-        pop_logprobs = self.population_logpdf(self.mass_1, self.mass_2, params)
-
-        # convert to EM and GW posterior parameters
-        lambda_1, lambda_2, log10_mej_dyn = parameter_conversion(self.mass_1, self.mass_2, params)
-
-        # get luminosity distance
-        luminosity_distance_arr = jnp.interp(self.redshift_arr, params["dL_fn_redshift_arr"], params["dL_fn_distance_arr"])
-
-        samples = jnp.array([
-            self.mass_1_det,
-            self.mass_2_det,
-            lambda_1,
-            lambda_2,
-            log10_mej_dyn,
-            luminosity_distance_arr,
-            self.cos_theta_jn,
-        ]).T
+    def process_gw_likelihood(
+            self,
+            samples: dict[str, Array]
+    ) -> Array:
         
-        def process_gw(sample: Float[Array, " 4"]) -> Float:
-            """
-            Process a single pre-sampled mass pair
-
-            Note: jax.lax.map with batch_size applies function to individual
-            elements. The batch_size parameter is for compilation optimization.
-
-            Parameters
-            ----------
-            sample : Float[Array, " 4"]
-                Pre-sampled mass pair [m1, m2]
-
-            Returns
-            -------
-            Float
-                Log probability including penalties for this sample
-            """
-            m1_det= sample[0]
-            m2_det = sample[1]
-            lambda_1 = sample[2]
-            lambda_2 = sample[3]
-            log10_mej_dyn = sample[4]
-            luminosity_distance = sample[5]
-            cos_theta_jn = sample[6]
-
+        def process_single(sample):
+            
             # Evaluate GW log_posterior on single sample
-            cond_sample = jnp.array([m1_det, m2_det, cos_theta_jn])
-            eval_sample = jnp.array([lambda_1, lambda_2, luminosity_distance])
+            cond_sample = jnp.array([sample["mass_1_source"], sample["mass_2_source"], sample["cos_theta_jn"]])
+            eval_sample = jnp.array([sample["lambda_1"], sample["lambda_2"], sample["luminosity_distance"]])
             logpdf_gw = self.cflow_gw.log_prob(eval_sample, cond_sample)
 
             # subtract the prior
-            gw_sample = jnp.array([m1_det, m2_det, lambda_1, lambda_2, luminosity_distance, cos_theta_jn])
-            logprior_gwvalue = self.logprior_gw(gw_sample)
+            logprior_gwvalue = self.logprior_gw(sample)
             logpdf_gw -= logprior_gwvalue
 
             return logpdf_gw
         
-        def process_em(sample: Float[Array, " 4"]) -> Float:
-            m1_det= sample[0]
-            m2_det = sample[1]
-            lambda_1 = sample[2]
-            lambda_2 = sample[3]
-            log10_mej_dyn = sample[4]
-            luminosity_distance = sample[5]
-            cos_theta_jn = sample[6]
+        log_probs_gw = jax.lax.map(
+            process_single,
+            samples,
+            batch_size=self.N_masses_batch_size
+        )
 
+        return log_probs_gw
+
+    def process_em_likelihood(
+            self,
+            samples: dict[str, Array]
+        ) -> Array:
+
+        def process_single(sample):
             # Evaluate log
-            em_sample = jnp.array([log10_mej_dyn, luminosity_distance, cos_theta_jn])
+            em_sample = jnp.array([sample["log10_mej_dyn"], sample["luminosity_distance"], sample["cos_theta_jn"]])
             logpdf_em = self.flow_em.log_prob(em_sample)
-            
+
             #subtract the prior
             logprior_emvalue = self.logprior_em(em_sample)
             logpdf_em -= logprior_emvalue
-            
-            # Return log prob + penalties for this sample
+
             return logpdf_em
         
-        # Use jax.lax.map with batching for memory-efficient processing
-        # Process all pre-sampled mass pairs
-        gw_logprobs = jax.lax.map(
-            process_gw, samples, batch_size=self.N_masses_batch_size
+        log_probs_em = jax.lax.map(
+            process_single,
+            samples,
+            batch_size=self.N_masses_batch_size
         )
 
-        if self.use_em_data:
-            em_logprobs = jax.lax.map(
-                process_em, samples, batch_size=self.N_masses_batch_size
-            )
-
-            all_logprobs = em_logprobs + gw_logprobs + pop_logprobs
-        
-        else:
-            all_logprobs = gw_logprobs + pop_logprobs
-
-        # Take logsumexp over all pre-sampled mass pairs
-        log_likelihood = logsumexp(all_logprobs) - jnp.log(all_logprobs.shape[0])
-
-        return log_likelihood
-    
-
-class CosmoMMSelectionLikelihood(LikelihoodBase):
-
-    def __init__(
-        self,
-        event_name: str,
-        dir_gw: str,
-        dir_gw_cond: str,
-        dir_em: str,
-        population_logpdf: Callable,
-        N_eval: int,
-        redshift_mean: float,
-        redshift_sigma: float,
-        logprior_gw: Callable | None = None,
-        logprior_em: Callable | None = None,
-        penalty_value: float = 0.0,
-        N_masses_batch_size: int = 1000,
-        key: jax.random.PRNGKey = jax.random.key(0),
-    ) -> None:
-        
-
-        super().__init__()
-        self.event_name = event_name
-        self.dir_gw = dir_gw
-        self.dir_em = dir_em
-        self.penalty_value = penalty_value
-        self.N_masses_batch_size = N_masses_batch_size
-
-        # Load GW posterior flow for this event
-        logger.info(f"Loading NF for GW posterior {event_name} from {dir_gw}.")
-        self.flow_gw = Flow.from_directory(dir_gw)
-        self.cflow_gw = ConditionalFlow.from_directory(dir_gw_cond)
-        logger.info(f"Loading NF for EM posterior {event_name} from {dir_em}.")
-        self.flow_em = Flow.from_directory(dir_em)
-        logger.info(f"Loaded NFs for GW and EM posterior.")
-
-        self.N_eval =  N_eval
-        self.population_logpdf = jax.jit(population_logpdf)
-
-        # Set up prior subtraction 
-        if logprior_gw is None:
-            logprior_gw = lambda x: 0
-        self.logprior_gw = jax.jit(logprior_gw)
-
-        if logprior_em is None:
-            logprior_em = lambda x: 0
-        self.logprior_em = jax.jit(logprior_em)
-
-        # setup redshift array
-        key, subkey = jax.random.split(key)
-        self.redshift_arr = jax.random.normal(subkey, shape=(self.N_eval,)) * redshift_sigma + redshift_mean
-
-        self.setup_integration_arrays(key)
-
-    def setup_integration_arrays(self, key):
-
-        key, subkey = jax.random.split(key)
-        mass_1_det, mass_2_det, cos_theta_jn = self.flow_gw.sample(subkey, (self.N_eval,)).T
-
-        mass_1 = mass_1_det / (1 + self.redshift_arr)
-        mass_2 = mass_2_det / (1 + self.redshift_arr)
-
-        self.mass_1_det = mass_1_det
-        self.mass_2_det = mass_2_det
-        self.mass_1 = mass_1
-        self.mass_2 = mass_2
-        self.cos_theta_jn = jnp.clip(cos_theta_jn, -1, 1)
-
+        return log_probs_em
 
     def evaluate(self, params: dict[str, Float | Array]) -> Float:
         """
@@ -356,287 +316,60 @@ class CosmoMMSelectionLikelihood(LikelihoodBase):
             - 'dL_fn_redshift_arr': x-array of redshift for the luminosity distance function
             - 'dL_fn_distance_arr': y-array of distance for the luminosity distance function
             - population parameters
-            - beta1 and beta2 for the inclination angle bias parametrization
         Returns
         -------
         Float
-            Log likelihood value for this GW event
+            Log likelihood value for this multi-messenger event
         """
 
-        pop_logprobs = self.population_logpdf(self.mass_1, self.mass_2, params)
+        mtov = params["masses_EOS"].max()
 
-        # convert to EM and GW posterior parameters
-        lambda_1, lambda_2, log10_mej_dyn = parameter_conversion(self.mass_1, self.mass_2, params)
+        mass_distribution_logprobs = self.mass_distribution_logpdf(
+            self.mass_1_source, 
+            self.mass_2_source, 
+            params
+        )
 
+        # get tidal deformabilities
+        lambda_1 = jnp.interp(self.mass_1_source, params["masses_EOS"], params["Lambdas_EOS"])
+        lambda_2 = jnp.interp(self.mass_2_source, params["masses_EOS"], params["Lambdas_EOS"])
+        
         # get luminosity distance
-        luminosity_distance_arr = jnp.interp(self.redshift_arr, params["dL_fn_redshift_arr"], params["dL_fn_distance_arr"])
+        luminosity_distance = jnp.interp(self.redshift_arr, params["dL_fn_redshift_arr"], params["dL_fn_distance_arr"])
 
-        # calculate the bias toward high inclinations
-        incl_bias_logprobs = self.inclination_bias_function(self.cos_theta_jn, luminosity_distance_arr, params)
-
+        # collect all in one dict
         samples = dict(
-            mass_1_det=self.mass_1_det,
-            mass_2_det=self.mass_2_det,
+            mass_1_source=self.mass_1_source,
+            mass_2_source=self.mass_2_source,
             lambda_1=lambda_1,
             lambda_2=lambda_2,
-            log10_mej_dyn=log10_mej_dyn,
-            luminosity_distance=luminosity_distance_arr,
-            cos_theta_jn=self.cos_theta_jn,
-        )
-        
-        def gw_likelihood(sample: Float[Array, " 6"]) -> Float:
-            """
-            Process a single pre-sampled mass pair
-
-            Note: jax.lax.map with batch_size applies function to individual
-            elements. The batch_size parameter is for compilation optimization.
-
-            Parameters
-            ----------
-            sample : Float[Array, " 6"]
-
-            Returns
-            -------
-            Float
-                Log probability including penalties for this sample
-            """
-
-            # Evaluate GW log_posterior on single sample
-            cond_sample = jnp.array([sample["mass_1_det"], sample["mass_2_det"], sample["cos_theta_jn"]])
-            eval_sample = jnp.array([sample["lambda_1"], sample["lambda_2"], sample["luminosity_distance"]])
-            logpdf_gw = self.cflow_gw.log_prob(eval_sample, cond_sample)
-
-            # subtract the prior
-            logprior_gwvalue = self.logprior_gw(sample)
-            logpdf_gw -= logprior_gwvalue
-
-            return logpdf_gw
-        
-        def em_likelihood(sample: Float[Array, " 6"]) -> Float:
-            # Evaluate log
-            em_sample = jnp.array([sample["log10_mej_dyn"], sample["luminosity_distance"], sample["cos_theta_jn"]])
-            logpdf_em = self.flow_em.log_prob(em_sample)
-
-            #subtract the prior
-            logprior_emvalue = self.logprior_em(sample)
-            logpdf_em -= logprior_emvalue
-
-            # Return log prob + penalties for this sample
-            return logpdf_em
-        
-        # Use jax.lax.map with batching for memory-efficient processing
-        # Process all pre-sampled mass pairs
-        gw_logprobs = jax.lax.map(
-            gw_likelihood, samples, batch_size=self.N_masses_batch_size
+            luminosity_distance=luminosity_distance,
+            cos_theta_jn=self.cos_theta_jn
         )
 
-        em_logprobs = jax.lax.map(
-            em_likelihood, samples, batch_size=self.N_masses_batch_size,
-        )
+        
+        # evaluate GW log probs
+        logprobs_gw = self.process_gw_likelihood(samples)
 
-        all_logprobs = gw_logprobs + em_logprobs + pop_logprobs + incl_bias_logprobs
+        log_probs = mass_distribution_logprobs + logprobs_gw
+
+        if self.use_em:
+            m_coll = params["k_coll"] * mtov
+            radii_1 = jnp.interp(self.mass_1_source, params["masses_EOS"], params["radii_EOS"])
+            radii_2 = jnp.interp(self.mass_2_source, params["masses_EOS"], params["radii_EOS"])
+            compactness_1 = self.mass_1_source / radii_1 * solar_mass_in_meter * 1e-3
+            compactness_2 = self.mass_2_source / radii_2 * solar_mass_in_meter * 1e-3
+            log10_mej_dyn = convert_to_log10_mej_dyn(
+                m_coll,
+                self.mass_1, compactness_1, lambda_1,
+                self.mass_2, compactness_2, lambda_2
+                )
+            samples["log10_mej_dyn"] = log10_mej_dyn
+
+            logprobs_em = self.process_em_likelihood(samples)
+            log_probs += logprobs_em
+    
         # Take logsumexp over all pre-sampled mass pairs
-        log_likelihood = logsumexp(all_logprobs) - jnp.log(all_logprobs.shape[0])
+        log_likelihood = logsumexp(log_probs) - jnp.log(log_probs.shape[0])
 
         return log_likelihood
-    
-    @staticmethod
-    def inclination_bias_function(cos_theta_jn: Array, luminosity_distance: Array, params: dict[str, Array]):
-
-        u = jnp.abs(cos_theta_jn)
-
-        # determine the maximum inclination that could be observed at the corresponding luminosity distance
-        limit = jnp.sqrt(
-            jnp.clip(
-                (luminosity_distance - params["beta_1"]) / params["beta_2"],
-                0.0, 1.0,
-            )
-        )
-
-        prob = jnp.where(
-            u > limit,
-            1 / (1 - limit),
-            1e-50,
-        )
-
-        return jnp.where(
-            luminosity_distance > params["beta_1"],
-            jnp.log(prob),
-            jnp.log(1),
-        )
-    
-
-class CosmoMMSelection2(LikelihoodBase):
-
-    def __init__(
-        self,
-        event_name: str,
-        dir_gw: str,
-        dir_gw_cond: str,
-        dir_em: str,
-        population_logpdf: Callable,
-        N_eval: int,
-        redshift_mean: float,
-        redshift_sigma: float,
-        logprior_gw: Callable | None = None,
-        logprior_em: Callable | None = None,
-        penalty_value: float = 0.0,
-        N_masses_batch_size: int = 1000,
-        key: jax.random.PRNGKey = jax.random.key(0),
-    ) -> None:
-        
-
-        super().__init__()
-        self.event_name = event_name
-        self.dir_gw = dir_gw
-        self.dir_em = dir_em
-        self.penalty_value = penalty_value
-        self.N_masses_batch_size = N_masses_batch_size
-
-        # Load GW posterior flow for this event
-        logger.info(f"Loading NF for GW posterior {event_name} from {dir_gw}.")
-        self.flow_gw = Flow.from_directory(dir_gw)
-        self.cflow_gw = ConditionalFlow.from_directory(dir_gw_cond)
-        logger.info(f"Loading NF for EM posterior {event_name} from {dir_em}.")
-        self.flow_em = Flow.from_directory(dir_em)
-        logger.info(f"Loaded NFs for GW and EM posterior.")
-
-        self.N_eval =  N_eval
-        self.population_logpdf = jax.jit(population_logpdf)
-
-        # Set up prior subtraction 
-        if logprior_gw is None:
-            logprior_gw = lambda x: 0
-        self.logprior_gw = jax.jit(logprior_gw)
-
-        if logprior_em is None:
-            logprior_em = lambda x: 0
-        self.logprior_em = jax.jit(logprior_em)
-
-        # setup redshift array
-        key, subkey = jax.random.split(key)
-        self.redshift_arr = jax.random.normal(subkey, shape=(self.N_eval,)) * redshift_sigma + redshift_mean
-
-        self.setup_integration_arrays(key)
-
-    def setup_integration_arrays(self, key):
-
-        key, subkey = jax.random.split(key)
-        mass_1_det, mass_2_det, cos_theta_jn = self.flow_gw.sample(subkey, (self.N_eval,)).T
-
-        mass_1 = mass_1_det / (1 + self.redshift_arr)
-        mass_2 = mass_2_det / (1 + self.redshift_arr)
-
-        self.mass_1_det = mass_1_det
-        self.mass_2_det = mass_2_det
-        self.mass_1 = mass_1
-        self.mass_2 = mass_2
-        self.cos_theta_jn = jnp.clip(cos_theta_jn, -1, 1)
-
-
-    def evaluate(self, params: dict[str, Float | Array]) -> Float:
-        """
-        Evaluate log likelihood for given EOS parameters
-
-        Parameters
-        ----------
-        params : dict[str, Float | Array]
-            Must contain:
-            - 'masses_EOS': Array of neutron star masses from EOS
-            - 'radii_EOS': Array of neutron star radii from EOS
-            - 'Lambdas_EOS': Array of tidal deformabilities from EOS
-            - 'dL_fn_redshift_arr': x-array of redshift for the luminosity distance function
-            - 'dL_fn_distance_arr': y-array of distance for the luminosity distance function
-            - population parameters
-            - beta1 and beta2 for the inclination angle bias parametrization
-        Returns
-        -------
-        Float
-            Log likelihood value for this GW event
-        """
-
-        pop_logprobs = self.population_logpdf(self.mass_1, self.mass_2, params)
-
-        # convert to EM and GW posterior parameters
-        lambda_1, lambda_2, log10_mej_dyn = parameter_conversion(self.mass_1, self.mass_2, params)
-
-        # get luminosity distance
-        luminosity_distance_arr = jnp.interp(self.redshift_arr, params["dL_fn_redshift_arr"], params["dL_fn_distance_arr"])
-
-        # calculate the bias toward high inclinations
-        incl_bias_logprobs = self.inclination_bias_function(self.cos_theta_jn, params)
-
-        samples = dict(
-            mass_1_det=self.mass_1_det,
-            mass_2_det=self.mass_2_det,
-            lambda_1=lambda_1,
-            lambda_2=lambda_2,
-            log10_mej_dyn=log10_mej_dyn,
-            luminosity_distance=luminosity_distance_arr,
-            cos_theta_jn=self.cos_theta_jn,
-        )
-        
-        def gw_likelihood(sample: Float[Array, " 6"]) -> Float:
-            """
-            Process a single pre-sampled mass pair
-
-            Note: jax.lax.map with batch_size applies function to individual
-            elements. The batch_size parameter is for compilation optimization.
-
-            Parameters
-            ----------
-            sample : Float[Array, " 6"]
-
-            Returns
-            -------
-            Float
-                Log probability including penalties for this sample
-            """
-
-            # Evaluate GW log_posterior on single sample
-            cond_sample = jnp.array([sample["mass_1_det"], sample["mass_2_det"], sample["cos_theta_jn"]])
-            eval_sample = jnp.array([sample["lambda_1"], sample["lambda_2"], sample["luminosity_distance"]])
-            logpdf_gw = self.cflow_gw.log_prob(eval_sample, cond_sample)
-
-            # subtract the prior
-            logprior_gwvalue = self.logprior_gw(sample)
-            logpdf_gw -= logprior_gwvalue
-
-            return logpdf_gw
-        
-        def em_likelihood(sample: Float[Array, " 6"]) -> Float:
-            # Evaluate log
-            em_sample = jnp.array([sample["log10_mej_dyn"], sample["luminosity_distance"], sample["cos_theta_jn"]])
-            logpdf_em = self.flow_em.log_prob(em_sample)
-
-            #subtract the prior
-            logprior_emvalue = self.logprior_em(sample)
-            logpdf_em -= logprior_emvalue
-
-            # Return log prob + penalties for this sample
-            return logpdf_em
-        
-        # Use jax.lax.map with batching for memory-efficient processing
-        # Process all pre-sampled mass pairs
-        gw_logprobs = jax.lax.map(
-            gw_likelihood, samples, batch_size=self.N_masses_batch_size
-        )
-
-        em_logprobs = jax.lax.map(
-            em_likelihood, samples, batch_size=self.N_masses_batch_size,
-        )
-
-        all_logprobs = gw_logprobs + em_logprobs + pop_logprobs + incl_bias_logprobs
-        # Take logsumexp over all pre-sampled mass pairs
-        log_likelihood = logsumexp(all_logprobs) - jnp.log(all_logprobs.shape[0])
-
-        return log_likelihood
-    
-    @staticmethod
-    def inclination_bias_function(cos_theta_jn: Array, params: dict[str, Array]):
-
-        u = jnp.abs(cos_theta_jn)
-
-        prob = (1+ params["beta_1"] * jnp.power(u, params["beta_2"])) / (1+params["beta_1"]/ (params["beta_2"]+1))
-
-        return jnp.log(prob)
