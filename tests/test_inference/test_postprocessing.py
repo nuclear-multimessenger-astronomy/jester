@@ -432,6 +432,34 @@ class TestPlotGeneration:
 class TestPlotErrorHandling:
     """Test error handling in plotting functions."""
 
+    def test_make_cornerplot_excludes_individual_aniso_params(self, temp_dir):
+        """Per-NS anisotropy params (lambda_DY_J0030 etc.) must be excluded from cornerplot."""
+        n_samples = 20
+        data = {
+            "masses": np.random.rand(n_samples, 50),
+            "radii": np.random.rand(n_samples, 50),
+            "lambdas": np.random.rand(n_samples, 50),
+            "densities": np.random.rand(n_samples, 50),
+            "pressures": np.random.rand(n_samples, 50),
+            "cs2": np.random.rand(n_samples, 50),
+            "log_prob": np.random.rand(n_samples),
+            "prior_params": {
+                "K_sat": np.random.uniform(200.0, 250.0, n_samples),
+                "L_sym": np.random.uniform(50.0, 100.0, n_samples),
+                # Individual-gamma anisotropy params — should be excluded
+                "lambda_DY_J0030": np.random.uniform(-1.0, 1.0, n_samples),
+                "lambda_DY_J0740": np.random.uniform(-1.0, 1.0, n_samples),
+                "lambda_BL_GW170817_mass1": np.random.uniform(-1.0, 1.0, n_samples),
+                "lambda_HB_B1913": np.random.uniform(-1.0, 1.0, n_samples),
+            },
+        }
+
+        make_cornerplot(data, outdir=str(temp_dir), max_params=10)
+
+        # Plot should exist — the function must not crash or go OOM from the extra params
+        assert (temp_dir / "cornerplot.pdf").exists()
+        plt.close("all")
+
     def test_cornerplot_missing_parameters(self, temp_dir):
         """Test cornerplot handles missing parameter data."""
         incomplete_data = {

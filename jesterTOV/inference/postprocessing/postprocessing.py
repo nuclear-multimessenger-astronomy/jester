@@ -372,10 +372,23 @@ def report_credible_interval(
 # nbreak is intentionally excluded so it still appears in the plot.
 _CSE_PARAM_RE = re.compile(r"^(n_CSE_\d+_u|cs2_CSE_\d+)$")
 
+# Regex matching per-NS anisotropy parameters from individual-gamma mode.
+# These are of the form <base>_<ns_key>, e.g. lambda_DY_J0030,
+# lambda_BL_GW170817_mass1, lambda_HB_B1913. There can be O(10-20) of them
+# per run and including them all in the cornerplot would exhaust memory on
+# a cluster node.  The base anisotropy coupling names are lambda_BL,
+# lambda_DY, and lambda_HB.
+_INDIV_ANISO_PARAM_RE = re.compile(r"^lambda_(BL|DY|HB)_.+$")
+
 
 def _is_cse_param(key: str) -> bool:
     """Return True if *key* is a MetaModel+CSE grid parameter."""
     return bool(_CSE_PARAM_RE.match(key))
+
+
+def _is_individual_aniso_param(key: str) -> bool:
+    """Return True if *key* is a per-NS anisotropy parameter (individual-gamma mode)."""
+    return bool(_INDIV_ANISO_PARAM_RE.match(key))
 
 
 # ─── Posterior preprocessing helpers ─────────────────────────────────────────
@@ -649,8 +662,14 @@ def make_cornerplot(
             f"Excluding {len(cse_keys)} CSE parameters from cornerplot: {sorted(cse_keys)}"
         )
 
+    aniso_keys = [k for k in prior_params if _is_individual_aniso_param(k)]
+    if aniso_keys:
+        logger.info(
+            f"Excluding {len(aniso_keys)} per-NS anisotropy parameters from cornerplot: {sorted(aniso_keys)}"
+        )
+
     for key in prior_params:
-        if _is_cse_param(key):
+        if _is_cse_param(key) or _is_individual_aniso_param(key):
             continue
         samples_dict[key] = prior_params[key]
 
