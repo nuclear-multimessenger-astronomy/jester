@@ -12,6 +12,7 @@ from .constraints import (
     ConstraintGammaLikelihood,
 )
 from .factory import create_likelihood, create_combined_likelihood
+from .individual_gamma import IndividualGammaLikelihood
 
 __all__ = [
     "CombinedLikelihood",
@@ -27,4 +28,5 @@ __all__ = [
     "ConstraintGammaLikelihood",
     "create_likelihood",
     "create_combined_likelihood",
+    "IndividualGammaLikelihood",
 ]

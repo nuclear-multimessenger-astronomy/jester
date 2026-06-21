@@ -15,6 +15,8 @@ import jax.numpy as jnp
 # Enable 64-bit precision by default
 jax.config.update("jax_enable_x64", True)
 
+from dataclasses import dataclass
+
 from .config.parser import load_config
 from .config.schema import (
     InferenceConfig,
@@ -23,6 +25,9 @@ from .config.schema import (
     BaseMetamodelEOSConfig,
     GWLikelihoodConfig,
     GWEventConfig,
+    AnisotropyTOVConfig,
+    RadioLikelihoodConfig,
+    NICERLikelihoodConfig,
 )
 from .priors.parser import parse_prior_file
 from .base.prior import CombinePrior
@@ -35,6 +40,80 @@ from jesterTOV.logging_config import get_logger
 
 # Set up logger
 logger = get_logger("jester")
+
+
+@dataclass(frozen=True)
+class NSSource:
+    """Represents one observed neutron star source in the individual-gamma expansion.
+
+    Attributes
+    ----------
+    ns_key : str
+        Unique key for this NS (e.g. ``"J0030"`` or ``"GW170817_mass1"``).
+    lk_type : str
+        Likelihood type: ``"radio"``, ``"nicer"``, or ``"gw"``.
+    event_name : str
+        For GW events: the event name (e.g. ``"GW170817"``).
+        For radio/NICER: same as ``ns_key``.
+    """
+
+    ns_key: str
+    lk_type: str
+    event_name: str
+
+
+def collect_ns_sources(config: InferenceConfig) -> list[NSSource]:
+    """Walk enabled likelihoods and collect all individual NS observation keys.
+
+    Parameters
+    ----------
+    config : InferenceConfig
+        Full inference configuration.
+
+    Returns
+    -------
+    list[NSSource]
+        Ordered list of NS sources from all enabled likelihoods.
+    """
+    sources: list[NSSource] = []
+    for lk in config.likelihoods:
+        if not lk.enabled:
+            continue
+        if isinstance(lk, RadioLikelihoodConfig):
+            for psr in lk.pulsars:
+                sources.append(
+                    NSSource(
+                        ns_key=str(psr["name"]),
+                        lk_type="radio",
+                        event_name=str(psr["name"]),
+                    )
+                )
+        elif isinstance(lk, NICERLikelihoodConfig):
+            for psr in lk.pulsars:
+                sources.append(
+                    NSSource(
+                        ns_key=str(psr["name"]),
+                        lk_type="nicer",
+                        event_name=str(psr["name"]),
+                    )
+                )
+        elif isinstance(lk, GWLikelihoodConfig):
+            for event in lk.events:
+                sources.append(
+                    NSSource(
+                        ns_key=f"{event.name}_mass1",
+                        lk_type="gw",
+                        event_name=event.name,
+                    )
+                )
+                sources.append(
+                    NSSource(
+                        ns_key=f"{event.name}_mass2",
+                        lk_type="gw",
+                        event_name=event.name,
+                    )
+                )
+    return sources
 
 
 def determine_keep_names(
@@ -144,6 +223,54 @@ def setup_prior(config: InferenceConfig) -> tuple[CombinePrior, dict[str, float]
     if fixed_params:
         logger.info(f"Fixed parameters found in prior file: {fixed_params}")
 
+    # ── INDIVIDUAL GAMMA EXPANSION ──────────────────────────────────────────
+    if isinstance(config.tov, AnisotropyTOVConfig) and config.tov.individual:
+        from jesterTOV.tov.anisotropy import AnisotropyTOVSolver
+
+        ns_sources = collect_ns_sources(config)
+        if not ns_sources:
+            raise ValueError(
+                "tov.individual=True but no NS sources found in enabled likelihoods."
+            )
+
+        aniso_required = AnisotropyTOVSolver().get_required_parameters()
+        sampled_aniso_names = [
+            p
+            for p in aniso_required
+            if any(p in pr.parameter_names for pr in prior.base_prior)
+        ]
+        if not sampled_aniso_names:
+            raise ValueError(
+                "tov.individual=True but no anisotropy parameters are sampled in "
+                "the prior file."
+            )
+
+        base_aniso_priors: dict[str, UniformPrior] = {}
+        retained_priors: list = []
+        for pr in prior.base_prior:
+            if pr.parameter_names[0] in sampled_aniso_names:
+                if not isinstance(pr, UniformPrior):
+                    raise ValueError(
+                        f"tov.individual=True requires anisotropy parameters to use "
+                        f"UniformPrior, but '{pr.parameter_names[0]}' uses "
+                        f"{type(pr).__name__}."
+                    )
+                base_aniso_priors[pr.parameter_names[0]] = pr
+            else:
+                retained_priors.append(pr)
+
+        expanded: list = []
+        for p_name, base_pr in base_aniso_priors.items():
+            for ns in ns_sources:
+                expanded.append(base_pr.copy_with_name(f"{p_name}_{ns.ns_key}"))
+
+        prior = CombinePrior(retained_priors + expanded)
+        logger.info(
+            f"Individual gamma mode: expanded {list(base_aniso_priors)} "
+            f"→ {len(expanded)} per-NS parameters across {len(ns_sources)} sources."
+        )
+    # ────────────────────────────────────────────────────────────────────────
+
     # Add _random_key prior if GW or NICER likelihoods are enabled
     if needs_random_key:
         logger.info("Adding _random_key prior for likelihood sampling")
@@ -220,12 +347,17 @@ def setup_transform(
                 f"Using max_nbreak_nsat from eos config: {config_value:.4f} n_sat"
             )
 
+    individual_ns_sources: list[str] | None = None
+    if isinstance(config.tov, AnisotropyTOVConfig) and config.tov.individual:
+        individual_ns_sources = [s.ns_key for s in collect_ns_sources(config)]
+
     transform = JesterTransform.from_config(
         eos_config=config.eos,
         tov_config=config.tov,
         keep_names=keep_names,
         max_nbreak_nsat=max_nbreak_nsat,
         fixed_params=_fixed_params if _fixed_params else None,
+        individual_ns_sources=individual_ns_sources,
     )
 
     # Validate that all required parameters are present.
@@ -450,14 +582,122 @@ def setup_likelihood(
     config : InferenceConfig
         Configuration object
     transform : JesterTransform
-        Transform instance
+        Transform instance (used in individual-gamma mode to access the TOV solver)
 
     Returns
     -------
     LikelihoodBase
         Combined likelihood instance
     """
+    if isinstance(config.tov, AnisotropyTOVConfig) and config.tov.individual:
+        return _create_individual_gamma_likelihood(config, transform)
     return create_combined_likelihood(config.likelihoods)
+
+
+def _create_individual_gamma_likelihood(
+    config: InferenceConfig,
+    transform: JesterTransform,
+) -> LikelihoodBase:
+    """Build an IndividualGammaLikelihood for individual-gamma mode.
+
+    Parameters
+    ----------
+    config : InferenceConfig
+        Full inference configuration.
+    transform : JesterTransform
+        Transform instance carrying the TOV solver and fixed_params.
+
+    Returns
+    -------
+    LikelihoodBase
+        Combined likelihood: IndividualGammaLikelihood + any non-NS likelihoods.
+    """
+    from jesterTOV.tov.anisotropy import AnisotropyTOVSolver
+    from .likelihoods.individual_gamma import IndividualGammaLikelihood
+    from .likelihoods.factory import create_likelihood, get_gw_model_dir
+    from .likelihoods.combined import CombinedLikelihood
+
+    aniso_required = AnisotropyTOVSolver().get_required_parameters()
+    fixed_aniso = {
+        p: transform.fixed_params[p]
+        for p in aniso_required
+        if p in transform.fixed_params
+    }
+    sampled_aniso = [p for p in aniso_required if p not in fixed_aniso]
+
+    ns_source_to_likelihood: dict[str, LikelihoodBase] = {}
+    non_ns_likelihoods: list[LikelihoodBase] = []
+
+    for lk_config in config.likelihoods:
+        if not lk_config.enabled:
+            continue
+        if isinstance(lk_config, RadioLikelihoodConfig):
+            for psr in lk_config.pulsars:
+                from .likelihoods.radio import RadioTimingLikelihood
+
+                lk: LikelihoodBase = RadioTimingLikelihood(
+                    psr_name=str(psr["name"]),
+                    mean=float(psr["mass_mean"]),  # type: ignore[arg-type]
+                    std=float(psr["mass_std"]),  # type: ignore[arg-type]
+                    penalty_value=lk_config.penalty_value,
+                )
+                ns_source_to_likelihood[str(psr["name"])] = lk
+        elif isinstance(lk_config, NICERLikelihoodConfig):
+            for psr in lk_config.pulsars:
+                from .likelihoods.nicer import NICERLikelihood
+
+                lk = NICERLikelihood(
+                    psr_name=str(psr["name"]),
+                    amsterdam_model_dir=(
+                        str(psr["amsterdam_model_dir"])
+                        if "amsterdam_model_dir" in psr
+                        else None
+                    ),
+                    maryland_model_dir=(
+                        str(psr["maryland_model_dir"])
+                        if "maryland_model_dir" in psr
+                        else None
+                    ),
+                    N_masses_evaluation=lk_config.N_masses_evaluation,
+                    N_masses_batch_size=lk_config.N_masses_batch_size,
+                    seed=lk_config.seed,
+                )
+                ns_source_to_likelihood[str(psr["name"])] = lk
+        elif isinstance(lk_config, GWLikelihoodConfig):
+            for event in lk_config.events:
+                from .likelihoods.gw import GWLikelihood
+
+                model_dir = get_gw_model_dir(event)
+                lk = GWLikelihood(
+                    event_name=event.name,
+                    model_dir=model_dir,
+                    penalty_value=lk_config.penalty_value,
+                    N_masses_evaluation=lk_config.N_masses_evaluation,
+                    N_masses_batch_size=lk_config.N_masses_batch_size,
+                    seed=lk_config.seed,
+                )
+                ns_source_to_likelihood[event.name] = lk
+        else:
+            inner = create_likelihood(lk_config)
+            if inner is not None:
+                non_ns_likelihoods.append(inner)
+
+    ns_sources = collect_ns_sources(config)
+
+    individual_lk: LikelihoodBase = IndividualGammaLikelihood(
+        ns_sources=ns_sources,
+        ns_source_to_likelihood=ns_source_to_likelihood,
+        tov_solver=transform.tov_solver,
+        sampled_aniso_params=sampled_aniso,
+        fixed_aniso_params=fixed_aniso,
+        ndat_TOV=config.tov.ndat_TOV,
+        min_nsat_TOV=config.tov.min_nsat_TOV,
+    )
+
+    all_likelihoods: list[LikelihoodBase] = [individual_lk] + non_ns_likelihoods
+    if len(all_likelihoods) == 1:
+        return all_likelihoods[0]
+    return CombinedLikelihood(all_likelihoods)
 
 
 def run_sampling(

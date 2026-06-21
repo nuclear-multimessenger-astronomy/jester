@@ -103,12 +103,14 @@ class JesterTransform(NtoMTransform):
         ndat_TOV: int = 100,
         min_nsat_TOV: float = 0.75,
         fixed_params: dict[str, float] | None = None,
+        individual_ns_sources: list[str] | None = None,
         **kwargs: Any,  # FIXME: remove kwargs argument in a future release
     ) -> None:
         self.eos = eos
         self.tov_solver = tov_solver
         self.ndat_TOV = ndat_TOV
         self.min_nsat_TOV = min_nsat_TOV
+        self.individual_ns_sources = individual_ns_sources
         if fixed_params is not None:
             self.fixed_params: dict[str, float] = fixed_params.copy()
         else:
@@ -124,7 +126,16 @@ class JesterTransform(NtoMTransform):
         if name_mapping is None:
             sampled_eos = [p for p in self.eos_params if p not in self.fixed_params]
             sampled_tov = [p for p in self.tov_params if p not in self.fixed_params]
-            input_names = sampled_eos + sampled_tov
+
+            if individual_ns_sources is not None:
+                # In individual mode, each sampled TOV param becomes one copy per NS.
+                input_tov = [
+                    f"{p}_{ns}" for p in sampled_tov for ns in individual_ns_sources
+                ]
+            else:
+                input_tov = sampled_tov
+
+            input_names = sampled_eos + input_tov
             output_names = ["logpc_EOS", "masses_EOS", "radii_EOS", "Lambdas_EOS"]
             name_mapping = (input_names, output_names)
 
@@ -146,6 +157,11 @@ class JesterTransform(NtoMTransform):
         logger.debug(f"  TOV parameters ({len(self.tov_params)}): {self.tov_params}")
         if self.fixed_params:
             logger.info(f"  Fixed parameters: {self.fixed_params}")
+        if individual_ns_sources is not None:
+            logger.info(
+                f"  Individual gamma mode: {len(individual_ns_sources)} NS sources — "
+                f"{individual_ns_sources}"
+            )
 
     @classmethod
     def from_config(
@@ -155,6 +171,7 @@ class JesterTransform(NtoMTransform):
         keep_names: list[str] | None = None,
         max_nbreak_nsat: float | None = None,
         fixed_params: dict[str, float] | None = None,
+        individual_ns_sources: list[str] | None = None,
     ) -> "JesterTransform":
         """Create transform from configuration objects.
 
@@ -174,6 +191,12 @@ class JesterTransform(NtoMTransform):
         fixed_params : dict[str, float] | None
             Parameters pinned to constant values, excluded from the sampling
             space but injected into every ``forward()`` call.
+        individual_ns_sources : list[str] | None
+            When set, enables individual-gamma mode: each sampled TOV parameter
+            is expanded to one copy per NS source key (e.g. ``lambda_DY_J0030``).
+            The reference M-R-Λ family in ``construct_eos_and_solve_tov`` is
+            computed at the GR limit; per-NS families are computed inside
+            ``IndividualGammaLikelihood``.
 
         Returns
         -------
@@ -205,6 +228,7 @@ class JesterTransform(NtoMTransform):
             ndat_TOV=tov_config.ndat_TOV,
             min_nsat_TOV=tov_config.min_nsat_TOV,
             fixed_params=fixed_params,
+            individual_ns_sources=individual_ns_sources,
         )
 
     @staticmethod
@@ -321,13 +345,25 @@ class JesterTransform(NtoMTransform):
         Fixed parameters (those pinned via ``Fixed(...)`` in the prior file)
         are excluded — they are not part of the sampling space.
 
+        In individual-gamma mode (``individual_ns_sources`` is not ``None``),
+        each sampled TOV parameter is expanded to one copy per NS source, e.g.
+        ``lambda_DY`` becomes ``lambda_DY_J0030``, ``lambda_DY_J0740``, etc.
+
         Returns
         -------
         list[str]
             Sampled parameter names required by this transform
         """
-        all_params = self.eos_params + self.tov_params
-        return [p for p in all_params if p not in self.fixed_params]
+        sampled_eos = [p for p in self.eos_params if p not in self.fixed_params]
+        sampled_tov = [p for p in self.tov_params if p not in self.fixed_params]
+
+        if self.individual_ns_sources is not None:
+            per_ns_tov = [
+                f"{p}_{ns}" for p in sampled_tov for ns in self.individual_ns_sources
+            ]
+            return sampled_eos + per_ns_tov
+
+        return sampled_eos + sampled_tov
 
     def construct_eos_and_solve_tov(
         self,
@@ -360,16 +396,35 @@ class JesterTransform(NtoMTransform):
         # EOS handles all parameter preprocessing (e.g., CSE conversion)
         eos_data = self.eos.construct_eos(params)
 
-        # Extract TOV-specific parameters from the combined prior dict
-        tov_params = self.tov_solver.fetch_params(params)
-
-        # Solve TOV equations to get M-R-Λ family
-        family_data = self.tov_solver.construct_family(
-            eos_data,
-            ndat=self.ndat_TOV,
-            min_nsat=self.min_nsat_TOV,
-            tov_params=tov_params,
-        )
+        if self.individual_ns_sources is not None:
+            # Individual mode: compute a GR-limit reference family for constraint
+            # checking only.  Per-NS families are computed lazily inside
+            # IndividualGammaLikelihood.  Using the GR limit here is conservative
+            # but acceptable; n_TOV is estimated from this reference family.
+            _GR_DEFAULTS: dict[str, float] = {
+                "lambda_BL": 0.0,
+                "lambda_DY": 0.0,
+                "lambda_HB": 1.0,
+            }
+            ref_tov_params = {
+                p: self.fixed_params.get(p, _GR_DEFAULTS.get(p, 0.0))
+                for p in self.tov_solver.get_required_parameters()
+            }
+            family_data = self.tov_solver.construct_family(
+                eos_data,
+                ndat=self.ndat_TOV,
+                min_nsat=self.min_nsat_TOV,
+                tov_params=ref_tov_params,
+            )
+        else:
+            # Standard mode: extract TOV-specific parameters from the combined prior dict
+            tov_params = self.tov_solver.fetch_params(params)
+            family_data = self.tov_solver.construct_family(
+                eos_data,
+                ndat=self.ndat_TOV,
+                min_nsat=self.min_nsat_TOV,
+                tov_params=tov_params,
+            )
 
         # Create standardized return dictionary with constraint checking
         result = self._create_return_dict(

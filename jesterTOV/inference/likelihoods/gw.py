@@ -289,19 +289,34 @@ class GWLikelihood(LikelihoodBase):
         ----------
         params : dict[str, Float | Array]
             Must contain:
-            - 'masses_EOS': Array of neutron star masses from EOS
-            - 'Lambdas_EOS': Array of tidal deformabilities from EOS
+            - 'masses_EOS': Array of neutron star masses from EOS (primary family)
+            - 'Lambdas_EOS': Array of tidal deformabilities from EOS (primary family)
 
-            Note: Does NOT require '_random_key' (unlike GWLikelihood)
+            Optional (injected by IndividualGammaLikelihood in individual mode):
+            - 'masses_EOS_2': Secondary M-R-Λ family masses
+            - 'Lambdas_EOS_2': Secondary M-R-Λ family tidal deformabilities
+
+            When the secondary keys are absent, the primary family is used for
+            both companions (shared-gamma path). The key check is a Python-level
+            test at JIT trace time, not at runtime.
+
+            Note: Does NOT require '_random_key' (unlike GWLikelihoodResampled)
 
         Returns
         -------
         Float
             Log likelihood value for this GW event
         """
-        # Extract EOS parameters (no _random_key needed!)
         masses_EOS: Float[Array, " n_points"] = params["masses_EOS"]
         Lambdas_EOS: Float[Array, " n_points"] = params["Lambdas_EOS"]
+        # Secondary family injected by IndividualGammaLikelihood; fall back to
+        # the primary family in the shared-gamma path.
+        if "masses_EOS_2" in params:
+            masses_EOS_2: Float[Array, " n_points"] = params["masses_EOS_2"]
+            Lambdas_EOS_2: Float[Array, " n_points"] = params["Lambdas_EOS_2"]
+        else:
+            masses_EOS_2 = masses_EOS
+            Lambdas_EOS_2 = Lambdas_EOS
         mtov: Float = jnp.max(masses_EOS)
 
         def process_sample(sample: Float[Array, " 2"]) -> Float:
@@ -324,9 +339,9 @@ class GWLikelihood(LikelihoodBase):
             m1 = sample[0]
             m2 = sample[1]
 
-            # Interpolate lambdas from candidate EOS
+            # Interpolate lambdas from candidate EOS (primary for m1, secondary for m2)
             lambda_1 = jnp.interp(m1, masses_EOS, Lambdas_EOS, right=1.0)
-            lambda_2 = jnp.interp(m2, masses_EOS, Lambdas_EOS, right=1.0)
+            lambda_2 = jnp.interp(m2, masses_EOS_2, Lambdas_EOS_2, right=1.0)
 
             # Evaluate log_prob on single sample
             ml_sample = jnp.array([m1, m2, lambda_1, lambda_2])

@@ -525,3 +525,18 @@ class UniformPrior(SequentialTransformPrior):
                 ),
             ],
         )
+
+    def copy_with_name(self, new_name: str) -> "UniformPrior":
+        """Return a new UniformPrior with the same bounds but a different parameter name.
+
+        Parameters
+        ----------
+        new_name : str
+            The parameter name for the new prior.
+
+        Returns
+        -------
+        UniformPrior
+            A new prior instance with bounds ``[xmin, xmax]`` and name ``new_name``.
+        """
+        return UniformPrior(self.xmin, self.xmax, parameter_names=[new_name])

@@ -67,9 +67,19 @@ class AnisotropyTOVConfig(BaseTOVConfig):
     ----------
     type : Literal["anisotropy"]
         TOV solver type identifier
+    individual : bool
+        If True, each observed NS source gets its own independent copy of
+        the anisotropy parameters. Prior entries are auto-expanded per source.
     """
 
     type: Literal["anisotropy"] = "anisotropy"  # type: ignore[override]  # Literal["anisotropy"] ⊂ str
+    individual: bool = Field(
+        default=False,
+        description=(
+            "If True, each observed NS source gets its own independent copy of "
+            "the anisotropy parameters. Prior entries are auto-expanded per source."
+        ),
+    )
 
 
 TOVConfig = Annotated[
