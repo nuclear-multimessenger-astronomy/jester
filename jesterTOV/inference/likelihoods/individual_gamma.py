@@ -121,9 +121,9 @@ class IndividualGammaLikelihood(LikelihoodBase):
             )
             inner_params = {
                 **params,
-                "masses_EOS": family.masses,
-                "radii_EOS": family.radii,
-                "Lambdas_EOS": family.lambdas,
+                "masses_EOS": jnp.nan_to_num(family.masses, nan=0.0, posinf=0.0, neginf=0.0),
+                "radii_EOS": jnp.nan_to_num(family.radii, nan=0.0, posinf=0.0, neginf=0.0),
+                "Lambdas_EOS": jnp.nan_to_num(family.lambdas, nan=0.0, posinf=0.0, neginf=0.0),
             }
             total = total + lk.evaluate(inner_params)
 
@@ -142,10 +142,10 @@ class IndividualGammaLikelihood(LikelihoodBase):
             )
             inner_params = {
                 **params,
-                "masses_EOS": family_1.masses,
-                "Lambdas_EOS": family_1.lambdas,
-                "masses_EOS_2": family_2.masses,
-                "Lambdas_EOS_2": family_2.lambdas,
+                "masses_EOS": jnp.nan_to_num(family_1.masses, nan=0.0, posinf=0.0, neginf=0.0),
+                "Lambdas_EOS": jnp.nan_to_num(family_1.lambdas, nan=0.0, posinf=0.0, neginf=0.0),
+                "masses_EOS_2": jnp.nan_to_num(family_2.masses, nan=0.0, posinf=0.0, neginf=0.0),
+                "Lambdas_EOS_2": jnp.nan_to_num(family_2.lambdas, nan=0.0, posinf=0.0, neginf=0.0),
             }
             total = total + lk.evaluate(inner_params)
 
