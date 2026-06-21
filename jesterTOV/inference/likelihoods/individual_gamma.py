@@ -6,6 +6,7 @@ from jaxtyping import Array, Float
 from jesterTOV.tov.base import TOVSolverBase
 from jesterTOV.tov.data_classes import EOSData
 from jesterTOV.inference.base.likelihood import LikelihoodBase
+from jesterTOV.inference.likelihoods.constraints import check_tov_validity
 from jesterTOV.logging_config import get_logger
 
 logger = get_logger("jester")
@@ -45,6 +46,13 @@ class IndividualGammaLikelihood(LikelihoodBase):
         Number of central pressure points for the M-R-Λ family.
     min_nsat_TOV : float
         Minimum density for TOV integration in units of nsat.
+    penalty_tov : float
+        Log-likelihood penalty applied when a per-NS TOV solve fails (returns
+        NaN).  Mirrors :class:`~jesterTOV.inference.likelihoods.constraints.ConstraintTOVLikelihood`
+        so that failed anisotropy solves are penalised even when the GR
+        reference family in :class:`~jesterTOV.inference.transforms.transform.JesterTransform`
+        succeeds (e.g. extreme ``lambda_DY`` near the prior boundary).
+        Default: ``-1e10``.
     """
 
     def __init__(
@@ -56,6 +64,7 @@ class IndividualGammaLikelihood(LikelihoodBase):
         fixed_aniso_params: dict[str, float],
         ndat_TOV: int = 100,
         min_nsat_TOV: float = 0.75,
+        penalty_tov: float = -1e10,
     ) -> None:
         super().__init__()
         self.tov_solver = tov_solver
@@ -63,6 +72,7 @@ class IndividualGammaLikelihood(LikelihoodBase):
         self.fixed_aniso_params = fixed_aniso_params
         self.ndat_TOV = ndat_TOV
         self.min_nsat_TOV = min_nsat_TOV
+        self.penalty_tov = float(penalty_tov)
 
         # Pre-split NS sources into radio/NICER vs. GW at init.
         self._radio_nicer: list[tuple[str, LikelihoodBase]] = []
@@ -119,6 +129,9 @@ class IndividualGammaLikelihood(LikelihoodBase):
                 min_nsat=self.min_nsat_TOV,
                 tov_params=self._build_tov_params(params, ns_key),
             )
+            # Count failures before cleaning (mirrors _create_return_dict in JesterTransform).
+            n_failures = check_tov_validity(family.masses, family.radii, family.lambdas)
+            total = total + jnp.where(n_failures > 0, self.penalty_tov, 0.0)
             inner_params = {
                 **params,
                 "masses_EOS": jnp.nan_to_num(family.masses, nan=0.0, posinf=0.0, neginf=0.0),
@@ -140,6 +153,12 @@ class IndividualGammaLikelihood(LikelihoodBase):
                 min_nsat=self.min_nsat_TOV,
                 tov_params=self._build_tov_params(params, f"{event_name}_mass2"),
             )
+            n_failures = check_tov_validity(
+                family_1.masses, family_1.radii, family_1.lambdas
+            ) + check_tov_validity(
+                family_2.masses, family_2.radii, family_2.lambdas
+            )
+            total = total + jnp.where(n_failures > 0, self.penalty_tov, 0.0)
             inner_params = {
                 **params,
                 "masses_EOS": jnp.nan_to_num(family_1.masses, nan=0.0, posinf=0.0, neginf=0.0),
