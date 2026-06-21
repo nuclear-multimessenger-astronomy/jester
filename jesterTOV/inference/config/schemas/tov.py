@@ -80,6 +80,15 @@ class AnisotropyTOVConfig(BaseTOVConfig):
             "the anisotropy parameters. Prior entries are auto-expanded per source."
         ),
     )
+    penalty_tov: float = Field(
+        default=-1e10,
+        description=(
+            "Log-likelihood penalty applied when a per-NS anisotropy TOV solve "
+            "fails (returns NaN). Only used when individual=True. "
+            "Mirrors ConstraintTOVLikelihood so that failures are penalised even "
+            "when the GR reference family in the transform succeeds."
+        ),
+    )
 
 
 TOVConfig = Annotated[

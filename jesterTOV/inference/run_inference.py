@@ -726,6 +726,7 @@ def _create_individual_gamma_likelihood(
         fixed_aniso_params=fixed_aniso,
         ndat_TOV=config.tov.ndat_TOV,
         min_nsat_TOV=config.tov.min_nsat_TOV,
+        penalty_tov=config.tov.penalty_tov,  # type: ignore[union-attr]
     )
 
     all_likelihoods: list[LikelihoodBase] = [individual_lk] + non_ns_likelihoods
