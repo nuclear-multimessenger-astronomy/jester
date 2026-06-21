@@ -28,6 +28,7 @@ from .config.schema import (
     AnisotropyTOVConfig,
     RadioLikelihoodConfig,
     NICERLikelihoodConfig,
+    MockMassRadiusLikelihoodConfig,
 )
 from .priors.parser import parse_prior_file
 from .base.prior import CombinePrior
@@ -51,10 +52,10 @@ class NSSource:
     ns_key : str
         Unique key for this NS (e.g. ``"J0030"`` or ``"GW170817_mass1"``).
     lk_type : str
-        Likelihood type: ``"radio"``, ``"nicer"``, or ``"gw"``.
+        Likelihood type: ``"radio"``, ``"nicer"``, ``"gw"``, or ``"mock_mr"``.
     event_name : str
         For GW events: the event name (e.g. ``"GW170817"``).
-        For radio/NICER: same as ``ns_key``.
+        For radio/NICER/mock_mr: same as ``ns_key``.
     """
 
     ns_key: str
@@ -111,6 +112,19 @@ def collect_ns_sources(config: InferenceConfig) -> list[NSSource]:
                         ns_key=f"{event.name}_mass2",
                         lk_type="gw",
                         event_name=event.name,
+                    )
+                )
+        elif isinstance(lk, MockMassRadiusLikelihoodConfig):
+            json_path = Path(lk.json_file).resolve()
+            with open(json_path) as f:
+                observations = json.load(f)
+            for obs in observations:
+                name = str(obs["name"])
+                sources.append(
+                    NSSource(
+                        ns_key=name,
+                        lk_type="mock_mr",
+                        event_name=name,
                     )
                 )
     return sources
@@ -677,6 +691,26 @@ def _create_individual_gamma_likelihood(
                     seed=lk_config.seed,
                 )
                 ns_source_to_likelihood[event.name] = lk
+        elif isinstance(lk_config, MockMassRadiusLikelihoodConfig):
+            from .likelihoods.mock_mr import MockMassRadiusLikelihood
+
+            json_path = Path(lk_config.json_file).resolve()
+            with open(json_path) as f:
+                observations = json.load(f)
+            for obs in observations:
+                mock_lk: LikelihoodBase = MockMassRadiusLikelihood(
+                    psr_name=str(obs["name"]),
+                    mean_mass=float(obs["mean_mass"]),
+                    mean_radius=float(obs["mean_radius"]),
+                    std_mass=float(obs["std_mass"]),
+                    std_radius=float(obs["std_radius"]),
+                    correlation=float(obs.get("correlation", 0.0)),
+                    penalty_value=lk_config.penalty_value,
+                    N_masses_evaluation=lk_config.N_masses_evaluation,
+                    N_masses_batch_size=lk_config.N_masses_batch_size,
+                    seed=lk_config.seed,
+                )
+                ns_source_to_likelihood[str(obs["name"])] = mock_lk
         else:
             inner = create_likelihood(lk_config)
             if inner is not None:

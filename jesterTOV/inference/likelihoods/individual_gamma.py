@@ -70,7 +70,7 @@ class IndividualGammaLikelihood(LikelihoodBase):
         self._gw_events: list[tuple[str, LikelihoodBase]] = []
 
         for src in ns_sources:
-            if src.lk_type in ("radio", "nicer"):
+            if src.lk_type in ("radio", "nicer", "mock_mr"):
                 lk = ns_source_to_likelihood[src.ns_key]
                 self._radio_nicer.append((src.ns_key, lk))
             elif src.lk_type == "gw" and src.event_name not in seen_gw:
