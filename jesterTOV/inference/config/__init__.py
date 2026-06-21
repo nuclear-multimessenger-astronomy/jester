@@ -27,6 +27,7 @@ from .schema import (
     DeprecatedConstraintsLikelihoodConfig,
     REXLikelihoodConfig,
     ZeroLikelihoodConfig,
+    MockMassRadiusLikelihoodConfig,
     LikelihoodConfig,
     # Samplers
     BaseSamplerConfig,

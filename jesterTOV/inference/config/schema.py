@@ -58,6 +58,7 @@ from .schemas.likelihoods import (
     DeprecatedConstraintsLikelihoodConfig,
     REXLikelihoodConfig,
     ZeroLikelihoodConfig,
+    MockMassRadiusLikelihoodConfig,
     LikelihoodConfig,
 )
 
@@ -254,6 +255,7 @@ __all__ = [
     "DeprecatedConstraintsLikelihoodConfig",
     "REXLikelihoodConfig",
     "ZeroLikelihoodConfig",
+    "MockMassRadiusLikelihoodConfig",
     "LikelihoodConfig",
     # Samplers
     "BaseSamplerConfig",

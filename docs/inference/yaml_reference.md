@@ -588,6 +588,60 @@ Returns zero log-likelihood (uniform likelihood) for all EOS configurations. Use
 
 ::::
 
+### Mock mass-radius
+
+Synthetic bivariate Gaussian mass-radius observations for testing and mock-data studies.
+
+::::{dropdown} **Mock Mass-Radius Likelihood**
+
+```yaml
+- type: "mock_mr"
+  enabled: true
+  json_file: "./mock_observations.json"
+  penalty_value: 0.0       # penalty when mass > M_TOV (default: 0.0)
+  N_masses_evaluation: 100 # mass samples for MC integration (default: 100)
+  N_masses_batch_size: 20  # batch size for jax.lax.map (default: 20)
+  seed: 42                 # random seed (default: 42)
+```
+
+**Description:**
+
+Constrains the M-R relation using one or more synthetic bivariate Gaussian observations
+read from a JSON file. Each entry describes a mock pulsar measurement with a mean mass
+and radius, their standard deviations, and the Pearson correlation between the two
+quantities. Masses are pre-sampled at initialisation for fast evaluation during MCMC.
+See {class}`~jesterTOV.inference.likelihoods.mock_mr.MockMassRadiusLikelihood` for the full API.
+
+The JSON file must be a list of objects with the following keys:
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `name` | str | Pulsar identifier, e.g. `"PSR0"` |
+| `mean_mass` | float | Mean mass (:math:`M_\odot`) |
+| `mean_radius` | float | Mean radius (km) |
+| `std_mass` | float | Standard deviation of mass (:math:`M_\odot`) |
+| `std_radius` | float | Standard deviation of radius (km) |
+| `correlation` | float | Pearson correlation, strictly in (-1, 1) |
+
+**Example JSON file:**
+
+```json
+[
+  {
+    "name": "PSR0",
+    "mean_mass": 1.4,
+    "mean_radius": 12.0,
+    "std_mass": 0.1,
+    "std_radius": 0.1,
+    "correlation": 0.0
+  }
+]
+```
+
+See `examples/inference/smc_random_walk/mock_mr/` for a complete working example.
+
+::::
+
 ---
 
 ## Samplers
