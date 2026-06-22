@@ -20,6 +20,7 @@ from ..config.schema import (
     REXLikelihoodConfig,
     ZeroLikelihoodConfig,
     MockMassRadiusLikelihoodConfig,
+    MockTOVMassLikelihoodConfig,
 )
 from .combined import CombinedLikelihood, ZeroLikelihood
 from .gw import GWLikelihood, GWLikelihoodResampled
@@ -196,6 +197,15 @@ def create_likelihood(
 
         case ZeroLikelihoodConfig():
             return ZeroLikelihood()
+
+        case MockTOVMassLikelihoodConfig():
+            from .mock_tov_mass import MockTOVMassLikelihood
+
+            return MockTOVMassLikelihood(
+                mean=config.mean,
+                std=config.std,
+                penalty_value=config.penalty_value,
+            )
 
         case _:
             raise ValueError(f"Unknown likelihood type: {config.type}")

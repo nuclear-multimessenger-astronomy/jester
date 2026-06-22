@@ -871,6 +871,43 @@ class MockMassRadiusLikelihoodConfig(BaseLikelihoodConfig):
     )
 
 
+class MockTOVMassLikelihoodConfig(BaseLikelihoodConfig):
+    """Mock TOV maximum-mass likelihood configuration.
+
+    Places a Gaussian constraint directly on the maximum TOV mass
+    :math:`M_\\mathrm{TOV}`, encoding both a lower and upper bound on the
+    maximum neutron star mass.  Useful for mock-data studies of hypothetical
+    future measurements.
+
+    Examples
+    --------
+    .. code-block:: yaml
+
+        - type: "mock_tov_mass"
+          enabled: true
+          mean: 2.0
+          std: 0.1
+    """
+
+    type: Literal["mock_tov_mass"] = Field(
+        default="mock_tov_mass", description="Likelihood type identifier"
+    )
+
+    mean: float = Field(
+        description="Central value of the Gaussian constraint on M_TOV (solar masses)"
+    )
+
+    std: float = Field(
+        gt=0,
+        description="1-sigma width of the Gaussian constraint on M_TOV (solar masses)",
+    )
+
+    penalty_value: float = Field(
+        default=0.0,
+        description="Log-likelihood returned when the TOV solver fails (default: 0.0)",
+    )
+
+
 # Discriminated union of all likelihood types
 LikelihoodConfig = Annotated[
     Union[
@@ -888,6 +925,7 @@ LikelihoodConfig = Annotated[
         REXLikelihoodConfig,
         ZeroLikelihoodConfig,
         MockMassRadiusLikelihoodConfig,
+        MockTOVMassLikelihoodConfig,
     ],
     Discriminator("type"),
 ]
