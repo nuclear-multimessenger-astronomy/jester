@@ -1,10 +1,12 @@
-FROM nvidia/cuda:12.2.0-cudnn8-runtime-ubuntu22.04
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# uv — manages Python installs too
+# uv — manages Python installs
 RUN curl -LsSf https://astral.sh/uv/install.sh | INSTALLER_NO_MODIFY_PATH=1 sh
 ENV PATH="/root/.local/bin:$PATH"
 
@@ -12,6 +14,7 @@ ENV PATH="/root/.local/bin:$PATH"
 RUN uv python install 3.12 && uv venv /opt/jester-env --python 3.12
 
 # Install JESTER with CUDA 12 support.
+# jax[cuda12] bundles its own CUDA 12 runtime wheels — no CUDA base image needed.
 # blackjax is a git dependency — internet access required at build time.
 RUN git clone https://github.com/nuclear-multimessenger-astronomy/jester.git /opt/jester && \
     cd /opt/jester && \

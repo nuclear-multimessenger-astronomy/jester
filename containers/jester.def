@@ -1,21 +1,27 @@
 Bootstrap: docker
-From: nvidia/cuda:12.2.0-cudnn8-runtime-ubuntu22.04
+From: ubuntu:22.04
 
 %post
-    # System dependencies (Ubuntu 22.04 default Python is 3.10 — uv handles 3.12)
+    # Suppress interactive prompts
+    export DEBIAN_FRONTEND=noninteractive
+
+    # System dependencies
     apt-get update
     apt-get install -y --no-install-recommends git curl ca-certificates
     rm -rf /var/lib/apt/lists/*
 
-    # uv — also manages Python installs
+    # uv — manages Python installs
     curl -LsSf https://astral.sh/uv/install.sh | INSTALLER_NO_MODIFY_PATH=1 sh
     export PATH="/root/.local/bin:$PATH"
 
-    # Install Python 3.12 via uv and create a dedicated venv
+    # Install Python 3.12 and create a dedicated venv
     uv python install 3.12
     uv venv /opt/jester-env --python 3.12
 
-    # Install JESTER with CUDA 12 support into the venv.
+    # Install JESTER with CUDA 12 support.
+    # jax[cuda12] bundles its own CUDA 12 runtime as Python wheels — no CUDA base image needed.
+    # Apptainer's --nv flag (enabled automatically by HTCondor for GPU jobs) bind-mounts
+    # the host CUDA driver, which JAX's bundled runtime then uses.
     # blackjax is a git dependency — internet access required at build time.
     git clone https://github.com/nuclear-multimessenger-astronomy/jester.git /opt/jester
     cd /opt/jester
@@ -33,10 +39,13 @@ From: nvidia/cuda:12.2.0-cudnn8-runtime-ubuntu22.04
 
 %labels
     Author thibeau.wouters
-    Description JESTER neutron-star inference — Python 3.12, CUDA 12, Ubuntu 22.04
+    Description JESTER neutron-star inference — Python 3.12, JAX bundled CUDA 12
 
 %help
-    JESTER Apptainer image with GPU (CUDA 12) support.
+    JESTER Apptainer image. Uses plain ubuntu:22.04 — jax[cuda12] bundles its own
+    CUDA 12 runtime wheels, so no CUDA base image is needed. The host GPU driver is
+    passed through by Apptainer's --nv flag (HTCondor enables this automatically for
+    GPU jobs via request_gpus).
 
     Build on CIT (requires internet access for the blackjax git dependency):
         cd /path/to/jester
