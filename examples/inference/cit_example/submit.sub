@@ -1,8 +1,14 @@
-executable            = /home/thibeau.wouters/jester_analyses/jester/.venv/bin/run_jester_inference
+# HTCondor submit file — Apptainer container approach.
+# Requires the .sif image to be pre-built; see containers/jester.def and README.md.
+
+executable            = run_jester_inference
 transfer_executable   = false
+MY.SingularityImage   = "/home/thibeau.wouters/jester_analyses/jester.sif"
 arguments             = config.yaml
 
 initialdir            = /home/thibeau.wouters/jester_analyses/jester/examples/inference/cit_example
+
+requirements = (HAS_SINGULARITY=?=True) && (TARGET.Arch == "X86_64") && (TARGET.GPUs >= 1)
 
 log    = outdir/condor.log
 output = outdir/log.out
