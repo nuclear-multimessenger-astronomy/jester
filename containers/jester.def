@@ -1,31 +1,31 @@
 Bootstrap: docker
-From: nvidia/cuda:12.2.0-cudnn8-runtime-rockylinux9
+From: nvidia/cuda:12.2.0-cudnn8-runtime-ubuntu22.04
 
 %post
-    # System dependencies
-    dnf install -y python3.12 python3.12-pip git curl
-    ln -sf /usr/bin/python3.12 /usr/local/bin/python3
-    ln -sf /usr/bin/python3.12 /usr/local/bin/python
+    # System dependencies (Ubuntu 22.04 default Python is 3.10 — uv handles 3.12)
+    apt-get update
+    apt-get install -y --no-install-recommends git curl ca-certificates
+    rm -rf /var/lib/apt/lists/*
 
-    # uv (fast Python package installer)
+    # uv — also manages Python installs
     curl -LsSf https://astral.sh/uv/install.sh | INSTALLER_NO_MODIFY_PATH=1 sh
     export PATH="/root/.local/bin:$PATH"
 
-    # Install JESTER with CUDA 12 support.
+    # Install Python 3.12 via uv and create a dedicated venv
+    uv python install 3.12
+    uv venv /opt/jester-env --python 3.12
+
+    # Install JESTER with CUDA 12 support into the venv.
     # blackjax is a git dependency — internet access required at build time.
     git clone https://github.com/nuclear-multimessenger-astronomy/jester.git /opt/jester
     cd /opt/jester
-    uv pip install --system -e ".[cuda12]"
+    uv pip install --python /opt/jester-env/bin/python -e ".[cuda12]"
 
     # Verify the entry point landed
-    which run_jester_inference
-
-    # Clean up to reduce image size
-    dnf clean all
-    pip3.12 cache purge 2>/dev/null || true
+    /opt/jester-env/bin/run_jester_inference --help
 
 %environment
-    export PATH="/root/.local/bin:/usr/local/bin:$PATH"
+    export PATH="/opt/jester-env/bin:/root/.local/bin:$PATH"
     export JAX_ENABLE_X64=1
 
 %runscript
@@ -33,21 +33,23 @@ From: nvidia/cuda:12.2.0-cudnn8-runtime-rockylinux9
 
 %labels
     Author thibeau.wouters
-    Description JESTER neutron-star inference — Python 3.12, CUDA 12, Rocky Linux 9
+    Description JESTER neutron-star inference — Python 3.12, CUDA 12, Ubuntu 22.04
 
 %help
     JESTER Apptainer image with GPU (CUDA 12) support.
 
     Build on CIT (requires internet access for the blackjax git dependency):
-        apptainer build /home/thibeau.wouters/jester_analyses/jester.sif jester.def
+        cd /path/to/jester
+        apptainer build /home/thibeau.wouters/jester_analyses/jester.sif containers/jester.def
 
-    Or build with Docker locally and transfer (see Dockerfile):
-        docker build -t jester .
+    Or build with Docker locally and transfer (see containers/Dockerfile):
+        docker build -t jester -f containers/Dockerfile .
         apptainer build jester.sif docker-daemon://jester:latest
         scp jester.sif thibeau.wouters@ldas-pcdev1.ligo.caltech.edu:/home/thibeau.wouters/jester_analyses/
 
     Test interactively on a CIT node:
-        apptainer exec --nv jester.sif run_jester_inference config.yaml --dry-run
+        apptainer exec --nv /home/thibeau.wouters/jester_analyses/jester.sif \
+            run_jester_inference config.yaml --dry-run
 
     Submit via HTCondor:
         cd examples/inference/cit_example

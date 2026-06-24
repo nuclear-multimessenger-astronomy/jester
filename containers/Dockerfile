@@ -1,20 +1,23 @@
-FROM nvidia/cuda:12.2.0-cudnn8-runtime-rockylinux9
+FROM nvidia/cuda:12.2.0-cudnn8-runtime-ubuntu22.04
 
-RUN dnf install -y python3.12 python3.12-pip git curl && dnf clean all
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN ln -sf /usr/bin/python3.12 /usr/local/bin/python3 && \
-    ln -sf /usr/bin/python3.12 /usr/local/bin/python
-
-# uv
+# uv — manages Python installs too
 RUN curl -LsSf https://astral.sh/uv/install.sh | INSTALLER_NO_MODIFY_PATH=1 sh
-ENV PATH="/root/.local/bin:/usr/local/bin:$PATH"
+ENV PATH="/root/.local/bin:$PATH"
+
+# Install Python 3.12 and create a dedicated venv
+RUN uv python install 3.12 && uv venv /opt/jester-env --python 3.12
 
 # Install JESTER with CUDA 12 support.
 # blackjax is a git dependency — internet access required at build time.
 RUN git clone https://github.com/nuclear-multimessenger-astronomy/jester.git /opt/jester && \
     cd /opt/jester && \
-    uv pip install --system -e ".[cuda12]"
+    uv pip install --python /opt/jester-env/bin/python -e ".[cuda12]"
 
+ENV PATH="/opt/jester-env/bin:/root/.local/bin:$PATH"
 ENV JAX_ENABLE_X64=1
 
 ENTRYPOINT ["run_jester_inference"]
