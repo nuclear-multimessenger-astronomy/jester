@@ -18,7 +18,9 @@ RUN uv python install 3.12 && uv venv /opt/jester-env --python 3.12
 # blackjax is a git dependency — internet access required at build time.
 RUN git clone https://github.com/nuclear-multimessenger-astronomy/jester.git /opt/jester && \
     cd /opt/jester && \
-    uv pip install --python /opt/jester-env/bin/python -e ".[cuda12]"
+    uv pip install --python /opt/jester-env/bin/python -e ".[cuda12]" && \
+    test -x /opt/jester-env/bin/run_jester_inference && \
+    /opt/jester-env/bin/python -c "import jesterTOV; print('jesterTOV import OK')"
 
 ENV PATH="/opt/jester-env/bin:/root/.local/bin:$PATH"
 ENV JAX_ENABLE_X64=1

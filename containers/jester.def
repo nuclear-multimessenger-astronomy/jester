@@ -27,8 +27,9 @@ From: ubuntu:22.04
     cd /opt/jester
     uv pip install --python /opt/jester-env/bin/python -e ".[cuda12]"
 
-    # Verify the entry point landed
-    /opt/jester-env/bin/run_jester_inference --help
+    # Verify the entry point and core import work
+    test -x /opt/jester-env/bin/run_jester_inference
+    /opt/jester-env/bin/python -c "import jesterTOV; print('jesterTOV import OK')"
 
 %environment
     export PATH="/opt/jester-env/bin:/root/.local/bin:$PATH"
