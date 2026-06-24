@@ -1,0 +1,20 @@
+
+executable            = /home/thibeau.wouters/jester_analyses/jester/.venv/bin/run_jester_inference
+transfer_executable   = false
+arguments             = config.yaml
+
+initialdir            = /home/thibeau.wouters/jester_analyses/jester/examples/inference/cit_example
+
+log    = outdir/condor.log
+output = outdir/log.out
+error  = outdir/log.err
+
+request_gpus   = 1
+request_cpus   = 1
+request_memory = 40GB
+request_disk   = 4GB
+
+accounting_group      = ligo.dev.o4.cbc.extremematter.bilby
+accounting_group_user = thibeau.wouters
+
+queue
