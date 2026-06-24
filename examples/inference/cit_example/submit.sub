@@ -3,7 +3,7 @@
 
 executable            = run_jester_inference
 transfer_executable   = false
-MY.SingularityImage   = "/home/thibeau.wouters/jester_analyses/jester.sif"
+MY.SingularityImage   = "/home/thibeau.wouters/jester_analyses/containers/jester.sif"
 arguments             = config.yaml
 
 initialdir            = /home/thibeau.wouters/jester_analyses/jester/examples/inference/cit_example
