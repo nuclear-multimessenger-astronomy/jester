@@ -1,32 +1,29 @@
-# HTCondor submit file — Apptainer container via OSDF CIT staging.
+# HTCondor submit file — container universe with OSDF CIT staging.
 #
 # Before first use: upload the .sif to OSDF (run on a CIT login node):
 #   osdf object put /home/thibeau.wouters/jester_analyses/containers/jester.sif \
 #       /igwn/cit/staging/thibeau.wouters/containers/jester.sif
 # Verify: osdf object ls /igwn/cit/staging/thibeau.wouters/containers/
 #
-# Pattern (from bilby production jobs):
-#   - OSDF URL goes in transfer_input_files — HTCondor fetches from the nearest cache
-#   - MY.SingularityImage uses the local filename after OSDF transfer lands the .sif
-#   - use_oauth_services = scitokens is required for OSDF auth on remote glidein nodes
+# Also create the output directory before submitting:
+#   mkdir -p outdir
 
-executable            = /opt/jester-env/bin/run_jester_inference
-transfer_executable   = false
-MY.SingularityImage   = "./jester.sif"
-arguments             = config.yaml
+universe        = container
+container_image = osdf:///igwn/cit/staging/thibeau.wouters/containers/jester.sif
 
-# OSDF URL: HTCondor fetches .sif from nearest cache (cached after first use at each site).
-# config.yaml is small and always transferred from the submit node.
-transfer_input_files  = config.yaml, prior.prior, osdf:///igwn/cit/staging/thibeau.wouters/containers/jester.sif
+executable      = /opt/jester-env/bin/run_jester_inference
+arguments       = config.yaml
+
+transfer_input_files  = config.yaml, prior.prior
 
 use_oauth_services    = scitokens
 
-initialdir            = /home/thibeau.wouters/jester_analyses/jester/examples/inference/cit_example
+initialdir = /home/thibeau.wouters/jester_analyses/jester/examples/inference/cit_example
 
 requirements = (TARGET.Arch == "X86_64")
 
-transfer_output_files     = outdir
-when_to_transfer_output   = ON_EXIT_OR_EVICT
+transfer_output_files   = outdir
+when_to_transfer_output = ON_EXIT_OR_EVICT
 
 log    = outdir/condor.log
 output = outdir/log.out
@@ -35,7 +32,11 @@ error  = outdir/log.err
 request_gpus   = 1
 request_cpus   = 1
 request_memory = 10GB
+<<<<<<< HEAD
 request_disk   = 8GB
+=======
+request_disk   = 4GB
+>>>>>>> 1bf36f70829003a30c0a2e8b4d3ef1dd6cc6adbb
 
 accounting_group      = ligo.dev.o4.cbc.extremematter.bilby
 accounting_group_user = thibeau.wouters
