@@ -1,18 +1,25 @@
-# HTCondor submit file — Apptainer container approach.
-# Requires the .sif image to be pre-built; see containers/jester.def and README.md.
+# HTCondor submit file — Apptainer container via OSDF CIT staging.
 #
-# IMPORTANT: MY.SingularityImage must use a RELATIVE path (just the filename).
-# HTCondor transfers the .sif via transfer_input_files to the remote node's
-# scratch directory; an absolute CIT path like /home/thibeau.wouters/... is
-# NOT accessible on remote OSG sites (e.g. SURFsara) and causes hold code 19.
+# Before first use: upload the .sif to OSDF (run on a CIT login node):
+#   osdf object put /home/thibeau.wouters/jester_analyses/containers/jester.sif \
+#       /igwn/cit/staging/thibeau.wouters/containers/jester.sif
+# Verify: osdf object ls /igwn/cit/staging/thibeau.wouters/containers/
+#
+# Pattern (from bilby production jobs):
+#   - OSDF URL goes in transfer_input_files — HTCondor fetches from the nearest cache
+#   - MY.SingularityImage uses the local filename after OSDF transfer lands the .sif
+#   - use_oauth_services = scitokens is required for OSDF auth on remote glidein nodes
 
-executable            = run_jester_inference
+executable            = /opt/jester-env/bin/run_jester_inference
 transfer_executable   = false
-MY.SingularityImage   = "jester.sif"
+MY.SingularityImage   = "./jester.sif"
 arguments             = config.yaml
 
-# Transfer the container image to the remote execute node.
-transfer_input_files  = /home/thibeau.wouters/jester_analyses/containers/jester.sif, config.yaml
+# OSDF URL: HTCondor fetches .sif from nearest cache (cached after first use at each site).
+# config.yaml is small and always transferred from the submit node.
+transfer_input_files  = config.yaml, osdf:///igwn/cit/staging/thibeau.wouters/containers/jester.sif
+
+use_oauth_services    = scitokens
 
 initialdir            = /home/thibeau.wouters/jester_analyses/jester/examples/inference/cit_example
 
@@ -25,6 +32,7 @@ error  = outdir/log.err
 request_gpus   = 1
 request_cpus   = 1
 request_memory = 10GB
+# .sif is fetched via OSDF but still lands in the job's scratch dir — keep 8 GB.
 request_disk   = 8GB
 
 accounting_group      = ligo.dev.o4.cbc.extremematter.bilby
