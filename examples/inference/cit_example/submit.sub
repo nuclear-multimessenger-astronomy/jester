@@ -1,12 +1,3 @@
-# HTCondor submit file - container universe with OSDF CIT staging.
-#
-# Before first use: upload the .sif to OSDF (run on a CIT login node):
-#   osdf object put /home/thibeau.wouters/jester_analyses/containers/jester.sif /igwn/cit/staging/thibeau.wouters/containers/jester.sif
-# Verify: osdf object ls /igwn/cit/staging/thibeau.wouters/containers/
-#
-# Also create the output directory before submitting:
-#   mkdir -p outdir
-
 universe        = container
 container_image = osdf:///igwn/cit/staging/thibeau.wouters/containers/jester.sif
 
