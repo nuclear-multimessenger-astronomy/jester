@@ -35,7 +35,6 @@ error  = outdir/log.err
 request_gpus   = 1
 request_cpus   = 1
 request_memory = 10GB
-# .sif is fetched via OSDF but still lands in the job's scratch dir — keep 8 GB.
 request_disk   = 8GB
 
 accounting_group      = ligo.dev.o4.cbc.extremematter.bilby
