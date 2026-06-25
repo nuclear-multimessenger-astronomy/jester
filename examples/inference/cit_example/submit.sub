@@ -25,6 +25,9 @@ initialdir            = /home/thibeau.wouters/jester_analyses/jester/examples/in
 
 requirements = (HAS_SINGULARITY=?=True) && (TARGET.Arch == "X86_64") && (TARGET.GPUs >= 1)
 
+transfer_output_files     = outdir
+when_to_transfer_output   = ON_EXIT_OR_EVICT
+
 log    = outdir/condor.log
 output = outdir/log.out
 error  = outdir/log.err
