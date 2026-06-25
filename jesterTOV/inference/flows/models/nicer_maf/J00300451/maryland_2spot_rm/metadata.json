@@ -1,0 +1,24 @@
+{
+  "n_samples_total": 100000,
+  "n_samples_used": 50000,
+  "parameter_names": [
+    "mass",
+    "radius"
+  ],
+  "filepath": "../../../../../data/NICER/J00300451_maryland_2spot_NICER_only_RM.npz",
+  "flow_type": "masked_autoregressive_flow",
+  "num_epochs": 2719,
+  "learning_rate": 0.0001,
+  "max_patience": 500,
+  "val_prop": 0.2,
+  "standardize": true,
+  "standardization_method": "zscore",
+  "data_mean": [
+    1.4502220389888605,
+    13.345950077161394
+  ],
+  "data_std": [
+    0.16706796738355423,
+    1.2375056128730417
+  ]
+}

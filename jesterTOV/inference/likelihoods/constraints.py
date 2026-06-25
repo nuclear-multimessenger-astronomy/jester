@@ -200,9 +200,9 @@ class ConstraintEOSLikelihood(LikelihoodBase):
     penalty_causality : float, optional
         Log likelihood penalty for causality violation (default: -1e10)
     penalty_stability : float, optional
-        Log likelihood penalty for thermodynamic instability (default: -1e5)
+        Log likelihood penalty for thermodynamic instability (default: -1e10)
     penalty_pressure : float, optional
-        Log likelihood penalty for non-monotonic pressure (default: -1e5)
+        Log likelihood penalty for non-monotonic pressure (default: -1e10)
 
     Examples
     --------
@@ -212,7 +212,7 @@ class ConstraintEOSLikelihood(LikelihoodBase):
     >>>     enabled: true
     >>>     parameters:
     >>>       penalty_causality: -1.0e10
-    >>>       penalty_stability: -1.0e5
+    >>>       penalty_stability: -1.0e10
     """
 
     penalty_causality: float
@@ -222,8 +222,8 @@ class ConstraintEOSLikelihood(LikelihoodBase):
     def __init__(
         self,
         penalty_causality: float = -1e10,
-        penalty_stability: float = -1e5,
-        penalty_pressure: float = -1e5,
+        penalty_stability: float = -1e10,
+        penalty_pressure: float = -1e10,
     ) -> None:
         super().__init__()
         self.penalty_causality = float(penalty_causality)
@@ -269,6 +269,169 @@ class ConstraintEOSLikelihood(LikelihoodBase):
         log_likelihood = penalty_caus + penalty_stab + penalty_press
 
         return log_likelihood
+
+
+def check_gamma_bounds(gamma_vals: Float[Array, " n"]) -> Float:
+    """
+    Check for violations of LALSuite gamma bounds.
+
+    LALSuite requires Γ(x) ∈ [0.6, 4.5] for all x to ensure physical validity
+    and numerical stability of the spectral decomposition EOS.
+
+    Parameters
+    ----------
+    gamma_vals : Float[Array, " n"]
+        Array of adiabatic index values Γ(x) evaluated at various x points
+
+    Returns
+    -------
+    Float
+        Number of points where Γ(x) violates bounds (0 = valid, >0 = violation)
+        Returns a scalar for JAX compatibility
+    """
+    return jnp.sum((gamma_vals < 0.6) | (gamma_vals > 4.5))
+
+
+class ConstraintGammaLikelihood(LikelihoodBase):
+    """
+    Gamma constraint likelihood for spectral decomposition EOS.
+
+    This likelihood enforces LALSuite's requirement that the adiabatic index
+    Γ(x) ∈ [0.6, 4.5] for all dimensionless log-pressures x ∈ [0, xmax].
+    This constraint is specific to spectral decomposition EOS and ensures
+    physical validity and numerical stability.
+
+    The spectral transform must add gamma violation counts to its output dictionary:
+    - 'n_gamma_violations': Number of points where Γ(x) violates [0.6, 4.5] bounds
+
+    Parameters
+    ----------
+    penalty_gamma : float, optional
+        Log likelihood penalty for gamma bound violation (default: -1e10)
+
+    Examples
+    --------
+    >>> # In config.yaml (spectral EOS examples)
+    >>> likelihoods:
+    >>>   - type: "constraints_gamma"
+    >>>     enabled: true
+    >>>     parameters:
+    >>>       penalty_gamma: -1.0e10
+
+    Notes
+    -----
+    This likelihood is only relevant for spectral decomposition EOS parametrization.
+    For metamodel or metamodel+CSE transforms, this likelihood will return 0.0
+    (no penalty) since n_gamma_violations will not be present in the transform output.
+
+    See Also
+    --------
+    ConstraintEOSLikelihood : General EOS-level constraints (causality, stability, pressure)
+    ConstraintTOVLikelihood : TOV integration validity
+    """
+
+    penalty_gamma: float
+
+    def __init__(
+        self,
+        penalty_gamma: float = -1e10,
+    ) -> None:
+        super().__init__()
+        self.penalty_gamma = float(penalty_gamma)
+
+    def evaluate(self, params: dict[str, Float | Array]) -> Float:
+        """
+        Evaluate gamma constraint log likelihood.
+
+        Returns 0.0 if all gamma constraints satisfied, applies penalty otherwise.
+        Uses jnp.where for JAX compatibility (no Python if-statements).
+
+        Parameters
+        ----------
+        params : dict[str, float]
+            Must contain gamma constraint violation counts from spectral transform:
+            - 'n_gamma_violations' (only present for spectral transform)
+
+        Returns
+        -------
+        Float
+            Gamma penalty (0.0 if valid, large negative if invalid)
+        """
+        # Get violation count from transform output (default to 0 if not present)
+        # This allows the likelihood to work with non-spectral transforms gracefully
+        n_gamma_violations = params.get("n_gamma_violations", 0.0)
+
+        # Apply penalty using jnp.where (JAX-compatible, no branching)
+        # Default penalty value is multiplied with number of violation points: more violations -> larger penalty
+        penalty_gamma = n_gamma_violations * self.penalty_gamma
+
+        return penalty_gamma
+
+
+class ConstraintEsymLikelihood(LikelihoodBase):
+    """
+    Symmetry energy constraint likelihood for metamodel EOS.
+
+    This likelihood penalises configurations where the symmetry energy
+    :math:`e_{\\rm sym}(n)` computed by the metamodel goes negative.
+    A negative symmetry energy implies pure neutron matter is more bound
+    than symmetric nuclear matter, which is unphysical.
+
+    The metamodel transform must add the violation count to its output dictionary:
+
+    - ``n_esym_violations``: number of density grid points where :math:`e_{\\rm sym} < 0`
+
+    Parameters
+    ----------
+    penalty_esym : float, optional
+        Log-likelihood penalty per violation point (default: -1e10).
+
+    Examples
+    --------
+    .. code-block:: yaml
+
+        - type: "constraints_esym"
+          enabled: true
+          penalty_esym: -1.0e10
+
+    Notes
+    -----
+    Only relevant for metamodel, metamodel+CSE, and metamodel+peakCSE EOS
+    parametrisations.  For other EOS types (spectral, piecewise polytrope) the
+    ``n_esym_violations`` key will not be present in the transform output, so this
+    likelihood returns 0.0 gracefully.
+
+    See Also
+    --------
+    ConstraintEOSLikelihood : General EOS-level constraints
+    ConstraintGammaLikelihood : Gamma bound constraints for spectral EOS
+    """
+
+    penalty_esym: float
+
+    def __init__(self, penalty_esym: float = -1e10) -> None:
+        super().__init__()
+        self.penalty_esym = float(penalty_esym)
+
+    def evaluate(self, params: dict[str, Float | Array]) -> Float:
+        """
+        Evaluate symmetry energy constraint log likelihood.
+
+        Returns 0.0 if :math:`e_{\\rm sym} \\geq 0` everywhere, applies penalty otherwise.
+        Uses ``jnp.where`` for JAX compatibility.
+
+        Parameters
+        ----------
+        params : dict[str, float | Array]
+            Must contain ``n_esym_violations`` from the metamodel transform.
+
+        Returns
+        -------
+        Float
+            Total penalty (0.0 if valid, large negative if :math:`e_{\\rm sym} < 0` anywhere).
+        """
+        n_esym_violations = params.get("n_esym_violations", 0.0)
+        return n_esym_violations * self.penalty_esym
 
 
 class ConstraintTOVLikelihood(LikelihoodBase):

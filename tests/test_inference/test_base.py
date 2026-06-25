@@ -20,7 +20,9 @@ from jesterTOV.inference.base.transform import (
     ScaleTransform,
     OffsetTransform,
     LogitTransform,
+    MVGaussianToUnitCube,
 )
+from jesterTOV.inference.base.prior import MultivariateGaussianPrior
 
 
 class TestPriorBase:
@@ -584,3 +586,140 @@ class TestTransformIntegration:
         std = jnp.std(samples["x"])
         expected_std = (8.0 - 2.0) / jnp.sqrt(12.0)
         assert 0.8 * expected_std < std < 1.2 * expected_std
+
+
+class TestMVGaussianToUnitCube:
+    """Tests for MVGaussianToUnitCube bijective transform.
+
+    This transform enables nested sampling (NS-AW) with MultivariateGaussianPrior
+    by mapping Gaussian space to the unit hypercube via the probability integral
+    transform (PIT).
+    """
+
+    def _make_transform_2d(self):
+        """Create a 2D MVGaussianToUnitCube with non-trivial mean and covariance."""
+        mean = jnp.array([1.0, 2.0])
+        cov = jnp.array([[1.0, 0.5], [0.5, 2.0]])
+        names = ["a", "b"]
+        return (
+            MVGaussianToUnitCube(name_mapping=(names, names), mean=mean, cov=cov),
+            mean,
+            cov,
+            names,
+        )
+
+    def test_forward_output_in_unit_cube(self):
+        """forward() maps Gaussian samples into [0, 1]."""
+        t, mean, cov, names = self._make_transform_2d()
+        # Sample from the prior
+        rng = jax.random.PRNGKey(0)
+        L = jnp.linalg.cholesky(cov)
+        z = jax.random.normal(rng, (100, 2))
+        thetas = mean + z @ L.T
+
+        for i in range(len(thetas)):
+            sample = {"a": thetas[i, 0], "b": thetas[i, 1]}
+            u = t.forward(sample)
+            assert 0.0 < float(u["a"]) < 1.0
+            assert 0.0 < float(u["b"]) < 1.0
+
+    def test_round_trip_forward_backward(self):
+        """backward(forward(θ)) ≈ θ for any θ."""
+        t, mean, _, _ = self._make_transform_2d()
+        theta = {"a": 1.5, "b": 3.0}
+        u = t.forward(theta)
+        theta_back = t.backward(u)
+        assert float(theta_back["a"]) == pytest.approx(float(theta["a"]), abs=1e-6)
+        assert float(theta_back["b"]) == pytest.approx(float(theta["b"]), abs=1e-6)
+
+    def test_round_trip_backward_forward(self):
+        """forward(backward(ũ)) ≈ ũ for any ũ ∈ (0, 1)^2."""
+        t, _, _, _ = self._make_transform_2d()
+        u = {"a": 0.3, "b": 0.7}
+        theta = t.backward(u)
+        u_back = t.forward(theta)
+        assert float(u_back["a"]) == pytest.approx(float(u["a"]), abs=1e-6)
+        assert float(u_back["b"]) == pytest.approx(float(u["b"]), abs=1e-6)
+
+    def test_probability_integral_transform_identity(self):
+        """log p(θ) + log|J_backward(ũ)| = 0 (PIT property).
+
+        This is the key property for NS: the prior in unit-cube space is flat.
+        """
+        t, mean, cov, names = self._make_transform_2d()
+        prior = MultivariateGaussianPrior(parameter_names=names, mean=mean, cov=cov)
+
+        u = {"a": 0.4, "b": 0.6}
+        theta, log_jac = t.inverse(u)
+
+        log_p = prior.log_prob(theta)
+        pit_sum = float(log_p) + float(log_jac)
+        # The sum should be very close to 0 (flat density in unit-cube space)
+        assert pit_sum == pytest.approx(0.0, abs=1e-5)
+
+    def test_inverse_jacobian_finite(self):
+        """inverse() returns a finite log Jacobian determinant."""
+        t, _, _, _ = self._make_transform_2d()
+        u = {"a": 0.5, "b": 0.5}
+        _, log_jac = t.inverse(u)
+        assert jnp.isfinite(log_jac)
+
+    def test_standard_normal_case(self):
+        """MVGaussianToUnitCube with N(0, I) maps via element-wise Φ."""
+        names = ["x", "y"]
+        t = MVGaussianToUnitCube(
+            name_mapping=(names, names),
+            mean=jnp.zeros(2),
+            cov=jnp.eye(2),
+        )
+        # For N(0, I), forward is just element-wise Φ
+        # Φ(0) = 0.5
+        sample = {"x": 0.0, "y": 0.0}
+        u = t.forward(sample)
+        assert float(u["x"]) == pytest.approx(0.5, abs=1e-6)
+        assert float(u["y"]) == pytest.approx(0.5, abs=1e-6)
+
+    def test_4d_case_spectral_reparam(self):
+        """MVGaussianToUnitCube works for the 4D spectral reparametrization case."""
+        # Mimic the spectral reparam prior: 4 parameters, non-trivial cov
+        from jesterTOV.eos.spectral.spectral_decomposition import (
+            SpectralDecomposition_EOS_model,
+        )
+
+        model = SpectralDecomposition_EOS_model(reparametrized=True)
+        mean = model.REPARAM_MEAN
+        L = model.reparam_l_wide
+        cov = L @ L.T
+
+        names = ["gamma_0_tilde", "gamma_1_tilde", "gamma_2_tilde", "gamma_3_tilde"]
+        t = MVGaussianToUnitCube(name_mapping=(names, names), mean=mean, cov=cov)
+
+        # Sampling from the prior: z ~ N(0, I), theta = mean + L @ z
+        rng = jax.random.PRNGKey(42)
+        z = jax.random.normal(rng, (4,))
+        theta_arr = mean + L @ z
+        theta = {names[i]: theta_arr[i] for i in range(4)}
+
+        u = t.forward(theta)
+        # All values should be in (0, 1)
+        for name in names:
+            assert 0.0 < float(u[name]) < 1.0
+
+        # Round-trip
+        theta_back = t.backward(u)
+        for name in names:
+            assert float(theta_back[name]) == pytest.approx(
+                float(theta[name]), abs=1e-5
+            )
+
+        # PIT property
+        prior = MultivariateGaussianPrior(parameter_names=names, mean=mean, cov=cov)
+        u_test = {
+            "gamma_0_tilde": 0.4,
+            "gamma_1_tilde": 0.5,
+            "gamma_2_tilde": 0.6,
+            "gamma_3_tilde": 0.3,
+        }
+        theta_test, log_jac = t.inverse(u_test)
+        log_p = prior.log_prob(theta_test)
+        assert float(log_p) + float(log_jac) == pytest.approx(0.0, abs=1e-5)

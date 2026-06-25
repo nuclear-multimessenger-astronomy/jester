@@ -1,60 +1,46 @@
-# GW170817-only inference configuration with pre-sampled masses
-# SMC with Random Walk kernel for constraining EOS using GW data
-# This configuration demonstrates the new GWLikelihoodPresampled class
-# which eliminates the _random_key hack by pre-sampling masses at initialization
-
 seed: 43
-
-# Execution options
 dry_run: false
 validate_only: false
-
-# Transform configuration: MetaModel + CSE for high-density region
-transform:
-  type: "metamodel_cse"
+eos:
+  type: metamodel_cse
   ndat_metamodel: 100
   nmax_nsat: 25.0
   nb_CSE: 8
+  crust_name: DH
+tov:
   min_nsat_TOV: 0.75
   ndat_TOV: 100
   nb_masses: 100
-  crust_name: "DH"
-
-# Prior specification file
+  type: gr
 prior:
-  specification_file: "prior.prior"
-
-# Likelihood constraints (only GW170817 enabled with pre-sampling)
+  specification_file: prior.prior
 likelihoods:
-  - type: "constraints_eos"
-    enabled: true
-  - type: "gw"  # NEW: Pre-sampled masses for deterministic evaluation
-    enabled: true
-    parameters:
-      events:
-        - name: "GW170817"
-          # model_dir is optional - defaults to flow trained on XP-NRTv3 posterior samples
-          # To use a different flow, specify: model_dir: "/path/to/flow/model/"
-      penalty_value: -99999.0
-      N_masses_evaluation: 2000  # Large N recommended - cheap on GPU!
-      N_masses_batch_size: 1000   # Batch size for jax.lax.map
-      seed: 42                     # Fixed seed for mass pre-sampling
-
-# SMC configuration with Random Walk kernel
-# Aggressive settings for high-quality GW inference
+- type: constraints_eos
+  enabled: true
+- type: gw
+  enabled: true
+  events:
+  - name: GW170817
+  N_masses_evaluation: 2000
+  N_masses_batch_size: 1000
+  seed: 42
+- type: radio
+  enabled: true
+  pulsars:
+  - name: J1614-2230
+    mass_mean: 1.937
+    mass_std: 0.014
+  - name: J0740+6620
+    mass_mean: 2.08
+    mass_std: 0.07
 sampler:
-  type: "smc"
-  kernel_type: "random_walk"  # Gaussian random walk kernel with sigma adaptation
-  n_particles: 5000          # Number of particles for full inference (AGGRESSIVE)
-  n_mcmc_steps: 10            # MCMC steps per tempering level (AGGRESSIVE)
-  target_ess: 0.9             # Target effective sample size (90%)
-  random_walk_sigma: 0.05      # Initial sigma for Gaussian random walk
-  target_acceptance: 0.8      # Target acceptance rate (lower than NUTS)
-  adaptation_rate: 0.3        # Adaptation rate for sigma tuning
-  n_eos_samples: 5000         # Number of EOS samples to generate after inference
-  output_dir: "./outdir/"
-
-# Postprocessing configuration
+  type: smc-rw
+  n_particles: 5000
+  n_mcmc_steps: 10
+  target_ess: 0.9
+  random_walk_sigma: 0.05
+  n_eos_samples: 5000
+  output_dir: ./outdir/
 postprocessing:
   enabled: true
   make_cornerplot: true

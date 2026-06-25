@@ -1,6 +1,12 @@
 {
   "n_samples_total": 23138,
   "n_samples_used": 23138,
+  "parameter_names": [
+    "mass_1_source",
+    "mass_2_source",
+    "lambda_1",
+    "lambda_2"
+  ],
   "filepath": "../../../../../data/gw170817/gw170817_xp_nrtv3.npz",
   "flow_type": "masked_autoregressive_flow",
   "num_epochs": 3000,
@@ -8,16 +14,17 @@
   "max_patience": 500,
   "val_prop": 0.2,
   "standardize": true,
-  "data_bounds_min": [
-    1.3617526862243516,
-    1.0472121186077818,
-    0.012692507040011018,
-    0.048367459752170154
+  "standardization_method": "zscore",
+  "data_mean": [
+    1.4855487758396844,
+    1.2588596555350913,
+    356.9289799751767,
+    522.7166039694835
   ],
-  "data_bounds_max": [
-    1.805597753573829,
-    1.3697258647657622,
-    2606.8770775744206,
-    3550.6642365620446
+  "data_std": [
+    0.0798352690147062,
+    0.06345365966080248,
+    287.41164304138044,
+    390.7805736873307
   ]
 }

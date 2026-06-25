@@ -37,14 +37,14 @@ jobs:
         with:
           version: "latest"
 
-      - name: Install pandoc
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y pandoc
+          sudo apt-get install -y pandoc texlive-latex-base texlive-latex-extra dvipng cm-super
 
       - name: Install dependencies
         run: |
-          uv pip install --system -e ".[docs]"
+          uv pip install --system -e ".[dev]"
 
       - name: Build Sphinx documentation
         run: |

@@ -1,0 +1,24 @@
+{
+  "n_samples_total": 200947,
+  "n_samples_used": 40190,
+  "parameter_names": [
+    "mass",
+    "radius"
+  ],
+  "filepath": "../../../../../data/NICER/J06143329_amsterdam_ST_PDT_NICER_only_Dittmann2025.npz",
+  "flow_type": "masked_autoregressive_flow",
+  "num_epochs": 736,
+  "learning_rate": 0.0001,
+  "max_patience": 500,
+  "val_prop": 0.2,
+  "standardize": true,
+  "standardization_method": "zscore",
+  "data_mean": [
+    1.4435653299686608,
+    10.353659065633071
+  ],
+  "data_std": [
+    0.0643961851409974,
+    0.9303165909341613
+  ]
+}

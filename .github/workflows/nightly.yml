@@ -1,0 +1,91 @@
+name: Nightly CI
+
+on:
+  schedule:
+    # Run at 2 AM UTC daily
+    - cron: '0 2 * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  e2e-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60  # E2E tests may take longer
+
+    strategy:
+      matrix:
+        python-version: ["3.12"]  # Run on same Python version as devs for nightly
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v4
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y texlive-latex-base texlive-latex-extra dvipng cm-super
+
+    - name: Install dependencies
+      run: |
+        uv sync --frozen --extra dev
+
+    - name: Run E2E tests (including slow tests)
+      run: |
+        uv run pytest tests/test_inference/test_e2e/ -v --timeout=600
+
+    - name: Run full test suite with slow tests
+      run: |
+        uv run pytest tests/ -v --timeout=600
+
+  notebooks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v6
+      with:
+        python-version: "3.12"
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v4
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pandoc texlive-latex-base texlive-latex-extra dvipng cm-super
+
+    - name: Install dependencies
+      run: |
+        uv sync --frozen --extra dev
+
+    - name: Execute notebooks
+      run: |
+        shopt -s globstar
+        notebooks=(docs/examples/**/*.ipynb)
+        for nb in "${notebooks[@]}"; do
+          if [[ "$(basename $nb)" == "result.ipynb" ]]; then
+            echo "Skipping $nb (excluded from CI execution)"
+            continue
+          fi
+          echo "Executing $nb"
+          uv run jupyter nbconvert --to notebook --execute "$nb" \
+            --output "$(basename $nb .ipynb)_executed.ipynb" \
+            --output-dir /tmp/executed_notebooks \
+            --ExecutePreprocessor.timeout=600
+        done
+
+    - name: Upload executed notebooks
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: executed-notebooks
+        path: /tmp/executed_notebooks/

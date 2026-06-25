@@ -2,51 +2,127 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Important developer guidelines
+
+- You do not know everything about samplers. Instead of just doing something that "seems right", please ask more information about samplers and best practices. We can provide src code. *Better to ask for help than to make wrong assumptions and write sloppy code!*
+- **blackjax**: For this, the src code is available at `/Users/Woute029/Documents/Code/projects/jester_review/blackjax`: use this to understand how to properly use blackjax samplers and best practices!
+- **Postprocessing plot functions**: Every `make_*` plot function call in `generate_all_plots` (in `postprocessing/postprocessing.py`) **must** be wrapped in a `try/except Exception` block that logs the error and continues. This ensures a missing LaTeX installation or any other rendering failure does not abort the entire postprocessing run. The pattern is:
+  ```python
+  try:
+      make_my_plot(...)
+  except Exception as e:
+      logger.error(f"Failed to create my plot: {e}")
+      logger.warning("Continuing with other plots...")
+  ```
+
 ## Module Overview
 
 The `jesterTOV/inference/` module provides Bayesian inference for constraining neutron star equation of state (EOS) parameters using multi-messenger observations. It implements a modular, configuration-driven architecture with normalizing flow-enhanced MCMC sampling.
 
-**Status**: Fully functional - Modular architecture complete (Phases 1-7), data infrastructure in place, ready for production use
+### Key Concepts
 
-## Running Inference
+**Transforms**: Convert parameter spaces
+- Sample transforms: Applied during sampling with Jacobian (bijective)
+- Likelihood transforms: Applied before likelihood evaluation (N-to-M)
+- JESTER uses single unified `JesterTransform` class: NEP → M-R-Λ via EOS + TOV
+  - EOS classes know their required parameters
+  - TOV solvers know their required parameters
+  - Transform coordinates the full pipeline and validates parameters
 
-**ALWAYS use `uv` for Python commands:**
-
-Run inference with config file with venv in root jester directory activated:
-```bash
-run_jester_inference config.yaml
+**Priors**: Bilby-style Python syntax in `.prior` files
+```python
+K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
+L_sym = UniformPrior(10.0, 200.0, parameter_names=["L_sym"])
 ```
 
+**Samplers**: Four backends available
+- `type: "flowmc"` - Flow-enhanced MCMC (production ready)
+  - Normalizing flow guidance for efficient sampling
+  - Training + production phases
+- `type: "smc-rw"` - Sequential Monte Carlo with Random Walk kernel (production ready, **DEFAULT**)
+  - Gaussian Random Walk with sigma adaptation
+  - Target ESS: 0.9, ~10-30 MCMC steps per tempering level
+- `type: "smc-nuts"` - Sequential Monte Carlo with NUTS kernel (production ready)
+  - NUTS kernel with Hessian-based mass matrix adaptation
+  - More efficient for complex posteriors
+- `type: "blackjax-ns-aw"` - Nested Sampling with Acceptance Walk (experimental)
+  - For model comparison and evidence estimation
+  - Needs additional testing/fixes
+
+### Changing Default Values for Likelihood Parameters
+
+When a user asks to change a default value (e.g. `penalty_value`), update **all** of the following:
+
+1. **`likelihoods/<name>.py`** — `__init__` signature default(s) and docstring(s)
+2. **`config/schemas/likelihoods.py`** — `Field(default=...)` and any docstring YAML example
+3. **`docs/inference/yaml_reference.md`** — update the relevant field entry by hand
+4. **`examples/inference/**/config.yaml`** — remove or update the now-redundant explicit value
+5. **`tests/test_inference/test_config.py`** — update any assertion on the old default
+
+The factory (`likelihoods/factory.py`) passes `config.<field>` through, so no change needed there.
+
+### Inference Documentation
+- `docs/inference_index.md` - Navigation hub
+- `docs/inference_quickstart.md` - Quick start guide
+- `docs/inference.md` - Complete reference
+- `docs/inference/yaml_reference.md` - Hand-maintained YAML reference
+
+Full details in `jesterTOV/inference/CLAUDE.md`
+
+---
+
 ## Architecture
+
+### Testing inference locally
+
+The example in `examples/inference/smc_random_walk/chiEFT` finishes in less than 1 minute: good for testing some changes locally for inference/postprocessing.
 
 ### Modular Structure
 
 ```
 jesterTOV/inference/
 ├── config/              # YAML parsing and Pydantic validation
-│   ├── schema.py        # Configuration data models
-│   ├── parser.py        # YAML loading
-│   └── generate_yaml_reference.py  # Auto-generate docs
+│   ├── schema.py        # Thin aggregator: InferenceConfig + re-exports
+│   └── schemas/         # Domain-specific config sub-modules
+│       ├── eos.py       #   BaseEOSConfig + concrete EOS configs
+│       ├── tov.py       #   BaseTOVConfig + GRTOVConfig
+│       ├── likelihoods.py #  All likelihood configs (incl. GWEventConfig)
+│       └── samplers.py  #   All sampler configs
+│   └── parser.py        # YAML loading
 ├── priors/              # Prior specification system
 │   └── parser.py        # Parse .prior files (bilby-style Python format)
-├── transforms/          # EOS parameter transforms
-│   ├── base.py          # JesterTransformBase ABC
-│   ├── metamodel.py     # MetaModel transform (NEP → M-R-Λ)
-│   └── metamodel_cse.py # MetaModel + CSE extension
+├── flows/               # Normalizing flow utilities for GW likelihoods
+│   ├── bilby_extract.py # Extract GW posteriors from bilby HDF5 results (+ CLI)
+│   ├── config.py        # FlowTrainingConfig Pydantic model
+│   ├── train_flow.py    # Flow training entry point
+│   ├── flow.py          # Flow model definition
+│   └── __init__.py      # Exports Flow, load_model, extract_gw_posterior_from_bilby
+├── transforms/          # Unified transform system
+│   ├── transform.py     # JesterTransform - single class for all EOS+TOV combinations
+│   └── __init__.py      # Exports JesterTransform
 ├── likelihoods/         # Observational constraints
-│   ├── gw.py            # Gravitational wave events
-│   ├── nicer.py         # X-ray timing observations
-│   ├── radio.py         # Radio pulsar timing
-│   ├── chieft.py        # Chiral EFT constraints
-│   ├── rex.py           # PREX/CREX experiments
-│   ├── combined.py      # Combined likelihood
-│   └── factory.py       # Likelihood creation
+│   ├── gw.py            # Gravitational wave events (GW170817, GW190425)
+│   ├── nicer.py         # X-ray timing (J0030, J0740, B0437)
+│   ├── radio.py         # Radio pulsar timing (FIDUCEO/FIDUCEO2)
+│   ├── chieft.py        # Chiral EFT low-density constraints
+│   ├── rex.py           # PREX/CREX neutron skin experiments
+│   ├── constraints.py   # Physical constraints (EOS/TOV/Gamma)
+│   ├── combined.py      # CombinedLikelihood wrapper
+│   └── factory.py       # Likelihood creation from config
 ├── data/                # Data loading and preprocessing
-│   ├── __init__.py      # Data loading functions (NICER, GW posteriors)
-│   └── paths.py         # Path management
+│   ├── __init__.py      # Data loading functions (NICER, GW posteriors, ChiEFT)
+│   └── paths.py         # Path management and Zenodo caching
 ├── samplers/            # Sampler implementations
-│   ├── jester_sampler.py  # Base sampler class
-│   └── flowmc.py        # flowMC backend setup
+│   ├── jester_sampler.py  # Base JesterSampler + SAMPLER_REGISTRY
+│   ├── flowmc.py        # FlowMC backend
+│   └── blackjax/        # BlackJAX backends
+│       ├── base.py      # BlackjaxSampler base class
+│       ├── smc/         # Sequential Monte Carlo framework
+│       │   ├── base.py  # BlackjaxSMCSampler
+│       │   ├── random_walk.py  # SMC-RW (production ready)
+│       │   └── nuts.py  # SMC-NUTS (production ready)
+│       └── nested_sampling/
+│           └── ns_aw.py # NS with Acceptance Walk (experimental)
 ├── base/                # Base classes (copied from Jim v0.2.0)
 │   ├── likelihood.py    # LikelihoodBase ABC
 │   ├── prior.py         # Prior, CombinePrior, UniformPrior
@@ -58,24 +134,195 @@ jesterTOV/inference/
 ### Execution Flow
 
 ```
-config.yaml → Pydantic validation
-  ↓
-Parse .prior file → CombinePrior object
-  ↓
-Create transform (factory) → JesterTransformBase
-  ↓
-Load data (NICER/GW posteriors, construct KDEs)
-  ↓
-Create likelihoods (factory) → CombinedLikelihood
-  ↓
-Setup flowMC sampler → JesterSampler wrapper
-  ↓
-MCMC sampling (training + production)
-  ↓
-Save results → outdir/results_production.npz
-  ↓
-Generate EOS samples → outdir/eos_samples.npz
+config.yaml + prior.prior
+    ↓
+parse_config() → InferenceConfig (Pydantic validated)
+    ↓
+parse_prior_file() → ParsedPrior(prior: CombinePrior, fixed_params: dict)
+    ↓
+JesterTransform.from_config(config.eos, config.tov)
+  ├─ Instantiate EOS (MetaModel/MetaModelCSE/Spectral)
+  └─ Instantiate TOV solver (GR/Anisotropy)
+    ↓
+Validate parameters
+  ├─ Check all required EOS params in prior → raise error if missing
+  └─ Check all required TOV params in prior → warn if unused
+    ↓
+prepare_gw_flows(config, outdir)   # no-op unless from_bilby_result events exist
+  ├─ Extract NPZ from bilby HDF5 (jester_extract_gw_posterior_bilby)
+  ├─ Train normalizing flow (FlowTrainingConfig + train_flow_from_config)
+  ├─ Hash-based cache: skip training if flow unchanged (flow_config_hash.json)
+  └─ Return updated config with resolved nf_model_dir for each event
+    ↓
+Load data (NICER, GW posteriors, ChiEFT, etc.)
+  ├─ Cache downloads from Zenodo
+  └─ Construct KDEs for GW posteriors
+    ↓
+create_likelihood() → CombinedLikelihood
+  ├─ Individual likelihoods from factory
+  └─ Equal weighting (1/N_likelihoods per likelihood)
+    ↓
+create_sampler() → Sampler from SAMPLER_REGISTRY
+  ├─ FlowMCSampler (flowmc)
+  ├─ BlackJAXSMCRandomWalkSampler (smc-rw)
+  ├─ BlackJAXSMCNUTSSampler (smc-nuts)
+  └─ BlackJAXNSAWSampler (blackjax-ns-aw)
+    ↓
+sampler.sample(prng_key) → SamplerOutput
+  ├─ samples: dict[str, Array]
+  ├─ log_prob: Array
+  └─ metadata: dict[str, Any] (ESS, weights, acceptance rates, etc.)
+    ↓
+InferenceResult.from_sampler() → HDF5 format
+  ├─ posterior (parameters + derived EOS quantities)
+  ├─ metadata (config + run statistics)
+  └─ histories (diagnostics: log_prob, ESS, etc.)
+    ↓
+Save to outdir/{result_id}.h5
 ```
+
+### EOS/TOV Architecture
+
+**Key Design Principle**: Modular separation of concerns
+
+1. **EOS Classes** (`jesterTOV/eos/`):
+   - Base: `Interpolate_EOS_model` (abstract base class)
+   - Available models:
+     - `MetaModel_EOS_model` - Nuclear empirical parameters (9 NEPs)
+       - Reference: Margueron et al. (PRD 103, 045803, 2021)
+       - Required: E_sat, K_sat, Q_sat, Z_sat, E_sym, L_sym, K_sym, Q_sym, Z_sym
+       - Crust options: BPS, DH, SLy
+     - `MetaModel_with_CSE_EOS_model` - MetaModel + crust-core-saturation extension
+       - Required: 9 NEPs + nbreak + nb_CSE grid parameters (typically 4-8)
+     - `SpectralDecomposition_EOS_model` - Spectral representation
+       - Reference: Lindblom 2010 (PRD 82, 103011)
+       - Required: gamma_0, gamma_1, gamma_2, gamma_3
+       - Uses 10-point Gauss-Legendre quadrature
+   - Each implements:
+     - `construct_eos(params: dict) -> EOSData` - Build EOS from parameters
+     - `get_required_parameters() -> list[str]` - List parameter names
+
+2. **TOV Solvers** (`jesterTOV/tov/`):
+   - Base: `TOVSolverBase` (abstract base class)
+   - Available solvers:
+     - `GRTOVSolver` - General Relativity
+       - Standard TOV equations, no additional parameters
+       - Uses Dopri5 (Dormand-Prince 5th order)
+     - `AnisotropyTOVSolver` - Beyond-GR modifications
+       - Phenomenological sigma terms (Yagi & Yunes 2013)
+       - Models: Bowers-Liang, Doneva-Yazadjiev, Herrera-Barreto, Post-Newtonian
+       - Required: coupling constants (lambda_BL, lambda_DY, etc.)
+     - `ScalarTensorTOVSolver` - Scalar-tensor gravity
+       - Jordan frame (Brown 2023, ApJ 958 125)
+       - Required: beta_ST, phi_c, nu_c
+   - Each implements:
+     - `solve(eos_data, pc, tov_params: dict) -> TOVSolution` - Single star
+     - `construct_family(eos_data, ndat, min_nsat, tov_params: dict) -> FamilyData` - M-R-Λ family
+     - `get_required_parameters() -> list[str]` - List additional parameters
+   - Key features:
+     - Uses Diffrax ODE solver with adaptive step size
+     - Computes Love number k2 for tidal deformability
+     - Parallelized via `jax.vmap()` over central pressures
+
+3. **JAX Dataclasses** (`jesterTOV/tov/data_classes.py`):
+   - All use NamedTuple for automatic JAX pytree compatibility
+   - `EOSData` - EOS quantities (8 fields)
+     - ns, ps, hs, es, dloge_dlogps, cs2, mu (optional), extra_constraints (optional)
+   - `TOVSolution` - Single star solution
+     - M (mass), R (radius), k2 (Love number)
+   - `FamilyData` - M-R-Λ family curves
+     - log10pcs, masses (M☉), radii (km), lambdas (dimensionless)
+
+4. **JesterTransform** (`jesterTOV/inference/transforms/transform.py`):
+   - Single unified class for all EOS+TOV combinations
+   - Created via `JesterTransform.from_config(config)`
+   - Coordinates: params → EOS.construct_eos() → TOV.construct_family() → observables
+   - Validates: all required params are in prior (raises error if missing)
+   - Logs warning: if prior contains unused parameters
+
+**JAX Compatibility Requirements**:
+- No Python `if` statements on traced values (use `jnp.where()`)
+- No `float()` casts on traced arrays
+- Dataclasses must be JAX pytrees (use NamedTuple, not @dataclass)
+
+### Parameter Validation
+
+**Automatic validation at transform setup** (in `run_inference.py`):
+
+After creating `JesterTransform`, the code validates that all required parameters are present in the prior:
+
+```python
+transform = JesterTransform.from_config(config.eos, config.tov, ...)
+required_params = set(transform.get_parameter_names())
+prior_params = set(prior.parameter_names)
+
+# Check for missing parameters
+missing_params = required_params - prior_params
+if missing_params:
+    raise ValueError(
+        f"Transform with EOS = {eos_name} and TOV = {tov_name} is missing "
+        f"params = {sorted(missing_params)} from the prior file"
+    )
+
+# Warn about unused parameters
+unused_params = prior_params - required_params
+if unused_params:
+    logger.warning(f"Prior contains unused parameters: {sorted(unused_params)}")
+```
+
+**Benefits**:
+- Catch configuration errors before sampling starts (fail-fast)
+- Clear error messages identifying which parameters are missing
+- Helpful for debugging when switching between EOS types
+
+**Tests**: See `tests/test_inference/test_transform_validation.py` for unit tests
+
+### Sampler Architecture
+
+**Base Class: JesterSampler** (`samplers/jester_sampler.py`)
+- Handles parameter transforms (sample + likelihood)
+- Manages posterior evaluation with Jacobian corrections
+- Provides standardized `SamplerOutput` interface
+
+**Sampler Registry:**
+```python
+SAMPLER_REGISTRY = {
+    "flowmc": FlowMCSampler,
+    "smc-rw": BlackJAXSMCRandomWalkSampler,
+    "smc-nuts": BlackJAXSMCNUTSSampler,
+    "blackjax-ns-aw": BlackJAXNSAWSampler,
+}
+```
+
+**BlackJAX Sampler Hierarchy:**
+```
+JesterSampler (base)
+    ├─ FlowMCSampler (flowmc.py)
+    └─ BlackjaxSampler (blackjax/base.py) - Shared transform logic
+        ├─ BlackjaxSMCSampler (blackjax/smc/base.py) - SMC framework
+        │   ├─ BlackJAXSMCRandomWalkSampler (blackjax/smc/random_walk.py)
+        │   └─ BlackJAXSMCNUTSSampler (blackjax/smc/nuts.py)
+        └─ BlackJAXNSAWSampler (blackjax/nested_sampling/ns_aw.py)
+```
+
+**SamplerOutput Structure:**
+```python
+class SamplerOutput:
+    samples: dict[str, Array]        # Parameter samples (N_samples × N_params)
+    log_prob: Array                  # Log probability (posterior for MCMC, likelihood for NS)
+    metadata: dict[str, Any]         # Sampler-specific data
+```
+
+**Metadata Contents** (sampler-specific):
+- **SMC samplers**: ESS (effective sample size), acceptance rates, weights, tempering schedule
+- **FlowMC**: flow training history, MCMC acceptance rates
+- **Nested sampling**: evidence (log Z), evidence error, iteration counts
+
+**Key Design Features:**
+- Automatic transform application (prior → sampling space)
+- Jacobian correction for bijective transforms
+- JAX-compatible (JIT compilation, vmap, grad)
+- Deterministic sampling via `jax.random.PRNGKey`
 
 ## Configuration System
 
@@ -84,35 +331,71 @@ Generate EOS samples → outdir/eos_samples.npz
 Configuration files use YAML with Pydantic validation. See `examples/inference/*/config.yaml` for examples.
 
 **Key sections:**
-- `seed`: Random seed for reproducibility
-- `transform`: EOS transform configuration (MetaModel or MetaModel+CSE)
-- `prior`: Path to `.prior` specification file
-- `likelihoods`: List of observational constraints to include
-- `sampler`: MCMC sampler parameters (chains, loops, learning rate)
-- `data_paths`: Override default data file locations
+- `seed`: Random seed for reproducibility (JAX PRNGKey)
+- `transform`: EOS transform configuration
+  - `type`: EOS model (metamodel, metamodel_cse, spectral)
+  - `nb_CSE`: Number of CSE parameters (only for metamodel_cse)
+  - `type`: TOV solver type (gr, anisotropy, scalar_tensor)
+  - Grid parameters: ndat, min_nsat, etc.
+- `prior`: Path to `.prior` specification file (bilby-style Python)
+- `likelihoods`: List of observational constraints (discriminated union)
+  - Available types: gw, gw_resampled, nicer, radio, chieft, rex, eos_constraints, tov_constraints, gamma_constraints, zero
+  - Each likelihood has `enabled` flag and type-specific parameters
+- `sampler`: Sampler configuration (discriminated union by type)
+  - FlowMC: n_chains, n_loop_training, n_loop_production, learning_rate, etc.
+  - SMC-RW: n_particles, n_mcmc_steps, target_ess, etc.
+  - SMC-NUTS: n_particles, n_mcmc_steps, target_ess, etc.
+  - NS-AW: n_live_points, max_samples, etc.
+- `data_paths`: Override default data file locations (optional)
+- `outdir`: Output directory for results (default: "outdir")
 
-**IMPORTANT**: When modifying `config/schema.py`, regenerate YAML documentation:
-```bash
-uv run python -m jesterTOV.inference.config.generate_yaml_reference
-```
+**Likelihood Types** (defined in `config/schemas/likelihoods.py`, re-exported from `config/schema.py`):
+1. `GWLikelihoodConfig` - Gravitational wave events (pre-sampled)
+   - `events`: list of `GWEventConfig` objects — two modes per event:
+     - **Pre-trained flow** (default): set `nf_model_dir` to a trained flow directory, or omit to use a built-in preset
+     - **From bilby result**: set `from_bilby_result` to a bilby HDF5 path; jester extracts posterior samples and trains a flow automatically via `prepare_gw_flows()` in `run_inference.py`
+   - `GWEventConfig` fields: `name` (required), `nf_model_dir`, `from_bilby_result`, `flow_config`, `retrain_flow`
+   - `from_bilby_result` and `nf_model_dir` are mutually exclusive; `flow_config`/`retrain_flow` only valid with `from_bilby_result`
+2. `GWResampledLikelihoodConfig` - GW with resampling during MCMC
+3. `NICERLikelihoodConfig` - X-ray timing
+   - sources: list of sources (e.g., ["J0030", "J0740"])
+4. `RadioLikelihoodConfig` - Radio pulsar timing
+   - database: "FIDUCEO" or "FIDUCEO2"
+5. `ChiEFTLikelihoodConfig` - Chiral EFT constraints
+   - nb_n: number of density points
+6. `REXLikelihoodConfig` - PREX/CREX neutron skin
+7. `EOSConstraintsLikelihoodConfig` - EOS physical validity (causality, stability)
+8. `TOVConstraintsLikelihoodConfig` - TOV solver success
+9. `GammaConstraintsLikelihoodConfig` - Spectral gamma bounds
+10. `ZeroLikelihoodConfig` - Prior-only sampling (no data)
+
+**IMPORTANT**: When modifying any file under `config/schemas/`, update `docs/inference/yaml_reference.md` by hand to keep the user documentation in sync.
 
 ### Prior Specification
 
-Priors are specified in `.prior` files using bilby-style Python syntax:
+Priors are specified in `.prior` files using bilby-style Python syntax: (note: the following example is specific for `metamodel` or `metamodel_cse`)
 
 ```python
-# Nuclear Empirical Parameters
+# Nuclear Empirical Parameters (required for MetaModel/MetaModelCSE)
+E_sat = UniformPrior(-16.1, -15.9, parameter_names=["E_sat"])
 K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
+Q_sat = UniformPrior(-500.0, 1100.0, parameter_names=["Q_sat"])
+Z_sat = UniformPrior(-2500.0, 1500.0, parameter_names=["Z_sat"])
+E_sym = UniformPrior(28.0, 45.0, parameter_names=["E_sym"])
 L_sym = UniformPrior(10.0, 200.0, parameter_names=["L_sym"])
+K_sym = UniformPrior(-400.0, 200.0, parameter_names=["K_sym"])
+Q_sym = UniformPrior(-1000.0, 1500.0, parameter_names=["Q_sym"])
+Z_sym = UniformPrior(-2000.0, 1500.0, parameter_names=["Z_sym"])
 
-# CSE breaking density (only if nb_CSE > 0)
+# CSE breaking density (for metamodel_cse transform only)
 nbreak = UniformPrior(0.16, 0.32, parameter_names=["nbreak"])
 ```
 
-The parser automatically:
-- Includes NEP parameters (`_sat` and `_sym` suffixes)
-- Includes `nbreak` only if `nb_CSE > 0` in config
-- Adds CSE grid parameters programmatically if `nb_CSE > 0`
+**Important notes**:
+- All 9 NEP parameters must be present for MetaModel/MetaModelCSE EOS types
+- E_sat is now a free parameter (no longer fixed to -16.0 by default)
+- CSE grid parameters (p_0, ..., p_N) are added programmatically if `nb_CSE > 0`
+- Parameter validation will raise an error if any required parameter is missing from prior
 
 ## Key Design Principles
 
@@ -123,59 +406,182 @@ Transforms convert between parameter spaces. Two types:
 1. **Sample Transforms** (BijectiveTransform):
    - Applied during sampling with Jacobian corrections
    - Must be invertible (1-to-1 mapping)
+   - Examples: LogitTransform for bounded parameters
 
 2. **Likelihood Transforms** (NtoMTransform):
    - Applied before likelihood evaluation
    - Can be N-to-M mapping (e.g., NEP → M-R-Λ curves)
    - No Jacobian corrections
-
-**JESTER uses likelihood transforms**: NEP parameters → Mass-Radius-Tidal deformability curves via TOV solver.
-
-### Base Classes (jimgw Independence)
-
-The `base/` module contains copies of Jim v0.2.0 base classes to remove dependency on jimgw. This gives JESTER full control over interfaces and bug fixes.
-
-**Current dependencies from base/**:
-- `LikelihoodBase` - Abstract base class for likelihoods
-- `Prior`, `CombinePrior`, `UniformPrior` - Prior system
-- `NtoMTransform`, `BijectiveTransform` - Transform interfaces
-
-**Goal**: Keep flowMC as the only external sampler dependency.
+   - **JesterTransform is the single unified likelihood transform**:
+     - Handles all EOS types (metamodel, metamodel_cse, spectral)
+     - Handles all TOV solver types (gr, anisotropy, scalar_tensor)
+     - Use `JesterTransform.from_config(config)` to instantiate
 
 ### Sampler Architecture
 
-`JesterSampler` is a lightweight wrapper around flowMC that handles:
-- Posterior evaluation with transform Jacobians
-- Parameter name propagation through transforms
-- Converting between named dicts and arrays
-- Generic sampling interface
-
-**Critical bug fixes in JesterSampler**:
-- Uses `jnp.inf` instead of `jnp.nan` for initialization (avoids NaN propagation)
-- Preserves parameter ordering when converting dict → array
-
-**Critical prior handling for blackjax-ns-aw**:
-- The blackjax-ns-aw sampler requires a flat `CombinePrior` structure (list of `UniformPrior` only)
-- When adding `_random_key` prior for GW/NICER likelihoods, the code flattens the structure to avoid nested `CombinePrior` objects
-- See `run_inference.py:125` for implementation
+`JesterSampler` is a base class, with subclasses for different sampler algorithms implemented as subclasses of `JesterSampler`.
 
 ## Common Development Tasks
 
 ### Adding a New Likelihood
 
-1. Create new file in `likelihoods/` inheriting from `LikelihoodBase`
-2. Implement `evaluate(params, data)` method
-3. Add likelihood type to `likelihoods/factory.py`
-4. Add type to `config/schema.py` LikelihoodConfig
-5. Regenerate YAML docs: `uv run python -m jesterTOV.inference.config.generate_yaml_reference`
+1. **Create likelihood class** in `likelihoods/` inheriting from `LikelihoodBase`
+   ```python
+   from jesterTOV.inference.base.likelihood import LikelihoodBase
 
-### Adding a New Transform
+   class MyNewLikelihood(LikelihoodBase):
+       def evaluate(self, params: dict, data: Any) -> float:
+           """Compute log probability for parameters."""
+           # Your implementation here
+           return log_prob
+   ```
 
-1. Create new file in `transforms/` inheriting from `JesterTransformBase`
-2. Implement `forward(params)` method
-3. Add transform type to `transforms/factory.py`
-4. Add type to `config/schema.py` TransformConfig
-5. Regenerate YAML docs
+2. **Add Pydantic config model** to `config/schema.py`:
+   ```python
+   class MyNewLikelihoodConfig(BaseModel):
+       type: Literal["my_new_likelihood"]
+       enabled: bool = True
+       # Add your likelihood-specific parameters here
+       param1: float
+       param2: int
+   ```
+
+3. **Update LikelihoodConfig discriminated union** in `config/schema.py`:
+   ```python
+   LikelihoodConfig = Annotated[
+       Union[
+           # ... existing configs ...
+           MyNewLikelihoodConfig,
+       ],
+       Field(discriminator="type"),
+   ]
+   ```
+
+4. **Add to factory** in `likelihoods/factory.py`:
+   ```python
+   elif config.type == "my_new_likelihood":
+       from .my_new import MyNewLikelihood
+       data = load_my_data()  # If needed
+       likelihood = MyNewLikelihood(data)
+   ```
+
+5. **Update YAML docs**: Open `docs/inference/yaml_reference.md` and add an entry for your new likelihood type under the appropriate category.
+
+6. **Add tests** in `tests/test_inference/test_likelihoods.py`
+
+### Adding a New EOS Model
+
+**Steps**:
+1. **Create EOS class** in `jesterTOV/eos/` inheriting from `Interpolate_EOS_model`
+   ```python
+   from jesterTOV.eos.base import Interpolate_EOS_model
+   from jesterTOV.tov.data_classes import EOSData
+
+   class MyNewEOS(Interpolate_EOS_model):
+       def construct_eos(self, params: dict[str, float]) -> EOSData:
+           """Build EOS from parameters."""
+           # Your implementation here
+           return EOSData(ns=..., ps=..., hs=..., es=..., ...)
+
+       def get_required_parameters(self) -> list[str]:
+           """Return list of required parameter names."""
+           return ["param1", "param2", ...]
+   ```
+
+2. **Add to JesterTransform factory** in `transforms/transform.py` with an `isinstance` check:
+   ```python
+   from jesterTOV.inference.config.schema import ..., MyNewEOSConfig
+
+   def _create_eos(config: BaseEOSConfig, ...) -> Interpolate_EOS_model:
+       ...
+       elif isinstance(config, MyNewEOSConfig):
+           from jesterTOV.eos.my_new import MyNewEOS
+           return MyNewEOS(...)
+       else:
+           raise ValueError(f"Unknown EOS config type: {type(config).__name__}")
+   ```
+
+3. **Add config class** to `config/schemas/eos.py` and extend the `EOSConfig` union.
+   Inherit from `BaseEOSConfig` (any EOS, has `crust_name`) or `BaseMetamodelEOSConfig`
+   (metamodel-based, also has `ndat_metamodel`, `nmax_nsat`, `nmin_MM_nsat`):
+   ```python
+   class MyNewEOSConfig(BaseEOSConfig):
+       type: Literal["my_new_eos"] = "my_new_eos"
+       # EOS-specific fields
+
+   EOSConfig = Annotated[
+       Union[MetamodelEOSConfig, MetamodelCSEEOSConfig, SpectralEOSConfig, MyNewEOSConfig],
+       Discriminator("type"),
+   ]
+   ```
+
+4. **Update YAML docs** (`docs/inference/yaml_reference.md`) and **add tests**
+
+**No need to create new transform classes** - `JesterTransform` handles all EOS × TOV combinations automatically!
+
+### Adding a New TOV Solver
+
+**Steps**:
+1. **Create solver class** in `jesterTOV/tov/` inheriting from `TOVSolverBase`
+   ```python
+   from jesterTOV.tov.base import TOVSolverBase
+   from jesterTOV.tov.data_classes import EOSData, TOVSolution, FamilyData
+
+   class MyNewTOVSolver(TOVSolverBase):
+       def solve(self, eos_data: EOSData, pc: float,
+                 tov_params: dict[str, float]) -> TOVSolution:
+           """Solve TOV for single central pressure."""
+           # Your implementation here
+           return TOVSolution(M=..., R=..., k2=...)
+
+       def construct_family(self, eos_data: EOSData, ndat: int,
+                           min_nsat: float,
+                           tov_params: dict[str, float]) -> FamilyData:
+           """Build M-R-Λ family curves."""
+           # Usually uses jax.vmap over self.solve
+           return FamilyData(log10pcs=..., masses=..., radii=..., lambdas=...)
+
+       def get_required_parameters(self) -> list[str]:
+           """Return list of additional parameters (e.g., coupling constants)."""
+           return ["coupling1", "coupling2", ...]
+   ```
+
+2. **Add to JesterTransform factory** in `transforms/transform.py` with an `isinstance` check:
+   ```python
+   from jesterTOV.inference.config.schema import BaseTOVConfig, GRTOVConfig, MyNewTOVConfig
+
+   def _create_tov_solver(config: BaseTOVConfig) -> TOVSolverBase:
+       if isinstance(config, GRTOVConfig):
+           return GRTOVSolver()
+       elif isinstance(config, MyNewTOVConfig):
+           from jesterTOV.tov.my_new import MyNewTOVSolver
+           return MyNewTOVSolver(...)
+       else:
+           raise ValueError(f"Unknown TOV config type: {type(config).__name__}")
+   ```
+
+3. **Add config class** to `config/schemas/tov.py`, re-export it from `config/schema.py` and `config/__init__.py`, and extend the `TOVConfig` union:
+   ```python
+   class MyNewTOVConfig(BaseTOVConfig):
+       type: Literal["my_new_solver"] = "my_new_solver"  # type: ignore[override]
+       # Solver-specific fields
+
+   TOVConfig = Annotated[
+       Union[GRTOVConfig, MyNewTOVConfig],
+       Discriminator("type"),
+   ]
+   ```
+
+4. **Update YAML docs** (`docs/inference/yaml_reference.md`) and **add tests**
+
+### Adding a New Sampler
+
+1. **Create sampler class** in `samplers/` inheriting from `JesterSampler`
+2. Implement `sample(prng_key, n_samples, ...) -> SamplerOutput`
+3. Add to `SAMPLER_REGISTRY` in `samplers/jester_sampler.py`
+4. Add Pydantic config to `config/schema.py`
+5. Update `SamplerConfig` discriminated union
+6. Update `docs/inference/yaml_reference.md` and add tests
 
 ### Testing Configuration Changes
 
@@ -185,9 +591,6 @@ uv run run_jester_inference config.yaml --validate-only
 
 # Dry run (setup without sampling)
 uv run run_jester_inference config.yaml --dry-run
-
-# Quick test with minimal sampling
-uv run run_jester_inference config.yaml  # Edit config: n_chains=2, n_loop_training=1
 ```
 
 ## Important Notes
@@ -204,35 +607,81 @@ For debugging NaN issues, uncomment:
 jax.config.update("jax_debug_nans", True)
 ```
 
-### flowMC Data Argument
+### Type Safety with JAX
 
-Likelihood signature is `likelihood.evaluate(params, data)`. In JESTER, observational data is encapsulated within likelihood objects, so **always pass an empty dict `{}`** as the data argument, not `None`.
+**Common type ignore patterns** (required due to JAX tracing limitations):
 
-### Output Files
+```python
+# vmap batches scalar NamedTuple fields → arrays
+masses: Float[Array, "n"] = solutions.M  # type: ignore[assignment]
 
-Inference produces two output files in `outdir/`:
-- `results_production.npz` - All sampled parameters and log probabilities
-- `eos_samples.npz` - Subset with full EOS curves (Mass, Radius, Lambda)
+# Diffrax with throw=False guarantees ys populated
+R = sol.ys[0][-1]  # type: ignore[index]
 
-### Known Issues
+# MetaModel guarantees mu populated (but type system sees Optional)
+mu: Float[Array, "n"] = eos_data.mu  # type: ignore[assignment]
+# TODO: Consider restructuring Interpolate_EOS_model to make mu non-optional
+```
 
-**Prior-only sampling with ZeroLikelihood** (December 2024) - ✅ RESOLVED:
-- **Issue**: NaN log probabilities and 0% acceptance rates in prior-only sampling
-- **Root cause**: Identified and fixed in sampler implementation
-- **Status**: Prior-only sampling now works correctly with ZeroLikelihood
+**Anti-pattern:** NEVER use runtime assertions in JAX-traced code (fails during tracing). Use type ignore with explanatory comments instead.
 
-**Nested CombinePrior with blackjax-ns-aw** (December 2024) - ✅ RESOLVED:
-- **Issue**: ValueError when using blackjax-ns-aw with GW or NICER likelihoods: "BlackJAX NS-AW requires UniformPrior components, got CombinePrior"
-- **Root cause**: When adding `_random_key` prior for GW/NICER likelihoods, the code wrapped an existing `CombinePrior` inside another `CombinePrior`, creating nested structure
-- **Fix**: Modified `run_inference.py:125` to flatten the structure: `CombinePrior(prior.base_prior + [random_key_prior])` instead of `CombinePrior([prior, random_key_prior])`
-- **Status**: blackjax-ns-aw now works correctly with all likelihood combinations
+## Result Storage System
+
+**InferenceResult Class** (`result.py`):
+- HDF5-based storage format for inference results
+- Standardized interface for all sampler types
+- Includes posterior samples, metadata, and diagnostics
+
+**Storage Structure:**
+```
+outdir/{result_id}.h5
+├─ posterior/               # Parameter samples + derived quantities
+│  ├─ <param_name>         # Each parameter as separate dataset
+│  └─ log_prob             # Log probability values
+├─ metadata/               # Run configuration and statistics
+│  ├─ config               # Original YAML config (string)
+│  ├─ sampler_type         # Sampler used
+│  ├─ n_samples            # Number of samples
+│  └─ run_statistics       # ESS, acceptance rates, etc.
+└─ histories/              # Diagnostics (optional)
+   ├─ log_prob_history     # Evolution during sampling
+   └─ ess_history          # ESS over iterations (for SMC)
+```
+
+**Key Methods:**
+```python
+# Create from sampler output
+result = InferenceResult.from_sampler(
+    sampler_output=output,
+    config=config,
+    prior=prior,
+)
+
+# Save to HDF5
+result.save(outdir / "result.h5")
+
+# Load from HDF5
+result = InferenceResult.load(outdir / "result.h5")
+
+# Access data
+samples = result.posterior["K_sat"]
+log_prob = result.posterior["log_prob"]
+metadata = result.metadata
+```
+
+**Benefits:**
+- Portable: HDF5 is language-agnostic, readable by Python, Julia, R, etc.
+- Efficient: Compressed storage, fast I/O for large arrays
+- Standardized: Consistent format across all sampler types
+- Self-documenting: Includes full config and metadata
 
 ## File Naming Conventions
 
 - Configuration: `config.yaml`
 - Prior specification: `prior.prior` (Python syntax)
-- Example configs: `examples/inference/<use_case>/config.yaml`
-- Output results: `outdir/results_production.npz`, `outdir/eos_samples.npz`
+- Example configs: `examples/inference/<sampler_type>/<use_case>/config.yaml`
+- Output results: `outdir/{result_id}.h5` (HDF5 format)
+  - Legacy: `outdir/results_production.npz`, `outdir/eos_samples.npz` (deprecated)
 
 ## Parent Project Context
 

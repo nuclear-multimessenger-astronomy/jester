@@ -19,7 +19,9 @@ from jesterTOV.logging_config import get_logger
 
 logger = get_logger("jester")
 
-SamplerType = Literal["flowmc", "blackjax_smc", "blackjax_ns_aw"]
+SamplerType = Literal[
+    "flowmc", "blackjax_smc_rw", "blackjax_smc_nuts", "blackjax_ns_aw"
+]
 
 
 class InferenceResult:
@@ -34,7 +36,7 @@ class InferenceResult:
     Attributes
     ----------
     sampler_type : SamplerType
-        Sampler backend type ("flowmc", "blackjax_smc", or "blackjax_ns_aw")
+        Sampler backend type ("flowmc", "blackjax_smc_rw", "blackjax_smc_nuts", or "blackjax_ns_aw")
     posterior : Dict[str, np.ndarray]
         All posterior samples including parameters, derived quantities, and sampler-specific data
     metadata : Dict[str, Any]
@@ -63,6 +65,7 @@ class InferenceResult:
         posterior: Dict[str, np.ndarray],
         metadata: Dict[str, Any],
         histories: Dict[str, np.ndarray] | None = None,
+        fixed_params: Dict[str, float] | None = None,
     ):
         """Initialize InferenceResult.
 
@@ -76,11 +79,17 @@ class InferenceResult:
             Sampler configuration and run statistics
         histories : Dict[str, np.ndarray] | None, optional
             Time-series histories for diagnostics
+        fixed_params : Dict[str, float] | None, optional
+            Parameters that were pinned to constant values during inference.
+            E.g. ``{"lambda_BL": 0.0, "lambda_DY": 0.0}``.
         """
         self.sampler_type = sampler_type
         self.posterior = posterior
         self.metadata = metadata
         self.histories = histories
+        self.fixed_params: Dict[str, float] = (
+            fixed_params if fixed_params is not None else {}
+        )
 
     @classmethod
     def from_sampler(
@@ -88,6 +97,7 @@ class InferenceResult:
         sampler: JesterSampler,
         config: InferenceConfig,
         runtime: float,
+        fixed_params: Dict[str, float] | None = None,
     ) -> "InferenceResult":
         """Create InferenceResult from sampler output.
 
@@ -101,6 +111,9 @@ class InferenceResult:
             Configuration used for inference
         runtime : float
             Total runtime in seconds
+        fixed_params : Dict[str, float] | None, optional
+            Parameters pinned to constant values during inference.
+            Stored in metadata for later retrieval.
 
         Returns
         -------
@@ -111,8 +124,10 @@ class InferenceResult:
         sampler_class_name = sampler.__class__.__name__
         if "FlowMC" in sampler_class_name:
             sampler_type = "flowmc"
-        elif "SMC" in sampler_class_name:
-            sampler_type = "blackjax_smc"
+        elif "SMCRandomWalk" in sampler_class_name:
+            sampler_type = "blackjax_smc_rw"
+        elif "SMCNUTS" in sampler_class_name:
+            sampler_type = "blackjax_smc_nuts"
         elif "NS" in sampler_class_name or "NestedSampling" in sampler_class_name:
             sampler_type = "blackjax_ns_aw"
         else:
@@ -150,6 +165,8 @@ class InferenceResult:
             "seed": int(config.seed),
             "creation_timestamp": datetime.now().isoformat(),
             "config_json": config_json,
+            "parameter_names": sampler.parameter_names,  # Save prior parameter names
+            "fixed_params": fixed_params or {},  # Fixed parameters (not sampled)
         }
 
         # Extract sampler-specific metadata and histories
@@ -159,10 +176,7 @@ class InferenceResult:
             # TODO: need to make diagnosis plots from training and production separately for sampler performance
             # still need to decide where to do this, and if to save in metadata the history/final summary for training and production
 
-            # FlowMC: Get metadata from sampler state
-            state = sampler.sampler.get_sampler_state(training=False)  # type: ignore[union-attr]
-
-            # Add FlowMC-specific metadata
+            # Add FlowMC-specific metadata (from config; get_sampler_state removed in flowMC 0.4.5)
             flowmc_config = config.sampler  # type: ignore[attr-defined]
             metadata.update(
                 {
@@ -178,15 +192,27 @@ class InferenceResult:
                 }
             )
 
-            # Extract histories
-            if "local_accs" in state:
+            # Extract acceptance histories from production buffers.
+            # flowMC 0.4.5: Buffer is initialized with -inf; acceptance buffers are
+            # only half-filled (local and global steppers share current_position but
+            # write to separate buffers). Filter out -inf to get only filled slots.
+            from flowMC.resource.buffers import Buffer
+
+            resources = sampler.sampler.resources  # type: ignore[union-attr]
+            local_accs_buf = resources.get("local_accs_production")
+            global_accs_buf = resources.get("global_accs_production")
+            if isinstance(local_accs_buf, Buffer) and isinstance(
+                global_accs_buf, Buffer
+            ):
+                local_data = np.array(local_accs_buf.data)
+                global_data = np.array(global_accs_buf.data)
+                # Filter out -inf (uninitialized buffer slots)
                 histories = {
-                    "local_accs": np.array(state["local_accs"]),
-                    "global_accs": np.array(state["global_accs"]),
-                    # "loss_vals": np.array(state["loss_vals"]),
+                    "local_accs": local_data[local_data > -np.inf],
+                    "global_accs": global_data[global_data > -np.inf],
                 }
 
-        elif sampler_type == "blackjax_smc":
+        elif sampler_type in ["blackjax_smc_rw", "blackjax_smc_nuts"]:
             # SMC: Get metadata from sampler.metadata dict
             smc_metadata = sampler.metadata  # type: ignore[attr-defined]
 
@@ -210,9 +236,12 @@ class InferenceResult:
 
             # Extract histories
             histories = {
-                "lmbda_history": np.array(smc_metadata["lmbda_history"]),
+                "tempering_param_history": np.array(
+                    smc_metadata["tempering_param_history"]
+                ),
                 "ess_history": np.array(smc_metadata["ess_history"]),
                 "acceptance_history": np.array(smc_metadata["acceptance_history"]),
+                "log_evidence_history": np.array(smc_metadata["log_evidence_history"]),
             }
 
         elif sampler_type == "blackjax_ns_aw":
@@ -257,6 +286,7 @@ class InferenceResult:
             posterior=posterior,
             metadata=metadata,
             histories=histories,
+            fixed_params=fixed_params,
         )
 
     def add_derived_eos(self, eos_dict: Dict[str, Array]) -> None:
@@ -287,7 +317,7 @@ class InferenceResult:
 
         Parameters
         ----------
-        transform : JesterTransformBase
+        transform : JesterTransform
             Transform to apply (should be TOV solver transform)
         n_eos_samples : int, optional
             Number of EOS samples to generate. If None or greater than available samples,
@@ -299,11 +329,11 @@ class InferenceResult:
         Notes
         -----
         When n_eos_samples < total samples:
+
         - Randomly selects n_eos_samples from posterior
         - Applies transform to selected samples
-        - Filters log_prob and sampler-specific fields (weights, ess, logL, logL_birth)
-          to match selected samples
-        - Backs up full arrays as *_full before filtering
+        - Filters log_prob and sampler-specific fields (weights, ess, logL, logL_birth) to match selected samples
+        - Backs up full arrays as ``*_full`` before filtering
         """
         import jax
         import jax.numpy as jnp
@@ -350,6 +380,7 @@ class InferenceResult:
             "p",
             "e",
             "cs2",
+            "n_TOV",
         }
         param_samples = {
             k: v for k, v in self.posterior.items() if k not in exclude_keys
@@ -363,6 +394,17 @@ class InferenceResult:
 
         # Apply transform with batched processing
         logger.info(f"Applying transform to {n_eos_samples} samples...")
+        if n_eos_samples == 0:
+            logger.warning(
+                "No posterior samples available for EOS generation; skipping transform."
+            )
+            return
+        if batch_size > n_eos_samples:
+            logger.warning(
+                f"Requested batch size ({batch_size}) is larger than the number of samples "
+                f"({n_eos_samples}). Adjusting batch size to {n_eos_samples}."
+            )
+            batch_size = n_eos_samples
         logger.info(f"Using batch size: {batch_size}")
 
         chosen_samples_jax = {k: jnp.array(v) for k, v in chosen_samples.items()}
@@ -381,7 +423,16 @@ class InferenceResult:
 
         # Add transformed outputs to posterior (EOS quantities only, not input parameters)
         # Filter out input parameters from transformed_samples to avoid overwriting full posterior arrays
-        eos_keys = {"masses_EOS", "radii_EOS", "Lambdas_EOS", "n", "p", "e", "cs2"}
+        eos_keys = {
+            "masses_EOS",
+            "radii_EOS",
+            "Lambdas_EOS",
+            "n",
+            "p",
+            "e",
+            "cs2",
+            "n_TOV",
+        }
         eos_only = {k: v for k, v in transformed_samples.items() if k in eos_keys}
         self.add_derived_eos(eos_only)
 
@@ -457,6 +508,7 @@ class InferenceResult:
                 "p",
                 "e",
                 "cs2",
+                "n_TOV",
             }
             sampler_specific_keys = {"weights", "ess", "logL", "logL_birth"}
 
@@ -501,6 +553,16 @@ class InferenceResult:
             for key, value in self.metadata.items():
                 if key == "config_json":
                     # Skip - already stored as dataset above
+                    continue
+                elif key == "parameter_names":
+                    # Store parameter names as JSON string (list of strings)
+                    param_names_json = json.dumps(value)
+                    metadata_grp.attrs[key] = param_names_json
+                    continue
+                elif key == "fixed_params":
+                    # Store fixed parameters as JSON string (dict[str, float])
+                    fixed_params_json = json.dumps(value)
+                    metadata_grp.attrs[key] = fixed_params_json
                     continue
                 # HDF5 attributes must be scalars or small arrays
                 if isinstance(value, (int, float, str, bool)):
@@ -592,7 +654,18 @@ class InferenceResult:
             # Load attributes
             if "metadata" in f:
                 for key, value in f["metadata"].attrs.items():
-                    metadata[key] = value
+                    if key == "parameter_names":
+                        # Deserialize from JSON string (list of strings)
+                        if isinstance(value, bytes):
+                            value = value.decode("utf-8")
+                        metadata[key] = json.loads(value)
+                    elif key == "fixed_params":
+                        # Deserialize from JSON string (dict[str, float])
+                        if isinstance(value, bytes):
+                            value = value.decode("utf-8")
+                        metadata[key] = json.loads(value)
+                    else:
+                        metadata[key] = value
 
             # Load histories
             histories: Dict[str, np.ndarray] | None = None
@@ -601,8 +674,9 @@ class InferenceResult:
                 for key in f["histories"].keys():  # type: ignore[union-attr]
                     histories[key] = f["histories"][key][:]  # type: ignore[index]
 
-            # Get sampler type from metadata
+            # Get sampler type and fixed_params from metadata
             sampler_type = metadata.get("sampler", "unknown")
+            fixed_params_loaded: Dict[str, float] = metadata.get("fixed_params", {})
 
         logger.info(f"Successfully loaded {sampler_type} results")
 
@@ -611,6 +685,7 @@ class InferenceResult:
             posterior=posterior,
             metadata=metadata,
             histories=histories,
+            fixed_params=fixed_params_loaded,
         )
 
     @property
@@ -648,6 +723,8 @@ class InferenceResult:
         )
         lines.append(f"Random seed: {self.metadata.get('seed', 'unknown')}")
         lines.append(f"Number of samples: {self.metadata.get('n_samples', 0)}")
+        if self.fixed_params:
+            lines.append(f"Fixed parameters: {self.fixed_params}")
 
         # Sampler-specific info
         if self.sampler_type == "flowmc":
@@ -660,7 +737,7 @@ class InferenceResult:
                 f"  Production loops: {self.metadata.get('n_loop_production', '?')}"
             )
 
-        elif self.sampler_type == "blackjax_smc":
+        elif self.sampler_type in ["blackjax_smc_rw", "blackjax_smc_nuts"]:
             lines.append("\nBlackJAX SMC Configuration:")
             lines.append(f"  Kernel type: {self.metadata.get('kernel_type', '?')}")
             lines.append(f"  Particles: {self.metadata.get('n_particles', '?')}")
@@ -699,6 +776,7 @@ class InferenceResult:
                 "p",
                 "e",
                 "cs2",
+                "n_TOV",
                 "_sampler_specific",
             }
         ]

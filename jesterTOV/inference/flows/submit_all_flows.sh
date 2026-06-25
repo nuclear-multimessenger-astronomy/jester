@@ -11,7 +11,7 @@ echo "==========================================="
 mkdir -p ./logs
 
 # Base directory for dataset configs
-MODELS_DIR="./models/gw_maf"
+MODELS_DIR="./models/"
 
 # Find all config.yaml files in the models directory
 CONFIG_DIRS=$(find "$MODELS_DIR" -type f -name "config.yaml" -exec dirname {} \; | sort)

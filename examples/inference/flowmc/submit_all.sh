@@ -1,7 +1,7 @@
 #!/bin/bash
 # Submit all flowMC inference jobs
 
-SKIP_DIRS=("prior")
+SKIP_DIRS=("prior" "chiEFT")
 
 for dir in */; do
     dir=${dir%/}  # Remove trailing slash

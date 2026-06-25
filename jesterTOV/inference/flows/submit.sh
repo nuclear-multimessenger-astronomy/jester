@@ -39,7 +39,7 @@ echo "=========================================="
 echo "Config: $CONFIG_FILE"
 echo ""
 
-train_jester_gw_flow "$CONFIG_FILE"
+train_jester_flow "$CONFIG_FILE"
 
 echo ""
 echo "DONE"

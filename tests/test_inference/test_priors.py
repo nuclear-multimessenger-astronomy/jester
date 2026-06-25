@@ -5,7 +5,9 @@ import jax
 import jax.numpy as jnp
 
 from jesterTOV.inference.priors import parser
+from jesterTOV.inference.priors.parser import ParsedPrior
 from jesterTOV.inference.base import CombinePrior, UniformPrior
+from jesterTOV.inference.base.prior import Fixed
 
 
 class TestPriorParser:
@@ -13,14 +15,17 @@ class TestPriorParser:
 
     def test_parse_basic_nep_prior(self, sample_prior_file):
         """Test parsing basic NEP parameters without CSE."""
-        prior = parser.parse_prior_file(sample_prior_file, nb_CSE=0)
+        result = parser.parse_prior_file(sample_prior_file, nb_CSE=0)
 
+        assert isinstance(result, ParsedPrior)
+        prior = result.prior
         assert isinstance(prior, CombinePrior)
-        # Should have 8 NEP parameters (4 _sat + 4 _sym)
-        assert prior.n_dim == 8
+        # Should have 9 NEP parameters (E_sat + 4 _sat + 4 _sym)
+        assert prior.n_dim == 9
 
         # Check parameter names
         param_names = prior.parameter_names
+        assert "E_sat" in param_names
         assert "K_sat" in param_names
         assert "Q_sat" in param_names
         assert "Z_sat" in param_names
@@ -33,15 +38,20 @@ class TestPriorParser:
         # nbreak should NOT be included when nb_CSE=0
         assert "nbreak" not in param_names
 
+        # No fixed params in a plain NEP prior
+        assert result.fixed_params == {}
+
     def test_parse_nep_prior_with_cse(self, sample_prior_file_with_cse):
         """Test parsing NEP parameters with CSE."""
         nb_CSE = 8
-        prior = parser.parse_prior_file(sample_prior_file_with_cse, nb_CSE=nb_CSE)
+        result = parser.parse_prior_file(sample_prior_file_with_cse, nb_CSE=nb_CSE)
 
+        assert isinstance(result, ParsedPrior)
+        prior = result.prior
         assert isinstance(prior, CombinePrior)
-        # Should have 8 NEP + 1 nbreak + 8*2 CSE grid params + 1 final cs2
-        # = 8 + 1 + 16 + 1 = 26
-        expected_dim = 8 + 1 + (nb_CSE * 2) + 1
+        # Should have 9 NEP + 1 nbreak + 8*2 CSE grid params + 1 final cs2
+        # = 9 + 1 + 16 + 1 = 27
+        expected_dim = 9 + 1 + (nb_CSE * 2) + 1
         assert prior.n_dim == expected_dim
 
         # Check parameter names
@@ -59,14 +69,15 @@ class TestPriorParser:
     def test_parse_cse_parameter_count(self, sample_prior_file_with_cse):
         """Test that CSE parameter count is correct for different nb_CSE values."""
         test_cases = [
-            (0, 8),  # No CSE: 8 NEP only
-            (4, 8 + 1 + 4 * 2 + 1),  # 8 NEP + nbreak + 4*2 grid + 1 final = 18
-            (8, 8 + 1 + 8 * 2 + 1),  # 8 NEP + nbreak + 8*2 grid + 1 final = 26
-            (16, 8 + 1 + 16 * 2 + 1),  # 8 NEP + nbreak + 16*2 grid + 1 final = 42
+            (0, 9),  # No CSE: 9 NEP only
+            (4, 9 + 1 + 4 * 2 + 1),  # 9 NEP + nbreak + 4*2 grid + 1 final = 19
+            (8, 9 + 1 + 8 * 2 + 1),  # 9 NEP + nbreak + 8*2 grid + 1 final = 27
+            (16, 9 + 1 + 16 * 2 + 1),  # 9 NEP + nbreak + 16*2 grid + 1 final = 43
         ]
 
         for nb_CSE, expected_dim in test_cases:
-            prior = parser.parse_prior_file(sample_prior_file_with_cse, nb_CSE=nb_CSE)
+            result = parser.parse_prior_file(sample_prior_file_with_cse, nb_CSE=nb_CSE)
+            prior = result.prior
             assert (
                 prior.n_dim == expected_dim
             ), f"Expected {expected_dim} for nb_CSE={nb_CSE}, got {prior.n_dim}"
@@ -89,7 +100,7 @@ class TestPriorParser:
         empty_prior = temp_dir / "empty.prior"
         empty_prior.write_text("# Just a comment, no priors defined")
 
-        with pytest.raises(ValueError, match="No priors found"):
+        with pytest.raises(ValueError, match="No sampled priors found"):
             parser.parse_prior_file(empty_prior, nb_CSE=0)
 
     def test_parse_prior_without_nep_params(self, temp_dir):
@@ -105,7 +116,8 @@ custom_param = UniformPrior(0.0, 1.0, parameter_names=["custom_param"])
 """
         )
 
-        prior = parser.parse_prior_file(custom_prior, nb_CSE=0)
+        result = parser.parse_prior_file(custom_prior, nb_CSE=0)
+        prior = result.prior
 
         # Should have K_sat and custom_param
         assert prior.n_dim == 2
@@ -114,7 +126,8 @@ custom_param = UniformPrior(0.0, 1.0, parameter_names=["custom_param"])
 
     def test_cse_priors_have_correct_bounds(self, sample_prior_file_with_cse):
         """Test that automatically generated CSE priors have correct bounds [0, 1]."""
-        prior = parser.parse_prior_file(sample_prior_file_with_cse, nb_CSE=8)
+        result = parser.parse_prior_file(sample_prior_file_with_cse, nb_CSE=8)
+        prior = result.prior
 
         # Sample from CSE parameters and check they're in [0, 1]
         rng_key = jax.random.PRNGKey(42)
@@ -135,6 +148,328 @@ custom_param = UniformPrior(0.0, 1.0, parameter_names=["custom_param"])
         # Check final cs2 parameter
         cs2_final_vals = samples["cs2_CSE_8"]
         assert jnp.all(cs2_final_vals >= 0.0) and jnp.all(cs2_final_vals <= 1.0)
+
+
+class TestFixedPrior:
+    """Tests for the Fixed prior class."""
+
+    def test_fixed_stores_value(self):
+        """Test that Fixed stores the given value."""
+        f = Fixed(3.14, parameter_names=["my_param"])
+        assert f.value == pytest.approx(3.14)
+        assert f.parameter_names == ["my_param"]
+        assert f.n_dim == 1
+
+    def test_fixed_accepts_int_value(self):
+        """Test that Fixed converts int values to float."""
+        f = Fixed(0, parameter_names=["x"])
+        assert isinstance(f.value, float)
+
+    def test_fixed_sample_raises(self):
+        """Fixed.sample() must not be called — it raises NotImplementedError."""
+        f = Fixed(1.0, parameter_names=["x"])
+        with pytest.raises(NotImplementedError):
+            f.sample(jax.random.PRNGKey(0), 1)
+
+    def test_fixed_log_prob_raises(self):
+        """Fixed.log_prob() must not be called — it raises NotImplementedError."""
+        f = Fixed(1.0, parameter_names=["x"])
+        with pytest.raises(NotImplementedError):
+            f.log_prob({"x": 1.0})
+
+    def test_fixed_repr(self):
+        """Test Fixed string representation."""
+        f = Fixed(2.5, parameter_names=["lambda_BL"])
+        assert "Fixed" in repr(f)
+        assert "2.5" in repr(f)
+        assert "lambda_BL" in repr(f)
+
+    def test_fixed_must_be_1d(self):
+        """Fixed must have exactly one parameter name."""
+        with pytest.raises(AssertionError):
+            Fixed(1.0, parameter_names=["a", "b"])
+
+
+class TestParserFixedParams:
+    """Tests for Fixed parameter handling in the parser."""
+
+    def test_parse_prior_with_fixed_param(self, temp_dir):
+        """Fixed parameters are extracted to fixed_params, not sampled prior."""
+        prior_file = temp_dir / "with_fixed.prior"
+        prior_file.write_text(
+            """
+K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
+lambda_BL = Fixed(0.0, parameter_names=["lambda_BL"])
+"""
+        )
+
+        result = parser.parse_prior_file(prior_file, nb_CSE=0)
+
+        # lambda_BL should NOT be in the sampled prior
+        assert "lambda_BL" not in result.prior.parameter_names
+        assert result.prior.n_dim == 1  # only K_sat
+
+        # lambda_BL should be in fixed_params with correct value
+        assert "lambda_BL" in result.fixed_params
+        assert result.fixed_params["lambda_BL"] == pytest.approx(0.0)
+
+    def test_parse_prior_multiple_fixed_params(self, temp_dir):
+        """Multiple Fixed parameters are all collected into fixed_params."""
+        prior_file = temp_dir / "multi_fixed.prior"
+        prior_file.write_text(
+            """
+K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
+L_sym = UniformPrior(10.0, 200.0, parameter_names=["L_sym"])
+lambda_BL = Fixed(0.5, parameter_names=["lambda_BL"])
+alpha = Fixed(-1.0, parameter_names=["alpha"])
+"""
+        )
+
+        result = parser.parse_prior_file(prior_file, nb_CSE=0)
+
+        assert result.prior.n_dim == 2
+        assert set(result.prior.parameter_names) == {"K_sat", "L_sym"}
+        assert result.fixed_params == {
+            "lambda_BL": pytest.approx(0.5),
+            "alpha": pytest.approx(-1.0),
+        }
+
+    def test_parse_prior_only_fixed_params_raises(self, temp_dir):
+        """A prior file with only Fixed entries has no sampled space — should raise."""
+        prior_file = temp_dir / "only_fixed.prior"
+        prior_file.write_text(
+            """
+lambda_BL = Fixed(0.0, parameter_names=["lambda_BL"])
+"""
+        )
+
+        with pytest.raises(ValueError, match="No sampled priors found"):
+            parser.parse_prior_file(prior_file, nb_CSE=0)
+
+    def test_parse_prior_no_fixed_gives_empty_dict(self, sample_prior_file):
+        """When no Fixed params are present, fixed_params is an empty dict."""
+        result = parser.parse_prior_file(sample_prior_file, nb_CSE=0)
+        assert result.fixed_params == {}
+
+
+class TestCSEFixedParams:
+    """Tests for Fixed and custom-bounded CSE parameters in the prior parser.
+
+    When a user specifies a CSE grid parameter in the prior file (either as
+    ``Fixed`` or with custom bounds), the auto-generation logic must respect
+    that specification and not overwrite it with a default UniformPrior(0, 1).
+    """
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    NEP_AND_NBREAK = """
+E_sat = UniformPrior(-16.1, -15.9, parameter_names=["E_sat"])
+K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
+Q_sat = UniformPrior(-500.0, 1100.0, parameter_names=["Q_sat"])
+Z_sat = UniformPrior(-2500.0, 1500.0, parameter_names=["Z_sat"])
+E_sym = UniformPrior(28.0, 45.0, parameter_names=["E_sym"])
+L_sym = UniformPrior(10.0, 200.0, parameter_names=["L_sym"])
+K_sym = UniformPrior(-400.0, 200.0, parameter_names=["K_sym"])
+Q_sym = UniformPrior(-1000.0, 1500.0, parameter_names=["Q_sym"])
+Z_sym = UniformPrior(-2000.0, 1500.0, parameter_names=["Z_sym"])
+nbreak = UniformPrior(0.16, 0.32, parameter_names=["nbreak"])
+"""
+
+    def _make_prior_file(self, temp_dir, extra: str, name: str = "test.prior"):
+        p = temp_dir / name
+        p.write_text(self.NEP_AND_NBREAK + extra)
+        return p
+
+    # ------------------------------------------------------------------
+    # Fixed CSE parameters
+    # ------------------------------------------------------------------
+
+    def test_single_fixed_cse_density_param(self, temp_dir):
+        """Fix one density grid point: it goes to fixed_params, not the sampled prior."""
+        nb_CSE = 4
+        prior_file = self._make_prior_file(
+            temp_dir,
+            'n_CSE_0_u = Fixed(0.5, parameter_names=["n_CSE_0_u"])\n',
+        )
+        result = parser.parse_prior_file(prior_file, nb_CSE=nb_CSE)
+
+        # n_CSE_0_u is fixed, not sampled
+        assert "n_CSE_0_u" not in result.prior.parameter_names
+        assert "n_CSE_0_u" in result.fixed_params
+        assert result.fixed_params["n_CSE_0_u"] == pytest.approx(0.5)
+
+        # All other CSE density params are still sampled
+        for i in range(1, nb_CSE):
+            assert f"n_CSE_{i}_u" in result.prior.parameter_names
+
+        # Total dimension: 9 NEP + 1 nbreak + (nb_CSE*2+1) CSE − 1 fixed
+        expected_dim = 9 + 1 + (nb_CSE * 2 + 1) - 1
+        assert result.prior.n_dim == expected_dim
+
+    def test_single_fixed_cse_cs2_param(self, temp_dir):
+        """Fix one cs2 grid point: it goes to fixed_params, not the sampled prior."""
+        nb_CSE = 4
+        prior_file = self._make_prior_file(
+            temp_dir,
+            'cs2_CSE_2 = Fixed(0.3, parameter_names=["cs2_CSE_2"])\n',
+        )
+        result = parser.parse_prior_file(prior_file, nb_CSE=nb_CSE)
+
+        assert "cs2_CSE_2" not in result.prior.parameter_names
+        assert result.fixed_params["cs2_CSE_2"] == pytest.approx(0.3)
+
+        expected_dim = 9 + 1 + (nb_CSE * 2 + 1) - 1
+        assert result.prior.n_dim == expected_dim
+
+    def test_fixed_final_cse_cs2_param(self, temp_dir):
+        """Fix the final cs2 parameter (cs2_CSE_{nb_CSE}) at nmax."""
+        nb_CSE = 4
+        prior_file = self._make_prior_file(
+            temp_dir,
+            f'cs2_CSE_{nb_CSE} = Fixed(0.8, parameter_names=["cs2_CSE_{nb_CSE}"])\n',
+        )
+        result = parser.parse_prior_file(prior_file, nb_CSE=nb_CSE)
+
+        assert f"cs2_CSE_{nb_CSE}" not in result.prior.parameter_names
+        assert result.fixed_params[f"cs2_CSE_{nb_CSE}"] == pytest.approx(0.8)
+
+        expected_dim = 9 + 1 + (nb_CSE * 2 + 1) - 1
+        assert result.prior.n_dim == expected_dim
+
+    def test_all_density_cse_params_fixed(self, temp_dir):
+        """Fix all n_CSE_i_u params; cs2 parameters are still sampled freely."""
+        nb_CSE = 3
+        fixed_lines = "".join(
+            f'n_CSE_{i}_u = Fixed({0.1 * (i + 1)}, parameter_names=["n_CSE_{i}_u"])\n'
+            for i in range(nb_CSE)
+        )
+        prior_file = self._make_prior_file(temp_dir, fixed_lines)
+        result = parser.parse_prior_file(prior_file, nb_CSE=nb_CSE)
+
+        for i in range(nb_CSE):
+            assert f"n_CSE_{i}_u" not in result.prior.parameter_names
+            assert f"n_CSE_{i}_u" in result.fixed_params
+
+        # cs2 params still sampled (nb_CSE + 1 of them)
+        for i in range(nb_CSE + 1):
+            assert f"cs2_CSE_{i}" in result.prior.parameter_names
+
+        # Dimension: removed nb_CSE density params
+        expected_dim = 9 + 1 + (nb_CSE * 2 + 1) - nb_CSE
+        assert result.prior.n_dim == expected_dim
+
+    def test_all_cse_params_fixed(self, temp_dir):
+        """Fix every CSE parameter: only NEP + nbreak are sampled."""
+        nb_CSE = 2
+        fixed_lines = ""
+        for i in range(nb_CSE):
+            fixed_lines += (
+                f'n_CSE_{i}_u = Fixed(0.5, parameter_names=["n_CSE_{i}_u"])\n'
+                f'cs2_CSE_{i} = Fixed(0.5, parameter_names=["cs2_CSE_{i}"])\n'
+            )
+        fixed_lines += (
+            f'cs2_CSE_{nb_CSE} = Fixed(0.5, parameter_names=["cs2_CSE_{nb_CSE}"])\n'
+        )
+        prior_file = self._make_prior_file(temp_dir, fixed_lines)
+        result = parser.parse_prior_file(prior_file, nb_CSE=nb_CSE)
+
+        # All CSE params fixed
+        for i in range(nb_CSE):
+            assert f"n_CSE_{i}_u" in result.fixed_params
+            assert f"cs2_CSE_{i}" in result.fixed_params
+        assert f"cs2_CSE_{nb_CSE}" in result.fixed_params
+
+        # Sampled space is just 9 NEP + nbreak
+        assert result.prior.n_dim == 10
+        assert "nbreak" in result.prior.parameter_names
+
+    # ------------------------------------------------------------------
+    # Custom-bounded CSE parameters (not Fixed, but user-specified prior)
+    # ------------------------------------------------------------------
+
+    def test_custom_bounds_for_cse_density_param(self, temp_dir):
+        """Custom UniformPrior for a CSE density param replaces the default [0, 1]."""
+        nb_CSE = 4
+        prior_file = self._make_prior_file(
+            temp_dir,
+            'n_CSE_1_u = UniformPrior(0.2, 0.8, parameter_names=["n_CSE_1_u"])\n',
+        )
+        result = parser.parse_prior_file(prior_file, nb_CSE=nb_CSE)
+
+        # n_CSE_1_u must appear exactly once
+        assert result.prior.parameter_names.count("n_CSE_1_u") == 1
+        assert "n_CSE_1_u" in result.prior.parameter_names
+
+        # Find that prior and check its bounds are the custom ones
+        import jax
+
+        samples = result.prior.sample(jax.random.PRNGKey(0), n_samples=500)
+        vals = samples["n_CSE_1_u"]
+        assert float(vals.min()) >= 0.2 - 1e-6
+        assert float(vals.max()) <= 0.8 + 1e-6
+
+        # Dimension unchanged (user-supplied prior replaces auto one, not added on top)
+        expected_dim = 9 + 1 + (nb_CSE * 2 + 1)
+        assert result.prior.n_dim == expected_dim
+
+    def test_custom_bounds_for_final_cs2_param(self, temp_dir):
+        """Custom UniformPrior for the final cs2_CSE_{nb_CSE} replaces the default."""
+        nb_CSE = 4
+        prior_file = self._make_prior_file(
+            temp_dir,
+            f'cs2_CSE_{nb_CSE} = UniformPrior(0.1, 0.6, parameter_names=["cs2_CSE_{nb_CSE}"])\n',
+        )
+        result = parser.parse_prior_file(prior_file, nb_CSE=nb_CSE)
+
+        assert result.prior.parameter_names.count(f"cs2_CSE_{nb_CSE}") == 1
+        expected_dim = 9 + 1 + (nb_CSE * 2 + 1)
+        assert result.prior.n_dim == expected_dim
+
+    # ------------------------------------------------------------------
+    # Mixed: some fixed, some custom, some auto-generated
+    # ------------------------------------------------------------------
+
+    def test_partial_cse_fixed_modular(self, temp_dir):
+        """Mix: fix density grid points, custom cs2 for one, rest auto-generated."""
+        nb_CSE = 3
+        extra = (
+            'n_CSE_0_u = Fixed(0.2, parameter_names=["n_CSE_0_u"])\n'
+            'n_CSE_1_u = Fixed(0.5, parameter_names=["n_CSE_1_u"])\n'
+            'cs2_CSE_0 = UniformPrior(0.1, 0.5, parameter_names=["cs2_CSE_0"])\n'
+        )
+        prior_file = self._make_prior_file(temp_dir, extra)
+        result = parser.parse_prior_file(prior_file, nb_CSE=nb_CSE)
+
+        # Two density params fixed
+        assert "n_CSE_0_u" in result.fixed_params
+        assert "n_CSE_1_u" in result.fixed_params
+        assert "n_CSE_0_u" not in result.prior.parameter_names
+        assert "n_CSE_1_u" not in result.prior.parameter_names
+
+        # Remaining density param auto-generated
+        assert "n_CSE_2_u" in result.prior.parameter_names
+
+        # cs2_CSE_0 present (user custom bounds) - appears exactly once
+        assert result.prior.parameter_names.count("cs2_CSE_0") == 1
+
+        # Total: 9 NEP + 1 nbreak + 3*2+1 CSE − 2 fixed density
+        expected_dim = 9 + 1 + (nb_CSE * 2 + 1) - 2
+        assert result.prior.n_dim == expected_dim
+
+    def test_no_duplicate_params_with_fixed_cse(self, temp_dir):
+        """Fixing CSE params must not produce duplicate entries in the prior."""
+        nb_CSE = 4
+        extra = "".join(
+            f'n_CSE_{i}_u = Fixed(0.25 * {i + 1}, parameter_names=["n_CSE_{i}_u"])\n'
+            for i in range(nb_CSE)
+        )
+        prior_file = self._make_prior_file(temp_dir, extra)
+        result = parser.parse_prior_file(prior_file, nb_CSE=nb_CSE)
+
+        names = result.prior.parameter_names
+        assert len(names) == len(set(names)), "Duplicate parameter names found in prior"
 
 
 class TestCombinePrior:
@@ -277,7 +612,8 @@ class TestPriorIntegration:
 
     def test_prior_sampling_deterministic(self, sample_prior_file):
         """Test that prior sampling is deterministic given same PRNGKey."""
-        prior = parser.parse_prior_file(sample_prior_file, nb_CSE=0)
+        result = parser.parse_prior_file(sample_prior_file, nb_CSE=0)
+        prior = result.prior
 
         # Same RNG key should give same output
         rng_key = jax.random.PRNGKey(42)
@@ -290,7 +626,8 @@ class TestPriorIntegration:
 
     def test_prior_samples_cover_full_range(self, sample_prior_file):
         """Test that sampling covers the parameter range."""
-        prior = parser.parse_prior_file(sample_prior_file, nb_CSE=0)
+        result = parser.parse_prior_file(sample_prior_file, nb_CSE=0)
+        prior = result.prior
 
         # Sample multiple times to get coverage
         rng_key = jax.random.PRNGKey(42)
@@ -303,7 +640,8 @@ class TestPriorIntegration:
 
     def test_parsed_prior_log_prob_valid_samples(self, sample_prior_file):
         """Test that log_prob is finite for valid samples from parsed prior."""
-        prior = parser.parse_prior_file(sample_prior_file, nb_CSE=0)
+        result = parser.parse_prior_file(sample_prior_file, nb_CSE=0)
+        prior = result.prior
 
         # Generate valid samples
         rng_key = jax.random.PRNGKey(42)
@@ -340,7 +678,8 @@ Z_sym = UniformPrior(-1000.0, 1000.0, parameter_names=["Z_sym"])
 """
         )
 
-        prior = parser.parse_prior_file(realistic_prior, nb_CSE=0)
+        result = parser.parse_prior_file(realistic_prior, nb_CSE=0)
+        prior = result.prior
 
         # Sample and check values are in physically reasonable ranges
         rng_key = jax.random.PRNGKey(42)

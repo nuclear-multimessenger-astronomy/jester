@@ -14,6 +14,6 @@ echo "$now"
 echo "Training flow for: gw190425_taylorf2_hs"
 source /home/twouters2/projects/jester_review/jester/.venv/bin/activate
 nvidia-smi --query-gpu=name --format=csv,noheader
-train_jester_gw_flow "./config.yaml"
+train_jester_flow "./config.yaml"
 echo "DONE"
 echo "$now"

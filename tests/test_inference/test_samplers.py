@@ -6,7 +6,12 @@ import jax.numpy as jnp
 
 from jesterTOV.inference.samplers.jester_sampler import JesterSampler
 from jesterTOV.inference.samplers.flowmc import FlowMCSampler
-from jesterTOV.inference.base import UniformPrior, CombinePrior, LikelihoodBase
+from jesterTOV.inference.base import (
+    UniformPrior,
+    CombinePrior,
+    LikelihoodBase,
+    MultivariateGaussianPrior,
+)
 from jesterTOV.inference.base.transform import (
     NtoMTransform,
     ScaleTransform,
@@ -135,18 +140,15 @@ class TestJesterSamplerBase:
         ):
             sampler.sample(jax.random.PRNGKey(42))
 
-    def test_jester_sampler_print_summary_not_implemented(self):
-        """Test that JesterSampler.print_summary raises NotImplementedError."""
+    def test_jester_sampler_print_summary_does_nothing(self):
+        """Test that JesterSampler.print_summary can be called without error (optional method)."""
         prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
         likelihood = MockLikelihood()
 
         sampler = JesterSampler(likelihood, prior)
 
-        with pytest.raises(
-            NotImplementedError,
-            match="must be implemented by backend-specific subclass",
-        ):
-            sampler.print_summary()
+        # Should not raise an error (just does nothing by default)
+        sampler.print_summary()
 
     def test_jester_sampler_get_samples_not_implemented(self):
         """Test that JesterSampler.get_samples raises NotImplementedError."""
@@ -354,6 +356,102 @@ class TestFlowMCSampler:
         assert sampler.sampler is not None
         assert len(sampler.likelihood_transforms) == 1
 
+    def test_flowmc_sampler_thinning_exceeds_local_steps_raises_error(self):
+        """Test FlowMC raises error when train_thinning exceeds n_local_steps."""
+        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
+        likelihood = MockLikelihood()
+
+        config = FlowMCSamplerConfig(
+            type="flowmc",
+            n_chains=2,
+            n_loop_training=1,
+            n_loop_production=1,
+            n_local_steps=10,
+            n_global_steps=10,
+            train_thinning=20,  # Exceeds n_local_steps
+            output_thinning=5,
+            output_dir="./test_output/",
+        )
+
+        with pytest.raises(
+            ValueError,
+            match="train_thinning.*exceeds n_local_steps",
+        ):
+            FlowMCSampler(likelihood, prior, config)
+
+    def test_flowmc_sampler_thinning_exceeds_global_steps_raises_error(self):
+        """Test FlowMC raises error when train_thinning exceeds n_global_steps."""
+        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
+        likelihood = MockLikelihood()
+
+        config = FlowMCSamplerConfig(
+            type="flowmc",
+            n_chains=2,
+            n_loop_training=1,
+            n_loop_production=1,
+            n_local_steps=10,
+            n_global_steps=5,
+            train_thinning=10,  # Exceeds n_global_steps
+            output_thinning=5,
+            output_dir="./test_output/",
+        )
+
+        with pytest.raises(
+            ValueError,
+            match="train_thinning.*exceeds n_global_steps",
+        ):
+            FlowMCSampler(likelihood, prior, config)
+
+    def test_flowmc_sampler_output_thinning_exceeds_steps_raises_error(self):
+        """Test FlowMC raises error when output_thinning exceeds step counts."""
+        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
+        likelihood = MockLikelihood()
+
+        config = FlowMCSamplerConfig(
+            type="flowmc",
+            n_chains=2,
+            n_loop_training=1,
+            n_loop_production=1,
+            n_local_steps=10,
+            n_global_steps=10,
+            train_thinning=5,
+            output_thinning=20,  # Exceeds n_local_steps
+            output_dir="./test_output/",
+        )
+
+        with pytest.raises(
+            ValueError,
+            match="output_thinning.*exceeds n_local_steps",
+        ):
+            FlowMCSampler(likelihood, prior, config)
+
+    def test_flowmc_sampler_multiple_thinning_errors_reported(self):
+        """Test FlowMC reports multiple thinning validation errors together."""
+        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
+        likelihood = MockLikelihood()
+
+        config = FlowMCSamplerConfig(
+            type="flowmc",
+            n_chains=2,
+            n_loop_training=1,
+            n_loop_production=1,
+            n_local_steps=5,
+            n_global_steps=5,
+            train_thinning=10,  # Exceeds both local and global steps
+            output_thinning=10,  # Exceeds both local and global steps
+            output_dir="./test_output/",
+        )
+
+        # Should report all four errors
+        with pytest.raises(ValueError) as exc_info:
+            FlowMCSampler(likelihood, prior, config)
+
+        error_msg = str(exc_info.value)
+        assert "train_thinning" in error_msg
+        assert "n_local_steps" in error_msg
+        assert "n_global_steps" in error_msg
+        assert "output_thinning" in error_msg
+
 
 class TestFlowMCSamplerParameterOrdering:
     """Test critical bug fix: parameter ordering preservation."""
@@ -383,6 +481,8 @@ class TestFlowMCSamplerParameterOrdering:
             n_local_steps=1,
             n_global_steps=1,
             n_epochs=1,
+            train_thinning=1,  # Must not exceed n_local_steps/n_global_steps
+            output_thinning=1,  # Must not exceed n_local_steps/n_global_steps
             output_dir="./test_output/",
         )
 
@@ -429,6 +529,8 @@ class TestSamplerIntegration:
             n_global_steps=2,
             n_epochs=2,
             learning_rate=0.001,
+            train_thinning=1,  # No thinning for minimal test
+            output_thinning=1,  # No thinning for minimal test
             output_dir="./test_output/",
         )
 
@@ -479,48 +581,20 @@ class TestSamplerIntegration:
         assert sampler.sampler is not None
 
 
-class TestBlackJAXSMCSampler:
-    """Test BlackJAX SMC sampler with different kernel types."""
+class TestBlackJAXSMCRandomWalkSampler:
+    """Test BlackJAX SMC sampler with Random Walk kernel."""
 
-    def test_smc_sampler_initialization_nuts(self):
-        """Test SMC sampler initializes with NUTS kernel."""
-        from jesterTOV.inference.samplers.blackjax_smc import BlackJAXSMCSampler
-        from jesterTOV.inference.config.schema import SMCSamplerConfig
+    def test_smc_rw_sampler_initialization(self):
+        """Test SMC Random Walk sampler initializes correctly."""
+        from jesterTOV.inference.samplers.blackjax.smc.random_walk import (
+            BlackJAXSMCRandomWalkSampler,
+        )
+        from jesterTOV.inference.config.schema import SMCRandomWalkSamplerConfig
 
         prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
         likelihood = MockLikelihood()
 
-        config = SMCSamplerConfig(
-            kernel_type="nuts",
-            n_particles=100,
-            n_mcmc_steps=1,
-            target_ess=0.9,
-            output_dir="./test_output/",
-        )
-
-        sampler = BlackJAXSMCSampler(
-            likelihood=likelihood,
-            prior=prior,
-            sample_transforms=[],
-            likelihood_transforms=[],
-            config=config,
-        )
-
-        assert sampler.config.kernel_type == "nuts"
-        assert sampler.config.n_particles == 100
-        assert sampler.prior == prior
-        assert sampler.likelihood == likelihood
-
-    def test_smc_sampler_initialization_random_walk(self):
-        """Test SMC sampler initializes with random walk kernel."""
-        from jesterTOV.inference.samplers.blackjax_smc import BlackJAXSMCSampler
-        from jesterTOV.inference.config.schema import SMCSamplerConfig
-
-        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
-        likelihood = MockLikelihood()
-
-        config = SMCSamplerConfig(
-            kernel_type="random_walk",
+        config = SMCRandomWalkSamplerConfig(
             n_particles=100,
             n_mcmc_steps=1,
             target_ess=0.9,
@@ -528,7 +602,7 @@ class TestBlackJAXSMCSampler:
             output_dir="./test_output/",
         )
 
-        sampler = BlackJAXSMCSampler(
+        sampler = BlackJAXSMCRandomWalkSampler(
             likelihood=likelihood,
             prior=prior,
             sample_transforms=[],
@@ -536,30 +610,72 @@ class TestBlackJAXSMCSampler:
             config=config,
         )
 
-        assert sampler.config.kernel_type == "random_walk"
+        assert sampler.config.type == "smc-rw"
+        assert sampler.config.n_particles == 100
         assert sampler.config.random_walk_sigma == 0.1
         assert sampler.prior == prior
         assert sampler.likelihood == likelihood
 
-    def test_smc_config_validation(self):
-        """Test SMC config validates kernel_type correctly."""
-        from jesterTOV.inference.config.schema import SMCSamplerConfig
+    def test_smc_rw_config_validation(self):
+        """Test SMC Random Walk config validates correctly."""
+        from jesterTOV.inference.config.schema import SMCRandomWalkSamplerConfig
 
-        # Valid kernel types
-        config_nuts = SMCSamplerConfig(kernel_type="nuts", output_dir="./test/")
-        assert config_nuts.kernel_type == "nuts"
+        # Valid config
+        config = SMCRandomWalkSamplerConfig(output_dir="./test/")
+        assert config.type == "smc-rw"
+        assert (
+            config.random_walk_sigma == 1.0
+        )  # default (uses empirical covariance directly)
 
-        config_rw = SMCSamplerConfig(kernel_type="random_walk", output_dir="./test/")
-        assert config_rw.kernel_type == "random_walk"
 
-        # Invalid kernel type should raise validation error
-        with pytest.raises(Exception):  # Pydantic ValidationError
-            SMCSamplerConfig(kernel_type="invalid", output_dir="./test/")
+class TestBlackJAXSMCNUTSSampler:
+    """Test BlackJAX SMC sampler with NUTS kernel."""
 
-    def test_smc_mass_matrix_building(self):
-        """Test SMC sampler builds mass matrix correctly with custom scales."""
-        from jesterTOV.inference.samplers.blackjax_smc import BlackJAXSMCSampler
-        from jesterTOV.inference.config.schema import SMCSamplerConfig
+    def test_smc_nuts_sampler_initialization(self):
+        """Test SMC NUTS sampler initializes correctly."""
+        from jesterTOV.inference.samplers.blackjax.smc.nuts import (
+            BlackJAXSMCNUTSSampler,
+        )
+        from jesterTOV.inference.config.schema import SMCNUTSSamplerConfig
+
+        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
+        likelihood = MockLikelihood()
+
+        config = SMCNUTSSamplerConfig(
+            n_particles=100,
+            n_mcmc_steps=1,
+            target_ess=0.9,
+            output_dir="./test_output/",
+        )
+
+        sampler = BlackJAXSMCNUTSSampler(
+            likelihood=likelihood,
+            prior=prior,
+            sample_transforms=[],
+            likelihood_transforms=[],
+            config=config,
+        )
+
+        assert sampler.config.type == "smc-nuts"
+        assert sampler.config.n_particles == 100
+        assert sampler.prior == prior
+        assert sampler.likelihood == likelihood
+
+    def test_smc_nuts_config_validation(self):
+        """Test SMC NUTS config validates correctly."""
+        from jesterTOV.inference.config.schema import SMCNUTSSamplerConfig
+
+        # Valid config
+        config = SMCNUTSSamplerConfig(output_dir="./test/")
+        assert config.type == "smc-nuts"
+        assert config.init_step_size == 1e-2  # default
+
+    def test_smc_nuts_mass_matrix_building(self):
+        """Test SMC NUTS sampler builds mass matrix correctly with custom scales."""
+        from jesterTOV.inference.samplers.blackjax.smc.nuts import (
+            BlackJAXSMCNUTSSampler,
+        )
+        from jesterTOV.inference.config.schema import SMCNUTSSamplerConfig
 
         # Multi-dimensional prior
         prior = CombinePrior(
@@ -572,15 +688,14 @@ class TestBlackJAXSMCSampler:
         likelihood = MockLikelihood()
 
         # Custom mass matrix scales
-        config = SMCSamplerConfig(
-            kernel_type="nuts",
+        config = SMCNUTSSamplerConfig(
             n_particles=100,
             mass_matrix_base=2.0e-1,
             mass_matrix_param_scales={"y": 2.0},  # Scale y parameter differently
             output_dir="./test_output/",
         )
 
-        sampler = BlackJAXSMCSampler(
+        sampler = BlackJAXSMCNUTSSampler(
             likelihood=likelihood,
             prior=prior,
             sample_transforms=[],
@@ -608,19 +723,20 @@ class TestBlackJAXSMCSampler:
 
     def test_smc_sampler_methods_before_sampling_raise_errors(self):
         """Test SMC sampler methods raise errors when called before sampling."""
-        from jesterTOV.inference.samplers.blackjax_smc import BlackJAXSMCSampler
-        from jesterTOV.inference.config.schema import SMCSamplerConfig
+        from jesterTOV.inference.samplers.blackjax.smc.random_walk import (
+            BlackJAXSMCRandomWalkSampler,
+        )
+        from jesterTOV.inference.config.schema import SMCRandomWalkSamplerConfig
 
         prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
         likelihood = MockLikelihood()
 
-        config = SMCSamplerConfig(
-            kernel_type="nuts",
+        config = SMCRandomWalkSamplerConfig(
             n_particles=100,
             output_dir="./test_output/",
         )
 
-        sampler = BlackJAXSMCSampler(
+        sampler = BlackJAXSMCRandomWalkSampler(
             likelihood=likelihood,
             prior=prior,
             sample_transforms=[],
@@ -640,8 +756,10 @@ class TestBlackJAXSMCSampler:
 
     def test_smc_sampler_with_sample_transforms_warns(self):
         """Test SMC sampler warns when given sample transforms (works in prior space)."""
-        from jesterTOV.inference.samplers.blackjax_smc import BlackJAXSMCSampler
-        from jesterTOV.inference.config.schema import SMCSamplerConfig
+        from jesterTOV.inference.samplers.blackjax.smc.random_walk import (
+            BlackJAXSMCRandomWalkSampler,
+        )
+        from jesterTOV.inference.config.schema import SMCRandomWalkSamplerConfig
 
         prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
         likelihood = MockLikelihood()
@@ -649,14 +767,13 @@ class TestBlackJAXSMCSampler:
         # Create a sample transform
         transform = ScaleTransform((["x"], ["y"]), scale=2.0)
 
-        config = SMCSamplerConfig(
-            kernel_type="nuts",
+        config = SMCRandomWalkSamplerConfig(
             n_particles=100,
             output_dir="./test_output/",
         )
 
         # Should log warning but still initialize
-        sampler = BlackJAXSMCSampler(
+        sampler = BlackJAXSMCRandomWalkSampler(
             likelihood=likelihood,
             prior=prior,
             sample_transforms=[transform],
@@ -669,14 +786,15 @@ class TestBlackJAXSMCSampler:
     @pytest.mark.slow
     def test_smc_sampler_minimal_run_nuts(self):
         """Test SMC sampler can run minimal sampling with NUTS kernel (slow test)."""
-        from jesterTOV.inference.samplers.blackjax_smc import BlackJAXSMCSampler
-        from jesterTOV.inference.config.schema import SMCSamplerConfig
+        from jesterTOV.inference.samplers.blackjax.smc.nuts import (
+            BlackJAXSMCNUTSSampler,
+        )
+        from jesterTOV.inference.config.schema import SMCNUTSSamplerConfig
 
         prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
         likelihood = MockLikelihood()
 
-        config = SMCSamplerConfig(
-            kernel_type="nuts",
+        config = SMCNUTSSamplerConfig(
             n_particles=50,  # Small for quick test
             n_mcmc_steps=2,
             target_ess=0.8,
@@ -684,7 +802,7 @@ class TestBlackJAXSMCSampler:
             output_dir="./test_output/",
         )
 
-        sampler = BlackJAXSMCSampler(
+        sampler = BlackJAXSMCNUTSSampler(
             likelihood=likelihood,
             prior=prior,
             sample_transforms=[],
@@ -721,14 +839,15 @@ class TestBlackJAXSMCSampler:
     @pytest.mark.slow
     def test_smc_sampler_minimal_run_random_walk(self):
         """Test SMC sampler can run minimal sampling with random walk kernel (slow test)."""
-        from jesterTOV.inference.samplers.blackjax_smc import BlackJAXSMCSampler
-        from jesterTOV.inference.config.schema import SMCSamplerConfig
+        from jesterTOV.inference.samplers.blackjax.smc.random_walk import (
+            BlackJAXSMCRandomWalkSampler,
+        )
+        from jesterTOV.inference.config.schema import SMCRandomWalkSamplerConfig
 
         prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
         likelihood = MockLikelihood()
 
-        config = SMCSamplerConfig(
-            kernel_type="random_walk",
+        config = SMCRandomWalkSamplerConfig(
             n_particles=50,
             n_mcmc_steps=10,  # More steps needed for random walk
             target_ess=0.8,
@@ -736,7 +855,7 @@ class TestBlackJAXSMCSampler:
             output_dir="./test_output/",
         )
 
-        sampler = BlackJAXSMCSampler(
+        sampler = BlackJAXSMCRandomWalkSampler(
             likelihood=likelihood,
             prior=prior,
             sample_transforms=[],
@@ -764,7 +883,9 @@ class TestBlackJAXNSAWSampler:
         """Test NS-AW sampler initializes correctly."""
         pytest.importorskip("blackjax")  # Skip if BlackJAX not installed
 
-        from jesterTOV.inference.samplers.blackjax_ns_aw import BlackJAXNSAWSampler
+        from jesterTOV.inference.samplers.blackjax.nested_sampling import (
+            BlackJAXNSAWSampler,
+        )
         from jesterTOV.inference.config.schema import BlackJAXNSAWConfig
 
         prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
@@ -794,7 +915,9 @@ class TestBlackJAXNSAWSampler:
         """Test NS-AW automatically creates BoundToBound transform for unit cube."""
         pytest.importorskip("blackjax")
 
-        from jesterTOV.inference.samplers.blackjax_ns_aw import BlackJAXNSAWSampler
+        from jesterTOV.inference.samplers.blackjax.nested_sampling import (
+            BlackJAXNSAWSampler,
+        )
         from jesterTOV.inference.config.schema import BlackJAXNSAWConfig
 
         prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
@@ -822,7 +945,9 @@ class TestBlackJAXNSAWSampler:
         """Test NS-AW sampler methods raise errors when called before sampling."""
         pytest.importorskip("blackjax")
 
-        from jesterTOV.inference.samplers.blackjax_ns_aw import BlackJAXNSAWSampler
+        from jesterTOV.inference.samplers.blackjax.nested_sampling import (
+            BlackJAXNSAWSampler,
+        )
         from jesterTOV.inference.config.schema import BlackJAXNSAWConfig
 
         prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
@@ -851,13 +976,124 @@ class TestBlackJAXNSAWSampler:
         # get_n_samples should return 0 before sampling
         assert sampler.get_n_samples() == 0
 
+    def test_ns_aw_creates_mv_gaussian_transform_for_gaussian_prior(self):
+        """NS-AW creates MVGaussianToUnitCube when prior is MultivariateGaussianPrior."""
+        pytest.importorskip("blackjax")
+
+        from jesterTOV.inference.samplers.blackjax.nested_sampling import (
+            BlackJAXNSAWSampler,
+        )
+        from jesterTOV.inference.base.transform import MVGaussianToUnitCube
+        from jesterTOV.inference.config.schema import BlackJAXNSAWConfig
+
+        prior = CombinePrior(
+            [
+                MultivariateGaussianPrior(
+                    parameter_names=["a", "b"],
+                    mean=jnp.zeros(2),
+                    cov=jnp.eye(2),
+                )
+            ]
+        )
+        likelihood = MockLikelihood()
+        config = BlackJAXNSAWConfig(n_live=100, output_dir="./test_output/")
+
+        sampler = BlackJAXNSAWSampler(
+            likelihood=likelihood,
+            prior=prior,
+            sample_transforms=[],
+            likelihood_transforms=[],
+            config=config,
+        )
+
+        assert len(sampler.sample_transforms) == 1
+        assert isinstance(sampler.sample_transforms[0], MVGaussianToUnitCube)
+
+    def test_ns_aw_creates_two_transforms_for_mixed_prior(self):
+        """NS-AW creates MVGaussianToUnitCube + BoundToBound for mixed priors."""
+        pytest.importorskip("blackjax")
+
+        from jesterTOV.inference.samplers.blackjax.nested_sampling import (
+            BlackJAXNSAWSampler,
+        )
+        from jesterTOV.inference.base.transform import (
+            MVGaussianToUnitCube,
+            BoundToBound,
+        )
+        from jesterTOV.inference.config.schema import BlackJAXNSAWConfig
+
+        prior = CombinePrior(
+            [
+                UniformPrior(0.0, 1.0, parameter_names=["x"]),
+                MultivariateGaussianPrior(
+                    parameter_names=["a", "b"],
+                    mean=jnp.zeros(2),
+                    cov=jnp.eye(2),
+                ),
+            ]
+        )
+        likelihood = MockLikelihood()
+        config = BlackJAXNSAWConfig(n_live=100, output_dir="./test_output/")
+
+        sampler = BlackJAXNSAWSampler(
+            likelihood=likelihood,
+            prior=prior,
+            sample_transforms=[],
+            likelihood_transforms=[],
+            config=config,
+        )
+
+        assert len(sampler.sample_transforms) == 2
+        transform_types = {type(t) for t in sampler.sample_transforms}
+        assert MVGaussianToUnitCube in transform_types
+        assert BoundToBound in transform_types
+
+    def test_ns_aw_mv_gaussian_logprior_is_flat_in_unit_cube(self):
+        """logprior_fn evaluates to 0 anywhere in the unit cube for a Gaussian prior.
+
+        This verifies the probability integral transform property: the prior
+        density in unit-cube space is exactly flat, which is required for NS.
+        """
+        pytest.importorskip("blackjax")
+
+        from jesterTOV.inference.samplers.blackjax.nested_sampling import (
+            BlackJAXNSAWSampler,
+        )
+        from jesterTOV.inference.config.schema import BlackJAXNSAWConfig
+
+        prior = CombinePrior(
+            [
+                MultivariateGaussianPrior(
+                    parameter_names=["a", "b"],
+                    mean=jnp.array([1.0, 2.0]),
+                    cov=jnp.array([[2.0, 0.5], [0.5, 1.0]]),
+                )
+            ]
+        )
+        likelihood = MockLikelihood()
+        config = BlackJAXNSAWConfig(n_live=100, output_dir="./test_output/")
+
+        sampler = BlackJAXNSAWSampler(
+            likelihood=likelihood,
+            prior=prior,
+            sample_transforms=[],
+            likelihood_transforms=[],
+            config=config,
+        )
+
+        # Any point in the unit cube should give logprior = 0
+        for u_vals in [(0.3, 0.7), (0.1, 0.9), (0.5, 0.5)]:
+            params = {"a": u_vals[0], "b": u_vals[1]}
+            log_p = sampler._logprior_fn(params)
+            assert float(log_p) == pytest.approx(0.0, abs=1e-5)
+
 
 class TestSamplerFactory:
     """Test sampler factory for multi-backend support."""
 
     def test_create_flowmc_sampler_from_config(self):
         """Test factory creates FlowMC sampler from config."""
-        from jesterTOV.inference.samplers.factory import create_sampler
+        from jesterTOV.inference.samplers import create_sampler
         from jesterTOV.inference.samplers.flowmc import FlowMCSampler
         from jesterTOV.inference.config.schema import (
             InferenceConfig,
@@ -867,9 +1103,10 @@ class TestSamplerFactory:
         # Create full inference config
         config = InferenceConfig(
             seed=42,
-            transform={"type": "metamodel", "nb_CSE": 0},
+            eos={"type": "metamodel", "nb_CSE": 0},
+            tov={"type": "gr"},
             prior={"specification_file": "test.prior"},
-            likelihoods=[{"type": "zero", "enabled": True, "parameters": {}}],
+            likelihoods=[{"type": "zero", "enabled": True}],
             sampler=FlowMCSamplerConfig(
                 type="flowmc",
                 n_chains=2,
@@ -886,7 +1123,6 @@ class TestSamplerFactory:
             config.sampler,
             prior,
             likelihood,
-            sample_transforms=[],
             likelihood_transforms=[],
             seed=42,
         )
@@ -895,13 +1131,14 @@ class TestSamplerFactory:
 
     def test_create_smc_sampler_from_config(self):
         """Test factory creates SMC sampler from config."""
-        from jesterTOV.inference.samplers.factory import create_sampler
-        from jesterTOV.inference.samplers.blackjax_smc import BlackJAXSMCSampler
-        from jesterTOV.inference.config.schema import SMCSamplerConfig
+        from jesterTOV.inference.samplers import create_sampler
+        from jesterTOV.inference.samplers.blackjax.smc.random_walk import (
+            BlackJAXSMCRandomWalkSampler,
+        )
+        from jesterTOV.inference.config.schema import SMCRandomWalkSamplerConfig
 
-        config = SMCSamplerConfig(
-            type="smc",
-            kernel_type="nuts",
+        config = SMCRandomWalkSamplerConfig(
+            type="smc-rw",
             n_particles=100,
             output_dir="./test/",
         )
@@ -913,20 +1150,49 @@ class TestSamplerFactory:
             config,
             prior,
             likelihood,
-            sample_transforms=[],
             likelihood_transforms=[],
             seed=42,
         )
 
-        assert isinstance(sampler, BlackJAXSMCSampler)
-        assert sampler.config.kernel_type == "nuts"
+        assert isinstance(sampler, BlackJAXSMCRandomWalkSampler)
+        assert sampler.config.type == "smc-rw"
+
+    def test_create_smc_nuts_sampler_from_config(self):
+        """Test factory creates SMC NUTS sampler from config."""
+        from jesterTOV.inference.samplers import create_sampler
+        from jesterTOV.inference.samplers.blackjax.smc.nuts import (
+            BlackJAXSMCNUTSSampler,
+        )
+        from jesterTOV.inference.config.schema import SMCNUTSSamplerConfig
+
+        config = SMCNUTSSamplerConfig(
+            type="smc-nuts",
+            n_particles=100,
+            output_dir="./test/",
+        )
+
+        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
+        likelihood = MockLikelihood()
+
+        sampler = create_sampler(
+            config,
+            prior,
+            likelihood,
+            likelihood_transforms=[],
+            seed=42,
+        )
+
+        assert isinstance(sampler, BlackJAXSMCNUTSSampler)
+        assert sampler.config.type == "smc-nuts"
 
     def test_create_ns_aw_sampler_from_config(self):
         """Test factory creates NS-AW sampler from config."""
         pytest.importorskip("blackjax")
 
-        from jesterTOV.inference.samplers.factory import create_sampler
-        from jesterTOV.inference.samplers.blackjax_ns_aw import BlackJAXNSAWSampler
+        from jesterTOV.inference.samplers import create_sampler
+        from jesterTOV.inference.samplers.blackjax.nested_sampling import (
+            BlackJAXNSAWSampler,
+        )
         from jesterTOV.inference.config.schema import BlackJAXNSAWConfig
 
         config = BlackJAXNSAWConfig(
@@ -942,7 +1208,6 @@ class TestSamplerFactory:
             config,
             prior,
             likelihood,
-            sample_transforms=[],
             likelihood_transforms=[],
             seed=42,
         )
@@ -951,7 +1216,7 @@ class TestSamplerFactory:
 
     def test_factory_invalid_sampler_type_raises_error(self):
         """Test factory raises error for invalid sampler type."""
-        from jesterTOV.inference.samplers.factory import create_sampler
+        from jesterTOV.inference.samplers import create_sampler
         from jesterTOV.inference.config.schema import BaseSamplerConfig
 
         # Create invalid config (this will fail Pydantic validation)
@@ -968,7 +1233,6 @@ class TestSamplerFactory:
                 InvalidConfig(output_dir="./test/"),
                 prior,
                 likelihood,
-                sample_transforms=[],
                 likelihood_transforms=[],
             )
 
@@ -1019,6 +1283,8 @@ class TestSamplerOutputInterface:
             n_local_steps=2,
             n_global_steps=2,
             n_epochs=2,
+            train_thinning=1,  # No thinning for minimal test
+            output_thinning=1,  # No thinning for minimal test
             output_dir="./test_output/",
         )
 
@@ -1058,20 +1324,21 @@ class TestSamplerOutputInterface:
         """Test SMC implements get_sampler_output() correctly."""
         pytest.importorskip("blackjax")
 
-        from jesterTOV.inference.samplers.blackjax_smc import BlackJAXSMCSampler
-        from jesterTOV.inference.config.schema import SMCSamplerConfig
+        from jesterTOV.inference.samplers.blackjax.smc.random_walk import (
+            BlackJAXSMCRandomWalkSampler,
+        )
+        from jesterTOV.inference.config.schema import SMCRandomWalkSamplerConfig
 
         prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
         likelihood = MockLikelihood()
 
-        config = SMCSamplerConfig(
-            kernel_type="nuts",
+        config = SMCRandomWalkSamplerConfig(
             n_particles=50,
             n_mcmc_steps=2,
             output_dir="./test_output/",
         )
 
-        sampler = BlackJAXSMCSampler(likelihood, prior, [], [], config)
+        sampler = BlackJAXSMCRandomWalkSampler(likelihood, prior, [], [], config)
         sampler.sample(jax.random.PRNGKey(42))
 
         # Get output via new interface
@@ -1096,7 +1363,9 @@ class TestSamplerOutputInterface:
         """Test NS-AW raises error before sampling."""
         pytest.importorskip("blackjax")
 
-        from jesterTOV.inference.samplers.blackjax_ns_aw import BlackJAXNSAWSampler
+        from jesterTOV.inference.samplers.blackjax.nested_sampling import (
+            BlackJAXNSAWSampler,
+        )
         from jesterTOV.inference.config.schema import BlackJAXNSAWConfig
 
         prior = UniformPrior(0.0, 1.0, parameter_names=["x"])

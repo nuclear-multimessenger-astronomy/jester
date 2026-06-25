@@ -4,10 +4,12 @@ import pytest
 import jax
 import jax.numpy as jnp
 
+pytestmark = pytest.mark.integration
+
 from jesterTOV.inference.config import parser as config_parser
 from jesterTOV.inference.config import schema
 from jesterTOV.inference.priors import parser as prior_parser
-from jesterTOV.inference.transforms import factory as transform_factory
+from jesterTOV.inference.transforms import JesterTransform
 from jesterTOV.inference.likelihoods import factory as likelihood_factory
 
 
@@ -23,12 +25,13 @@ class TestConfigToComponents:
         prior_spec_file = config.prior.specification_file
 
         # Create prior
-        prior = prior_parser.parse_prior_file(
-            prior_spec_file, nb_CSE=config.transform.nb_CSE
+        parsed = prior_parser.parse_prior_file(
+            prior_spec_file, nb_CSE=config.eos.nb_CSE
         )
+        prior = parsed.prior
 
         # Prior should have correct number of dimensions
-        assert prior.n_dim == 8  # 8 NEP parameters for nb_CSE=0
+        assert prior.n_dim == 9  # 9 NEP parameters for nb_CSE=0 (includes E_sat)
 
         # Can sample from prior
         rng_key = jax.random.PRNGKey(42)
@@ -36,6 +39,7 @@ class TestConfigToComponents:
 
         # Should have all expected parameters
         expected_params = [
+            "E_sat",
             "K_sat",
             "Q_sat",
             "Z_sat",
@@ -52,34 +56,13 @@ class TestConfigToComponents:
         """Test creating transform from configuration."""
         config = schema.InferenceConfig(**sample_config_dict)
 
-        # Get prior for name mapping
-        nb_CSE = config.transform.nb_CSE
-        param_names = [
-            "K_sat",
-            "Q_sat",
-            "Z_sat",
-            "E_sym",
-            "L_sym",
-            "K_sym",
-            "Q_sym",
-            "Z_sym",
-        ]
-        output_names = ["masses_EOS", "radii_EOS", "Lambdas_EOS"]
-        name_mapping = (param_names, output_names)
-
-        # Create transform config with name_mapping
-        transform_config_dict = {
-            **config.transform.model_dump(),
-            "name_mapping": name_mapping,
-        }
-
-        # Create transform (should work with TransformConfig)
-        transform = transform_factory.create_transform(
-            schema.TransformConfig(**transform_config_dict)
-        )
+        # Create transform using from_config (no need for manual name_mapping)
+        transform = JesterTransform.from_config(config.eos, config.tov)
 
         # Transform should have correct type
-        assert transform.get_eos_type() == "MM"  # MetaModel for nb_CSE=0
+        assert (
+            "MetaModel_EOS_model" in transform.get_eos_type()
+        )  # MetaModel for nb_CSE=0
 
     def test_config_to_likelihood_integration(self, sample_config_dict):
         """Test creating likelihood from configuration."""
@@ -122,25 +105,26 @@ Z_sym = UniformPrior(-2000.0, 1500.0, parameter_names=["Z_sym"])
             "seed": 42,
             "dry_run": False,
             "validate_only": False,
-            "transform": {
+            "eos": {
                 "type": "metamodel",
                 "ndat_metamodel": 50,  # Smaller for faster tests
                 "nmax_nsat": 2.0,
                 "nb_CSE": 0,
+                "crust_name": "DH",
+            },
+            "tov": {
+                "type": "gr",
                 "min_nsat_TOV": 0.75,
                 "ndat_TOV": 50,
                 "nb_masses": 50,
-                "crust_name": "DH",
             },
             "prior": {"specification_file": str(prior_file)},
             "likelihoods": [
                 {
                     "type": "constraints_eos",
                     "enabled": True,
-                    "parameters": {
-                        "penalty_causality": -1e10,
-                        "penalty_stability": -1e5,
-                    },
+                    "penalty_causality": -1e10,
+                    "penalty_stability": -1e5,
                 }
             ],
             "sampler": {
@@ -167,9 +151,10 @@ Z_sym = UniformPrior(-2000.0, 1500.0, parameter_names=["Z_sym"])
         that the components are compatible.
         """
         # Create prior
-        prior = prior_parser.parse_prior_file(
-            full_config.prior.specification_file, nb_CSE=full_config.transform.nb_CSE
+        parsed = prior_parser.parse_prior_file(
+            full_config.prior.specification_file, nb_CSE=full_config.eos.nb_CSE
         )
+        prior = parsed.prior
 
         # Sample from prior
         rng_key = jax.random.PRNGKey(42)
@@ -197,9 +182,10 @@ Z_sym = UniformPrior(-2000.0, 1500.0, parameter_names=["Z_sym"])
     def test_prior_log_prob_and_likelihood(self, full_config):
         """Test evaluating prior log probability and likelihood together."""
         # Create prior
-        prior = prior_parser.parse_prior_file(
-            full_config.prior.specification_file, nb_CSE=full_config.transform.nb_CSE
+        parsed = prior_parser.parse_prior_file(
+            full_config.prior.specification_file, nb_CSE=full_config.eos.nb_CSE
         )
+        prior = parsed.prior
 
         # Sample from prior
         rng_key = jax.random.PRNGKey(42)
@@ -273,7 +259,8 @@ class TestParameterNamePropagation:
     def test_prior_parameter_names_match_transform(self, sample_prior_file):
         """Test that prior parameter names match what transform expects."""
         # Create prior
-        prior = prior_parser.parse_prior_file(sample_prior_file, nb_CSE=0)
+        parsed = prior_parser.parse_prior_file(sample_prior_file, nb_CSE=0)
+        prior = parsed.prior
 
         # Get parameter names
         param_names = prior.parameter_names
@@ -297,7 +284,10 @@ class TestParameterNamePropagation:
         """Test that CSE parameters are added when nb_CSE > 0."""
         # Create prior with CSE
         nb_CSE = 8
-        prior = prior_parser.parse_prior_file(sample_prior_file_with_cse, nb_CSE=nb_CSE)
+        parsed = prior_parser.parse_prior_file(
+            sample_prior_file_with_cse, nb_CSE=nb_CSE
+        )
+        prior = parsed.prior
 
         # Get parameter names
         param_names = prior.parameter_names
@@ -319,7 +309,8 @@ class TestSampleValidation:
 
     def test_prior_samples_are_in_bounds(self, sample_prior_file):
         """Test that prior samples respect bounds."""
-        prior = prior_parser.parse_prior_file(sample_prior_file, nb_CSE=0)
+        parsed = prior_parser.parse_prior_file(sample_prior_file, nb_CSE=0)
+        prior = parsed.prior
 
         # Sample many times
         rng_key = jax.random.PRNGKey(42)
@@ -335,7 +326,8 @@ class TestSampleValidation:
 
     def test_samples_are_deterministic_with_same_seed(self, sample_prior_file):
         """Test that sampling is deterministic given same RNG key."""
-        prior = prior_parser.parse_prior_file(sample_prior_file, nb_CSE=0)
+        parsed = prior_parser.parse_prior_file(sample_prior_file, nb_CSE=0)
+        prior = parsed.prior
 
         # Sample twice with same key
         rng_key = jax.random.PRNGKey(42)
@@ -359,7 +351,6 @@ class TestRadioTimingIntegration:
             psr_name="J0348+0432",
             mean=2.01,
             std=0.04,
-            nb_masses=100,
         )
 
         # Mock stiff EOS with Mmax > 2.01
@@ -390,7 +381,6 @@ class TestRadioTimingIntegration:
             psr_name="J0348+0432",
             mean=2.01,
             std=0.04,
-            nb_masses=100,
         )
 
         # Mock soft EOS with Mmax < 2.01 but > m_min (0.1)
@@ -417,12 +407,12 @@ class TestConfigValidationIntegration:
     """Test that invalid configurations are caught early."""
 
     def test_invalid_config_type_raises_validation_error(self):
-        """Test that invalid transform type is caught by Pydantic."""
+        """Test that invalid EOS type is caught by Pydantic."""
         from pydantic import ValidationError
 
         with pytest.raises(ValidationError):
-            schema.TransformConfig(
-                type="invalid_transform",  # Should fail
+            schema.MetamodelEOSConfig(
+                type="invalid_eos",  # Should fail
                 nb_CSE=0,
             )
 
@@ -431,7 +421,7 @@ class TestConfigValidationIntegration:
         from pydantic import ValidationError
 
         with pytest.raises(ValidationError, match="nb_CSE must be 0"):
-            schema.TransformConfig(
+            schema.MetamodelEOSConfig(
                 type="metamodel",
                 nb_CSE=8,  # Should fail for type=metamodel
             )
@@ -442,10 +432,8 @@ class TestConfigValidationIntegration:
 
         # GW likelihood requires 'events' parameter
         with pytest.raises(ValidationError):
-            schema.LikelihoodConfig(
-                type="gw",
-                enabled=True,
-                parameters={},  # Missing 'events' - should fail
+            schema.GWLikelihoodConfig(
+                # Missing 'events' - should fail
             )
 
 
@@ -462,11 +450,12 @@ class TestEOSSampleGeneration:
         import numpy as np
         from jesterTOV.inference.result import InferenceResult
         from jesterTOV.inference.config.schema import InferenceConfig
-        from jesterTOV.inference.transforms import factory as transform_factory
+        from jesterTOV.inference.transforms import JesterTransform
 
         # Create a mock result with 100 posterior samples
         n_full_samples = 100
         posterior = {
+            "E_sat": np.random.uniform(-15.9, -16.1, n_full_samples),
             "K_sat": np.random.uniform(150, 300, n_full_samples),
             "L_sym": np.random.uniform(10, 200, n_full_samples),
             "Q_sat": np.random.uniform(100, 300, n_full_samples),
@@ -492,9 +481,10 @@ class TestEOSSampleGeneration:
         # Create minimal config for generate_eos_samples
         config_dict = {
             "seed": 42,
-            "transform": {"type": "metamodel", "nb_CSE": 0},
+            "eos": {"type": "metamodel", "nb_CSE": 0},
+            "tov": {"type": "gr"},
             "prior": {"specification_file": "dummy.prior"},
-            "likelihoods": [{"type": "zero", "enabled": True, "parameters": {}}],
+            "likelihoods": [{"type": "zero", "enabled": True}],
             "sampler": {
                 "type": "flowmc",
                 "n_chains": 10,
@@ -502,10 +492,8 @@ class TestEOSSampleGeneration:
                 "n_loop_production": 2,
                 "n_local_steps": 50,
                 "n_global_steps": 50,
+                "n_epochs": 30,
                 "learning_rate": 0.01,
-                "momentum": 0.9,
-                "batch_size": 10000,
-                "use_global": True,
                 "output_dir": str(temp_dir),
                 "n_eos_samples": 50,  # Request only 50 EOS samples
                 "log_prob_batch_size": 10,
@@ -513,8 +501,8 @@ class TestEOSSampleGeneration:
         }
         config = InferenceConfig(**config_dict)
 
-        # Create transform (factory auto-generates name_mapping for metamodel)
-        transform = transform_factory.create_transform(config.transform)
+        # Create transform using from_config
+        transform = JesterTransform.from_config(config.eos, config.tov)
 
         # Store original log_prob length
         original_log_prob_len = len(result.posterior["log_prob"])
@@ -560,11 +548,12 @@ class TestEOSSampleGeneration:
         import numpy as np
         from jesterTOV.inference.result import InferenceResult
         from jesterTOV.inference.config.schema import InferenceConfig
-        from jesterTOV.inference.transforms import factory as transform_factory
+        from jesterTOV.inference.transforms import JesterTransform
 
         # Create a mock SMC result with weights and ess
         n_full_samples = 100
         posterior = {
+            "E_sat": np.random.uniform(-15.9, -16.1, n_full_samples),
             "K_sat": np.random.uniform(150, 300, n_full_samples),
             "L_sym": np.random.uniform(10, 200, n_full_samples),
             "Q_sat": np.random.uniform(100, 300, n_full_samples),
@@ -578,13 +567,13 @@ class TestEOSSampleGeneration:
             "ess": np.random.uniform(0.7, 0.95, n_full_samples),  # SMC ESS
         }
         metadata = {
-            "sampler": "blackjax_smc",
+            "sampler": "blackjax_smc_rw",
             "n_samples": n_full_samples,
             "seed": 123,
         }
 
         result = InferenceResult(
-            sampler_type="blackjax_smc",
+            sampler_type="blackjax_smc_rw",
             posterior=posterior,
             metadata=metadata,
         )
@@ -592,12 +581,12 @@ class TestEOSSampleGeneration:
         # Create minimal config
         config_dict = {
             "seed": 123,
-            "transform": {"type": "metamodel", "nb_CSE": 0},
+            "eos": {"type": "metamodel", "nb_CSE": 0},
+            "tov": {"type": "gr"},
             "prior": {"specification_file": "dummy.prior"},
-            "likelihoods": [{"type": "zero", "enabled": True, "parameters": {}}],
+            "likelihoods": [{"type": "zero", "enabled": True}],
             "sampler": {
-                "type": "smc",
-                "kernel_type": "nuts",
+                "type": "smc-rw",
                 "n_particles": 100,
                 "n_mcmc_steps": 10,
                 "target_ess": 0.9,
@@ -608,8 +597,8 @@ class TestEOSSampleGeneration:
         }
         config = InferenceConfig(**config_dict)
 
-        # Create transform (factory auto-generates name_mapping for metamodel)
-        transform = transform_factory.create_transform(config.transform)
+        # Create transform using from_config
+        transform = JesterTransform.from_config(config.eos, config.tov)
 
         # Generate 40 EOS samples from 100 posterior samples using new method
         n_eos_samples = 40
@@ -628,3 +617,82 @@ class TestEOSSampleGeneration:
         assert len(result.posterior["log_prob_full"]) == n_full_samples
         assert len(result.posterior["weights_full"]) == n_full_samples
         assert len(result.posterior["ess_full"]) == n_full_samples
+
+    def test_batch_size_capped_to_n_eos_samples(self, temp_dir, caplog):
+        """Test that batch_size is automatically reduced when larger than n_eos_samples.
+
+        Regression test for issue #95: batch size was not capped when the number of
+        requested EOS samples was smaller than the configured batch size.
+        """
+        import logging
+
+        import numpy as np
+
+        from jesterTOV.inference.config.schema import InferenceConfig
+        from jesterTOV.inference.result import InferenceResult
+        from jesterTOV.inference.transforms import JesterTransform
+
+        n_full_samples = 50
+        posterior = {
+            "E_sat": np.random.uniform(-15.9, -16.1, n_full_samples),
+            "K_sat": np.random.uniform(150, 300, n_full_samples),
+            "L_sym": np.random.uniform(10, 200, n_full_samples),
+            "Q_sat": np.random.uniform(100, 300, n_full_samples),
+            "Q_sym": np.random.uniform(-200, 200, n_full_samples),
+            "Z_sat": np.random.uniform(-100, 100, n_full_samples),
+            "Z_sym": np.random.uniform(-200, 200, n_full_samples),
+            "E_sym": np.ones(n_full_samples) * 31.6,
+            "K_sym": np.ones(n_full_samples) * -100.0,
+            "log_prob": np.random.uniform(-100, -10, n_full_samples),
+        }
+        result = InferenceResult(
+            sampler_type="flowmc",
+            posterior=posterior,
+            metadata={"sampler": "flowmc", "n_samples": n_full_samples, "seed": 42},
+        )
+
+        config_dict = {
+            "seed": 42,
+            "eos": {"type": "metamodel", "nb_CSE": 0},
+            "tov": {"type": "gr"},
+            "prior": {"specification_file": "dummy.prior"},
+            "likelihoods": [{"type": "zero", "enabled": True}],
+            "sampler": {
+                "type": "flowmc",
+                "n_chains": 10,
+                "n_loop_training": 2,
+                "n_loop_production": 2,
+                "n_local_steps": 50,
+                "n_global_steps": 50,
+                "n_epochs": 30,
+                "learning_rate": 0.01,
+                "output_dir": str(temp_dir),
+                "n_eos_samples": 10,
+                "log_prob_batch_size": 1000,  # Larger than n_eos_samples
+            },
+        }
+        config = InferenceConfig(**config_dict)
+        transform = JesterTransform.from_config(config.eos, config.tov)
+
+        # batch_size=1000 is larger than n_eos_samples=10 → should be capped with a warning.
+        # The jester logger has propagate=False, so we temporarily enable propagation
+        # so caplog can capture log records from it.
+        jester_logger = logging.getLogger("jester")
+        with caplog.at_level(logging.WARNING, logger="jester"):
+            jester_logger.propagate = True
+            try:
+                result.add_eos_from_transform(
+                    transform=transform,
+                    n_eos_samples=10,
+                    batch_size=1000,
+                )
+            finally:
+                jester_logger.propagate = False
+
+        assert any(
+            "Adjusting batch size" in msg for msg in caplog.messages
+        ), "Expected a warning about batch size being adjusted"
+
+        # EOS quantities should still be generated correctly
+        assert "masses_EOS" in result.posterior
+        assert len(result.posterior["masses_EOS"]) == 10

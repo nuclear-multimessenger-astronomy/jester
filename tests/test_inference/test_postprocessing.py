@@ -15,6 +15,9 @@ from jesterTOV.inference.postprocessing.postprocessing import (
     make_cornerplot,
     make_mass_radius_plot,
     make_pressure_density_plot,
+    make_cs2_plot,
+    make_parameter_histograms,
+    _split_into_monotone_branches,
 )
 from jesterTOV.inference.result import InferenceResult
 
@@ -60,6 +63,7 @@ class TestLoadEOSData:
             "p": np.random.rand(2, 50),
             "e": np.random.rand(2, 50),
             "cs2": np.random.rand(2, 50),
+            "n_TOV": np.array([1e45, 2e45]),  # geometric units
         }
         metadata = {
             "sampler": "flowmc",
@@ -86,11 +90,13 @@ class TestLoadEOSData:
         assert "pressures" in data  # renamed from p
         assert "energies" in data  # renamed from e
         assert "cs2" in data
+        assert "n_TOV" in data
         assert "log_prob" in data
 
         # Verify shapes preserved (note: densities/pressures have unit conversions applied)
         assert data["masses"].shape == (2, 100)
         assert data["densities"].shape == (2, 50)
+        assert data["n_TOV"].shape == (2,)  # scalar per sample
 
     def test_load_eos_data_file_not_found(self, temp_dir):
         """Test that load_eos_data raises FileNotFoundError for missing file."""
@@ -210,14 +216,15 @@ class TestPlotGeneration:
             "pressures": np.random.uniform(1.0, 100.0, (n_samples, n_eos_points)),
             "energies": np.random.uniform(1.0, 500.0, (n_samples, n_eos_points)),
             "cs2": np.random.uniform(0.0, 1.0, (n_samples, n_eos_points)),
+            "n_TOV": np.random.uniform(2.5, 6.0, n_samples),  # in n_sat units
             "log_prob": np.random.uniform(-50.0, -10.0, n_samples),
-            "nep_params": {
+            # Use "prior_params" as returned by load_eos_data (not "nep_params")
+            "prior_params": {
                 "K_sat": np.random.uniform(200.0, 250.0, n_samples),
                 "L_sym": np.random.uniform(50.0, 100.0, n_samples),
                 "Q_sat": np.random.uniform(-200.0, 200.0, n_samples),
                 "E_sym": np.random.uniform(28.0, 35.0, n_samples),
             },
-            "cse_params": {},
         }
         return data
 
@@ -276,6 +283,32 @@ class TestPlotGeneration:
 
         plt.close("all")
 
+    def test_make_cs2_plot_basic(self, mock_data, temp_dir):
+        """Test cs2-density plot generation doesn't crash."""
+        make_cs2_plot(data=mock_data, prior_data=None, outdir=str(temp_dir))
+
+        # Check that plot file was created
+        expected_file = temp_dir / "cs2_density_plot.pdf"
+        assert expected_file.exists()
+
+        plt.close("all")
+
+    def test_make_cs2_plot_with_prior(self, mock_data, temp_dir):
+        """Test cs2-density plot with prior samples."""
+        # Create smaller prior data
+        prior_data = {
+            "densities": mock_data["densities"][:10],
+            "cs2": mock_data["cs2"][:10],
+            "log_prob": mock_data["log_prob"][:10],
+        }
+
+        make_cs2_plot(data=mock_data, prior_data=prior_data, outdir=str(temp_dir))
+
+        expected_file = temp_dir / "cs2_density_plot.pdf"
+        assert expected_file.exists()
+
+        plt.close("all")
+
     def test_plots_handle_small_sample_size(self, temp_dir):
         """Test plots work with very small sample sizes."""
         # Minimal data (just 2 samples)
@@ -288,16 +321,111 @@ class TestPlotGeneration:
             "energies": np.random.rand(2, 50),
             "cs2": np.random.rand(2, 50),
             "log_prob": np.array([-10.0, -11.0]),
-            "nep_params": {
+            # Use "prior_params" as returned by load_eos_data
+            "prior_params": {
                 "K_sat": np.array([220.0, 230.0]),
                 "L_sym": np.array([90.0, 95.0]),
             },
-            "cse_params": {},
         }
 
         # Should handle gracefully (may show warnings but shouldn't crash)
         make_mass_radius_plot(data=minimal_data, prior_data=None, outdir=str(temp_dir))
 
+        plt.close("all")
+
+    def test_make_parameter_histograms_n_TOV(self, mock_data, temp_dir):
+        """Test that make_parameter_histograms creates n_TOV histogram when n_TOV present."""
+        make_parameter_histograms(data=mock_data, outdir=str(temp_dir))
+
+        expected_file = temp_dir / "n_TOV_histogram.pdf"
+        assert (
+            expected_file.exists()
+        ), "n_TOV histogram should be created when n_TOV is in data"
+
+        plt.close("all")
+
+    def test_make_parameter_histograms_without_n_TOV(self, mock_data, temp_dir):
+        """Test that make_parameter_histograms works without n_TOV (backwards compat)."""
+        data_without_n_TOV = {k: v for k, v in mock_data.items() if k != "n_TOV"}
+        make_parameter_histograms(data=data_without_n_TOV, outdir=str(temp_dir))
+
+        # n_TOV histogram should NOT be created
+        assert not (temp_dir / "n_TOV_histogram.pdf").exists()
+        # But other histograms should still be created
+        assert (temp_dir / "MTOV_histogram.pdf").exists()
+
+        plt.close("all")
+
+    def test_pressure_density_plot_uses_n_TOV_for_truncation(self, temp_dir):
+        """Test that p(n) curves are truncated at n_TOV."""
+        n_samples = 5
+        n_eos_points = 100
+        # Densities from 0 to 8 n_sat
+        densities = np.tile(np.linspace(0, 8, n_eos_points), (n_samples, 1))
+        pressures = np.tile(np.linspace(0.1, 1000, n_eos_points), (n_samples, 1))
+        n_TOV = np.full(n_samples, 3.0)  # truncate at 3 n_sat
+
+        data = {
+            "masses": np.random.uniform(1.0, 2.5, (n_samples, n_eos_points)),
+            "radii": np.random.uniform(10.0, 15.0, (n_samples, n_eos_points)),
+            "lambdas": np.random.uniform(100.0, 1000.0, (n_samples, n_eos_points)),
+            "densities": densities,
+            "pressures": pressures,
+            "n_TOV": n_TOV,
+            "log_prob": np.full(n_samples, -10.0),
+            "prior_params": {},
+        }
+
+        make_pressure_density_plot(data=data, prior_data=None, outdir=str(temp_dir))
+        assert (temp_dir / "pressure_density_plot.pdf").exists()
+        plt.close("all")
+
+    def test_cs2_plot_uses_n_TOV_for_truncation(self, temp_dir):
+        """Test that cs2(n) curves are truncated at n_TOV."""
+        n_samples = 5
+        n_eos_points = 100
+        densities = np.tile(np.linspace(0, 8, n_eos_points), (n_samples, 1))
+        cs2 = np.tile(np.linspace(0.0, 0.8, n_eos_points), (n_samples, 1))
+        n_TOV = np.full(n_samples, 3.0)
+
+        data = {
+            "masses": np.random.uniform(1.0, 2.5, (n_samples, n_eos_points)),
+            "radii": np.random.uniform(10.0, 15.0, (n_samples, n_eos_points)),
+            "lambdas": np.random.uniform(100.0, 1000.0, (n_samples, n_eos_points)),
+            "densities": densities,
+            "cs2": cs2,
+            "n_TOV": n_TOV,
+            "log_prob": np.full(n_samples, -10.0),
+            "prior_params": {},
+        }
+
+        make_cs2_plot(data=data, prior_data=None, outdir=str(temp_dir))
+        assert (temp_dir / "cs2_density_plot.pdf").exists()
+        plt.close("all")
+
+    def test_plots_skip_invalid_n_TOV_zero(self, temp_dir):
+        """Test that samples with n_TOV=0 (failed computation) are skipped."""
+        n_samples = 5
+        n_eos_points = 100
+        densities = np.tile(np.linspace(0, 8, n_eos_points), (n_samples, 1))
+        pressures = np.tile(np.linspace(0.1, 1000, n_eos_points), (n_samples, 1))
+        # One sample has n_TOV=0 (nan_to_num fallback for failed EOS)
+        n_TOV = np.array([3.0, 0.0, 4.0, 3.5, 2.5])
+
+        data = {
+            "masses": np.random.uniform(1.0, 2.5, (n_samples, n_eos_points)),
+            "radii": np.random.uniform(10.0, 15.0, (n_samples, n_eos_points)),
+            "lambdas": np.random.uniform(100.0, 1000.0, (n_samples, n_eos_points)),
+            "densities": densities,
+            "pressures": pressures,
+            "n_TOV": n_TOV,
+            "log_prob": np.full(n_samples, -10.0),
+            "prior_params": {},
+        }
+
+        # Should not crash; the zero-n_TOV sample is silently skipped
+        make_pressure_density_plot(data=data, prior_data=None, outdir=str(temp_dir))
+        assert (temp_dir / "pressure_density_plot.pdf").exists()
         plt.close("all")
 
 
@@ -309,23 +437,18 @@ class TestPlotErrorHandling:
         incomplete_data = {
             "log_prob": np.array([-10.0, -11.0]),
             "masses_EOS": np.random.rand(2, 50),
+            "prior_params": {},  # Empty prior_params
         }
 
-        # Should either skip or handle gracefully
-        # (exact behavior depends on implementation)
-        try:
-            make_cornerplot(incomplete_data, outdir=str(temp_dir))
-            plt.close("all")
-        except (KeyError, ValueError):
-            # Acceptable to raise error for incomplete data
-            pass
+        # Should handle gracefully (will log warning and return early)
+        make_cornerplot(incomplete_data, outdir=str(temp_dir))
+        plt.close("all")
 
     def test_mass_radius_plot_missing_eos_data(self, temp_dir):
         """Test M-R plot handles missing EOS data."""
         incomplete_data = {
             "log_prob": np.array([-10.0, -11.0]),
-            "nep_params": {"K_sat": np.array([220.0, 230.0])},
-            "cse_params": {},
+            "prior_params": {"K_sat": np.array([220.0, 230.0])},
         }
 
         # Should raise KeyError for missing required fields
@@ -357,12 +480,15 @@ class TestIntegrationWithInferenceResult:
             "p": np.random.uniform(0.1, 500, (n_samples, n_eos)),
             "e": np.random.uniform(1, 1000, (n_samples, n_eos)),
             "cs2": np.random.uniform(0.0, 1.0, (n_samples, n_eos)),
+            "n_TOV": np.random.uniform(1e45, 5e45, n_samples),
         }
 
         metadata = {
             "sampler": "flowmc",
             "n_samples": n_samples,
             "sampling_time": 3600.0,
+            # Include parameter_names so load_eos_data can populate prior_params
+            "parameter_names": ["K_sat", "L_sym", "Q_sat", "E_sym"],
         }
 
         result = InferenceResult(
@@ -381,6 +507,7 @@ class TestIntegrationWithInferenceResult:
         make_cornerplot(data, outdir=str(temp_dir), max_params=4)
         make_mass_radius_plot(data, prior_data=None, outdir=str(temp_dir))
         make_pressure_density_plot(data, prior_data=None, outdir=str(temp_dir))
+        make_cs2_plot(data, prior_data=None, outdir=str(temp_dir))
 
         # Verify all plots created (note: some are PDF, some are PDF/PNG)
         assert (temp_dir / "cornerplot.pdf").exists()
@@ -389,5 +516,110 @@ class TestIntegrationWithInferenceResult:
         assert (temp_dir / "pressure_density_plot.pdf").exists() or (
             temp_dir / "pressure_density_plot.png"
         ).exists()
+        assert (temp_dir / "cs2_density_plot.pdf").exists()
 
         plt.close("all")
+
+
+class TestSplitIntoMonotoneBranches:
+    """Tests for the multi-branch detection helper."""
+
+    def test_monotone_decreasing_returns_one_segment(self):
+        """Smooth Lambda(M) with no increases → single segment covering all data."""
+        masses = np.array([0.5, 0.8, 1.1, 1.4, 1.7, 2.0])
+        lambdas = np.array([2000.0, 800.0, 300.0, 120.0, 50.0, 20.0])
+        branches = _split_into_monotone_branches(masses, lambdas)
+        assert len(branches) == 1
+        assert branches[0] == (0, 6)
+
+    def test_single_lambda_increase_splits_into_two_branches(self):
+        """One Lambda increase mid-curve → two branches."""
+        masses = np.array([0.5, 0.8, 1.1, 1.2, 1.5, 1.8])
+        lambdas = np.array([2000.0, 800.0, 300.0, 1500.0, 400.0, 100.0])
+        branches = _split_into_monotone_branches(masses, lambdas)
+        assert len(branches) == 2
+        assert branches[0] == (0, 3)
+        assert branches[1] == (3, 6)
+
+    def test_multiple_lambda_increases_many_branches(self):
+        """Multiple Lambda increases → multiple branches."""
+        masses = np.linspace(0.5, 2.0, 10)
+        lambdas = np.array(
+            [1000.0, 500.0, 800.0, 200.0, 600.0, 100.0, 300.0, 50.0, 80.0, 20.0]
+        )
+        branches = _split_into_monotone_branches(masses, lambdas)
+        assert len(branches) > 2
+        assert branches[0][0] == 0
+        assert branches[-1][1] == len(masses)
+
+    def test_constant_lambda_returns_one_segment(self):
+        """Flat Lambda → no increases → single segment."""
+        masses = np.linspace(0.5, 2.0, 5)
+        lambdas = np.ones(5) * 500.0
+        branches = _split_into_monotone_branches(masses, lambdas)
+        assert len(branches) == 1
+
+    def test_all_segments_cover_full_range(self):
+        """Branch segments are contiguous and cover the full array without gaps."""
+        masses = np.linspace(0.5, 2.0, 20)
+        rng = np.random.default_rng(42)
+        lambdas = np.cumsum(rng.uniform(-200, 100, 20)) + 2000.0
+        branches = _split_into_monotone_branches(masses, lambdas)
+        assert branches[0][0] == 0
+        assert branches[-1][1] == len(masses)
+        for k in range(len(branches) - 1):
+            assert branches[k][1] == branches[k + 1][0]
+
+    def test_plot_runs_without_error_when_unstable(self, tmp_path):
+        """make_mass_radius_plot runs cleanly when multi-branch samples are present."""
+        n_eos = 50
+        masses_jagged = np.linspace(0.75, 2.5, n_eos)
+        lambdas_jagged = np.concatenate(
+            [
+                np.linspace(2000, 400, 25),
+                np.linspace(1500, 50, 25),
+            ]
+        )
+        radii_jagged = np.linspace(12.0, 10.0, n_eos)
+
+        masses_smooth = np.linspace(0.75, 2.5, n_eos)
+        lambdas_smooth = np.linspace(2000, 10, n_eos)
+        radii_smooth = np.linspace(12.0, 10.0, n_eos)
+
+        data = {
+            "masses": np.array([masses_jagged, masses_smooth]),
+            "radii": np.array([radii_jagged, radii_smooth]),
+            "lambdas": np.array([lambdas_jagged, lambdas_smooth]),
+            "densities": np.ones((2, n_eos)),
+            "pressures": np.ones((2, n_eos)),
+            "cs2": np.ones((2, n_eos)) * 0.3,
+            "log_prob": np.array([-10.0, -10.0]),
+            "prior_params": {},
+        }
+
+        make_mass_radius_plot(data, prior_data=None, outdir=str(tmp_path))
+        plt.close("all")
+        assert (tmp_path / "mass_radius_plot.pdf").exists()
+
+    def test_plot_runs_without_error_when_smooth(self, tmp_path):
+        """make_mass_radius_plot runs cleanly when all samples are smooth."""
+        n_eos = 50
+        n_samples = 3
+        masses = np.tile(np.linspace(0.75, 2.5, n_eos), (n_samples, 1))
+        lambdas = np.tile(np.linspace(2000, 10, n_eos), (n_samples, 1))
+        radii = np.tile(np.linspace(12.0, 10.0, n_eos), (n_samples, 1))
+
+        data = {
+            "masses": masses,
+            "radii": radii,
+            "lambdas": lambdas,
+            "densities": np.ones((n_samples, n_eos)),
+            "pressures": np.ones((n_samples, n_eos)),
+            "cs2": np.ones((n_samples, n_eos)) * 0.3,
+            "log_prob": np.full(n_samples, -10.0),
+            "prior_params": {},
+        }
+
+        make_mass_radius_plot(data, prior_data=None, outdir=str(tmp_path))
+        plt.close("all")
+        assert (tmp_path / "mass_radius_plot.pdf").exists()

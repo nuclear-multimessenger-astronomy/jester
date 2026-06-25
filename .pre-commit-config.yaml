@@ -12,9 +12,9 @@ repos:
     rev: 1.7.1
     hooks:
     - id: nbqa-black
-      exclude: ^examples/
+      exclude: ^(docs/examples/|examples/google_colab/)
       additional_dependencies: [ipython==8.12, black]
-    - id: nbqa-ruff 
-      exclude: ^examples/
+    - id: nbqa-ruff
+      exclude: ^(docs/examples/|examples/google_colab/)
       args: ["--fix", "--ignore=I001"]
       additional_dependencies: [ipython==8.12, ruff]

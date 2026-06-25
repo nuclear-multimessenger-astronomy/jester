@@ -1,0 +1,41 @@
+seed: 43
+dry_run: false
+validate_only: false
+eos:
+  type: spectral
+  crust_name: SLy
+  n_points_high: 100
+  reparametrized: true
+tov:
+  ndat_TOV: 100
+  nb_masses: 100
+  min_nsat_TOV: 0.75
+  type: gr
+prior:
+  specification_file: prior.prior
+likelihoods:
+- type: constraints_eos
+  enabled: true
+- type: constraints_gamma
+  enabled: true
+  penalty_gamma: -1.0e10
+- type: gw
+  enabled: true
+  events:
+  - name: GW170817
+  N_masses_evaluation: 2000
+  N_masses_batch_size: 1000
+  seed: 42
+sampler:
+  type: smc-rw
+  n_particles: 5000
+  n_mcmc_steps: 10
+  target_ess: 0.9
+  random_walk_sigma: 0.50
+  n_eos_samples: 5000
+  output_dir: ./outdir/
+postprocessing:
+  enabled: true
+  make_cornerplot: true
+  make_massradius: true
+  make_pressuredensity: true

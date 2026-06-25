@@ -2,13 +2,34 @@ r"""Factory functions for creating likelihoods from configuration"""
 
 from pathlib import Path
 
-from ..config.schema import LikelihoodConfig
+from ..config.schema import (
+    LikelihoodConfig,
+    GWEventConfig,
+    GWLikelihoodConfig,
+    GWResampledLikelihoodConfig,
+    NICERLikelihoodConfig,
+    NICERKDELikelihoodConfig,
+    RadioLikelihoodConfig,
+    ChiEFTLikelihoodConfig,
+    EOSConstraintsLikelihoodConfig,
+    TOVConstraintsLikelihoodConfig,
+    EsymConstraintsLikelihoodConfig,
+    GammaConstraintsLikelihoodConfig,
+    DeprecatedConstraintsLikelihoodConfig,
+    REXLikelihoodConfig,
+    ZeroLikelihoodConfig,
+)
 from .combined import CombinedLikelihood, ZeroLikelihood
 from .gw import GWLikelihood, GWLikelihoodResampled
-from .nicer import NICERLikelihood
+from .nicer import NICERLikelihood, NICERKDELikelihood
 from .radio import RadioTimingLikelihood
 from .chieft import ChiEFTLikelihood
-from .constraints import ConstraintEOSLikelihood, ConstraintTOVLikelihood
+from .constraints import (
+    ConstraintEOSLikelihood,
+    ConstraintTOVLikelihood,
+    ConstraintEsymLikelihood,
+    ConstraintGammaLikelihood,
+)
 from jesterTOV.logging_config import get_logger
 
 logger = get_logger("jester")
@@ -16,45 +37,44 @@ logger = get_logger("jester")
 # Preset flow model directories for GW events with trained flows
 # Paths are relative to jesterTOV/inference/ directory
 GW_EVENT_PRESETS = {
-    "GW170817": "flows/models/gw_maf/gw170817/gw170817_xp_nrtv3",
-    "GW190425": "flows/models/gw_maf/gw190425/gw190425_xp_nrtv3",
+    "GW170817": "flows/models/gw_maf/gw170817/gw170817_gwtc1_lowspin",
+    "GW190425": "flows/models/gw_maf/gw190425/gw190425_phenompnrt_ls",
 }
 
 
-def get_gw_model_dir(event_name: str, model_dir: str | None) -> str:
+def get_gw_model_dir(event: GWEventConfig) -> str:
     """
-    Get model directory for GW event, using presets if path is not provided.
+    Get model directory for a GW event config, using presets if no path is provided.
 
     Parameters
     ----------
-    event_name : str
-        Name of the GW event (case-insensitive)
-    model_dir : str | None
-        User-provided model directory, or None/empty string to use preset
+    event : GWEventConfig
+        Typed GW event configuration.
 
     Returns
     -------
     str
-        Absolute path to model directory
+        Absolute path to model directory.
 
     Raises
     ------
     ValueError
-        If model_dir is not provided and event is not in presets
+        If ``nf_model_dir`` is not provided and the event is not in presets.
     """
+    event_name = event.name
     # Normalize event name to uppercase for preset lookup
     event_name_upper = event_name.upper()
 
-    # If model_dir is provided and not empty, use it directly
-    if model_dir:
-        return str(Path(model_dir).resolve())
+    # If nf_model_dir is provided and not empty, use it directly
+    if event.nf_model_dir:
+        return str(Path(event.nf_model_dir).resolve())
 
     # Check if event is in presets
     if event_name_upper not in GW_EVENT_PRESETS:
         raise ValueError(
-            f"No model_dir provided for event '{event_name}' and event is not in presets. "
+            f"No nf_model_dir provided for event '{event_name}' and event is not in presets. "
             f"Available presets: {list(GW_EVENT_PRESETS.keys())}. "
-            f"Please provide model_dir explicitly in the configuration."
+            f"Please provide nf_model_dir explicitly in the configuration."
         )
 
     # Get preset path and convert to absolute
@@ -65,7 +85,7 @@ def get_gw_model_dir(event_name: str, model_dir: str | None) -> str:
 
     # Log warning that we're using default path
     logger.warning(
-        f"No model_dir provided for event '{event_name}'. "
+        f"No nf_model_dir provided for event '{event_name}'. "
         f"Using default preset path: {model_dir_abs}"
     )
 
@@ -81,7 +101,7 @@ def create_likelihood(
     Parameters
     ----------
     config : LikelihoodConfig
-        Likelihood configuration
+        Likelihood configuration (discriminated union)
 
     Returns
     -------
@@ -91,67 +111,92 @@ def create_likelihood(
     if not config.enabled:
         return None
 
-    params = config.parameters
+    # Type narrowing with match statement
+    match config:
+        case GWLikelihoodConfig() | GWResampledLikelihoodConfig():
+            # GW likelihoods are handled specially in create_combined_likelihood
+            # This function should not be called directly for GW type
+            raise RuntimeError(
+                "GW likelihoods should be created via create_combined_likelihood, "
+                "not create_likelihood directly"
+            )
 
-    if config.type == "gw":
-        # GW likelihoods are handled specially in create_combined_likelihood
-        # This function should not be called directly for GW type
-        raise RuntimeError(
-            "GW likelihoods should be created via create_combined_likelihood, "
-            "not create_likelihood directly"
-        )
+        case NICERLikelihoodConfig() | NICERKDELikelihoodConfig():
+            # NICER likelihoods are handled specially in create_combined_likelihood
+            # This function should not be called directly for NICER types
+            raise RuntimeError(
+                "NICER likelihoods should be created via create_combined_likelihood, "
+                "not create_likelihood directly"
+            )
 
-    elif config.type == "nicer":
-        # NICER likelihoods are handled specially in create_combined_likelihood
-        # This function should not be called directly for NICER type
-        raise RuntimeError(
-            "NICER likelihoods should be created via create_combined_likelihood, "
-            "not create_likelihood directly"
-        )
+        case RadioLikelihoodConfig():
+            # Radio timing likelihoods are handled specially in create_combined_likelihood
+            # This function should not be called directly for radio type
+            raise RuntimeError(
+                "Radio timing likelihoods should be created via create_combined_likelihood, "
+                "not create_likelihood directly"
+            )
 
-    elif config.type == "radio":
-        # Radio timing likelihoods are handled specially in create_combined_likelihood
-        # This function should not be called directly for radio type
-        raise RuntimeError(
-            "Radio timing likelihoods should be created via create_combined_likelihood, "
-            "not create_likelihood directly"
-        )
+        case ChiEFTLikelihoodConfig():
+            return ChiEFTLikelihood(
+                low_filename=config.low_filename,
+                high_filename=config.high_filename,
+                nb_n=config.nb_n,
+            )
 
-    elif config.type == "chieft":
-        return ChiEFTLikelihood(
-            low_filename=params.get("low_filename", None),
-            high_filename=params.get("high_filename", None),
-            nb_n=params.get("nb_n", 100),
-        )
+        case REXLikelihoodConfig():
+            # FIXME: Implement load_rex_posterior(experiment_name) -> gaussian_kde
+            # This should load PREX/CREX posterior KDE from data files
+            # For now, raise NotImplementedError
+            raise NotImplementedError(
+                f"REX likelihood data loading not implemented. "
+                f"Need to implement load_rex_posterior('{config.experiment_name}') -> gaussian_kde"
+            )
 
-    elif config.type == "rex":
-        experiment_name = params.get("experiment_name", "PREX")
+        case EOSConstraintsLikelihoodConfig():
+            return ConstraintEOSLikelihood(
+                penalty_causality=config.penalty_causality,
+                penalty_stability=config.penalty_stability,
+                penalty_pressure=config.penalty_pressure,
+            )
 
-        # FIXME: Implement load_rex_posterior(experiment_name) -> gaussian_kde
-        # This should load PREX/CREX posterior KDE from data files
-        # For now, raise NotImplementedError
-        raise NotImplementedError(
-            f"REX likelihood data loading not implemented. "
-            f"Need to implement load_rex_posterior('{experiment_name}') -> gaussian_kde"
-        )
+        case TOVConstraintsLikelihoodConfig():
+            return ConstraintTOVLikelihood(
+                penalty_tov=config.penalty_tov,
+            )
 
-    elif config.type == "constraints_eos":
-        return ConstraintEOSLikelihood(
-            penalty_causality=params.get("penalty_causality", -1e10),
-            penalty_stability=params.get("penalty_stability", -1e5),
-            penalty_pressure=params.get("penalty_pressure", -1e5),
-        )
+        case EsymConstraintsLikelihoodConfig():
+            return ConstraintEsymLikelihood(
+                penalty_esym=config.penalty_esym,
+            )
 
-    elif config.type == "constraints_tov":
-        return ConstraintTOVLikelihood(
-            penalty_tov=params.get("penalty_tov", -1e10),
-        )
+        case GammaConstraintsLikelihoodConfig():
+            return ConstraintGammaLikelihood(
+                penalty_gamma=config.penalty_gamma,
+            )
 
-    elif config.type == "zero":
-        return ZeroLikelihood()
+        case DeprecatedConstraintsLikelihoodConfig():
+            # Handle deprecated combined constraints
+            logger.warning(
+                "Using deprecated 'constraints' likelihood type. "
+                "Please use 'constraints_eos' + 'constraints_tov' instead."
+            )
+            # Create combined likelihood with both EOS and TOV constraints
+            eos_constraint = ConstraintEOSLikelihood(
+                penalty_causality=config.penalty_causality,
+                penalty_stability=config.penalty_stability,
+                penalty_pressure=config.penalty_pressure,
+            )
+            tov_constraint = ConstraintTOVLikelihood(
+                penalty_tov=config.penalty_tov,
+            )
+            return CombinedLikelihood([eos_constraint, tov_constraint])
 
-    else:
-        raise ValueError(f"Unknown likelihood type: {config.type}")
+        case ZeroLikelihoodConfig():
+            return ZeroLikelihood()
+
+        case _:
+            raise ValueError(f"Unknown likelihood type: {config.type}")
 
 
 def create_combined_likelihood(
@@ -181,95 +226,103 @@ def create_combined_likelihood(
         if not config.enabled:
             continue
 
-        # Special handling for GW likelihoods (presampled is now default): create one likelihood per event
-        if config.type == "gw":
-            params = config.parameters
-            events = params["events"]  # Required, validated by schema
-            penalty_value = params.get("penalty_value", -99999.0)
-            N_masses_evaluation = params.get("N_masses_evaluation", 2000)
-            N_masses_batch_size = params.get("N_masses_batch_size", 1000)
-            seed = params.get("seed", 42)
+        # Use match statement for type narrowing
+        match config:
+            # Special handling for GW likelihoods (presampled): create one likelihood per event
+            case GWLikelihoodConfig():
+                # Create one GWLikelihood (presampled) per event
+                for event in config.events:
+                    # Get model directory (use preset if not provided)
+                    model_dir = get_gw_model_dir(event)
 
-            # Create one GWLikelihood (presampled) per event
-            for event in events:
-                # Get model directory (use preset if not provided)
-                model_dir = get_gw_model_dir(
-                    event_name=event["name"], model_dir=event.get("model_dir")
-                )
+                    gw_likelihood = GWLikelihood(
+                        event_name=event.name,
+                        model_dir=model_dir,
+                        penalty_value=config.penalty_value,
+                        N_masses_evaluation=config.N_masses_evaluation,
+                        N_masses_batch_size=config.N_masses_batch_size,
+                        seed=config.seed,
+                    )
+                    likelihoods.append(gw_likelihood)
 
-                gw_likelihood = GWLikelihood(
-                    event_name=event["name"],
-                    model_dir=model_dir,
-                    penalty_value=penalty_value,
-                    N_masses_evaluation=N_masses_evaluation,
-                    N_masses_batch_size=N_masses_batch_size,
-                    seed=seed,
-                )
-                likelihoods.append(gw_likelihood)
+            # Special handling for GW likelihoods with resampling: create one likelihood per event
+            case GWResampledLikelihoodConfig():
+                # Create one GWLikelihoodResampled per event
+                for event in config.events:
+                    # Get model directory (use preset if not provided)
+                    # GWResampledLikelihoodConfig still uses dict[str, str] events
+                    model_dir = get_gw_model_dir(
+                        GWEventConfig(
+                            name=event["name"],
+                            nf_model_dir=event.get("model_dir"),
+                        )
+                    )
 
-        # Special handling for GW likelihoods with resampling: create one likelihood per event
-        elif config.type == "gw_resampled":
-            params = config.parameters
-            events = params["events"]  # Required, validated by schema
-            penalty_value = params.get("penalty_value", -99999.0)
-            N_masses_evaluation = params.get("N_masses_evaluation", 20)
-            N_masses_batch_size = params.get("N_masses_batch_size", 10)
+                    gw_likelihood = GWLikelihoodResampled(
+                        event_name=event["name"],
+                        model_dir=model_dir,
+                        penalty_value=config.penalty_value,
+                        N_masses_evaluation=config.N_masses_evaluation,
+                        N_masses_batch_size=config.N_masses_batch_size,
+                    )
+                    likelihoods.append(gw_likelihood)
 
-            # Create one GWLikelihoodResampled per event
-            for event in events:
-                # Get model directory (use preset if not provided)
-                model_dir = get_gw_model_dir(
-                    event_name=event["name"], model_dir=event.get("model_dir")
-                )
+            # Special handling for NICER likelihoods (flow-based): create one likelihood per pulsar
+            case NICERLikelihoodConfig():
+                # Create one NICERLikelihood (flow-based) per pulsar
+                for pulsar in config.pulsars:
+                    nicer_likelihood = NICERLikelihood(
+                        psr_name=pulsar["name"],
+                        amsterdam_model_dir=pulsar.get("amsterdam_model_dir"),
+                        maryland_model_dir=pulsar.get("maryland_model_dir"),
+                        N_masses_evaluation=config.N_masses_evaluation,
+                        N_masses_batch_size=config.N_masses_batch_size,
+                        seed=config.seed,
+                    )
+                    likelihoods.append(nicer_likelihood)
 
-                gw_likelihood = GWLikelihoodResampled(
-                    event_name=event["name"],
-                    model_dir=model_dir,
-                    penalty_value=penalty_value,
-                    N_masses_evaluation=N_masses_evaluation,
-                    N_masses_batch_size=N_masses_batch_size,
-                )
-                likelihoods.append(gw_likelihood)
+            # Special handling for NICER KDE likelihoods (legacy): create one likelihood per pulsar
+            case NICERKDELikelihoodConfig():
+                # Create one NICERKDELikelihood (KDE-based) per pulsar
+                for pulsar in config.pulsars:
+                    nicer_kde_likelihood = NICERKDELikelihood(
+                        psr_name=pulsar["name"],
+                        amsterdam_samples_file=pulsar["amsterdam_samples_file"],
+                        maryland_samples_file=pulsar["maryland_samples_file"],
+                        N_masses_evaluation=config.N_masses_evaluation,
+                        N_masses_batch_size=config.N_masses_batch_size,
+                    )
+                    likelihoods.append(nicer_kde_likelihood)
 
-        # Special handling for NICER likelihoods: create one likelihood per pulsar
-        elif config.type == "nicer":
-            params = config.parameters
-            pulsars = params["pulsars"]  # Required, validated by schema
-            N_masses_evaluation = params.get("N_masses_evaluation", 100)
-            N_masses_batch_size = params.get("N_masses_batch_size", 20)
+            # Special handling for radio timing likelihoods: create one likelihood per pulsar
+            case RadioLikelihoodConfig():
+                # Create one RadioTimingLikelihood per pulsar
+                for pulsar in config.pulsars:
+                    # Type checker needs help since dict values are str | float
+                    psr_name = pulsar["name"]
+                    assert isinstance(psr_name, str), "name must be a string"
+                    mass_mean = pulsar["mass_mean"]
+                    assert isinstance(
+                        mass_mean, (int, float)
+                    ), "mass_mean must be a number"
+                    mass_std = pulsar["mass_std"]
+                    assert isinstance(
+                        mass_std, (int, float)
+                    ), "mass_std must be a number"
 
-            # Create one NICERLikelihood per pulsar
-            for pulsar in pulsars:
-                nicer_likelihood = NICERLikelihood(
-                    psr_name=pulsar["name"],
-                    amsterdam_samples_file=pulsar["amsterdam_samples_file"],
-                    maryland_samples_file=pulsar["maryland_samples_file"],
-                    N_masses_evaluation=N_masses_evaluation,
-                    N_masses_batch_size=N_masses_batch_size,
-                )
-                likelihoods.append(nicer_likelihood)
+                    radio_likelihood = RadioTimingLikelihood(
+                        psr_name=psr_name,
+                        mean=float(mass_mean),
+                        std=float(mass_std),
+                        penalty_value=config.penalty_value,
+                    )
+                    likelihoods.append(radio_likelihood)
 
-        # Special handling for radio timing likelihoods: create one likelihood per pulsar
-        elif config.type == "radio":
-            params = config.parameters
-            pulsars = params["pulsars"]  # Required, validated by schema
-            nb_masses = params.get("nb_masses", 100)
-
-            # Create one RadioTimingLikelihood per pulsar
-            for pulsar in pulsars:
-                radio_likelihood = RadioTimingLikelihood(
-                    psr_name=pulsar["name"],
-                    mean=pulsar["mass_mean"],
-                    std=pulsar["mass_std"],
-                    nb_masses=nb_masses,
-                )
-                likelihoods.append(radio_likelihood)
-
-        else:
-            # For other likelihoods, use standard creation
-            likelihood = create_likelihood(config)
-            if likelihood is not None:
-                likelihoods.append(likelihood)
+            case _:
+                # For other likelihoods, use standard creation
+                likelihood = create_likelihood(config)
+                if likelihood is not None:
+                    likelihoods.append(likelihood)
 
     if len(likelihoods) == 0:
         raise ValueError("No likelihoods enabled in configuration")

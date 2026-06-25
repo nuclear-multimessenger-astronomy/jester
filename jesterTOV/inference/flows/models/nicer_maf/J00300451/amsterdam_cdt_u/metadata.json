@@ -1,0 +1,24 @@
+{
+  "n_samples_total": 23888,
+  "n_samples_used": 23888,
+  "parameter_names": [
+    "mass",
+    "radius"
+  ],
+  "filepath": "../../../../../data/NICER/J00300451_amsterdam_CDT_U_NICER_only_Riley2019.npz",
+  "flow_type": "masked_autoregressive_flow",
+  "num_epochs": 3000,
+  "learning_rate": 0.0001,
+  "max_patience": 500,
+  "val_prop": 0.2,
+  "standardize": true,
+  "standardization_method": "zscore",
+  "data_mean": [
+    1.4389787678069808,
+    13.903139002228775
+  ],
+  "data_std": [
+    0.16684241316326667,
+    1.1589058874048417
+  ]
+}

@@ -1,23 +1,30 @@
 {
   "n_samples_total": 53945,
   "n_samples_used": 26973,
+  "parameter_names": [
+    "mass_1_source",
+    "mass_2_source",
+    "lambda_1",
+    "lambda_2"
+  ],
   "filepath": "../../../../../data/gw190425/gw190425_phenomdnrt-ls_posterior.npz",
   "flow_type": "masked_autoregressive_flow",
-  "num_epochs": 3000,
+  "num_epochs": 1555,
   "learning_rate": 0.0001,
   "max_patience": 500,
   "val_prop": 0.2,
   "standardize": true,
-  "data_bounds_min": [
-    1.612675411265949,
-    1.2686182030023687,
-    0.005137940760254667,
-    0.025254090304265425
+  "standardization_method": "zscore",
+  "data_mean": [
+    1.7612113783320555,
+    1.5508789587836616,
+    446.363321540387,
+    667.0343180699356
   ],
-  "data_bounds_max": [
-    2.1481993447519905,
-    1.695867036263967,
-    4944.017582888096,
-    9335.844241090632
+  "data_std": [
+    0.08376343600410772,
+    0.0689236043630885,
+    505.1512840998894,
+    752.7115111789377
   ]
 }

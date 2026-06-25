@@ -1,0 +1,41 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "JESTER: JAX-based EoS and TOV solvER"
+version: 0.1.1
+repository-code: "https://github.com/nuclear-multimessenger-astronomy/jester"
+license: MIT
+authors:
+  - family-names: Wouters
+    given-names: Thibeau
+    email: thibeauwouters@gmail.com
+  - family-names: Pang
+    given-names: "Peter T. H."
+    email: tsunhopang@gmail.com
+preferred-citation:
+  type: article
+  title: "Leveraging differentiable programming in the inverse problem of neutron stars"
+  authors:
+    - family-names: Wouters
+      given-names: Thibeau
+    - family-names: Pang
+      given-names: "Peter T. H."
+    - family-names: Koehn
+      given-names: Hauke
+    - family-names: Rose
+      given-names: Henrik
+    - family-names: Somasundaram
+      given-names: Rahul
+    - family-names: Tews
+      given-names: Ingo
+    - family-names: Dietrich
+      given-names: Tim
+    - family-names: Van Den Broeck
+      given-names: Chris
+  doi: "10.1103/v2y8-kxvx"
+  journal: "Physical Review D"
+  volume: "112"
+  issue: "4"
+  pages: "043037"
+  year: 2025
+  url: "https://arxiv.org/abs/2504.15893"

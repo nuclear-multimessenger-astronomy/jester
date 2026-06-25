@@ -1,7 +1,9 @@
 """Tests for inference likelihood system (base, factory, specific likelihoods)."""
 
 import pytest
+import jax
 import jax.numpy as jnp
+from unittest.mock import MagicMock, patch
 
 from jesterTOV.inference.config import schema
 from jesterTOV.inference.likelihoods import factory
@@ -9,11 +11,14 @@ from jesterTOV.inference.likelihoods.combined import ZeroLikelihood, CombinedLik
 from jesterTOV.inference.likelihoods.constraints import (
     ConstraintEOSLikelihood,
     ConstraintTOVLikelihood,
+    ConstraintEsymLikelihood,
+    ConstraintGammaLikelihood,
     check_tov_validity,
     check_causality_violation,
     check_stability,
     check_pressure_monotonicity,
     check_all_constraints,
+    check_gamma_bounds,
 )
 from jesterTOV.inference.likelihoods.chieft import ChiEFTLikelihood
 from jesterTOV.inference.likelihoods.radio import RadioTimingLikelihood
@@ -227,6 +232,218 @@ class TestConstraintEOSLikelihood:
         result = likelihood.evaluate(params)
         assert result == 0.0
 
+    def test_check_gamma_bounds_valid(self):
+        """Test gamma bounds check with valid Gamma values."""
+        gamma_vals = jnp.array([0.8, 1.2, 2.0, 3.5, 4.0])  # All in [0.6, 4.5]
+
+        n_violations = check_gamma_bounds(gamma_vals)
+        assert n_violations == 0.0
+
+    def test_check_gamma_bounds_below_lower_bound(self):
+        """Test gamma bounds check with Gamma < 0.6 (violates lower bound)."""
+        gamma_vals = jnp.array([0.5, 0.8, 1.2, 2.0])  # One violation (0.5 < 0.6)
+
+        n_violations = check_gamma_bounds(gamma_vals)
+        assert n_violations == 1.0
+
+    def test_check_gamma_bounds_above_upper_bound(self):
+        """Test gamma bounds check with Gamma > 4.5 (violates upper bound)."""
+        gamma_vals = jnp.array([1.0, 2.0, 4.6, 5.0])  # Two violations (4.6, 5.0 > 4.5)
+
+        n_violations = check_gamma_bounds(gamma_vals)
+        assert n_violations == 2.0
+
+    def test_check_gamma_bounds_both_bounds_violated(self):
+        """Test gamma bounds check with violations at both bounds."""
+        gamma_vals = jnp.array(
+            [0.5, 1.0, 2.0, 4.6]
+        )  # Two violations (0.5 < 0.6, 4.6 > 4.5)
+
+        n_violations = check_gamma_bounds(gamma_vals)
+        assert n_violations == 2.0
+
+    def test_check_gamma_bounds_at_boundaries(self):
+        """Test gamma bounds check with Gamma exactly at boundaries."""
+        gamma_vals = jnp.array([0.6, 1.0, 4.5])  # All valid, including boundaries
+
+        n_violations = check_gamma_bounds(gamma_vals)
+        assert n_violations == 0.0
+
+
+class TestConstraintGammaLikelihood:
+    """Test ConstraintGammaLikelihood (Gamma bound constraints for spectral EOS)."""
+
+    def test_constraint_gamma_likelihood_valid(self):
+        """Test ConstraintGammaLikelihood with valid Gamma bounds."""
+        likelihood = ConstraintGammaLikelihood()
+
+        # Valid Gamma (no violations)
+        params = {"n_gamma_violations": 0.0}
+
+        result = likelihood.evaluate(params)
+        assert result == 0.0
+
+    def test_constraint_gamma_likelihood_with_violations(self):
+        """Test ConstraintGammaLikelihood with Gamma bound violations."""
+        likelihood = ConstraintGammaLikelihood(penalty_gamma=-1e10)
+
+        # Gamma violations
+        params = {"n_gamma_violations": 3.0}  # Multiple violations
+
+        result = likelihood.evaluate(params)
+        # Penalty is multiplied by number of violations: 3.0 * (-1e10) = -3e10
+        assert result == -3e10
+
+    def test_constraint_gamma_likelihood_missing_key(self):
+        """Test ConstraintGammaLikelihood with missing n_gamma_violations key."""
+        likelihood = ConstraintGammaLikelihood()
+
+        # Empty params - should use default (0.0)
+        params = {}
+
+        result = likelihood.evaluate(params)
+        assert result == 0.0
+
+    def test_constraint_gamma_likelihood_with_non_spectral_transform(self):
+        """Test ConstraintGammaLikelihood gracefully handles non-spectral transforms.
+
+        Non-spectral transforms (metamodel, metamodel_cse) won't have n_gamma_violations
+        in their output. The likelihood should return 0.0 in this case.
+        """
+        likelihood = ConstraintGammaLikelihood()
+
+        # Params from non-spectral transform (no n_gamma_violations key)
+        params = {
+            "masses_EOS": jnp.array([1.4, 1.8, 2.0]),
+            "radii_EOS": jnp.array([12.0, 11.5, 11.0]),
+        }
+
+        result = likelihood.evaluate(params)
+        assert result == 0.0
+
+
+class TestConstraintEsymLikelihood:
+    """Test ConstraintEsymLikelihood (symmetry energy constraint for metamodel EOS)."""
+
+    def test_constraint_esym_likelihood_valid(self):
+        """Returns 0.0 when no esym violations."""
+        likelihood = ConstraintEsymLikelihood()
+        params = {"n_esym_violations": 0.0}
+        result = likelihood.evaluate(params)
+        assert float(result) == 0.0
+
+    def test_constraint_esym_likelihood_with_violations(self):
+        """Penalty is proportional to number of violation points."""
+        likelihood = ConstraintEsymLikelihood(penalty_esym=-1e10)
+        params = {"n_esym_violations": 5.0}
+        result = likelihood.evaluate(params)
+        assert float(result) == -5e10
+
+    def test_constraint_esym_likelihood_missing_key(self):
+        """Missing key defaults to 0 → 0.0 log-likelihood."""
+        likelihood = ConstraintEsymLikelihood()
+        result = likelihood.evaluate({})
+        assert float(result) == 0.0
+
+    def test_constraint_esym_likelihood_non_metamodel_params(self):
+        """No n_esym_violations key (non-metamodel transform) → returns 0.0."""
+        likelihood = ConstraintEsymLikelihood()
+        params = {
+            "masses_EOS": jnp.array([1.4, 2.0]),
+            "radii_EOS": jnp.array([12.0, 11.0]),
+        }
+        result = likelihood.evaluate(params)
+        assert float(result) == 0.0
+
+    def test_metamodel_good_params_zero_violations(self):
+        """MetaModel with typical NEPs stores zero esym violations in extra_constraints."""
+        from jesterTOV.eos.metamodel.base import MetaModel_EOS_model
+
+        eos = MetaModel_EOS_model()
+        params = {
+            "E_sat": -16.0,
+            "K_sat": 230.0,
+            "Q_sat": 300.0,
+            "Z_sat": -500.0,
+            "E_sym": 32.0,
+            "L_sym": 60.0,
+            "K_sym": -100.0,
+            "Q_sym": 0.0,
+            "Z_sym": 0.0,
+        }
+        eos_data = eos.construct_eos(params)
+        assert eos_data.extra_constraints is not None
+        assert "n_esym_violations" in eos_data.extra_constraints
+        assert float(eos_data.extra_constraints["n_esym_violations"]) == 0.0
+
+    def test_metamodel_bad_params_nonzero_violations(self):
+        """MetaModel with pathological NEPs (very negative L_sym) gives esym < 0."""
+        from jesterTOV.eos.metamodel.base import MetaModel_EOS_model
+
+        eos = MetaModel_EOS_model()
+        params = {
+            "E_sat": -16.0,
+            "K_sat": 230.0,
+            "Q_sat": 300.0,
+            "Z_sat": -500.0,
+            "E_sym": 5.0,
+            "L_sym": -200.0,
+            "K_sym": -400.0,
+            "Q_sym": 0.0,
+            "Z_sym": 0.0,
+        }
+        eos_data = eos.construct_eos(params)
+        assert eos_data.extra_constraints is not None
+        assert float(eos_data.extra_constraints["n_esym_violations"]) > 0.0
+
+    def test_metamodel_cse_propagates_violations(self):
+        """MetaModel+CSE propagates esym violations from the inner metamodel."""
+        from jesterTOV.eos.metamodel.metamodel_CSE import MetaModel_with_CSE_EOS_model
+
+        eos = MetaModel_with_CSE_EOS_model(nb_CSE=4)
+        good_params = {
+            "E_sat": -16.0,
+            "K_sat": 230.0,
+            "Q_sat": 300.0,
+            "Z_sat": -500.0,
+            "E_sym": 32.0,
+            "L_sym": 60.0,
+            "K_sym": -100.0,
+            "Q_sym": 0.0,
+            "Z_sym": 0.0,
+            "nbreak": 0.24,
+        }
+        for i in range(4):
+            good_params[f"n_CSE_{i}_u"] = (i + 1) / 5.0
+            good_params[f"cs2_CSE_{i}"] = 0.3
+        good_params["cs2_CSE_4"] = 0.3
+
+        eos_data = eos.construct_eos(good_params)
+        assert eos_data.extra_constraints is not None
+        assert "n_esym_violations" in eos_data.extra_constraints
+        assert float(eos_data.extra_constraints["n_esym_violations"]) == 0.0
+
+    def test_full_pipeline_likelihood_evaluates(self):
+        """ConstraintEsymLikelihood evaluates correctly on metamodel extra_constraints."""
+        from jesterTOV.eos.metamodel.base import MetaModel_EOS_model
+
+        eos = MetaModel_EOS_model()
+        bad_params = {
+            "E_sat": -16.0,
+            "K_sat": 230.0,
+            "Q_sat": 300.0,
+            "Z_sat": -500.0,
+            "E_sym": 5.0,
+            "L_sym": -200.0,
+            "K_sym": -400.0,
+            "Q_sym": 0.0,
+            "Z_sym": 0.0,
+        }
+        eos_data = eos.construct_eos(bad_params)
+        likelihood = ConstraintEsymLikelihood(penalty_esym=-1e10)
+        logL = likelihood.evaluate(eos_data.extra_constraints)  # type: ignore[arg-type]
+        assert float(logL) < -1e8
+
 
 class TestConstraintTOVLikelihood:
     """Test ConstraintTOVLikelihood (TOV-level constraints only)."""
@@ -331,13 +548,11 @@ class TestRadioTimingLikelihood:
             psr_name="J0348+0432",
             mean=2.01,  # Solar masses
             std=0.04,  # Uncertainty
-            nb_masses=100,
         )
 
         assert likelihood.psr_name == "J0348+0432"
         assert likelihood.mean == 2.01
         assert likelihood.std == 0.04
-        assert likelihood.nb_masses == 100
 
     def test_radio_timing_likelihood_evaluate(self):
         """Test RadioTimingLikelihood evaluation.
@@ -351,7 +566,6 @@ class TestRadioTimingLikelihood:
             psr_name="J0348+0432",
             mean=2.01,
             std=0.04,
-            nb_masses=100,
         )
 
         # Mock transform output with masses_EOS
@@ -376,11 +590,7 @@ class TestLikelihoodFactory:
 
     def test_create_zero_likelihood(self):
         """Test creating ZeroLikelihood via factory."""
-        config = schema.LikelihoodConfig(
-            type="zero",
-            enabled=True,
-            parameters={},
-        )
+        config = schema.ZeroLikelihoodConfig(enabled=True)
 
         likelihood = factory.create_likelihood(config)
 
@@ -388,13 +598,10 @@ class TestLikelihoodFactory:
 
     def test_create_constraint_eos_likelihood(self):
         """Test creating ConstraintEOSLikelihood via factory."""
-        config = schema.LikelihoodConfig(
-            type="constraints_eos",
+        config = schema.EOSConstraintsLikelihoodConfig(
             enabled=True,
-            parameters={
-                "penalty_causality": -1e10,
-                "penalty_stability": -1e5,
-            },
+            penalty_causality=-1e10,
+            penalty_stability=-1e5,
         )
 
         likelihood = factory.create_likelihood(config)
@@ -405,12 +612,9 @@ class TestLikelihoodFactory:
 
     def test_create_constraint_tov_likelihood(self):
         """Test creating ConstraintTOVLikelihood via factory."""
-        config = schema.LikelihoodConfig(
-            type="constraints_tov",
+        config = schema.TOVConstraintsLikelihoodConfig(
             enabled=True,
-            parameters={
-                "penalty_tov": -1e10,
-            },
+            penalty_tov=-1e10,
         )
 
         likelihood = factory.create_likelihood(config)
@@ -418,14 +622,33 @@ class TestLikelihoodFactory:
         assert isinstance(likelihood, ConstraintTOVLikelihood)
         assert likelihood.penalty_tov == -1e10
 
+    def test_create_constraint_esym_likelihood(self):
+        """Test creating ConstraintEsymLikelihood via factory."""
+        config = schema.EsymConstraintsLikelihoodConfig(
+            enabled=True,
+            penalty_esym=-1e10,
+        )
+        likelihood = factory.create_likelihood(config)
+        assert isinstance(likelihood, ConstraintEsymLikelihood)
+        assert likelihood.penalty_esym == -1e10
+
+    def test_create_constraint_gamma_likelihood(self):
+        """Test creating ConstraintGammaLikelihood via factory."""
+        config = schema.GammaConstraintsLikelihoodConfig(
+            enabled=True,
+            penalty_gamma=-1e10,
+        )
+
+        likelihood = factory.create_likelihood(config)
+
+        assert isinstance(likelihood, ConstraintGammaLikelihood)
+        assert likelihood.penalty_gamma == -1e10
+
     def test_create_chieft_likelihood(self):
         """Test creating ChiEFTLikelihood via factory."""
-        config = schema.LikelihoodConfig(
-            type="chieft",
+        config = schema.ChiEFTLikelihoodConfig(
             enabled=True,
-            parameters={
-                "nb_n": 100,
-            },
+            nb_n=100,
         )
 
         try:
@@ -437,23 +660,16 @@ class TestLikelihoodFactory:
 
     def test_create_disabled_likelihood_returns_none(self):
         """Test that factory returns None for disabled likelihoods."""
-        config = schema.LikelihoodConfig(
-            type="zero",
-            enabled=False,
-            parameters={},
-        )
+        config = schema.ZeroLikelihoodConfig(enabled=False)
 
         likelihood = factory.create_likelihood(config)
         assert likelihood is None
 
     def test_create_gw_likelihood_via_factory_raises_error(self):
         """Test that GW likelihoods must be created via create_combined_likelihood."""
-        config = schema.LikelihoodConfig(
-            type="gw",
+        config = schema.GWLikelihoodConfig(
             enabled=True,
-            parameters={
-                "events": [{"name": "GW170817", "model_dir": "/path/to/data"}],
-            },
+            events=[{"name": "GW170817", "nf_model_dir": "/path/to/data"}],  # type: ignore[arg-type]
         )
 
         with pytest.raises(
@@ -463,18 +679,15 @@ class TestLikelihoodFactory:
 
     def test_create_nicer_likelihood_via_factory_raises_error(self):
         """Test that NICER likelihoods must be created via create_combined_likelihood."""
-        config = schema.LikelihoodConfig(
-            type="nicer",
+        config = schema.NICERLikelihoodConfig(
             enabled=True,
-            parameters={
-                "pulsars": [
-                    {
-                        "name": "J0030",
-                        "amsterdam_samples_file": "/path/to/amsterdam.txt",
-                        "maryland_samples_file": "/path/to/maryland.txt",
-                    }
-                ],
-            },
+            pulsars=[
+                {
+                    "name": "J0030",
+                    "amsterdam_samples_file": "/path/to/amsterdam.txt",
+                    "maryland_samples_file": "/path/to/maryland.txt",
+                }
+            ],
         )
 
         with pytest.raises(
@@ -488,13 +701,17 @@ class TestLikelihoodFactory:
         NOTE: Pydantic catches this during config creation, not in factory.
         This is the correct behavior - validation happens at config time.
         """
-        from pydantic import ValidationError
+        from pydantic import ValidationError, TypeAdapter
 
-        with pytest.raises(ValidationError, match="Input should be"):
-            schema.LikelihoodConfig(
-                type="invalid_type",
-                enabled=True,
-                parameters={},
+        # Test using TypeAdapter since LikelihoodConfig is now a Union
+        adapter = TypeAdapter(schema.LikelihoodConfig)
+
+        with pytest.raises(ValidationError, match="Input tag"):
+            adapter.validate_python(
+                {
+                    "type": "invalid_type",
+                    "enabled": True,
+                }
             )
 
 
@@ -503,13 +720,7 @@ class TestCombinedLikelihoodFactory:
 
     def test_create_combined_likelihood_single(self):
         """Test that single enabled likelihood is returned directly (not wrapped)."""
-        configs = [
-            schema.LikelihoodConfig(
-                type="zero",
-                enabled=True,
-                parameters={},
-            ),
-        ]
+        configs = [schema.ZeroLikelihoodConfig(enabled=True)]
 
         likelihood = factory.create_combined_likelihood(configs)
 
@@ -519,12 +730,8 @@ class TestCombinedLikelihoodFactory:
     def test_create_combined_likelihood_multiple(self):
         """Test that multiple likelihoods are combined."""
         configs = [
-            schema.LikelihoodConfig(type="zero", enabled=True, parameters={}),
-            schema.LikelihoodConfig(
-                type="constraints_eos",
-                enabled=True,
-                parameters={},
-            ),
+            schema.ZeroLikelihoodConfig(enabled=True),
+            schema.EOSConstraintsLikelihoodConfig(enabled=True),
         ]
 
         likelihood = factory.create_combined_likelihood(configs)
@@ -536,8 +743,8 @@ class TestCombinedLikelihoodFactory:
     def test_create_combined_likelihood_with_disabled(self):
         """Test that disabled likelihoods are skipped."""
         configs = [
-            schema.LikelihoodConfig(type="zero", enabled=True, parameters={}),
-            schema.LikelihoodConfig(type="zero", enabled=False, parameters={}),
+            schema.ZeroLikelihoodConfig(enabled=True),
+            schema.ZeroLikelihoodConfig(enabled=False),
         ]
 
         likelihood = factory.create_combined_likelihood(configs)
@@ -548,8 +755,8 @@ class TestCombinedLikelihoodFactory:
     def test_create_combined_likelihood_all_disabled_raises_error(self):
         """Test that all disabled likelihoods raises ValueError."""
         configs = [
-            schema.LikelihoodConfig(type="zero", enabled=False, parameters={}),
-            schema.LikelihoodConfig(type="zero", enabled=False, parameters={}),
+            schema.ZeroLikelihoodConfig(enabled=False),
+            schema.ZeroLikelihoodConfig(enabled=False),
         ]
 
         with pytest.raises(ValueError, match="No likelihoods enabled"):
@@ -558,19 +765,15 @@ class TestCombinedLikelihoodFactory:
     def test_create_combined_likelihood_with_radio_timing(self):
         """Test creating combined likelihood with radio timing constraint."""
         configs = [
-            schema.LikelihoodConfig(
-                type="radio",
+            schema.RadioLikelihoodConfig(
                 enabled=True,
-                parameters={
-                    "pulsars": [
-                        {
-                            "name": "J0348+0432",
-                            "mass_mean": 2.01,
-                            "mass_std": 0.04,
-                        },
-                    ],
-                    "nb_masses": 100,
-                },
+                pulsars=[
+                    {
+                        "name": "J0348+0432",
+                        "mass_mean": 2.01,
+                        "mass_std": 0.04,
+                    },
+                ],
             ),
         ]
 
@@ -584,63 +787,65 @@ class TestGWEventPresets:
     """Test GW event preset path functionality."""
 
     def test_get_gw_model_dir_gw170817_preset(self):
-        """Test that GW170817 uses preset path when model_dir not provided."""
-        result = factory.get_gw_model_dir("GW170817", None)
+        """Test that GW170817 uses preset path when nf_model_dir not provided."""
+        result = factory.get_gw_model_dir(schema.GWEventConfig(name="GW170817"))
 
         # Should contain the expected path components
-        assert "gw170817_xp_nrtv3" in result
-        assert result.endswith("gw170817_xp_nrtv3")
+        assert "gw170817_gwtc1_lowspin" in result
+        assert result.endswith("gw170817_gwtc1_lowspin")
 
     def test_get_gw_model_dir_gw190425_preset(self):
-        """Test that GW190425 uses preset path when model_dir not provided."""
-        result = factory.get_gw_model_dir("GW190425", None)
+        """Test that GW190425 uses preset path when nf_model_dir not provided."""
+        result = factory.get_gw_model_dir(schema.GWEventConfig(name="GW190425"))
 
         # Should contain the expected path components
-        assert "gw190425_xp_nrtv3" in result
-        assert result.endswith("gw190425_xp_nrtv3")
+        assert "gw190425_phenompnrt_ls" in result
+        assert result.endswith("gw190425_phenompnrt_ls")
 
     def test_get_gw_model_dir_case_insensitive(self):
         """Test that event name matching is case-insensitive."""
         # Lowercase should work
-        result_lower = factory.get_gw_model_dir("gw170817", None)
-        assert "gw170817_xp_nrtv3" in result_lower
+        result_lower = factory.get_gw_model_dir(schema.GWEventConfig(name="gw170817"))
+        assert "gw170817_gwtc1_lowspin" in result_lower
 
         # Mixed case should work
-        result_mixed = factory.get_gw_model_dir("Gw170817", None)
-        assert "gw170817_xp_nrtv3" in result_mixed
+        result_mixed = factory.get_gw_model_dir(schema.GWEventConfig(name="Gw170817"))
+        assert "gw170817_gwtc1_lowspin" in result_mixed
 
         # Uppercase should work
-        result_upper = factory.get_gw_model_dir("GW170817", None)
-        assert "gw170817_xp_nrtv3" in result_upper
+        result_upper = factory.get_gw_model_dir(schema.GWEventConfig(name="GW170817"))
+        assert "gw170817_gwtc1_lowspin" in result_upper
 
     def test_get_gw_model_dir_custom_path(self):
-        """Test that custom model_dir takes precedence over preset."""
+        """Test that custom nf_model_dir takes precedence over preset."""
         custom_path = "/custom/path/to/model"
-        result = factory.get_gw_model_dir("GW170817", custom_path)
+        result = factory.get_gw_model_dir(
+            schema.GWEventConfig(name="GW170817", nf_model_dir=custom_path)
+        )
 
         # Should use the custom path, not preset
         assert "custom/path/to/model" in result
-        assert "gw170817_xp_nrtv3" not in result
+        assert "gw170817_gwtc1_lowspin" not in result
 
-    def test_get_gw_model_dir_empty_string_uses_preset(self):
-        """Test that empty string for model_dir triggers preset."""
-        result = factory.get_gw_model_dir("GW170817", "")
+    def test_get_gw_model_dir_no_nf_model_dir_uses_preset(self):
+        """Test that omitting nf_model_dir triggers preset lookup."""
+        result = factory.get_gw_model_dir(schema.GWEventConfig(name="GW170817"))
 
-        # Empty string should trigger preset
-        assert "gw170817_xp_nrtv3" in result
+        # No nf_model_dir should trigger preset
+        assert "gw170817_gwtc1_lowspin" in result
 
     def test_get_gw_model_dir_unknown_event_raises_error(self):
-        """Test that unknown event without model_dir raises ValueError."""
+        """Test that unknown event without nf_model_dir raises ValueError."""
         with pytest.raises(ValueError, match="not in presets"):
-            factory.get_gw_model_dir("GW999999", None)
+            factory.get_gw_model_dir(schema.GWEventConfig(name="GW999999"))
 
         # Error message should list available presets
         with pytest.raises(ValueError, match="GW170817.*GW190425"):
-            factory.get_gw_model_dir("GW999999", None)
+            factory.get_gw_model_dir(schema.GWEventConfig(name="GW999999"))
 
     def test_get_gw_model_dir_returns_absolute_path(self):
         """Test that preset paths are resolved to absolute paths."""
-        result = factory.get_gw_model_dir("GW170817", None)
+        result = factory.get_gw_model_dir(schema.GWEventConfig(name="GW170817"))
 
         # Should be an absolute path
         from pathlib import Path
@@ -652,7 +857,7 @@ class TestGWEventPresets:
         from pathlib import Path
 
         for event_name in ["GW170817", "GW190425"]:
-            model_dir = factory.get_gw_model_dir(event_name, None)
+            model_dir = factory.get_gw_model_dir(schema.GWEventConfig(name=event_name))
             model_path = Path(model_dir)
 
             # Directory should exist
@@ -669,7 +874,7 @@ class TestGWEventPresets:
         """Test that Flow can actually be loaded from GW170817 preset path."""
         from jesterTOV.inference.flows.flow import Flow
 
-        model_dir = factory.get_gw_model_dir("GW170817", None)
+        model_dir = factory.get_gw_model_dir(schema.GWEventConfig(name="GW170817"))
 
         # Should load without errors
         flow = Flow.from_directory(model_dir)
@@ -684,7 +889,7 @@ class TestGWEventPresets:
         """Test that Flow can actually be loaded from GW190425 preset path."""
         from jesterTOV.inference.flows.flow import Flow
 
-        model_dir = factory.get_gw_model_dir("GW190425", None)
+        model_dir = factory.get_gw_model_dir(schema.GWEventConfig(name="GW190425"))
 
         # Should load without errors
         flow = Flow.from_directory(model_dir)
@@ -751,3 +956,194 @@ class TestLikelihoodIntegration:
         result = combined.evaluate(params)
         # Should sum both penalties
         assert result == -2e10
+
+
+def _make_mock_flow() -> MagicMock:
+    """Create a mock Flow with realistic sample/log_prob behaviour."""
+    flow = MagicMock()
+    # sample returns (N, 2) array of (mass, radius) pairs
+    flow.sample.side_effect = lambda k, shape: jax.random.uniform(
+        k,
+        shape=(*shape, 2),
+        minval=jnp.array([1.0, 10.0]),
+        maxval=jnp.array([2.5, 14.0]),
+    )
+    # log_prob returns a scalar
+    flow.log_prob.return_value = jnp.array(-2.5)
+    return flow
+
+
+class TestNICERLikelihoodGroups:
+    """Tests that NICERLikelihood handles one or both analysis groups correctly."""
+
+    def _make_params(self) -> dict:
+        masses = jnp.linspace(1.0, 2.5, 50)
+        radii = jnp.linspace(13.0, 11.0, 50)
+        return {"masses_EOS": masses, "radii_EOS": radii}
+
+    def test_raises_when_neither_group_provided(self):
+        """NICERLikelihood must raise if both model dirs are None."""
+        from jesterTOV.inference.likelihoods.nicer import NICERLikelihood
+
+        with pytest.raises(ValueError, match="At least one"):
+            NICERLikelihood("J0437", amsterdam_model_dir=None, maryland_model_dir=None)
+
+    def test_amsterdam_only_initialization(self):
+        """Amsterdam-only: flow is loaded and masses are pre-sampled."""
+        from jesterTOV.inference.likelihoods.nicer import NICERLikelihood
+
+        mock_flow = _make_mock_flow()
+
+        with patch(
+            "jesterTOV.inference.flows.flow.Flow.from_directory", return_value=mock_flow
+        ):
+            likelihood = NICERLikelihood(
+                "J0437",
+                amsterdam_model_dir="/fake/amsterdam",
+                maryland_model_dir=None,
+                N_masses_evaluation=10,
+                seed=42,
+            )
+
+        assert likelihood.amsterdam_flow is mock_flow
+        assert likelihood.maryland_flow is None
+        assert likelihood.amsterdam_fixed_mass_samples is not None
+        assert likelihood.maryland_fixed_mass_samples is None
+        assert likelihood.amsterdam_fixed_mass_samples.shape == (10,)
+
+    def test_maryland_only_initialization(self):
+        """Maryland-only: flow is loaded and masses are pre-sampled."""
+        from jesterTOV.inference.likelihoods.nicer import NICERLikelihood
+
+        mock_flow = _make_mock_flow()
+
+        with patch(
+            "jesterTOV.inference.flows.flow.Flow.from_directory", return_value=mock_flow
+        ):
+            likelihood = NICERLikelihood(
+                "J0614",
+                amsterdam_model_dir=None,
+                maryland_model_dir="/fake/maryland",
+                N_masses_evaluation=10,
+                seed=42,
+            )
+
+        assert likelihood.amsterdam_flow is None
+        assert likelihood.maryland_flow is mock_flow
+        assert likelihood.amsterdam_fixed_mass_samples is None
+        assert likelihood.maryland_fixed_mass_samples is not None
+        assert likelihood.maryland_fixed_mass_samples.shape == (10,)
+
+    def test_both_groups_initialization(self):
+        """Both groups: both flows are loaded and masses pre-sampled."""
+        from jesterTOV.inference.likelihoods.nicer import NICERLikelihood
+
+        mock_amsterdam = _make_mock_flow()
+        mock_maryland = _make_mock_flow()
+
+        with patch(
+            "jesterTOV.inference.flows.flow.Flow.from_directory",
+            side_effect=[mock_amsterdam, mock_maryland],
+        ):
+            likelihood = NICERLikelihood(
+                "J0030",
+                amsterdam_model_dir="/fake/amsterdam",
+                maryland_model_dir="/fake/maryland",
+                N_masses_evaluation=10,
+                seed=42,
+            )
+
+        assert likelihood.amsterdam_flow is mock_amsterdam
+        assert likelihood.maryland_flow is mock_maryland
+        assert likelihood.amsterdam_fixed_mass_samples is not None
+        assert likelihood.maryland_fixed_mass_samples is not None
+
+    def test_amsterdam_only_evaluate_returns_finite(self):
+        """Amsterdam-only evaluate returns a finite log-likelihood."""
+        from jesterTOV.inference.likelihoods.nicer import NICERLikelihood
+
+        mock_flow = _make_mock_flow()
+
+        with patch(
+            "jesterTOV.inference.flows.flow.Flow.from_directory", return_value=mock_flow
+        ):
+            likelihood = NICERLikelihood(
+                "J0437",
+                amsterdam_model_dir="/fake/amsterdam",
+                maryland_model_dir=None,
+                N_masses_evaluation=10,
+                N_masses_batch_size=5,
+                seed=42,
+            )
+
+        result = likelihood.evaluate(self._make_params())
+
+        assert jnp.isfinite(result), f"Expected finite log-likelihood, got {result}"
+
+    def test_maryland_only_evaluate_returns_finite(self):
+        """Maryland-only evaluate returns a finite log-likelihood."""
+        from jesterTOV.inference.likelihoods.nicer import NICERLikelihood
+
+        mock_flow = _make_mock_flow()
+
+        with patch(
+            "jesterTOV.inference.flows.flow.Flow.from_directory", return_value=mock_flow
+        ):
+            likelihood = NICERLikelihood(
+                "J0614",
+                amsterdam_model_dir=None,
+                maryland_model_dir="/fake/maryland",
+                N_masses_evaluation=10,
+                N_masses_batch_size=5,
+                seed=42,
+            )
+
+        result = likelihood.evaluate(self._make_params())
+
+        assert jnp.isfinite(result), f"Expected finite log-likelihood, got {result}"
+
+    def test_single_group_equals_that_group_logL(self):
+        """Single-group result equals the per-group log-mean (no averaging dilution)."""
+        from jesterTOV.inference.likelihoods.nicer import NICERLikelihood
+
+        mock_amsterdam = _make_mock_flow()
+        mock_maryland = _make_mock_flow()
+
+        with patch(
+            "jesterTOV.inference.flows.flow.Flow.from_directory",
+            side_effect=[mock_amsterdam],
+        ):
+            lhood_amsterdam_only = NICERLikelihood(
+                "J0030",
+                amsterdam_model_dir="/fake/amsterdam",
+                maryland_model_dir=None,
+                N_masses_evaluation=10,
+                N_masses_batch_size=5,
+                seed=42,
+            )
+
+        with patch(
+            "jesterTOV.inference.flows.flow.Flow.from_directory",
+            side_effect=[mock_amsterdam, mock_maryland],
+        ):
+            lhood_both = NICERLikelihood(
+                "J0030",
+                amsterdam_model_dir="/fake/amsterdam",
+                maryland_model_dir="/fake/maryland",
+                N_masses_evaluation=10,
+                N_masses_batch_size=5,
+                seed=42,
+            )
+
+        params = self._make_params()
+        result_single = lhood_amsterdam_only.evaluate(params)
+        result_both = lhood_both.evaluate(params)
+
+        # With a constant mock log_prob=-2.5, single-group result == both-groups result
+        # because logsumexp([x, x]) - log(2) == x
+        assert jnp.isfinite(result_single)
+        assert jnp.isfinite(result_both)
+        assert jnp.allclose(result_single, result_both, atol=1e-5), (
+            f"Single-group ({result_single:.4f}) != both-groups ({result_both:.4f}) "
+            "for constant mock log_prob"
+        )
