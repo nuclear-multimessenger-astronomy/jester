@@ -23,7 +23,7 @@ use_oauth_services    = scitokens
 
 initialdir            = /home/thibeau.wouters/jester_analyses/jester/examples/inference/cit_example
 
-requirements = (HAS_SINGULARITY=?=True) && (TARGET.Arch == "X86_64") && (TARGET.GPUs >= 1)
+requirements = (TARGET.Arch == "X86_64")
 
 transfer_output_files     = outdir
 when_to_transfer_output   = ON_EXIT_OR_EVICT
