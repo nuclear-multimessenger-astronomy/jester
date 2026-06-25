@@ -67,10 +67,11 @@ class RadioTimingLikelihood(LikelihoodBase):
     m_min : float, optional
         Minimum mass for the integration lower bound in solar masses. This should be
         well below any physical neutron star mass to avoid truncation effects.
+        Recommended to not touch this parameter.
         Default is 0.1 :math:`M_{\odot}`.
     penalty_value : float, optional
         Log-likelihood penalty for invalid TOV solutions (M_TOV ≤ m_min).
-        Default is -1e5.
+        Default is 0.0.
 
     Attributes
     ----------
@@ -123,14 +124,14 @@ class RadioTimingLikelihood(LikelihoodBase):
         psr_name: str,
         mean: float,
         std: float,
-        m_min: float = 0.1,  # TODO: determine if needs tuning later on
-        penalty_value: float = -1e5,
+        m_min: float = 0.1,
+        penalty_value: float = 0.0,
     ) -> None:
         super().__init__()
         self.psr_name = psr_name
         self.mean = mean
         self.std = std
-        self.m_min = m_min  # Minimum mass for integration (solar masses)
+        self.m_min = m_min
         self.penalty_value = penalty_value
 
     def evaluate(self, params: dict[str, Float | Array]) -> Float:

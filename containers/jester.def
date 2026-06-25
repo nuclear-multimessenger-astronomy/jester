@@ -1,0 +1,66 @@
+Bootstrap: docker
+From: ubuntu:22.04
+
+%post
+    # Suppress interactive prompts
+    export DEBIAN_FRONTEND=noninteractive
+
+    # System dependencies
+    apt-get update
+    apt-get install -y --no-install-recommends git curl ca-certificates
+    rm -rf /var/lib/apt/lists/*
+
+    # uv — manages Python installs
+    curl -LsSf https://astral.sh/uv/install.sh | INSTALLER_NO_MODIFY_PATH=1 sh
+    export PATH="/root/.local/bin:$PATH"
+
+    # Install Python 3.12 and create a dedicated venv
+    uv python install 3.12
+    uv venv /opt/jester-env --python 3.12
+
+    # Install JESTER with CUDA 12 support.
+    # jax[cuda12] bundles its own CUDA 12 runtime as Python wheels — no CUDA base image needed.
+    # Apptainer's --nv flag (enabled automatically by HTCondor for GPU jobs) bind-mounts
+    # the host CUDA driver, which JAX's bundled runtime then uses.
+    # blackjax is a git dependency — internet access required at build time.
+    git clone https://github.com/nuclear-multimessenger-astronomy/jester.git /opt/jester
+    cd /opt/jester
+    uv pip install --python /opt/jester-env/bin/python -e ".[cuda12]"
+
+    # Verify the entry point and core import work
+    test -x /opt/jester-env/bin/run_jester_inference
+    /opt/jester-env/bin/python -c "import jesterTOV; print('jesterTOV import OK')"
+
+%environment
+    export PATH="/opt/jester-env/bin:/root/.local/bin:$PATH"
+    export JAX_ENABLE_X64=1
+
+%runscript
+    exec run_jester_inference "$@"
+
+%labels
+    Author thibeau.wouters
+    Description JESTER neutron-star inference — Python 3.12, JAX bundled CUDA 12
+
+%help
+    JESTER Apptainer image. Uses plain ubuntu:22.04 — jax[cuda12] bundles its own
+    CUDA 12 runtime wheels, so no CUDA base image is needed. The host GPU driver is
+    passed through by Apptainer's --nv flag (HTCondor enables this automatically for
+    GPU jobs via request_gpus).
+
+    Build on CIT (requires internet access for the blackjax git dependency):
+        cd /path/to/jester
+        apptainer build /home/thibeau.wouters/jester_analyses/jester.sif containers/jester.def
+
+    Or build with Docker locally and transfer (see containers/Dockerfile):
+        docker build -t jester -f containers/Dockerfile .
+        apptainer build jester.sif docker-daemon://jester:latest
+        scp jester.sif thibeau.wouters@ldas-pcdev1.ligo.caltech.edu:/home/thibeau.wouters/jester_analyses/
+
+    Test interactively on a CIT node:
+        apptainer exec --nv /home/thibeau.wouters/jester_analyses/jester.sif \
+            run_jester_inference config.yaml --dry-run
+
+    Submit via HTCondor:
+        cd examples/inference/cit_example
+        condor_submit submit.sub

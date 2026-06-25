@@ -14,7 +14,6 @@ tov:
   min_nsat_TOV: 0.75
   ndat_TOV: 100
   nb_masses: 100
-
 prior:
   specification_file: prior.prior
 

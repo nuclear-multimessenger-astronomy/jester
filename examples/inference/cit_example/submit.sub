@@ -1,0 +1,31 @@
+universe        = container
+container_image = osdf:///igwn/cit/staging/thibeau.wouters/containers/jester.sif
+
+executable           = /opt/jester-env/bin/run_jester_inference
+transfer_executable  = false
+arguments            = config.yaml
+
+transfer_input_files = config.yaml, prior.prior
+
+use_oauth_services = scitokens
+
+initialdir = /home/thibeau.wouters/jester_analyses/jester/examples/inference/cit_example
+
+requirements = (TARGET.Arch == "X86_64")
+
+transfer_output_files   = outdir
+when_to_transfer_output = ON_EXIT_OR_EVICT
+
+log    = outdir/condor.log
+output = outdir/log.out
+error  = outdir/log.err
+
+request_gpus   = 1
+request_cpus   = 1
+request_memory = 10GB
+request_disk   = 4GB
+
+accounting_group      = ligo.dev.o4.cbc.extremematter.bilby
+accounting_group_user = thibeau.wouters
+
+queue

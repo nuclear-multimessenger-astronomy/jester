@@ -419,15 +419,13 @@ Constrain neutron star masses using radio pulsar timing measurements. For the ph
     - name: "J0740+6620"
       mass_mean: 2.08
       mass_std: 0.07
-  penalty_value: -1e5           # Penalty for M_TOV ≤ m_min (optional, default: -1e5)
-  nb_masses: 100                # Number of mass points (optional, default: 100)
+  penalty_value: 0.0            # Penalty for M_TOV ≤ m_min (optional, default: 0.0)
 ```
 
 **Field Details:**
 
 - **`pulsars`** (`list[dict]`) - List of pulsars with `name`, `mass_mean`, and `mass_std` keys for Gaussian mass constraints
-- **`penalty_value`** (`float`, default: `-1e5`) - Log-likelihood penalty for invalid TOV solutions (M_TOV ≤ m_min)
-- **`nb_masses`** (`int`, default: `100`) - Number of mass points for numerical integration of Gaussian mass constraint
+- **`penalty_value`** (`float`, default: `0.0`) - Log-likelihood penalty for invalid TOV solutions (M_TOV ≤ m_min)
 
 ::::
 

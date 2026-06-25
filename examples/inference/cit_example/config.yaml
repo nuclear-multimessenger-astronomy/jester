@@ -1,39 +1,39 @@
 seed: 42
 dry_run: false
 validate_only: false
+
 eos:
   type: metamodel_cse
   ndat_metamodel: 100
   nmax_nsat: 25.0
   nb_CSE: 8
   crust_name: DH
+
 tov:
-  type: anisotropy
+  type: gr
   min_nsat_TOV: 0.75
   ndat_TOV: 100
   nb_masses: 100
+
 prior:
   specification_file: prior.prior
+
 likelihoods:
 - type: constraints_eos
   enabled: true
 - type: radio
   enabled: true
   pulsars:
-  - name: J1614-2230
-    mass_mean: 1.937
-    mass_std: 0.014
   - name: J0740+6620
     mass_mean: 2.08
     mass_std: 0.07
-- type: nicer
+- type: gw
   enabled: true
-  pulsars:
-  - name: J0740+6620
-    amsterdam_model_dir: ../../../../jesterTOV/inference/flows/models/nicer_maf/J07406620/amsterdam_gamma_nicerxmm
-    maryland_model_dir: ../../../../jesterTOV/inference/flows/models/nicer_maf/J07406620/maryland_unknown_nicerxmm_rm
-  N_masses_evaluation: 20
-  N_masses_batch_size: 20
+  events:
+  - name: GW170817
+  N_masses_evaluation: 2000
+  N_masses_batch_size: 1000
+
 sampler:
   type: smc-rw
   n_particles: 5000
@@ -42,8 +42,9 @@ sampler:
   random_walk_sigma: 0.05
   n_eos_samples: 5000
   output_dir: ./outdir/
+
 postprocessing:
   enabled: true
-  make_cornerplot: true
+  make_cornerplot: false
   make_massradius: true
   make_pressuredensity: true
