@@ -132,6 +132,7 @@ Contents
    inference/workflow
    inference/analyze_bns
    inference/training_flows
+   inference/cit_cluster
    examples/inference/result
 
 .. toctree::
