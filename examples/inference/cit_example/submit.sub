@@ -17,7 +17,7 @@ arguments             = config.yaml
 
 # OSDF URL: HTCondor fetches .sif from nearest cache (cached after first use at each site).
 # config.yaml is small and always transferred from the submit node.
-transfer_input_files  = config.yaml, osdf:///igwn/cit/staging/thibeau.wouters/containers/jester.sif
+transfer_input_files  = config.yaml, prior.prior, osdf:///igwn/cit/staging/thibeau.wouters/containers/jester.sif
 
 use_oauth_services    = scitokens
 
