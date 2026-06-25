@@ -1,10 +1,18 @@
 # HTCondor submit file — Apptainer container approach.
 # Requires the .sif image to be pre-built; see containers/jester.def and README.md.
+#
+# IMPORTANT: MY.SingularityImage must use a RELATIVE path (just the filename).
+# HTCondor transfers the .sif via transfer_input_files to the remote node's
+# scratch directory; an absolute CIT path like /home/thibeau.wouters/... is
+# NOT accessible on remote OSG sites (e.g. SURFsara) and causes hold code 19.
 
 executable            = run_jester_inference
 transfer_executable   = false
-MY.SingularityImage   = "/home/thibeau.wouters/jester_analyses/containers/jester.sif"
+MY.SingularityImage   = "jester.sif"
 arguments             = config.yaml
+
+# Transfer the container image to the remote execute node.
+transfer_input_files  = /home/thibeau.wouters/jester_analyses/containers/jester.sif, config.yaml
 
 initialdir            = /home/thibeau.wouters/jester_analyses/jester/examples/inference/cit_example
 
@@ -17,7 +25,7 @@ error  = outdir/log.err
 request_gpus   = 1
 request_cpus   = 1
 request_memory = 10GB
-request_disk   = 2GB
+request_disk   = 8GB
 
 accounting_group      = ligo.dev.o4.cbc.extremematter.bilby
 accounting_group_user = thibeau.wouters
