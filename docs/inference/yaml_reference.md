@@ -762,6 +762,59 @@ sampler:
 
 ::::
 
+::::{dropdown} **EOS Reweighting** (`type: "eos-reweighting"`)
+
+Evaluates jester's GPU-accelerated likelihoods on a discrete set of tabulated EOS curves (M, $\Lambda$, R tables) rather than sampling a parametric EOS model. Returns the marginal log-likelihood per EOS, the Bayesian evidence $\log Z$, and optionally a Bayes factor between two EOS sets. The Python class is {class}`~jesterTOV.inference.samplers.eos_reweighting.EOSReweightingSampler`. The Pydantic config schema is {class}`~jesterTOV.inference.config.schema.EOSReweightingConfig`.
+
+This sampler does **not** require an `eos`, `tov`, or `prior` section in the YAML — the EOS is provided as tabulated curves. The top-level config schema is {class}`~jesterTOV.inference.config.schemas.eos_reweighting.EOSReweightingInferenceConfig`.
+
+```yaml
+sampler:
+  type: "eos-reweighting"
+
+  # EOS input — NPZ files with keys: masses, lambdas, radii (all 1-D float64)
+  # For a file containing N curves: arrays shaped [N, n_points]
+  eos_set_A:
+    - "path/to/eos_set_A.npz"       # one or more NPZ files
+  eos_set_B:                         # optional — enables Bayes factor B_AB
+    - "path/to/eos_set_B.npz"
+
+  # Mass interpolation grid
+  n_grid: 200        # number of grid points (default: 200)
+  m_min: 0.5         # lower bound in M_sun (default: 0.5)
+  m_max: null        # upper bound in M_sun; null → min(M_TOV) across set A
+
+  # JAX batch size for lax.map over EOS curves
+  # null → auto-tune starting from N (all at once ≈ vmap), halving on OOM
+  batch_size: null
+
+  n_bootstrap: 500   # bootstrap resamples for log Z uncertainty (default: 500)
+
+  output_dir: "outdir/eos_reweighting/"
+```
+
+**EOS table format.** Each NPZ file must contain:
+
+| Key | Shape | Description |
+|---|---|---|
+| `masses` | `[n_points]` or `[N, n_points]` | Gravitational mass in $M_\odot$, monotone increasing |
+| `lambdas` | same as `masses` | Dimensionless tidal deformability $\Lambda$ |
+| `radii` | same as `masses` | Radius in km (optional; omit if no NICER likelihood) |
+
+**Output.** The sampler writes `result.h5` to `output_dir` containing:
+- `posterior/parameters/eos_index` — integer index per EOS in set A
+- `posterior/parameters/log_weight` — log-likelihood per EOS
+- `posterior/parameters/posterior_weight` — normalised posterior weight
+- `metadata/evidence` — `log_Z`, `log_Z_std`, `N_eff`, `N_eff_fraction` for set A
+- `metadata/evidence_B`, `metadata/bayes_factor` — set B evidence and $\log_{10} B_{AB}$ (if `eos_set_B` provided)
+
+**When to use:**
+- When collaborators provide tabulated EOS sets from e.g. nuclear-theory calculations
+- When computing the Bayesian evidence $\log Z$ or Bayes factor between two EOS families
+- When you want to reweight an existing EOS prior sample with jester's multi-messenger likelihoods
+
+::::
+
 ---
 
 ## Data paths (optional)

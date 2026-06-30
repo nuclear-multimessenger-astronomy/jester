@@ -257,6 +257,71 @@ class SMCNUTSSamplerConfig(BaseSamplerConfig):
         return v
 
 
+class EOSReweightingConfig(BaseSamplerConfig):
+    r"""Configuration for EOS reweighting sampler.
+
+    This sampler evaluates jester's GPU-accelerated likelihoods on a discrete
+    set of tabulated EOS curves (M, :math:`\Lambda`, R tables) provided by
+    collaborators, rather than sampling a parametric EOS model. It computes
+    the marginal log-likelihood per EOS, the Bayesian evidence :math:`\log Z`,
+    and optionally a Bayes factor between two EOS sets.
+
+    EOS tables must be NPZ files with keys:
+
+    - ``masses``: 1D float64 array in :math:`M_\odot`, monotone increasing
+    - ``lambdas``: 1D float64 array, dimensionless tidal deformability
+    - ``radii``: 1D float64 array in km (required)
+
+    For a file containing N EOS curves: arrays shaped ``[N, n_points]``.
+
+    Attributes
+    ----------
+    type : Literal["eos-reweighting"]
+        Sampler type identifier
+    eos_set_A : list[str]
+        Paths to NPZ files for EOS set A
+    eos_set_B : list[str] | None
+        Optional paths to NPZ files for set B (enables Bayes factor computation)
+    n_grid : int
+        Number of mass grid points for common interpolation grid (default: 200)
+    m_min : float
+        Minimum mass for interpolation grid in :math:`M_\odot` (default: 0.5)
+    m_max : float | None
+        Maximum mass for grid in :math:`M_\odot`. None → use min(M_TOV) across set A.
+    batch_size : int | None
+        Number of EOS curves processed simultaneously by JAX. None → auto-tune
+        starting from N (all at once, equivalent to vmap) and halving on OOM.
+    n_bootstrap : int
+        Number of bootstrap resamples for :math:`\log Z` uncertainty (default: 500)
+    """
+
+    type: Literal["eos-reweighting"] = "eos-reweighting"
+
+    eos_set_A: list[str]
+    eos_set_B: list[str] | None = None
+
+    n_grid: int = Field(default=200, gt=10)
+    m_min: float = Field(default=0.5, gt=0.0)
+    m_max: float | None = None
+
+    batch_size: int | None = None
+    n_bootstrap: int = Field(default=500, gt=0)
+
+    @field_validator("eos_set_A")
+    @classmethod
+    def _validate_eos_set_A(cls, v: list[str]) -> list[str]:
+        if not v:
+            raise ValueError("eos_set_A must contain at least one EOS file path")
+        return v
+
+    @field_validator("batch_size")
+    @classmethod
+    def _validate_batch_size(cls, v: int | None) -> int | None:
+        if v is not None and v <= 0:
+            raise ValueError(f"batch_size must be positive, got: {v}")
+        return v
+
+
 # Discriminated union for sampler configurations
 SamplerConfig = Annotated[
     Union[
@@ -264,6 +329,7 @@ SamplerConfig = Annotated[
         BlackJAXNSAWConfig,
         SMCRandomWalkSamplerConfig,
         SMCNUTSSamplerConfig,
+        EOSReweightingConfig,
     ],
     Discriminator("type"),
 ]
