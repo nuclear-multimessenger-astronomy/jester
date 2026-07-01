@@ -19,9 +19,10 @@ N_GRID = 30
 def _make_dummy_npz(tmp_dir: Path, n_eos: int = N_EOS, n_pts: int = 50) -> str:
     """Write a minimal NPZ file with toy EOS curves."""
     masses = np.tile(np.linspace(0.5, 2.0, n_pts), (n_eos, 1))
-    lambdas = np.random.default_rng(0).uniform(100, 1000, (n_eos, 1)) * (
-        (2.0 - masses) / 1.5
-    ) ** 3
+    lambdas = (
+        np.random.default_rng(0).uniform(100, 1000, (n_eos, 1))
+        * ((2.0 - masses) / 1.5) ** 3
+    )
     radii = 12.0 * np.ones_like(masses)
     path = str(tmp_dir / "test_eos.npz")
     np.savez(path, masses=masses, lambdas=lambdas, radii=radii)
@@ -44,8 +45,6 @@ def _make_sampler(npz_path: str, likelihood) -> EOSReweightingSampler:
         n_grid=N_GRID,
         m_min=0.5,
         m_max=None,
-        batch_size=None,
-        n_bootstrap=20,
     )
     return EOSReweightingSampler(likelihood=likelihood, config=cfg)
 
@@ -58,7 +57,7 @@ class TestEOSReweightingSamplerBasic:
 
         assert out.log_prob.shape == (N_EOS,), "log_prob must be [N_eos]"
         assert out.samples["eos_index"].shape == (N_EOS,)
-        assert out.samples["log_weight"].shape == (N_EOS,)
+        assert out.samples["log_likelihood"].shape == (N_EOS,)
         assert out.samples["posterior_weight"].shape == (N_EOS,)
 
     def test_evidence_finite(self, tmp_npz, zero_likelihood):
@@ -71,12 +70,14 @@ class TestEOSReweightingSamplerBasic:
         assert 0.0 < ev["N_eff_fraction"] <= 1.0
 
     def test_zero_likelihood_uniform_weights(self, tmp_npz, zero_likelihood):
-        """ZeroLikelihood → all log-weights equal → N_eff = N."""
+        """ZeroLikelihood → all log-likelihoods equal → N_eff = N."""
         sampler = _make_sampler(tmp_npz, zero_likelihood)
         out = sampler.sample(jax.random.key(0))
 
-        lw = np.array(out.samples["log_weight"])
-        assert np.allclose(lw, lw[0], atol=1e-6), "ZeroLikelihood must give equal weights"
+        lw = np.array(out.samples["log_likelihood"])
+        assert np.allclose(
+            lw, lw[0], atol=1e-6
+        ), "ZeroLikelihood must give equal weights"
         assert abs(out.metadata["evidence"]["N_eff"] - N_EOS) < 0.5
 
     def test_posterior_weights_sum_to_one(self, tmp_npz, zero_likelihood):
@@ -90,21 +91,16 @@ class TestEOSReweightingSamplerBasic:
         out = sampler.sample(jax.random.key(0))
         assert out.metadata["N_eos"] == N_EOS
 
+
 class TestEOSReweightingConfig:
     def test_config_validation_bad_batch_size(self):
         with pytest.raises(Exception):
             EOSReweightingConfig(eos_file="x.npz", batch_size=-1, n_grid=50, m_min=0.5)
 
-    def test_config_validation_bad_progress_interval(self):
-        with pytest.raises(Exception):
-            EOSReweightingConfig(eos_file="x.npz", progress_interval=1.5, n_grid=50, m_min=0.5)
-        with pytest.raises(Exception):
-            EOSReweightingConfig(eos_file="x.npz", progress_interval=-0.1, n_grid=50, m_min=0.5)
-
-    def test_progress_interval_zero_disables_progress(self, tmp_npz, zero_likelihood):
-        """progress_interval=0 should still produce correct results."""
+    def test_small_batch_size_still_correct(self, tmp_npz, zero_likelihood):
+        """A batch_size smaller than N_EOS should still produce correct results."""
         cfg = EOSReweightingConfig(
-            eos_file=tmp_npz, n_grid=N_GRID, m_min=0.5, n_bootstrap=5, progress_interval=0.0
+            eos_file=tmp_npz, n_grid=N_GRID, m_min=0.5, batch_size=1
         )
         sampler = EOSReweightingSampler(likelihood=zero_likelihood, config=cfg)
         out = sampler.sample(jax.random.key(0))
@@ -115,9 +111,21 @@ class TestEOSReweightingConfig:
         p = str(tmp_path / "no_radii.npz")
         masses = np.tile(np.linspace(0.5, 2.0, 30), (3, 1))
         np.savez(p, masses=masses, lambdas=np.ones_like(masses) * 500)
-        cfg = EOSReweightingConfig(eos_file=p, n_grid=20, m_min=0.5, n_bootstrap=5)
+        cfg = EOSReweightingConfig(eos_file=p, n_grid=20, m_min=0.5)
         sampler = EOSReweightingSampler(likelihood=zero_likelihood, config=cfg)
         with pytest.raises(ValueError, match="radii"):
+            sampler.sample(jax.random.key(0))
+
+    def test_mismatched_shapes_raises(self, tmp_path, zero_likelihood):
+        """masses/lambdas/radii with mismatched shapes must raise a clear ValueError."""
+        p = str(tmp_path / "ragged.npz")
+        masses = np.tile(np.linspace(0.5, 2.0, 30), (3, 1))
+        lambdas = np.tile(np.linspace(100, 1000, 20), (3, 1))  # wrong n_points
+        radii = np.ones_like(masses) * 12.0
+        np.savez(p, masses=masses, lambdas=lambdas, radii=radii)
+        cfg = EOSReweightingConfig(eos_file=p, n_grid=20, m_min=0.5)
+        sampler = EOSReweightingSampler(likelihood=zero_likelihood, config=cfg)
+        with pytest.raises(ValueError, match="mismatched shapes"):
             sampler.sample(jax.random.key(0))
 
 
@@ -132,6 +140,7 @@ class TestEOSReweightingHDF5:
         # Build a minimal config-like object
         class _Cfg:
             seed = 0
+
             def model_dump(self):
                 return {"seed": 0}
 

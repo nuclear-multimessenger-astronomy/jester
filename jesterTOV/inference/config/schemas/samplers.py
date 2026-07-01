@@ -283,18 +283,14 @@ class EOSReweightingConfig(BaseSamplerConfig):
     n_grid : int
         Number of mass grid points for common interpolation grid (default: 200)
     m_min : float
-        Minimum mass for interpolation grid in :math:`M_\odot` (default: 0.5)
+        Minimum mass for interpolation grid in :math:`M_\odot` (default: 1.0)
     m_max : float | None
         Maximum mass for grid in :math:`M_\odot`. None → use min(M_TOV) across
         all curves.
-    batch_size : int | None
-        Number of EOS curves processed simultaneously by JAX. None → auto-tune
-        starting from N (all at once, equivalent to vmap) and halving on OOM.
-    n_bootstrap : int
-        Number of bootstrap resamples for :math:`\log Z` uncertainty (default: 500)
-    progress_interval : float
-        Fraction of EOS curves between progress log lines (default: 0.1 = every
-        10%).  Set to 0 to disable progress reporting.
+    batch_size : int
+        Number of EOS curves processed simultaneously by JAX (default: 1000).
+        Progress is logged after each batch. Choose a value that fits in
+        memory; there is no automatic OOM recovery.
     """
 
     type: Literal["eos-reweighting"] = "eos-reweighting"
@@ -302,32 +298,14 @@ class EOSReweightingConfig(BaseSamplerConfig):
     eos_file: str
 
     n_grid: int = Field(default=200, gt=10)
-    m_min: float = Field(default=0.5, gt=0.0)
+    m_min: float = Field(default=1.0, gt=0.0)
     m_max: float | None = None
 
-    batch_size: int | None = None
-    n_bootstrap: int = Field(default=500, gt=0)
-    progress_interval: float = Field(
-        default=0.1,
-        description=(
-            "Fraction of EOS curves between progress log lines (e.g. 0.1 = every 10%). "
-            "Set to 0 to disable progress reporting."
-        ),
+    batch_size: int = Field(
+        default=1000,
+        gt=0,
+        description="Number of EOS curves processed simultaneously by JAX. Progress is logged after each batch.",
     )
-
-    @field_validator("batch_size")
-    @classmethod
-    def _validate_batch_size(cls, v: int | None) -> int | None:
-        if v is not None and v <= 0:
-            raise ValueError(f"batch_size must be positive, got: {v}")
-        return v
-
-    @field_validator("progress_interval")
-    @classmethod
-    def _validate_progress_interval(cls, v: float) -> float:
-        if v < 0.0 or v > 1.0:
-            raise ValueError(f"progress_interval must be in [0, 1], got: {v}")
-        return v
 
 
 # Discriminated union for sampler configurations

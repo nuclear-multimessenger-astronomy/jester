@@ -23,7 +23,7 @@ Sampler Classes
 ---------------
 
 These refer to the base class (``JesterSampler``) and the output class (``SamplerOutput``) for all samplers implemented in ``jesterTOV.inference.samplers``.
-Moreover, the ``flowMC`` sampler is documented here as well.
+Moreover, the ``flowMC`` sampler and the ``EOSReweightingSampler`` (likelihood reweighting of a fixed, tabulated EOS set) are documented here as well.
 
 .. autosummary::
    :toctree: _autosummary
@@ -31,3 +31,4 @@ Moreover, the ``flowMC`` sampler is documented here as well.
    jester_sampler.JesterSampler
    jester_sampler.SamplerOutput
    flowmc.FlowMCSampler
+   eos_reweighting.EOSReweightingSampler

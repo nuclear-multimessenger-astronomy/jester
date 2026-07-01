@@ -592,7 +592,7 @@ Returns zero log-likelihood (uniform likelihood) for all EOS configurations. Use
 
 ## Samplers
 
-Choose a sampling algorithm for Bayesian inference. JESTER supports four backends with different strengths. For a conceptual comparison, see {ref}`overview-samplers`. The sampler base class is {class}`~jesterTOV.inference.samplers.jester_sampler.JesterSampler`. All samplers produce a {class}`~jesterTOV.inference.samplers.jester_sampler.SamplerOutput` with posterior samples, log-probabilities, and metadata. The base Pydantic schema is {class}`~jesterTOV.inference.config.schema.BaseSamplerConfig`.
+Choose a sampling algorithm for Bayesian inference. JESTER supports five backends with different strengths. For a conceptual comparison, see {ref}`overview-samplers`. The sampler base class is {class}`~jesterTOV.inference.samplers.jester_sampler.JesterSampler`. All samplers produce a {class}`~jesterTOV.inference.samplers.jester_sampler.SamplerOutput` with posterior samples, log-probabilities, and metadata. The base Pydantic schema is {class}`~jesterTOV.inference.config.schema.BaseSamplerConfig`.
 
 ### Sequential Monte Carlo with random walk
 
@@ -762,11 +762,13 @@ sampler:
 
 ::::
 
-::::{dropdown} **EOS Reweighting** (`type: "eos-reweighting"`)
+### EOS reweighting
 
 Evaluates jester's GPU-accelerated likelihoods on a discrete set of tabulated EOS curves (M, $\Lambda$, R tables) rather than sampling a parametric EOS model. Returns the marginal log-likelihood per EOS and the Bayesian evidence $\log Z$. The Python class is {class}`~jesterTOV.inference.samplers.eos_reweighting.EOSReweightingSampler`. The Pydantic config schema is {class}`~jesterTOV.inference.config.schema.EOSReweightingConfig`.
 
 This sampler does **not** require an `eos`, `tov`, or `prior` section in the YAML — the EOS is provided as tabulated curves. The top-level config schema is {class}`~jesterTOV.inference.config.schemas.eos_reweighting.EOSReweightingInferenceConfig`.
+
+::::{dropdown} **EOS reweighting configuration**
 
 ```yaml
 sampler:
@@ -778,15 +780,13 @@ sampler:
 
   # Mass interpolation grid
   n_grid: 200        # number of grid points (default: 200)
-  m_min: 0.5         # lower bound in M_sun (default: 0.5)
-  m_max: null        # upper bound in M_sun; null → min(M_TOV) across all curves
+  m_min: 1.0         # lower bound in M_sun (default: 1.0)
+  m_max: null        # upper bound in M_sun; null → max(M_TOV) across all curves
 
-  # JAX batch size for lax.map over EOS curves
-  # null → auto-tune starting from N (all at once ≈ vmap), halving on OOM
-  batch_size: null
-
-  n_bootstrap: 500      # bootstrap resamples for log Z uncertainty (default: 500)
-  progress_interval: 0.1  # log a progress line every 10% of EOS curves (0 = disable)
+  # JAX batch size for lax.map over EOS curves (default: 1000)
+  # Tune (with trial-and-error) to a value that fits in memory, there is no automatic OOM recovery.
+  # Progress is logged after each batch is processed.
+  batch_size: 1000
 
   output_dir: "outdir/eos_reweighting/"
 ```
@@ -801,7 +801,7 @@ sampler:
 
 **Output.** The sampler writes `result.h5` to `output_dir` containing:
 - `posterior/parameters/eos_index` — integer index per EOS
-- `posterior/parameters/log_weight` — log-likelihood per EOS
+- `posterior/parameters/log_likelihood` — log-likelihood per EOS
 - `posterior/parameters/posterior_weight` — normalised posterior weight
 - `metadata/log_Z`, `metadata/log_Z_std`, `metadata/N_eff`, `metadata/N_eff_fraction` — evidence scalars
 
@@ -927,6 +927,7 @@ Several full configurations are available in the `examples` directory in jester:
 * `examples/inference/blackjax-ns-aw`: Examples of the nested sampler implemented in `blackjax`
 * `examples/inference/flowmc`: Examples of the flowMC sampler
 * `examples/inference/mm_peakcse`: Examples of the metamodel+CSE analysis
+* `examples/inference/reweighting`: Example of the EOS reweighting sampler applied to a set of tabulated EOS curves
 * `examples/inference/smc_random_walk`: Examples of the SMC sampler with random walk kernel
 * `examples/inference/spectral`: Examples of the spectral EOS parameterization
 * `examples/inference/spectral_reparam`: Examples of the spectral EOS parameterization, after the reparametrization described in TODO: add the new docs page once it exists

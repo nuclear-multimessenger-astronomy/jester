@@ -57,7 +57,8 @@ See the :doc:`overview/` guide for detailed explanations about what is implement
 
        - :doc:`Sequential Monte Carlo <overview/samplers/smc>`
        - :doc:`Nested Sampling <overview/samplers/nested_sampling>`
-       - :doc:`FlowMC (normalizing flows) <overview/samplers/flowmc>` 
+       - :doc:`FlowMC (normalizing flows) <overview/samplers/flowmc>`
+       - :doc:`EOS Reweighting <overview/samplers/eos_reweighting>`
 
 
 Curious for more?
@@ -134,6 +135,7 @@ Contents
    inference/training_flows
    inference/cit_cluster
    examples/inference/result
+   examples/inference/reweighting/reweighting
 
 .. toctree::
    :maxdepth: 2
