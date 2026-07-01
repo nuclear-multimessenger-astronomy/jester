@@ -2,13 +2,13 @@ r"""EOS reweighting sampler for jesterTOV.
 
 Evaluates jester's GPU-accelerated likelihoods on a discrete set of
 tabulated EOS curves (M, :math:`\Lambda`, R tables) rather than sampling a
-parametric EOS model.  Returns the marginal log-likelihood per EOS, the
-Bayesian evidence :math:`\log Z`, and optionally a Bayes factor between two
-EOS sets.
+parametric EOS model.  Returns the marginal log-likelihood per EOS and the
+Bayesian evidence :math:`\log Z`.
 """
 
 from __future__ import annotations
 
+import time
 from typing import Any, Callable
 
 import numpy as np
@@ -181,8 +181,11 @@ class EOSReweightingSampler(JesterSampler):
     ) -> Float[Array, " N"]:
         r"""Evaluate *f* on all N EOS curves using :func:`jax.lax.map`.
 
-        Auto-tunes ``batch_size``: starts at ``config.batch_size`` (or N if
-        ``None``), halves on OOM until ``batch_size=1``.
+        Splits the work into progress chunks (controlled by
+        ``config.progress_interval``) so that throughput and ETA can be logged
+        at regular intervals.  Within each chunk, auto-tunes ``batch_size``:
+        starts at ``config.batch_size`` (or chunk size if ``None``), halves
+        on OOM, and reuses the found size for subsequent chunks.
 
         Parameters
         ----------
@@ -197,33 +200,67 @@ class EOSReweightingSampler(JesterSampler):
             Log-likelihood per EOS.
         """
         N = all_masses.shape[0]
-        initial = self.config.batch_size if self.config.batch_size is not None else N
-        batch_size = min(initial, N)
+        progress_interval = self.config.progress_interval
 
-        stacked = (all_masses, all_lambdas, all_radii)
+        # Determine Python-level chunk size for progress reporting.
+        if progress_interval > 0.0 and N > 1:
+            n_chunks = max(1, round(1.0 / progress_interval))
+            chunk_size = max(1, (N + n_chunks - 1) // n_chunks)
+        else:
+            chunk_size = N  # single chunk — no intermediate progress
 
-        while batch_size >= 1:
-            try:
-                log_weights: Float[Array, " N"] = jax.lax.map(
-                    f, stacked, batch_size=batch_size
+        # JAX-internal batch size (memory management); will be updated on OOM.
+        found_batch_size: int = (
+            self.config.batch_size if self.config.batch_size is not None else chunk_size
+        )
+
+        results: list[Array] = []
+        start_time = time.monotonic()
+        processed = 0
+
+        for start in range(0, N, chunk_size):
+            end = min(start + chunk_size, N)
+            stacked = (all_masses[start:end], all_lambdas[start:end], all_radii[start:end])
+            current_bs = min(found_batch_size, end - start)
+            chunk_result: Float[Array, " _"] = jnp.empty(0)  # overwritten in the loop below
+
+            while current_bs >= 1:
+                try:
+                    chunk_result = jax.lax.map(
+                        f, stacked, batch_size=current_bs
+                    )
+                    jax.block_until_ready(chunk_result)
+                    if current_bs != found_batch_size:
+                        logger.info(f"Auto-reduced batch_size to {current_bs}")
+                    found_batch_size = current_bs
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    if current_bs == 1:
+                        raise RuntimeError(
+                            f"EOS evaluation failed even at batch_size=1: {exc}"
+                        ) from exc
+                    prev = current_bs
+                    current_bs = max(1, current_bs // 2)
+                    logger.warning(
+                        f"batch_size={prev} failed ({type(exc).__name__}); "
+                        f"retrying with batch_size={current_bs}"
+                    )
+
+            results.append(chunk_result)
+            processed = end
+
+            if progress_interval > 0.0:
+                elapsed = time.monotonic() - start_time
+                fraction = processed / N
+                eta = elapsed / fraction * (1.0 - fraction) if fraction > 0 else 0.0
+                logger.info(
+                    f"EOS reweighting: {processed}/{N} EOS "
+                    f"({fraction * 100:.0f}%) | "
+                    f"elapsed {elapsed:.1f}s | ETA {eta:.1f}s"
                 )
-                jax.block_until_ready(log_weights)
-                if batch_size != initial:
-                    logger.info(f"Auto-reduced batch_size to {batch_size}")
-                return log_weights
-            except Exception as exc:  # noqa: BLE001
-                if batch_size == 1:
-                    raise RuntimeError(
-                        f"EOS evaluation failed even at batch_size=1: {exc}"
-                    ) from exc
-                prev = batch_size
-                batch_size = max(1, batch_size // 2)
-                logger.warning(
-                    f"batch_size={prev} failed ({type(exc).__name__}); "
-                    f"retrying with batch_size={batch_size}"
-                )
 
-        raise RuntimeError("_evaluate_batch: unreachable")  # pragma: no cover
+        log_weights: Float[Array, " N"] = jnp.concatenate(results)
+        return log_weights
 
     def _bootstrap_log_Z(self, log_weights: Float[Array, " N"]) -> float:
         r"""Estimate :math:`\log Z` uncertainty via bootstrap resampling.
@@ -283,46 +320,6 @@ class EOSReweightingSampler(JesterSampler):
             "posterior_weights": posterior_weights,
         }
 
-    def _bayes_factor(
-        self,
-        ev_A: dict[str, Any],
-        ev_B: dict[str, Any],
-    ) -> dict[str, Any]:
-        r"""Compute Bayes factor :math:`B_{AB} = Z_A / Z_B`.
-
-        Parameters
-        ----------
-        ev_A, ev_B :
-            Evidence dicts from :meth:`_compute_evidence`.
-
-        Returns
-        -------
-        dict with keys ``log_BF``, ``log10_BF``, ``log_BF_std``, ``jeffreys``.
-        """
-        log_BF = float(ev_A["log_Z"] - ev_B["log_Z"])
-        log10_BF = log_BF / np.log(10)
-        log_BF_std = float(
-            np.sqrt(ev_A["log_Z_std"] ** 2 + ev_B["log_Z_std"] ** 2)
-        )
-        abs_log10 = abs(log10_BF)
-        
-        # TODO: add 0.5 steps as well
-        jeffreys = (
-            "decisive"
-            if abs_log10 > 2
-            else "strong"
-            if abs_log10 > 1
-            else "substantial"
-            if abs_log10 > 0.5
-            else "not worth a bare mention"
-        )
-        return {
-            "log_BF": log_BF,
-            "log10_BF": log10_BF,
-            "log_BF_std": log_BF_std,
-            "jeffreys": jeffreys,
-        }
-
     def sample(self, key: PRNGKeyArray) -> SamplerOutput:  # type: ignore[override]  # key unused — no stochastic component
         r"""Evaluate all EOS curves and return evidence + posterior weights.
 
@@ -334,85 +331,50 @@ class EOSReweightingSampler(JesterSampler):
         Returns
         -------
         SamplerOutput
-            - ``samples["eos_index"]`` : integer index per EOS in set A
-            - ``samples["log_weight"]`` : log-likelihood per EOS in set A
+            - ``samples["eos_index"]`` : integer index per EOS
+            - ``samples["log_weight"]`` : log-likelihood per EOS
             - ``samples["posterior_weight"]`` : normalised posterior weight per EOS
             - ``log_prob`` : same as ``samples["log_weight"]``
-            - ``metadata["set_A"]`` : evidence dict for set A
-            - ``metadata["set_B"]`` : evidence dict for set B (if provided)
-            - ``metadata["bayes_factor"]`` : Bayes factor dict (if set B provided)
+            - ``metadata["evidence"]`` : evidence dict (log_Z, log_Z_std, N_eff, …)
+            - ``metadata["N_eos"]`` : total number of EOS curves
         """
         f = self._make_eos_fn()
 
-        # --- Set A ---
-        logger.info(
-            f"Loading EOS set A ({len(self.config.eos_set_A)} file(s))..."
-        )
-        M_A, L_A, R_A = self._load_and_grid(
-            self.config.eos_set_A,
+        logger.info(f"Loading EOS file: {self.config.eos_file}")
+        all_masses, all_lambdas, all_radii = self._load_and_grid(
+            [self.config.eos_file],
             self.config.n_grid,
             self.config.m_min,
             self.config.m_max,
         )
-        N_A = int(M_A.shape[0])
+        N = int(all_masses.shape[0])
         logger.info(
-            f"EOS set A: {N_A} curves on "
-            f"[{self.config.m_min:.2f}, {float(M_A[0, -1]):.3f}] M_sun "
+            f"EOS set: {N} curves on "
+            f"[{self.config.m_min:.2f}, {float(all_masses[0, -1]):.3f}] M_sun "
             f"({self.config.n_grid} grid points)"
         )
 
-        logger.info("Evaluating likelihoods on EOS set A...")
-        log_weights_A = self._evaluate_batch(f, M_A, L_A, R_A)
-        ev_A = self._compute_evidence(log_weights_A)
+        logger.info("Evaluating likelihoods on EOS set...")
+        log_weights = self._evaluate_batch(f, all_masses, all_lambdas, all_radii)
+        ev = self._compute_evidence(log_weights)
         logger.info(
-            f"Set A  log Z = {ev_A['log_Z']:.3f} ± {ev_A['log_Z_std']:.3f}  "
-            f"N_eff = {ev_A['N_eff']:.1f} ({ev_A['N_eff_fraction']*100:.1f}%)"
+            f"log Z = {ev['log_Z']:.3f} ± {ev['log_Z_std']:.3f}  "
+            f"N_eff = {ev['N_eff']:.1f} ({ev['N_eff_fraction']*100:.1f}%)"
         )
 
         samples: dict[str, Array] = {
-            "eos_index": jnp.arange(N_A),
-            "log_weight": log_weights_A,
-            "posterior_weight": ev_A["posterior_weights"],
+            "eos_index": jnp.arange(N),
+            "log_weight": log_weights,
+            "posterior_weight": ev["posterior_weights"],
         }
         metadata: dict[str, Any] = {
-            "set_A": ev_A,
-            "N_eos_A": N_A,
+            "evidence": ev,
+            "N_eos": N,
         }
-
-        # --- Set B (optional) ---
-        if self.config.eos_set_B is not None:
-            logger.info(
-                f"Loading EOS set B ({len(self.config.eos_set_B)} file(s))..."
-            )
-            M_B, L_B, R_B = self._load_and_grid(
-                self.config.eos_set_B,
-                self.config.n_grid,
-                self.config.m_min,
-                self.config.m_max,
-            )
-            N_B = int(M_B.shape[0])
-            logger.info(f"EOS set B: {N_B} curves")
-
-            logger.info("Evaluating likelihoods on EOS set B...")
-            log_weights_B = self._evaluate_batch(f, M_B, L_B, R_B)
-            ev_B = self._compute_evidence(log_weights_B)
-            bf = self._bayes_factor(ev_A, ev_B)
-
-            logger.info(
-                f"Set B  log Z = {ev_B['log_Z']:.3f} ± {ev_B['log_Z_std']:.3f}"
-            )
-            logger.info(
-                f"Bayes factor  log10(B_AB) = {bf['log10_BF']:.3f} "
-                f"({bf['jeffreys']})"
-            )
-
-            metadata["set_B"] = ev_B
-            metadata["N_eos_B"] = N_B
-            metadata["bayes_factor"] = bf
 
         return SamplerOutput(
             samples=samples,
-            log_prob=log_weights_A,
+            log_prob=log_weights,
             metadata=metadata,
         )
 

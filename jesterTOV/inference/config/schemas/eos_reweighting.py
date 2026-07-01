@@ -51,8 +51,7 @@ class EOSReweightingInferenceConfig(JesterBaseModel):
 
         sampler:
           type: eos-reweighting
-          eos_set_A:
-            - path/to/eos_set_A.npz
+          eos_file: path/to/eos.npz
           batch_size: 50
     """
 

@@ -38,10 +38,9 @@ def zero_likelihood() -> ZeroLikelihood:
     return ZeroLikelihood()
 
 
-def _make_sampler(npz_path: str, likelihood, eos_set_B=None) -> EOSReweightingSampler:
+def _make_sampler(npz_path: str, likelihood) -> EOSReweightingSampler:
     cfg = EOSReweightingConfig(
-        eos_set_A=[npz_path],
-        eos_set_B=eos_set_B,
+        eos_file=npz_path,
         n_grid=N_GRID,
         m_min=0.5,
         m_max=None,
@@ -66,7 +65,7 @@ class TestEOSReweightingSamplerBasic:
         sampler = _make_sampler(tmp_npz, zero_likelihood)
         out = sampler.sample(jax.random.key(0))
 
-        ev = out.metadata["set_A"]
+        ev = out.metadata["evidence"]
         assert np.isfinite(ev["log_Z"]), "log_Z must be finite"
         assert ev["N_eff"] > 0, "N_eff must be positive"
         assert 0.0 < ev["N_eff_fraction"] <= 1.0
@@ -78,7 +77,7 @@ class TestEOSReweightingSamplerBasic:
 
         lw = np.array(out.samples["log_weight"])
         assert np.allclose(lw, lw[0], atol=1e-6), "ZeroLikelihood must give equal weights"
-        assert abs(out.metadata["set_A"]["N_eff"] - N_EOS) < 0.5
+        assert abs(out.metadata["evidence"]["N_eff"] - N_EOS) < 0.5
 
     def test_posterior_weights_sum_to_one(self, tmp_npz, zero_likelihood):
         sampler = _make_sampler(tmp_npz, zero_likelihood)
@@ -89,102 +88,34 @@ class TestEOSReweightingSamplerBasic:
     def test_n_eos_in_metadata(self, tmp_npz, zero_likelihood):
         sampler = _make_sampler(tmp_npz, zero_likelihood)
         out = sampler.sample(jax.random.key(0))
-        assert out.metadata["N_eos_A"] == N_EOS
-
-    def test_multi_file_stacking(self, tmp_path, zero_likelihood):
-        """Multiple NPZ files should be concatenated along the EOS axis."""
-        p1 = str(tmp_path / "eos_a.npz")
-        p2 = str(tmp_path / "eos_b.npz")
-        np.savez(p1, **{
-            "masses": np.tile(np.linspace(0.5, 2.0, 40), (3, 1)),
-            "lambdas": np.ones((3, 40)) * 500,
-            "radii": np.ones((3, 40)) * 12.0,
-        })
-        np.savez(p2, **{
-            "masses": np.tile(np.linspace(0.5, 2.0, 40), (4, 1)),
-            "lambdas": np.ones((4, 40)) * 400,
-            "radii": np.ones((4, 40)) * 11.5,
-        })
-
-        cfg = EOSReweightingConfig(
-            eos_set_A=[p1, p2],
-            n_grid=N_GRID,
-            m_min=0.5,
-            n_bootstrap=10,
-        )
-        sampler = EOSReweightingSampler(likelihood=zero_likelihood, config=cfg)
-        out = sampler.sample(jax.random.key(0))
-        assert out.metadata["N_eos_A"] == 7
-        assert out.log_prob.shape == (7,)
-
-
-class TestEOSReweightingBayesFactor:
-    def test_bayes_factor_present(self, tmp_path, zero_likelihood):
-        """When eos_set_B is provided, bayes_factor should appear in metadata."""
-        p_a = str(tmp_path / "set_a.npz")
-        p_b = str(tmp_path / "set_b.npz")
-        np.savez(p_a, **{
-            "masses": np.tile(np.linspace(0.5, 2.0, 40), (3, 1)),
-            "lambdas": np.ones((3, 40)) * 500,
-            "radii": np.ones((3, 40)) * 12.0,
-        })
-        np.savez(p_b, **{
-            "masses": np.tile(np.linspace(0.5, 2.0, 40), (3, 1)),
-            "lambdas": np.ones((3, 40)) * 500,
-            "radii": np.ones((3, 40)) * 12.0,
-        })
-
-        cfg = EOSReweightingConfig(
-            eos_set_A=[p_a],
-            eos_set_B=[p_b],
-            n_grid=N_GRID,
-            m_min=0.5,
-            n_bootstrap=10,
-        )
-        sampler = EOSReweightingSampler(likelihood=zero_likelihood, config=cfg)
-        out = sampler.sample(jax.random.key(0))
-
-        assert "set_B" in out.metadata
-        assert "bayes_factor" in out.metadata
-        bf = out.metadata["bayes_factor"]
-        assert "log_BF" in bf
-        assert "log10_BF" in bf
-        assert "jeffreys" in bf
-
-    def test_identical_sets_zero_bayes_factor(self, tmp_path, zero_likelihood):
-        """Identical EOS sets with ZeroLikelihood → log_BF ≈ 0."""
-        p = str(tmp_path / "eos.npz")
-        np.savez(p, **{
-            "masses": np.tile(np.linspace(0.5, 2.0, 40), (4, 1)),
-            "lambdas": np.ones((4, 40)) * 500,
-            "radii": np.ones((4, 40)) * 12.0,
-        })
-
-        cfg = EOSReweightingConfig(
-            eos_set_A=[p], eos_set_B=[p], n_grid=N_GRID, m_min=0.5, n_bootstrap=10
-        )
-        sampler = EOSReweightingSampler(likelihood=zero_likelihood, config=cfg)
-        out = sampler.sample(jax.random.key(0))
-
-        log_BF = out.metadata["bayes_factor"]["log_BF"]
-        assert abs(log_BF) < 1e-6, f"Expected log_BF ≈ 0 for identical sets, got {log_BF}"
-
+        assert out.metadata["N_eos"] == N_EOS
 
 class TestEOSReweightingConfig:
-    def test_config_validation_empty_set(self):
-        with pytest.raises(Exception):
-            EOSReweightingConfig(eos_set_A=[], n_grid=50, m_min=0.5)
-
     def test_config_validation_bad_batch_size(self):
         with pytest.raises(Exception):
-            EOSReweightingConfig(eos_set_A=["x.npz"], batch_size=-1, n_grid=50, m_min=0.5)
+            EOSReweightingConfig(eos_file="x.npz", batch_size=-1, n_grid=50, m_min=0.5)
+
+    def test_config_validation_bad_progress_interval(self):
+        with pytest.raises(Exception):
+            EOSReweightingConfig(eos_file="x.npz", progress_interval=1.5, n_grid=50, m_min=0.5)
+        with pytest.raises(Exception):
+            EOSReweightingConfig(eos_file="x.npz", progress_interval=-0.1, n_grid=50, m_min=0.5)
+
+    def test_progress_interval_zero_disables_progress(self, tmp_npz, zero_likelihood):
+        """progress_interval=0 should still produce correct results."""
+        cfg = EOSReweightingConfig(
+            eos_file=tmp_npz, n_grid=N_GRID, m_min=0.5, n_bootstrap=5, progress_interval=0.0
+        )
+        sampler = EOSReweightingSampler(likelihood=zero_likelihood, config=cfg)
+        out = sampler.sample(jax.random.key(0))
+        assert out.log_prob.shape == (N_EOS,)
 
     def test_missing_radii_raises(self, tmp_path, zero_likelihood):
         """NPZ file without 'radii' key must raise a clear ValueError."""
         p = str(tmp_path / "no_radii.npz")
         masses = np.tile(np.linspace(0.5, 2.0, 30), (3, 1))
         np.savez(p, masses=masses, lambdas=np.ones_like(masses) * 500)
-        cfg = EOSReweightingConfig(eos_set_A=[p], n_grid=20, m_min=0.5, n_bootstrap=5)
+        cfg = EOSReweightingConfig(eos_file=p, n_grid=20, m_min=0.5, n_bootstrap=5)
         sampler = EOSReweightingSampler(likelihood=zero_likelihood, config=cfg)
         with pytest.raises(ValueError, match="radii"):
             sampler.sample(jax.random.key(0))
@@ -209,7 +140,7 @@ class TestEOSReweightingHDF5:
         result.save(h5_path)
 
         loaded = InferenceResult.load(h5_path)
-        assert np.isfinite(loaded.metadata["log_Z_A"]), "log_Z_A must be saved and finite"
-        assert loaded.metadata["N_eff_A"] > 0, "N_eff_A must be saved and positive"
-        assert np.isfinite(loaded.metadata["log_Z_std_A"])
-        assert np.isfinite(loaded.metadata["N_eff_fraction_A"])
+        assert np.isfinite(loaded.metadata["log_Z"]), "log_Z must be saved and finite"
+        assert loaded.metadata["N_eff"] > 0, "N_eff must be saved and positive"
+        assert np.isfinite(loaded.metadata["log_Z_std"])
+        assert np.isfinite(loaded.metadata["N_eff_fraction"])

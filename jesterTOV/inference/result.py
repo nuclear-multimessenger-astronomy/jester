@@ -326,35 +326,19 @@ class InferenceResult:
         # Flatten evidence scalars as individual metadata keys so they survive
         # the HDF5 attribute serialisation (dicts are not supported as attrs).
         # posterior_weights is already stored in posterior["posterior_weight"].
-        ev_A = output.metadata.get("set_A", {})
+        ev = output.metadata.get("evidence", {})
         metadata: Dict[str, Any] = {
             "sampler": "eos_reweighting",
             "sampling_time": float(runtime),
-            "n_eos_A": int(output.metadata.get("N_eos_A", 0)),
+            "n_eos": int(output.metadata.get("N_eos", 0)),
             "seed": int(config.seed),
             "creation_timestamp": datetime.now().isoformat(),
             "config_json": config_json,
-            "log_Z_A": float(ev_A.get("log_Z", float("nan"))),
-            "log_Z_std_A": float(ev_A.get("log_Z_std", float("nan"))),
-            "N_eff_A": float(ev_A.get("N_eff", float("nan"))),
-            "N_eff_fraction_A": float(ev_A.get("N_eff_fraction", float("nan"))),
+            "log_Z": float(ev.get("log_Z", float("nan"))),
+            "log_Z_std": float(ev.get("log_Z_std", float("nan"))),
+            "N_eff": float(ev.get("N_eff", float("nan"))),
+            "N_eff_fraction": float(ev.get("N_eff_fraction", float("nan"))),
         }
-        if "set_B" in output.metadata:
-            ev_B = output.metadata["set_B"]
-            bf = output.metadata.get("bayes_factor", {})
-            metadata.update(
-                {
-                    "n_eos_B": int(output.metadata.get("N_eos_B", 0)),
-                    "log_Z_B": float(ev_B.get("log_Z", float("nan"))),
-                    "log_Z_std_B": float(ev_B.get("log_Z_std", float("nan"))),
-                    "N_eff_B": float(ev_B.get("N_eff", float("nan"))),
-                    "N_eff_fraction_B": float(ev_B.get("N_eff_fraction", float("nan"))),
-                    "log_BF": float(bf.get("log_BF", float("nan"))),
-                    "log10_BF": float(bf.get("log10_BF", float("nan"))),
-                    "log_BF_std": float(bf.get("log_BF_std", float("nan"))),
-                    "jeffreys": str(bf.get("jeffreys", "")),
-                }
-            )
 
         return cls(
             sampler_type="eos_reweighting",
@@ -836,26 +820,13 @@ class InferenceResult:
 
         elif self.sampler_type == "eos_reweighting":
             lines.append("\nEOS Reweighting:")
-            lines.append(f"  N_EOS (set A): {self.metadata.get('n_eos_A', '?')}")
-            log_Z_A = self.metadata.get("log_Z_A", float("nan"))
-            log_Z_std_A = self.metadata.get("log_Z_std_A", float("nan"))
-            N_eff_A = self.metadata.get("N_eff_A", float("nan"))
-            N_eff_frac_A = self.metadata.get("N_eff_fraction_A", float("nan"))
-            lines.append(f"  log Z (set A) = {log_Z_A:.3f} ± {log_Z_std_A:.3f}")
-            lines.append(
-                f"  N_eff (set A) = {N_eff_A:.1f}  ({N_eff_frac_A * 100:.1f}%)"
-            )
-            if "log_Z_B" in self.metadata:
-                log_Z_B = self.metadata.get("log_Z_B", float("nan"))
-                log_Z_std_B = self.metadata.get("log_Z_std_B", float("nan"))
-                lines.append(f"  N_EOS (set B): {self.metadata.get('n_eos_B', '?')}")
-                lines.append(f"  log Z (set B) = {log_Z_B:.3f} ± {log_Z_std_B:.3f}")
-                log10_BF = self.metadata.get("log10_BF", float("nan"))
-                log_BF_std = self.metadata.get("log_BF_std", float("nan"))
-                jeffreys = self.metadata.get("jeffreys", "?")
-                lines.append(
-                    f"  log10(B_AB) = {log10_BF:.3f} ± {log_BF_std:.3f}  ({jeffreys})"
-                )
+            lines.append(f"  N_EOS: {self.metadata.get('n_eos', '?')}")
+            log_Z = self.metadata.get("log_Z", float("nan"))
+            log_Z_std = self.metadata.get("log_Z_std", float("nan"))
+            N_eff = self.metadata.get("N_eff", float("nan"))
+            N_eff_frac = self.metadata.get("N_eff_fraction", float("nan"))
+            lines.append(f"  log Z = {log_Z:.3f} ± {log_Z_std:.3f}")
+            lines.append(f"  N_eff = {N_eff:.1f}  ({N_eff_frac * 100:.1f}%)")
 
         # Posterior info
         # Extract parameter keys (excluding special fields)

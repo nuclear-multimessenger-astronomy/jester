@@ -263,8 +263,8 @@ class EOSReweightingConfig(BaseSamplerConfig):
     This sampler evaluates jester's GPU-accelerated likelihoods on a discrete
     set of tabulated EOS curves (M, :math:`\Lambda`, R tables) provided by
     collaborators, rather than sampling a parametric EOS model. It computes
-    the marginal log-likelihood per EOS, the Bayesian evidence :math:`\log Z`,
-    and optionally a Bayes factor between two EOS sets.
+    the marginal log-likelihood per EOS and the Bayesian evidence
+    :math:`\log Z`.
 
     EOS tables must be NPZ files with keys:
 
@@ -278,27 +278,28 @@ class EOSReweightingConfig(BaseSamplerConfig):
     ----------
     type : Literal["eos-reweighting"]
         Sampler type identifier
-    eos_set_A : list[str]
-        Paths to NPZ files for EOS set A
-    eos_set_B : list[str] | None
-        Optional paths to NPZ files for set B (enables Bayes factor computation)
+    eos_file : str
+        Path to an NPZ file containing EOS curves
     n_grid : int
         Number of mass grid points for common interpolation grid (default: 200)
     m_min : float
         Minimum mass for interpolation grid in :math:`M_\odot` (default: 0.5)
     m_max : float | None
-        Maximum mass for grid in :math:`M_\odot`. None → use min(M_TOV) across set A.
+        Maximum mass for grid in :math:`M_\odot`. None → use min(M_TOV) across
+        all curves.
     batch_size : int | None
         Number of EOS curves processed simultaneously by JAX. None → auto-tune
         starting from N (all at once, equivalent to vmap) and halving on OOM.
     n_bootstrap : int
         Number of bootstrap resamples for :math:`\log Z` uncertainty (default: 500)
+    progress_interval : float
+        Fraction of EOS curves between progress log lines (default: 0.1 = every
+        10%).  Set to 0 to disable progress reporting.
     """
 
     type: Literal["eos-reweighting"] = "eos-reweighting"
 
-    eos_set_A: list[str]
-    eos_set_B: list[str] | None = None
+    eos_file: str
 
     n_grid: int = Field(default=200, gt=10)
     m_min: float = Field(default=0.5, gt=0.0)
@@ -306,19 +307,26 @@ class EOSReweightingConfig(BaseSamplerConfig):
 
     batch_size: int | None = None
     n_bootstrap: int = Field(default=500, gt=0)
-
-    @field_validator("eos_set_A")
-    @classmethod
-    def _validate_eos_set_A(cls, v: list[str]) -> list[str]:
-        if not v:
-            raise ValueError("eos_set_A must contain at least one EOS file path")
-        return v
+    progress_interval: float = Field(
+        default=0.1,
+        description=(
+            "Fraction of EOS curves between progress log lines (e.g. 0.1 = every 10%). "
+            "Set to 0 to disable progress reporting."
+        ),
+    )
 
     @field_validator("batch_size")
     @classmethod
     def _validate_batch_size(cls, v: int | None) -> int | None:
         if v is not None and v <= 0:
             raise ValueError(f"batch_size must be positive, got: {v}")
+        return v
+
+    @field_validator("progress_interval")
+    @classmethod
+    def _validate_progress_interval(cls, v: float) -> float:
+        if v < 0.0 or v > 1.0:
+            raise ValueError(f"progress_interval must be in [0, 1], got: {v}")
         return v
 
 
