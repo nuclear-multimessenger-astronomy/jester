@@ -28,6 +28,8 @@ Schema Classes
    schema.BlackJAXNSAWConfig
    schema.SMCRandomWalkSamplerConfig
    schema.SMCNUTSSamplerConfig
+   schema.EOSReweightingConfig
+   schema.EOSReweightingInferenceConfig
    schema.PostprocessingConfig
 
 Parser Functions

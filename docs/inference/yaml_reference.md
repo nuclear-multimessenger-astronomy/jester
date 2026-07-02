@@ -592,7 +592,7 @@ Returns zero log-likelihood (uniform likelihood) for all EOS configurations. Use
 
 ## Samplers
 
-Choose a sampling algorithm for Bayesian inference. JESTER supports four backends with different strengths. For a conceptual comparison, see {ref}`overview-samplers`. The sampler base class is {class}`~jesterTOV.inference.samplers.jester_sampler.JesterSampler`. All samplers produce a {class}`~jesterTOV.inference.samplers.jester_sampler.SamplerOutput` with posterior samples, log-probabilities, and metadata. The base Pydantic schema is {class}`~jesterTOV.inference.config.schema.BaseSamplerConfig`.
+Choose a sampling algorithm for Bayesian inference. JESTER supports five backends with different strengths. For a conceptual comparison, see {ref}`overview-samplers`. The sampler base class is {class}`~jesterTOV.inference.samplers.jester_sampler.JesterSampler`. All samplers produce a {class}`~jesterTOV.inference.samplers.jester_sampler.SamplerOutput` with posterior samples, log-probabilities, and metadata. The base Pydantic schema is {class}`~jesterTOV.inference.config.schema.BaseSamplerConfig`.
 
 ### Sequential Monte Carlo with random walk
 
@@ -762,6 +762,58 @@ sampler:
 
 ::::
 
+### EOS reweighting
+
+Evaluates jester's GPU-accelerated likelihoods on a discrete set of tabulated EOS curves (M, $\Lambda$, R tables) rather than sampling a parametric EOS model. Returns the marginal log-likelihood per EOS and the Bayesian evidence $\log Z$. The Python class is {class}`~jesterTOV.inference.samplers.eos_reweighting.EOSReweightingSampler`. The Pydantic config schema is {class}`~jesterTOV.inference.config.schema.EOSReweightingConfig`.
+
+This sampler does **not** require an `eos`, `tov`, or `prior` section in the YAML — the EOS is provided as tabulated curves. The top-level config schema is {class}`~jesterTOV.inference.config.schemas.eos_reweighting.EOSReweightingInferenceConfig`.
+
+::::{dropdown} **EOS reweighting configuration**
+
+```yaml
+sampler:
+  type: "eos-reweighting"
+
+  # EOS input — NPZ file with keys: masses, lambdas, radii (all 1-D float64)
+  # For a file containing N curves: arrays shaped [N, n_points]
+  eos_file: "path/to/eos.npz"
+
+  # Mass interpolation grid
+  n_grid: 200        # number of grid points (default: 200)
+  m_min: 1.0         # lower bound in M_sun (default: 1.0)
+  m_max: null        # upper bound in M_sun; null → max(M_TOV) across all curves
+
+  # JAX batch size for lax.map over EOS curves (default: 1000)
+  # Tune (with trial-and-error) to a value that fits in memory, there is no automatic OOM recovery.
+  # Progress is logged after each batch is processed.
+  batch_size: 1000
+
+  output_dir: "outdir/eos_reweighting/"
+```
+
+**EOS table format.** Each NPZ file must contain:
+
+| Key | Shape | Description |
+|---|---|---|
+| `masses` | `[n_points]` or `[N, n_points]` | Gravitational mass in $M_\odot$, monotone increasing |
+| `lambdas` | same as `masses` | Dimensionless tidal deformability $\Lambda$ |
+| `radii` | same as `masses` | Radius in km |
+
+**Output.** The sampler writes `result.h5` to `output_dir` containing:
+- `posterior/parameters/eos_index` — integer index per EOS
+- `posterior/parameters/log_likelihood` — log-likelihood per EOS
+- `posterior/parameters/posterior_weight` — normalised posterior weight
+- `metadata/log_Z`, `metadata/log_Z_std`, `metadata/N_eff`, `metadata/N_eff_fraction` — evidence scalars
+
+**When to use:**
+- When collaborators provide tabulated EOS sets from e.g. nuclear-theory calculations
+- When computing the Bayesian evidence $\log Z$ for an EOS family
+- When you want to reweight an existing EOS prior sample with jester's multi-messenger likelihoods
+
+**Supported likelihoods.** Because the EOS is only known through its tabulated $(M, \Lambda, R)$ curve, `likelihoods` may only contain types that depend purely on these neutron-star observables: `gw`, `nicer`, `radio`, and `zero`. Likelihoods that need EOS-level structure (density, pressure, sound speed, ...) — `gw_resampled`, `nicer_kde`, `chieft`, `constraints_eos`, `constraints_tov`, `constraints_esym`, `constraints_gamma`, `rex` — are rejected at config-validation time with a clear error, since that information is not available from tabulated curves.
+
+::::
+
 ---
 
 ## Data paths (optional)
@@ -877,6 +929,7 @@ Several full configurations are available in the `examples` directory in jester:
 * `examples/inference/blackjax-ns-aw`: Examples of the nested sampler implemented in `blackjax`
 * `examples/inference/flowmc`: Examples of the flowMC sampler
 * `examples/inference/mm_peakcse`: Examples of the metamodel+CSE analysis
+* `examples/inference/reweighting`: Example of the EOS reweighting sampler applied to a set of tabulated EOS curves
 * `examples/inference/smc_random_walk`: Examples of the SMC sampler with random walk kernel
 * `examples/inference/spectral`: Examples of the spectral EOS parameterization
 * `examples/inference/spectral_reparam`: Examples of the spectral EOS parameterization, after the reparametrization described in TODO: add the new docs page once it exists

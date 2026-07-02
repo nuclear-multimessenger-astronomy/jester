@@ -1,0 +1,32 @@
+seed: 42
+debug_nans: false
+
+likelihoods:
+  - type: gw
+    enabled: true
+    events:
+      - name: GW170817
+
+  - type: nicer
+    enabled: true
+    pulsars:
+      - name: J0030
+        amsterdam_model_dir: "../../../../jesterTOV/inference/flows/models/nicer_maf/J00300451/amsterdam_st_pst"
+        maryland_model_dir: "../../../../jesterTOV/inference/flows/models/nicer_maf/J00300451/maryland_2spot_rm"
+      - name: J0740+6620
+        amsterdam_model_dir: "../../../../jesterTOV/inference/flows/models/nicer_maf/J07406620/amsterdam_gamma_nicerxmm"
+        maryland_model_dir: "../../../../jesterTOV/inference/flows/models/nicer_maf/J07406620/maryland_unknown_nicerxmm_rm"
+
+sampler:
+  type: "eos-reweighting"
+
+  eos_file: ./eos_sets/PSR_10k.npz
+
+  # Mass grid
+  n_grid: 200
+  m_min: 1.1
+  m_max: null
+
+  batch_size: 1000
+
+  output_dir: ./outdir/

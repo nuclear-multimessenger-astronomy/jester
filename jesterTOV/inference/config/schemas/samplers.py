@@ -257,6 +257,56 @@ class SMCNUTSSamplerConfig(BaseSamplerConfig):
         return v
 
 
+class EOSReweightingConfig(BaseSamplerConfig):
+    r"""Configuration for EOS reweighting sampler.
+
+    This sampler evaluates jester's GPU-accelerated likelihoods on a discrete
+    set of tabulated EOS curves (M, :math:`\Lambda`, R tables), not necessarily
+    produced by jester itself, rather than sampling a parametric EOS model.
+    It computes the marginal log-likelihood per EOS and the Bayesian evidence :math:`\log Z`.
+
+    EOS tables must be NPZ files with keys:
+
+    - ``masses``: 1D float64 array in :math:`M_\odot`, monotone increasing
+    - ``lambdas``: 1D float64 array, dimensionless tidal deformability
+    - ``radii``: 1D float64 array in km (required)
+
+    For a file containing N EOS curves: arrays shaped ``[N, n_points]``.
+
+    Attributes
+    ----------
+    type : Literal["eos-reweighting"]
+        Sampler type identifier
+    eos_file : str
+        Path to an NPZ file containing EOS curves
+    n_grid : int
+        Number of mass grid points for common interpolation grid (default: 200)
+    m_min : float
+        Minimum mass for interpolation grid in :math:`M_\odot` (default: 1.0)
+    m_max : float | None
+        Maximum mass for grid in :math:`M_\odot`. None → use min(M_TOV) across
+        all curves.
+    batch_size : int
+        Number of EOS curves processed simultaneously by JAX (default: 1000).
+        Progress is logged after each batch. Choose a value that fits in
+        memory; there is no automatic OOM recovery.
+    """
+
+    type: Literal["eos-reweighting"] = "eos-reweighting"
+
+    eos_file: str
+
+    n_grid: int = Field(default=200, gt=10)
+    m_min: float = Field(default=1.0, gt=0.0)
+    m_max: float | None = None
+
+    batch_size: int = Field(
+        default=1000,
+        gt=0,
+        description="Number of EOS curves processed simultaneously by JAX. Progress is logged after each batch.",
+    )
+
+
 # Discriminated union for sampler configurations
 SamplerConfig = Annotated[
     Union[
@@ -264,6 +314,7 @@ SamplerConfig = Annotated[
         BlackJAXNSAWConfig,
         SMCRandomWalkSamplerConfig,
         SMCNUTSSamplerConfig,
+        EOSReweightingConfig,
     ],
     Discriminator("type"),
 ]
