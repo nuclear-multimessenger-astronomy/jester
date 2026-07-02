@@ -7,7 +7,10 @@ import numpy as np
 import pytest
 
 from jesterTOV.inference.likelihoods.combined import ZeroLikelihood
-from jesterTOV.inference.samplers.eos_reweighting import EOSReweightingSampler
+from jesterTOV.inference.samplers.eos_reweighting import (
+    EOSReweightingSampler,
+    resample_eos_posterior,
+)
 from jesterTOV.inference.config.schemas.samplers import EOSReweightingConfig
 from jesterTOV.inference.config.schemas.eos_reweighting import (
     EOSReweightingInferenceConfig,
@@ -108,6 +111,118 @@ class TestEOSReweightingSamplerBasic:
         out = sampler.sample(jax.random.key(0))
         assert out.metadata["N_eos"] == N_EOS
 
+    def test_resampled_posterior_present(self, tmp_npz, zero_likelihood):
+        sampler = _make_sampler(tmp_npz, zero_likelihood)
+        out = sampler.sample(jax.random.key(0))
+
+        n_resampled = out.metadata["N_resampled"]
+        assert n_resampled > 0
+        assert out.samples["masses_EOS"].shape == (n_resampled, N_GRID)
+        assert out.samples["Lambdas_EOS"].shape == (n_resampled, N_GRID)
+        assert out.samples["radii_EOS"].shape == (n_resampled, N_GRID)
+        assert out.samples["resampled_eos_index"].shape == (n_resampled,)
+        assert out.samples["resampled_log_likelihood"].shape == (n_resampled,)
+        assert np.all(np.asarray(out.samples["resampled_eos_index"]) < N_EOS)
+
+    def test_resampled_curves_match_source_curves(self, tmp_npz, zero_likelihood):
+        """Each resampled curve must equal the source curve at its index."""
+        sampler = _make_sampler(tmp_npz, zero_likelihood)
+        out = sampler.sample(jax.random.key(0))
+
+        _, (all_masses, all_lambdas, all_radii) = sampler.load_and_grid(
+            [tmp_npz], N_GRID, 0.5, None
+        )
+        idx = np.asarray(out.samples["resampled_eos_index"])
+        np.testing.assert_allclose(
+            np.asarray(out.samples["masses_EOS"]), np.asarray(all_masses)[idx]
+        )
+        np.testing.assert_allclose(
+            np.asarray(out.samples["Lambdas_EOS"]), np.asarray(all_lambdas)[idx]
+        )
+        np.testing.assert_allclose(
+            np.asarray(out.samples["radii_EOS"]), np.asarray(all_radii)[idx]
+        )
+
+    def test_zero_likelihood_resample_size_equals_n_eff(self, tmp_npz, zero_likelihood):
+        """With ZeroLikelihood, N_eff == N_EOS, so the default resample size is N_EOS."""
+        sampler = _make_sampler(tmp_npz, zero_likelihood)
+        out = sampler.sample(jax.random.key(0))
+        assert out.metadata["N_resampled"] == N_EOS
+
+    def test_n_resample_override(self, tmp_npz, zero_likelihood):
+        cfg = EOSReweightingConfig(
+            eos_file=tmp_npz, n_grid=N_GRID, m_min=0.5, n_resample=3
+        )
+        sampler = EOSReweightingSampler(likelihood=zero_likelihood, config=cfg)
+        out = sampler.sample(jax.random.key(0))
+        assert out.metadata["N_resampled"] == 3
+        assert out.samples["masses_EOS"].shape == (3, N_GRID)
+
+
+class TestResampleEosPosterior:
+    """Unit tests for the standalone, publicly reusable resample_eos_posterior()."""
+
+    @staticmethod
+    def _toy_curves(n: int = 4, n_pts: int = 5):
+        masses = np.tile(np.linspace(1.0, 2.0, n_pts), (n, 1))
+        lambdas = np.arange(n)[:, None] * np.ones((n, n_pts))
+        radii = 10.0 + np.arange(n)[:, None] * np.ones((n, n_pts))
+        return masses, lambdas, radii
+
+    def test_default_n_samples_is_n_eff(self):
+        masses, lambdas, radii = self._toy_curves(n=4)
+        weights = np.array([0.25, 0.25, 0.25, 0.25])
+        out = resample_eos_posterior(masses, lambdas, radii, weights, seed=0)
+        # N_eff = 1 / sum(w^2) = 4 for uniform weights over 4 points
+        assert out["masses_EOS"].shape[0] == 4
+
+    def test_explicit_n_samples(self):
+        masses, lambdas, radii = self._toy_curves(n=4)
+        weights = np.array([0.7, 0.1, 0.1, 0.1])
+        out = resample_eos_posterior(
+            masses, lambdas, radii, weights, n_samples=10, seed=0
+        )
+        assert out["eos_index"].shape == (10,)
+        assert out["masses_EOS"].shape == (10, 5)
+
+    def test_curves_match_indices(self):
+        masses, lambdas, radii = self._toy_curves(n=4)
+        weights = np.array([0.25, 0.25, 0.25, 0.25])
+        out = resample_eos_posterior(
+            masses, lambdas, radii, weights, n_samples=20, seed=1
+        )
+        idx = out["eos_index"]
+        np.testing.assert_allclose(out["masses_EOS"], masses[idx])
+        np.testing.assert_allclose(out["Lambdas_EOS"], lambdas[idx])
+        np.testing.assert_allclose(out["radii_EOS"], radii[idx])
+
+    def test_deterministic_given_seed(self):
+        masses, lambdas, radii = self._toy_curves(n=4)
+        weights = np.array([0.4, 0.3, 0.2, 0.1])
+        out1 = resample_eos_posterior(
+            masses, lambdas, radii, weights, n_samples=50, seed=7
+        )
+        out2 = resample_eos_posterior(
+            masses, lambdas, radii, weights, n_samples=50, seed=7
+        )
+        np.testing.assert_array_equal(out1["eos_index"], out2["eos_index"])
+
+    def test_only_high_weight_index_sampled_when_others_are_zero(self):
+        masses, lambdas, radii = self._toy_curves(n=4)
+        weights = np.array([1.0, 0.0, 0.0, 0.0])
+        out = resample_eos_posterior(
+            masses, lambdas, radii, weights, n_samples=20, seed=0
+        )
+        assert np.all(out["eos_index"] == 0)
+
+    def test_unnormalised_weights_are_normalised(self):
+        masses, lambdas, radii = self._toy_curves(n=4)
+        weights = np.array([10.0, 0.0, 0.0, 0.0])  # not normalised to 1
+        out = resample_eos_posterior(
+            masses, lambdas, radii, weights, n_samples=20, seed=0
+        )
+        assert np.all(out["eos_index"] == 0)
+
 
 class TestEOSReweightingConfig:
     def test_config_validation_bad_batch_size(self):
@@ -144,6 +259,65 @@ class TestEOSReweightingConfig:
         sampler = EOSReweightingSampler(likelihood=zero_likelihood, config=cfg)
         with pytest.raises(ValueError, match="mismatched shapes"):
             sampler.sample(jax.random.key(0))
+
+    def test_m_max_cap_only_limits_likelihood_grid_not_posterior(
+        self, tmp_path, zero_likelihood
+    ):
+        """When M_TOV exceeds DEFAULT_M_MAX_CAP, the likelihood grid is capped
+        but the resampled posterior curves (used for plotting) must still
+        extend out to the true M_TOV of each EOS."""
+        n_pts = 50
+        m_tov = 4.0  # well above DEFAULT_M_MAX_CAP (3.0)
+        masses = np.tile(np.linspace(0.5, m_tov, n_pts), (3, 1))
+        lambdas = 500.0 * ((m_tov - masses) / (m_tov - 0.5)) ** 3
+        radii = 12.0 * np.ones_like(masses)
+        p = str(tmp_path / "stiff.npz")
+        np.savez(p, masses=masses, lambdas=lambdas, radii=radii)
+
+        cfg = EOSReweightingConfig(eos_file=p, n_grid=20, m_min=0.5, m_max=None)
+        sampler = EOSReweightingSampler(likelihood=zero_likelihood, config=cfg)
+
+        (lik_masses, _, _), (full_masses, _, _) = sampler.load_and_grid(
+            [p], 20, 0.5, None
+        )
+        assert float(lik_masses[0, -1]) == pytest.approx(
+            EOSReweightingSampler.DEFAULT_M_MAX_CAP
+        )
+        assert float(full_masses[0, -1]) == pytest.approx(m_tov)
+
+        out = sampler.sample(jax.random.key(0))
+        assert float(np.max(np.asarray(out.samples["masses_EOS"]))) == pytest.approx(
+            m_tov
+        )
+
+    def test_m_min_only_limits_likelihood_grid_not_posterior(
+        self, tmp_path, zero_likelihood
+    ):
+        """m_min restricts the likelihood grid's lower bound, but the
+        resampled posterior curves (used for plotting/output) must still
+        extend down to the EOS set's own natural minimum mass."""
+        n_pts = 50
+        m_natural_min = 0.2
+        m_tov = 2.0
+        masses = np.tile(np.linspace(m_natural_min, m_tov, n_pts), (3, 1))
+        lambdas = 500.0 * ((m_tov - masses) / (m_tov - m_natural_min)) ** 3
+        radii = 12.0 * np.ones_like(masses)
+        p = str(tmp_path / "wide_range.npz")
+        np.savez(p, masses=masses, lambdas=lambdas, radii=radii)
+
+        cfg = EOSReweightingConfig(eos_file=p, n_grid=20, m_min=1.1, m_max=None)
+        sampler = EOSReweightingSampler(likelihood=zero_likelihood, config=cfg)
+
+        (lik_masses, _, _), (full_masses, _, _) = sampler.load_and_grid(
+            [p], 20, 1.1, None
+        )
+        assert float(lik_masses[0, 0]) == pytest.approx(1.1)
+        assert float(full_masses[0, 0]) == pytest.approx(m_natural_min)
+
+        out = sampler.sample(jax.random.key(0))
+        assert float(np.min(np.asarray(out.samples["masses_EOS"]))) == pytest.approx(
+            m_natural_min
+        )
 
 
 class TestEOSReweightingLikelihoodValidation:

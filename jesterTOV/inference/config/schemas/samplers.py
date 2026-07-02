@@ -290,6 +290,11 @@ class EOSReweightingConfig(BaseSamplerConfig):
         Number of EOS curves processed simultaneously by JAX (default: 1000).
         Progress is logged after each batch. Choose a value that fits in
         memory; there is no automatic OOM recovery.
+    n_resample : int | None
+        Number of posterior EOS samples to draw (with replacement, weighted
+        by the normalised posterior weights) after evidence computation.
+        ``None`` (default) uses the Kish effective sample size
+        :math:`N_\mathrm{eff}`, rounded to the nearest integer.
     """
 
     type: Literal["eos-reweighting"] = "eos-reweighting"
@@ -305,6 +310,22 @@ class EOSReweightingConfig(BaseSamplerConfig):
         gt=0,
         description="Number of EOS curves processed simultaneously by JAX. Progress is logged after each batch.",
     )
+
+    n_resample: int | None = Field(
+        default=None,
+        description=(
+            "Number of posterior EOS samples to draw via weighted resampling "
+            "after evidence computation. None -> use N_eff (Kish effective "
+            "sample size, rounded)."
+        ),
+    )
+
+    @field_validator("n_resample")
+    @classmethod
+    def _validate_n_resample(cls, v: int | None) -> int | None:
+        if v is not None and v <= 0:
+            raise ValueError(f"n_resample must be positive, got: {v}")
+        return v
 
 
 # Discriminated union for sampler configurations

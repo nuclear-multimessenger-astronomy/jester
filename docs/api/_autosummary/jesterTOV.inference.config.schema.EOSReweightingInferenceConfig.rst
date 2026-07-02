@@ -54,6 +54,7 @@
       ~EOSReweightingInferenceConfig.seed
       ~EOSReweightingInferenceConfig.likelihoods
       ~EOSReweightingInferenceConfig.sampler
+      ~EOSReweightingInferenceConfig.postprocessing
       ~EOSReweightingInferenceConfig.debug_nans
       ~EOSReweightingInferenceConfig.dry_run
    

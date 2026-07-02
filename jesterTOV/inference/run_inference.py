@@ -706,6 +706,19 @@ def run_eos_reweighting(config_path: str) -> None:
     result.save(result_path)
     logger.info(f"Results saved to {result_path}")
 
+    if config.postprocessing.enabled:
+        logger.info("=" * 60)
+        logger.info("Running postprocessing...")
+        logger.info("=" * 60)
+        from .postprocessing.postprocessing import generate_eos_reweighting_plots
+
+        generate_eos_reweighting_plots(
+            outdir=str(outdir),
+            injection_eos_path=config.postprocessing.injection_eos_path,
+            plot_format=config.postprocessing.plot_format,
+        )
+        logger.info(f"\nPostprocessing complete! Plots saved to {outdir}")
+
 
 # TODO: there are some calls that check specific types of samplers/configs/...
 # Ideally we should remove this and just have a small loop that prints over all available

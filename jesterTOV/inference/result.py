@@ -325,16 +325,16 @@ class InferenceResult:
 
         # Flatten evidence scalars as individual metadata keys so they survive
         # the HDF5 attribute serialisation (dicts are not supported as attrs).
-        # posterior_weights is already stored in posterior["posterior_weight"].
-
-        # TODO: decide if we also store e.g. resampled posterior samples using these weights,
-        # although this might become memory inefficient if we have a lot of prior samples
-        # For now, we just provide weights, evidence and N_eff
+        # posterior_weights is already stored in posterior["posterior_weight"];
+        # the resampled equal-weight posterior curves are stored in
+        # posterior["masses_EOS"]/"Lambdas_EOS"/"radii_EOS" (see
+        # EOSReweightingSampler.sample and resample_eos_posterior).
         ev = output.metadata.get("evidence", {})
         metadata: Dict[str, Any] = {
             "sampler": "eos_reweighting",
             "sampling_time": float(runtime),
             "n_eos": int(output.metadata.get("N_eos", 0)),
+            "n_resampled": int(output.metadata.get("N_resampled", 0)),
             "seed": int(config.seed),
             "creation_timestamp": datetime.now().isoformat(),
             "config_json": config_json,
@@ -831,6 +831,9 @@ class InferenceResult:
             N_eff_frac = self.metadata.get("N_eff_fraction", float("nan"))
             lines.append(f"  log Z = {log_Z:.3f} ± {log_Z_std:.3f}")
             lines.append(f"  N_eff = {N_eff:.1f}  ({N_eff_frac * 100:.1f}%)")
+            lines.append(
+                f"  Resampled posterior draws: {self.metadata.get('n_resampled', '?')}"
+            )
 
         # Posterior info
         # Extract parameter keys (excluding special fields)

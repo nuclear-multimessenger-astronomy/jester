@@ -25,6 +25,66 @@ from jesterTOV.logging_config import get_logger
 logger = get_logger("jester")
 
 
+def resample_eos_posterior(
+    masses: Float[Array, "N L"] | Float[np.ndarray, "N L"],
+    lambdas: Float[Array, "N L"] | Float[np.ndarray, "N L"],
+    radii: Float[Array, "N L"] | Float[np.ndarray, "N L"],
+    posterior_weights: Float[Array, " N"] | Float[np.ndarray, " N"],
+    n_samples: int | None = None,
+    seed: int = 0,
+) -> dict[str, np.ndarray]:
+    r"""Resample a tabulated EOS set into equal-weight posterior samples.
+
+    This is a small, standalone utility that turns the *discrete* weighted
+    posterior produced by :meth:`EOSReweightingSampler.sample` (one weight
+    per input EOS curve) into an equal-weight set of posterior draws, by
+    drawing curves with replacement according to ``posterior_weights``. It
+    only needs the gridded curves and weights, so it works equally well on
+    a fresh set of EOS curves that were reweighted outside of
+    :class:`EOSReweightingSampler` (e.g. with a custom likelihood), as long
+    as ``masses``/``lambdas``/``radii`` share a common mass grid — see
+    :meth:`EOSReweightingSampler.load_and_grid` for a helper that builds
+    such a grid from a list of NPZ files.
+
+    Parameters
+    ----------
+    masses, lambdas, radii :
+        Common-grid EOS curves of shape ``[N, L]``, e.g. as returned by
+        :meth:`EOSReweightingSampler.load_and_grid`.
+    posterior_weights :
+        Normalised posterior weight per EOS (sums to 1), e.g.
+        ``sample_output.metadata["evidence"]["posterior_weights"]``.
+    n_samples :
+        Number of samples to draw. ``None`` (default) uses the Kish
+        effective sample size :math:`N_\mathrm{eff} = 1/\sum_a (w^{(a)})^2`,
+        rounded to the nearest integer.
+    seed :
+        Seed for the NumPy random generator used to draw the resample.
+
+    Returns
+    -------
+    dict
+        - ``eos_index`` : index into the input arrays for each draw, shape ``[n_samples]``
+        - ``masses_EOS``, ``Lambdas_EOS``, ``radii_EOS`` : resampled curves, shape ``[n_samples, L]``
+    """
+    weights = np.asarray(posterior_weights, dtype=np.float64)
+    weights = weights / weights.sum()
+
+    if n_samples is None:
+        n_eff = 1.0 / np.sum(weights**2)
+        n_samples = max(1, int(round(n_eff)))
+
+    rng = np.random.default_rng(seed)
+    idx = rng.choice(len(weights), size=n_samples, replace=True, p=weights)
+
+    return {
+        "eos_index": idx,
+        "masses_EOS": np.asarray(masses)[idx],
+        "Lambdas_EOS": np.asarray(lambdas)[idx],
+        "radii_EOS": np.asarray(radii)[idx],
+    }
+
+
 class EOSReweightingSampler(JesterSampler):
     r"""Sampler that reweights a discrete EOS set by jester likelihoods.
 
@@ -71,14 +131,62 @@ class EOSReweightingSampler(JesterSampler):
     #: bound in :meth:`load_and_grid` when ``m_max`` is not given explicitly.
     DEFAULT_M_MAX_CAP: float = 3.0
 
+    @staticmethod
+    def _regrid(
+        mass_grid: np.ndarray,
+        masses_list: list[np.ndarray],
+        lambdas_list: list[np.ndarray],
+        radii_list: list[np.ndarray],
+        m_tov_list: list[float],
+    ) -> tuple[Float[Array, "N L"], Float[Array, "N L"], Float[Array, "N L"]]:
+        """Interpolate a list of ragged (M, Lambda, R) curves onto a shared mass grid.
+
+        Values above each curve's own :math:`M_\\mathrm{TOV}` are set to zero.
+        """
+        n_grid = mass_grid.shape[0]
+        lam_interp_list: list[np.ndarray] = []
+        rad_interp_list: list[np.ndarray] = []
+
+        for m_i, lam_i, rad_i, m_tov_i in zip(
+            masses_list, lambdas_list, radii_list, m_tov_list
+        ):
+            lam_g = np.interp(mass_grid, m_i, lam_i, left=0.0, right=0.0)
+            rad_g = np.interp(mass_grid, m_i, rad_i, left=0.0, right=0.0)
+            # Zero out above M_TOV (interp already handles right=0.0, but be explicit)
+            above = mass_grid > m_tov_i
+            lam_g[above] = 0.0
+            rad_g[above] = 0.0
+            lam_interp_list.append(lam_g)
+            rad_interp_list.append(rad_g)
+
+        N = len(masses_list)
+        all_masses = jnp.array(np.broadcast_to(mass_grid, (N, n_grid)))
+        all_lambdas = jnp.array(np.stack(lam_interp_list))
+        all_radii = jnp.array(np.stack(rad_interp_list))
+        return all_masses, all_lambdas, all_radii
+
     def load_and_grid(
         self,
         paths: list[str],
         n_grid: int,
         m_min: float,
         m_max: float | None,
-    ) -> tuple[Float[Array, "N L"], Float[Array, "N L"], Float[Array, "N L"]]:
-        r"""Load EOS files and resample all curves onto a common mass grid.
+    ) -> tuple[
+        tuple[Float[Array, "N L"], Float[Array, "N L"], Float[Array, "N L"]],
+        tuple[Float[Array, "N L"], Float[Array, "N L"], Float[Array, "N L"]],
+    ]:
+        r"""Load EOS files and resample all curves onto two common mass grids.
+
+        Two grids are built from the same underlying curves: a *likelihood*
+        grid (bounded by ``m_min``/``m_max``, as configured) used to evaluate
+        the likelihoods, and a *full* grid that always spans the EOS set's
+        own natural range — from :math:`\min(M)` across all curves up to
+        :math:`\max(M_\mathrm{TOV})` — regardless of ``m_min``/``m_max``.
+        Those two bounds only restrict what jester's likelihoods see; the
+        full-range curves are what gets resampled into the posterior
+        (:meth:`sample`) for downstream plotting/output, so posterior
+        M-R/M-Lambda curves and the saved result are never truncated by the
+        likelihood grid's bounds.
 
         Parameters
         ----------
@@ -92,24 +200,25 @@ class EOSReweightingSampler(JesterSampler):
             files, since each curve is resampled onto the common mass
             grid independently.
         n_grid :
-            Number of mass grid points.
+            Number of mass grid points (used for both grids).
         m_min :
-            Lower bound of the common mass grid in :math:`M_\odot`.
+            Lower bound of the *likelihood* grid in :math:`M_\odot`.
         m_max :
-            Upper bound in :math:`M_\odot`.  ``None`` → use
-            :math:`\max(M_\mathrm{TOV})` across all curves in ``paths``,
-            capped at :attr:`DEFAULT_M_MAX_CAP` :math:`M_\odot` (a warning
-            is logged if the cap is applied, since likelihoods will not be
-            evaluated above it).
+            Upper bound of the *likelihood* grid in :math:`M_\odot`.
+            If ``None``, then use :math:`\max(M_\mathrm{TOV})` across all curves in
+            ``paths``, capped at :attr:`DEFAULT_M_MAX_CAP` :math:`M_\odot`
+            (a warning is logged if the cap is applied, since likelihoods
+            will not be evaluated above it).
 
         Returns
         -------
-        all_masses : Float[Array, "N L"]
-            Common mass grid repeated for each EOS (all rows identical).
-        all_lambdas : Float[Array, "N L"]
-            Tidal deformability on the common grid; zero above :math:`M_\mathrm{TOV}`.
-        all_radii : Float[Array, "N L"]
-            Radius in km on the common grid; zero above :math:`M_\mathrm{TOV}`.
+        likelihood_grid : tuple of Float[Array, "N L"]
+            ``(masses, lambdas, radii)`` on the ``[m_min, m_max]``-bounded
+            grid used for likelihood evaluation.
+        full_grid : tuple of Float[Array, "N L"]
+            ``(masses, lambdas, radii)`` on the EOS set's natural
+            ``[min(M), max(M_TOV)]`` grid, used for posterior resampling —
+            unaffected by ``m_min``/``m_max``.
         """
         masses_list: list[np.ndarray] = []
         lambdas_list: list[np.ndarray] = []
@@ -146,50 +255,50 @@ class EOSReweightingSampler(JesterSampler):
                 masses_list.append(m[i])
                 lambdas_list.append(lam[i])
                 radii_list.append(rad[i])
-                m_tov_list.append(float(np.max(m[i])))
+                
+                nonzero = np.nonzero(rad[i] > 0)[0]
+                m_tov = (
+                    float(m[i][nonzero[-1]]) if len(nonzero) > 0 else float(np.max(m[i]))
+                )
+                m_tov_list.append(m_tov)
 
-        # Common grid upper bound
+        m_tov_arr = np.asarray(m_tov_list)
+        max_m_tov = float(np.max(m_tov_arr))
+        min_m_full = float(np.min([m_i[0] for m_i in masses_list]))
+
+        # Likelihood grid upper bound (may be capped)
         if m_max is None:
             m_cap = self.DEFAULT_M_MAX_CAP
-            m_tov_arr = np.asarray(m_tov_list)
-            max_m_tov = float(np.max(m_tov_arr))
             if max_m_tov > m_cap:
                 n_above = int(np.sum(m_tov_arr > m_cap))
                 logger.warning(
                     f"Maximum M_TOV across the EOS set is {max_m_tov:.3f} M_sun, "
-                    f"which exceeds {m_cap:.1f} M_sun. Capping the common mass grid at "
-                    f"{m_cap:.1f} M_sun instead. {n_above}/{len(m_tov_arr)} EOS curves have "
-                    f"M_TOV above {m_cap:.1f} M_sun; the interpolated grid (and any "
-                    "likelihoods evaluated on it) will not extend to their true "
-                    "M_TOV. Please double-check that this is acceptable for your use case."
+                    f"which exceeds {m_cap:.1f} M_sun. Capping the *likelihood* mass "
+                    f"grid at {m_cap:.1f} M_sun instead. {n_above}/{len(m_tov_arr)} EOS "
+                    f"curves have M_TOV above {m_cap:.1f} M_sun; likelihoods will not "
+                    "be evaluated above it. The posterior curves used for plotting "
+                    "are not affected by this cap."
                 )
-                m_max_grid = m_cap
+                m_max_likelihood = m_cap
             else:
-                m_max_grid = max_m_tov
+                m_max_likelihood = max_m_tov
         else:
-            m_max_grid = m_max
-        mass_grid = np.linspace(m_min, m_max_grid, n_grid)
+            m_max_likelihood = m_max
 
-        lam_interp_list: list[np.ndarray] = []
-        rad_interp_list: list[np.ndarray] = []
+        likelihood_mass_grid = np.linspace(m_min, m_max_likelihood, n_grid)
+        likelihood_grid = self._regrid(
+            likelihood_mass_grid, masses_list, lambdas_list, radii_list, m_tov_list
+        )
 
-        for i, (m_i, lam_i, rad_i, m_tov_i) in enumerate(
-            zip(masses_list, lambdas_list, radii_list, m_tov_list)
-        ):
-            lam_g = np.interp(mass_grid, m_i, lam_i, left=0.0, right=0.0)
-            rad_g = np.interp(mass_grid, m_i, rad_i, left=0.0, right=0.0)
-            # Zero out above M_TOV (interp already handles right=0.0, but be explicit)
-            above = mass_grid > m_tov_i
-            lam_g[above] = 0.0
-            rad_g[above] = 0.0
-            lam_interp_list.append(lam_g)
-            rad_interp_list.append(rad_g)
+        if m_min <= min_m_full and m_max_likelihood >= max_m_tov:
+            full_grid = likelihood_grid
+        else:
+            full_mass_grid = np.linspace(min_m_full, max_m_tov, n_grid)
+            full_grid = self._regrid(
+                full_mass_grid, masses_list, lambdas_list, radii_list, m_tov_list
+            )
 
-        N = len(masses_list)
-        all_masses = jnp.array(np.broadcast_to(mass_grid, (N, n_grid)))
-        all_lambdas = jnp.array(np.stack(lam_interp_list))
-        all_radii = jnp.array(np.stack(rad_interp_list))
-        return all_masses, all_lambdas, all_radii
+        return likelihood_grid, full_grid
 
     def make_eos_fn(self) -> Callable[[tuple[Array, Array, Array]], Array]:
         r"""Build a single-EOS log-likelihood callable for use with :func:`jax.lax.map`.
@@ -346,28 +455,50 @@ class EOSReweightingSampler(JesterSampler):
             "posterior_weights": posterior_weights,
         }
 
-    def sample(self, key: PRNGKeyArray) -> SamplerOutput:  # type: ignore[override]  # key unused — no stochastic component
-        r"""Evaluate all EOS curves and return evidence + posterior weights.
+    def sample(self, key: PRNGKeyArray) -> SamplerOutput:  # type: ignore[override]
+        r"""Evaluate all EOS curves and return evidence + posterior samples.
+
+        After computing the per-EOS evidence and posterior weights, this
+        also draws :attr:`~jesterTOV.inference.config.schemas.samplers.EOSReweightingConfig.n_resample`
+        (default: :math:`N_\mathrm{eff}`) equal-weight posterior samples via
+        :func:`resample_eos_posterior`, so that downstream postprocessing
+        (e.g. :func:`~jesterTOV.inference.postprocessing.postprocessing.generate_eos_reweighting_plots`)
+        can plot mass-radius/mass-Lambda curves directly without having to
+        deal with the unequal per-EOS weights itself. The resampled curves
+        are drawn from the *full*, uncapped mass grid (see
+        :meth:`load_and_grid`), so plots always show each EOS out to its true
+        :math:`M_\mathrm{TOV}` even if the likelihood grid was capped.
 
         Parameters
         ----------
         key :
-            JAX random key (not used; accepted for API compatibility).
+            JAX random key. Only its bits are used (to seed the NumPy RNG
+            for resampling); the likelihood evaluation itself is
+            deterministic.
 
         Returns
         -------
         SamplerOutput
-            - ``samples["eos_index"]`` : integer index per EOS
-            - ``samples["log_likelihood"]`` : log-likelihood per EOS
-            - ``samples["posterior_weight"]`` : normalised posterior weight per EOS
-            - ``log_prob`` : same as ``samples["log_likelihood"]``
+            - ``samples["eos_index"]`` : integer index per input EOS (length N)
+            - ``samples["log_likelihood"]`` : log-likelihood per input EOS (length N)
+            - ``samples["posterior_weight"]`` : normalised posterior weight per input EOS (length N)
+            - ``samples["masses_EOS"]``, ``samples["Lambdas_EOS"]``, ``samples["radii_EOS"]`` :
+              resampled equal-weight posterior curves (length N_resampled)
+            - ``samples["resampled_eos_index"]`` : index into the input EOS set for each resampled draw
+            - ``samples["resampled_log_likelihood"]`` : log-likelihood of each resampled draw
+            - ``log_prob`` : same as ``samples["log_likelihood"]`` (length N)
             - ``metadata["evidence"]`` : evidence dict (log_Z, log_Z_std, N_eff, …)
-            - ``metadata["N_eos"]`` : total number of EOS curves
+            - ``metadata["N_eos"]`` : total number of input EOS curves
+            - ``metadata["N_resampled"]`` : number of resampled posterior draws
         """
         f = self.make_eos_fn()
 
         logger.info(f"Loading EOS file: {self.config.eos_file}")
-        all_masses, all_lambdas, all_radii = self.load_and_grid(
+        (all_masses, all_lambdas, all_radii), (
+            full_masses,
+            full_lambdas,
+            full_radii,
+        ) = self.load_and_grid(
             [self.config.eos_file],
             self.config.n_grid,
             self.config.m_min,
@@ -375,9 +506,8 @@ class EOSReweightingSampler(JesterSampler):
         )
         N = int(all_masses.shape[0])
         logger.info(
-            f"EOS set: {N} curves on "
-            f"[{self.config.m_min:.2f}, {float(all_masses[0, -1]):.3f}] M_sun "
-            f"({self.config.n_grid} grid points)"
+            f"EOS set: {N} curves evaluated on"
+            f"[{self.config.m_min:.2f}, {float(all_masses[0, -1]):.3f}] M_sun; "
         )
 
         logger.info("Evaluating likelihoods on EOS set...")
@@ -388,14 +518,36 @@ class EOSReweightingSampler(JesterSampler):
             f"N_eff = {ev['N_eff']:.1f} ({ev['N_eff_fraction']*100:.1f}%)"
         )
 
+        resample_seed = int(jax.random.randint(key, (), 0, 2**31 - 1))
+        resampled = resample_eos_posterior(
+            full_masses,
+            full_lambdas,
+            full_radii,
+            ev["posterior_weights"],
+            n_samples=self.config.n_resample,
+            seed=resample_seed,
+        )
+        n_resampled = int(resampled["eos_index"].shape[0])
+        resampled_log_likelihood = np.asarray(log_likelihoods)[resampled["eos_index"]]
+        logger.info(
+            f"Resampled {n_resampled} equal-weight posterior EOS draws "
+            f"(N_eff = {ev['N_eff']:.1f})"
+        )
+
         samples: dict[str, Array] = {
             "eos_index": jnp.arange(N),
             "log_likelihood": log_likelihoods,
             "posterior_weight": ev["posterior_weights"],
+            "masses_EOS": jnp.array(resampled["masses_EOS"]),
+            "Lambdas_EOS": jnp.array(resampled["Lambdas_EOS"]),
+            "radii_EOS": jnp.array(resampled["radii_EOS"]),
+            "resampled_eos_index": jnp.array(resampled["eos_index"]),
+            "resampled_log_likelihood": jnp.array(resampled_log_likelihood),
         }
         metadata: dict[str, Any] = {
             "evidence": ev,
             "N_eos": N,
+            "N_resampled": n_resampled,
         }
 
         return SamplerOutput(

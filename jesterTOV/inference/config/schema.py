@@ -73,7 +73,10 @@ from .schemas.samplers import (
 )
 
 # EOS reweighting inference config (no transform/prior sections)
-from .schemas.eos_reweighting import EOSReweightingInferenceConfig
+from .schemas.eos_reweighting import (
+    EOSReweightingInferenceConfig,
+    EOSReweightingPostprocessingConfig,
+)
 
 
 # ============================================================================
@@ -272,4 +275,5 @@ __all__ = [
     "PostprocessingConfig",
     "InferenceConfig",
     "EOSReweightingInferenceConfig",
+    "EOSReweightingPostprocessingConfig",
 ]

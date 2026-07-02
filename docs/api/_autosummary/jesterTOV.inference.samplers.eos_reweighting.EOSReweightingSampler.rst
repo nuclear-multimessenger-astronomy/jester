@@ -36,6 +36,7 @@
 
    .. autosummary::
    
+      ~EOSReweightingSampler.DEFAULT_M_MAX_CAP
       ~EOSReweightingSampler.likelihood
       ~EOSReweightingSampler.prior
       ~EOSReweightingSampler.sample_transforms

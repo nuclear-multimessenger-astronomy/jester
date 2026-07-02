@@ -9,7 +9,7 @@ from .flowmc import FlowMCSampler
 from .blackjax.nested_sampling import BlackJAXNSAWSampler
 from .blackjax.smc.random_walk import BlackJAXSMCRandomWalkSampler
 from .blackjax.smc.nuts import BlackJAXSMCNUTSSampler
-from .eos_reweighting import EOSReweightingSampler
+from .eos_reweighting import EOSReweightingSampler, resample_eos_posterior
 
 from ..base import LikelihoodBase, Prior, NtoMTransform
 from ..config.schema import SamplerConfig
@@ -22,6 +22,7 @@ __all__ = [
     "BlackJAXSMCRandomWalkSampler",
     "BlackJAXSMCNUTSSampler",
     "EOSReweightingSampler",
+    "resample_eos_posterior",
     "create_sampler",
 ]
 

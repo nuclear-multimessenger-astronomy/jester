@@ -7,6 +7,8 @@ has **no** ``eos``, ``tov``, or ``prior`` sections, because the EOS is provided
 as tabulated curves rather than generated from a parametric model.
 """
 
+from typing import Literal
+
 from pydantic import Field, field_validator, ConfigDict
 
 from ._base import JesterBaseModel
@@ -26,6 +28,37 @@ _EOS_REWEIGHTING_ALLOWED_LIKELIHOOD_TYPES = {
 }
 
 
+class EOSReweightingPostprocessingConfig(JesterBaseModel):
+    r"""Configuration for EOS reweighting postprocessing plots.
+
+    EOS reweighting only produces resampled (M, :math:`\Lambda`, R) posterior
+    curves — there is no NEP/CSE parameter posterior, density/pressure/cs2
+    profile, or TOV central-density diagnostic to plot, so only the
+    mass-radius and mass-Lambda plots are supported (unlike
+    :class:`~jesterTOV.inference.config.schema.PostprocessingConfig`, which
+    also covers cornerplots, pressure-density, cs2, histograms, and
+    contours for the parametric samplers).
+
+    Attributes
+    ----------
+    enabled : bool
+        Whether to run postprocessing after inference (default: True)
+    injection_eos_path : str | None
+        Path to NPZ file containing injection EOS data for plotting
+        (default: None). See
+        :func:`~jesterTOV.inference.postprocessing.postprocessing.load_injection_eos`
+        for the expected format.
+    plot_format : {"pdf", "png"}
+        Output file format for all plots (default: "pdf")
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    injection_eos_path: str | None = None
+    plot_format: Literal["pdf", "png"] = "pdf"
+
+
 class EOSReweightingInferenceConfig(JesterBaseModel):
     r"""Top-level configuration for EOS reweighting inference.
 
@@ -43,6 +76,8 @@ class EOSReweightingInferenceConfig(JesterBaseModel):
         bilby results is not supported in this mode.
     sampler : EOSReweightingConfig
         EOS reweighting sampler configuration including EOS file paths.
+    postprocessing : EOSReweightingPostprocessingConfig
+        Postprocessing configuration (mass-radius/mass-Lambda plots only).
     debug_nans : bool
         Enable JAX NaN debugging (default: False)
 
@@ -61,6 +96,9 @@ class EOSReweightingInferenceConfig(JesterBaseModel):
     seed: int = 43
     likelihoods: list[LikelihoodConfig]
     sampler: EOSReweightingConfig
+    postprocessing: EOSReweightingPostprocessingConfig = Field(
+        default_factory=EOSReweightingPostprocessingConfig
+    )
     debug_nans: bool = Field(
         default=False,
         description="Enable JAX NaN debugging for catching numerical issues",

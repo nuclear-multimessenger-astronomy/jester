@@ -57,6 +57,7 @@
       ~EOSReweightingConfig.m_min
       ~EOSReweightingConfig.m_max
       ~EOSReweightingConfig.batch_size
+      ~EOSReweightingConfig.n_resample
       ~EOSReweightingConfig.output_dir
       ~EOSReweightingConfig.n_eos_samples
       ~EOSReweightingConfig.log_prob_batch_size
