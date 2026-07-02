@@ -1377,7 +1377,9 @@ def make_parameter_histograms(
 
     if p3nsat_list is not None:
         label = (
-            r"$p(3n_{\rm{sat}})$ [MeV fm$^{-3}$]" if TEX_ENABLED else "p(3n_sat) [MeV fm^-3]"
+            r"$p(3n_{\rm{sat}})$ [MeV fm$^{-3}$]"
+            if TEX_ENABLED
+            else "p(3n_sat) [MeV fm^-3]"
         )
         parameters["p3nsat"] = {"values": p3nsat_list, "xlabel": label}
 

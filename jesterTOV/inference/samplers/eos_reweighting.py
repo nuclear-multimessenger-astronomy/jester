@@ -143,9 +143,9 @@ class EOSReweightingSampler(JesterSampler):
 
         Values above each curve's own :math:`M_\\mathrm{TOV}` are set to zero.
         """
-        n_grid = mass_grid.shape[0]
         lam_interp_list: list[np.ndarray] = []
         rad_interp_list: list[np.ndarray] = []
+        mass_interp_list: list[np.ndarray] = []
 
         for m_i, lam_i, rad_i, m_tov_i in zip(
             masses_list, lambdas_list, radii_list, m_tov_list
@@ -156,11 +156,20 @@ class EOSReweightingSampler(JesterSampler):
             above = mass_grid > m_tov_i
             lam_g[above] = 0.0
             rad_g[above] = 0.0
+            # Clamp the per-curve mass grid at this curve's own M_TOV above
+            # that point, instead of leaving the shared grid's (identical
+            # across curves) values in place. All likelihoods derive M_TOV
+            # via `jnp.max(masses_EOS)`; if every curve carried the same
+            # broadcast grid, jnp.max would return the same (grid-capped)
+            # value for every EOS regardless of its true M_TOV, making the
+            # likelihoods blind to M_TOV differences between EOS curves.
+            mass_g = mass_grid.copy()
+            mass_g[above] = m_tov_i
             lam_interp_list.append(lam_g)
             rad_interp_list.append(rad_g)
+            mass_interp_list.append(mass_g)
 
-        N = len(masses_list)
-        all_masses = jnp.array(np.broadcast_to(mass_grid, (N, n_grid)))
+        all_masses = jnp.array(np.stack(mass_interp_list))
         all_lambdas = jnp.array(np.stack(lam_interp_list))
         all_radii = jnp.array(np.stack(rad_interp_list))
         return all_masses, all_lambdas, all_radii
@@ -255,10 +264,12 @@ class EOSReweightingSampler(JesterSampler):
                 masses_list.append(m[i])
                 lambdas_list.append(lam[i])
                 radii_list.append(rad[i])
-                
+
                 nonzero = np.nonzero(rad[i] > 0)[0]
                 m_tov = (
-                    float(m[i][nonzero[-1]]) if len(nonzero) > 0 else float(np.max(m[i]))
+                    float(m[i][nonzero[-1]])
+                    if len(nonzero) > 0
+                    else float(np.max(m[i]))
                 )
                 m_tov_list.append(m_tov)
 
