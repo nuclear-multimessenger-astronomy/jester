@@ -33,6 +33,7 @@ from jesterTOV.logging_config import get_logger
 
 logger = get_logger("jester")
 
+
 class RadioTimingLikelihood(LikelihoodBase):
     r"""Likelihood for radio pulsar mass measurements constraining maximum NS mass.
 
@@ -135,8 +136,10 @@ class RadioTimingLikelihood(LikelihoodBase):
         self.std = std
         self.m_min = m_min
         self.penalty_value = penalty_value
-        
-        logger.info(f"Initialized RadioTimingLikelihood for {self.psr_name}: mean={self.mean}, std={self.std}, m_min={self.m_min}, penalty_value={self.penalty_value}")
+
+        logger.info(
+            f"Initialized RadioTimingLikelihood for {self.psr_name}: mean={self.mean}, std={self.std}, m_min={self.m_min}, penalty_value={self.penalty_value}"
+        )
 
     def evaluate(self, params: dict[str, Float | Array]) -> Float:
         """Evaluate the marginalized log-likelihood for the pulsar mass measurement.
