@@ -326,6 +326,10 @@ class InferenceResult:
         # Flatten evidence scalars as individual metadata keys so they survive
         # the HDF5 attribute serialisation (dicts are not supported as attrs).
         # posterior_weights is already stored in posterior["posterior_weight"].
+
+        # TODO: decide if we also store e.g. resampled posterior samples using these weights,
+        # although this might become memory inefficient if we have a lot of prior samples
+        # For now, we just provide weights, evidence and N_eff
         ev = output.metadata.get("evidence", {})
         metadata: Dict[str, Any] = {
             "sampler": "eos_reweighting",

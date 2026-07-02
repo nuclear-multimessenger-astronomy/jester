@@ -261,10 +261,9 @@ class EOSReweightingConfig(BaseSamplerConfig):
     r"""Configuration for EOS reweighting sampler.
 
     This sampler evaluates jester's GPU-accelerated likelihoods on a discrete
-    set of tabulated EOS curves (M, :math:`\Lambda`, R tables) provided by
-    collaborators, rather than sampling a parametric EOS model. It computes
-    the marginal log-likelihood per EOS and the Bayesian evidence
-    :math:`\log Z`.
+    set of tabulated EOS curves (M, :math:`\Lambda`, R tables), not necessarily
+    produced by jester itself, rather than sampling a parametric EOS model.
+    It computes the marginal log-likelihood per EOS and the Bayesian evidence :math:`\log Z`.
 
     EOS tables must be NPZ files with keys:
 

@@ -9,6 +9,23 @@ import pytest
 from jesterTOV.inference.likelihoods.combined import ZeroLikelihood
 from jesterTOV.inference.samplers.eos_reweighting import EOSReweightingSampler
 from jesterTOV.inference.config.schemas.samplers import EOSReweightingConfig
+from jesterTOV.inference.config.schemas.eos_reweighting import (
+    EOSReweightingInferenceConfig,
+)
+from jesterTOV.inference.config.schemas.likelihoods import (
+    ZeroLikelihoodConfig,
+    GWLikelihoodConfig,
+    GWEventConfig,
+    GWResampledLikelihoodConfig,
+    NICERLikelihoodConfig,
+    NICERKDELikelihoodConfig,
+    RadioLikelihoodConfig,
+    ChiEFTLikelihoodConfig,
+    EOSConstraintsLikelihoodConfig,
+    TOVConstraintsLikelihoodConfig,
+    EsymConstraintsLikelihoodConfig,
+    GammaConstraintsLikelihoodConfig,
+)
 
 jax.config.update("jax_enable_x64", True)
 
@@ -127,6 +144,90 @@ class TestEOSReweightingConfig:
         sampler = EOSReweightingSampler(likelihood=zero_likelihood, config=cfg)
         with pytest.raises(ValueError, match="mismatched shapes"):
             sampler.sample(jax.random.key(0))
+
+
+class TestEOSReweightingLikelihoodValidation:
+    """Only likelihoods that depend purely on tabulated M-Lambda-R curves
+    (gw, nicer, radio, zero) are accepted in eos-reweighting mode; others
+    require EOS-level structure that tabulated curves don't provide."""
+
+    @staticmethod
+    def _sampler_config() -> EOSReweightingConfig:
+        return EOSReweightingConfig(eos_file="x.npz", n_grid=20, m_min=0.5)
+
+    @pytest.mark.parametrize(
+        "likelihood",
+        [
+            ZeroLikelihoodConfig(),
+            GWLikelihoodConfig(events=[GWEventConfig(name="GW170817")]),
+            NICERLikelihoodConfig(pulsars=[{"name": "J0030"}]),
+            RadioLikelihoodConfig(
+                pulsars=[{"name": "J0740+6620", "mass_mean": 2.08, "mass_std": 0.07}]
+            ),
+        ],
+        ids=["zero", "gw", "nicer", "radio"],
+    )
+    def test_accepted_likelihoods(self, likelihood):
+        cfg = EOSReweightingInferenceConfig(
+            likelihoods=[likelihood], sampler=self._sampler_config()
+        )
+        assert cfg.likelihoods[0].type == likelihood.type
+
+    @pytest.mark.parametrize(
+        "likelihood",
+        [
+            GWResampledLikelihoodConfig(events=[{"name": "GW170817"}]),
+            NICERKDELikelihoodConfig(
+                pulsars=[
+                    {
+                        "name": "J0030",
+                        "amsterdam_samples_file": "a.npz",
+                        "maryland_samples_file": "m.npz",
+                    }
+                ]
+            ),
+            ChiEFTLikelihoodConfig(),
+            EOSConstraintsLikelihoodConfig(),
+            TOVConstraintsLikelihoodConfig(),
+            EsymConstraintsLikelihoodConfig(),
+            GammaConstraintsLikelihoodConfig(),
+        ],
+        ids=[
+            "gw_resampled",
+            "nicer_kde",
+            "chieft",
+            "constraints_eos",
+            "constraints_tov",
+            "constraints_esym",
+            "constraints_gamma",
+        ],
+    )
+    def test_rejected_likelihoods(self, likelihood):
+        with pytest.raises(ValueError, match="not supported by EOS reweighting"):
+            EOSReweightingInferenceConfig(
+                likelihoods=[likelihood], sampler=self._sampler_config()
+            )
+
+    def test_disabled_incompatible_likelihood_is_not_rejected(self):
+        """A disabled likelihood should not trigger the type-compatibility check."""
+        cfg = EOSReweightingInferenceConfig(
+            likelihoods=[
+                ZeroLikelihoodConfig(),
+                ChiEFTLikelihoodConfig(enabled=False),
+            ],
+            sampler=self._sampler_config(),
+        )
+        assert len(cfg.likelihoods) == 2
+
+    def test_rejects_multiple_incompatible_types_together(self):
+        with pytest.raises(ValueError, match="not supported by EOS reweighting"):
+            EOSReweightingInferenceConfig(
+                likelihoods=[
+                    ChiEFTLikelihoodConfig(),
+                    EOSConstraintsLikelihoodConfig(),
+                ],
+                sampler=self._sampler_config(),
+            )
 
 
 class TestEOSReweightingHDF5:

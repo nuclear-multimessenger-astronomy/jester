@@ -13,6 +13,18 @@ from ._base import JesterBaseModel
 from .likelihoods import LikelihoodConfig
 from .samplers import EOSReweightingConfig
 
+#: Likelihood types that only require the tabulated M-Λ-R family curves
+#: (via "masses_EOS", "Lambdas_EOS", "radii_EOS") produced by the
+#: reweighting sampler. Every other likelihood type reads EOS-level
+#: structure (e.g. "n", "p", "nbreak", "_random_key") that only exists when
+#: the EOS is built from a parametric model, and would raise a KeyError here.
+_EOS_REWEIGHTING_ALLOWED_LIKELIHOOD_TYPES = {
+    "gw",
+    "nicer",
+    "radio",
+    "zero",
+}
+
 
 class EOSReweightingInferenceConfig(JesterBaseModel):
     r"""Top-level configuration for EOS reweighting inference.
@@ -37,17 +49,6 @@ class EOSReweightingInferenceConfig(JesterBaseModel):
     Examples
     --------
     A minimal YAML config::
-
-        seed: 42
-
-        likelihoods:
-          - type: gw
-            events:
-              - name: GW170817
-          - type: nicer
-            sources: [J0740]
-          - type: radio
-            database: FIDUCEO2
 
         sampler:
           type: eos-reweighting
@@ -74,12 +75,26 @@ class EOSReweightingInferenceConfig(JesterBaseModel):
     def _validate_likelihoods(cls, v: list[LikelihoodConfig]) -> list[LikelihoodConfig]:
         if not any(lk.enabled for lk in v):
             raise ValueError("At least one likelihood must be enabled")
-        # TODO: validate that no incompatible likelihood types (chieft, rex,
-        # eos_constraints, tov_constraints, gamma_constraints) are enabled —
-        # these require EOS structure (n, p, nbreak, ...) that is not available
-        # from tabulated M-Λ-R curves and will fail at sampling time with a
-        # KeyError.  Add a clear validation error here once the full set of
-        # incompatible types is confirmed.
+        # TODO: EOS-based likelihoods (gw_resampled, nicer_kde, chieft,
+        # constraints_eos, constraints_tov, constraints_esym,
+        # constraints_gamma, rex) require EOS-level structure
+        # (n, p, nbreak, _random_key, ...) that is not available from
+        # tabulated M-Λ-R curves. Check if we can include these likelihoods
+        # in the future, e.g. by also tabulating the underlying EOS
+        # quantities.
+        invalid = [
+            lk
+            for lk in v
+            if lk.enabled and lk.type not in _EOS_REWEIGHTING_ALLOWED_LIKELIHOOD_TYPES
+        ]
+        if invalid:
+            bad_types = sorted({lk.type for lk in invalid})
+            raise ValueError(
+                f"Likelihood types {bad_types} are not supported by EOS reweighting: "
+                "they require EOS-level structure (n, p, nbreak, _random_key, ...) "
+                "that is not available from tabulated M-Λ-R curves. "
+                f"Supported types are: {sorted(_EOS_REWEIGHTING_ALLOWED_LIKELIHOOD_TYPES)}."
+            )
         return v
 
     @field_validator("seed")

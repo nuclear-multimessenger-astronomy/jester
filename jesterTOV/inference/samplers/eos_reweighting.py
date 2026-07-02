@@ -67,6 +67,10 @@ class EOSReweightingSampler(JesterSampler):
         self.likelihood = likelihood  # type: ignore[assignment]
         self.config = config
 
+    #: Absolute cap (:math:`M_\odot`) applied to the common mass grid upper
+    #: bound in :meth:`load_and_grid` when ``m_max`` is not given explicitly.
+    DEFAULT_M_MAX_CAP: float = 3.0
+
     def load_and_grid(
         self,
         paths: list[str],
@@ -94,8 +98,9 @@ class EOSReweightingSampler(JesterSampler):
         m_max :
             Upper bound in :math:`M_\odot`.  ``None`` → use
             :math:`\max(M_\mathrm{TOV})` across all curves in ``paths``,
-            capped at 3.0 :math:`M_\odot` (a warning is logged if the cap
-            is applied, since likelihoods will not be evaluated above it).
+            capped at :attr:`DEFAULT_M_MAX_CAP` :math:`M_\odot` (a warning
+            is logged if the cap is applied, since likelihoods will not be
+            evaluated above it).
 
         Returns
         -------
@@ -145,19 +150,20 @@ class EOSReweightingSampler(JesterSampler):
 
         # Common grid upper bound
         if m_max is None:
+            m_cap = self.DEFAULT_M_MAX_CAP
             m_tov_arr = np.asarray(m_tov_list)
             max_m_tov = float(np.max(m_tov_arr))
-            if max_m_tov > 3.0:
-                n_above = int(np.sum(m_tov_arr > 3.0))
+            if max_m_tov > m_cap:
+                n_above = int(np.sum(m_tov_arr > m_cap))
                 logger.warning(
                     f"Maximum M_TOV across the EOS set is {max_m_tov:.3f} M_sun, "
-                    f"which exceeds 3.0 M_sun. Capping the common mass grid at "
-                    f"3.0 M_sun instead. {n_above}/{len(m_tov_arr)} EOS curves have "
-                    "M_TOV above 3.0 M_sun; the interpolated grid (and any "
+                    f"which exceeds {m_cap:.1f} M_sun. Capping the common mass grid at "
+                    f"{m_cap:.1f} M_sun instead. {n_above}/{len(m_tov_arr)} EOS curves have "
+                    f"M_TOV above {m_cap:.1f} M_sun; the interpolated grid (and any "
                     "likelihoods evaluated on it) will not extend to their true "
                     "M_TOV. Please double-check that this is acceptable for your use case."
                 )
-                m_max_grid = 3.0
+                m_max_grid = m_cap
             else:
                 m_max_grid = max_m_tov
         else:
@@ -399,9 +405,9 @@ class EOSReweightingSampler(JesterSampler):
         )
 
     # ------------------------------------------------------------------ #
-    # The following methods are not applicable for this sampler type.      #
-    # They raise informative errors rather than NotImplementedError so     #
-    # callers get a clear message.                                         #
+    # The following methods are not applicable for this sampler type.    #
+    # They raise informative errors rather than NotImplementedError so   #
+    # callers get a clear message.                                       #
     # ------------------------------------------------------------------ #
 
     def get_samples(self) -> dict[str, Array]:

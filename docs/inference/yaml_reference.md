@@ -810,6 +810,8 @@ sampler:
 - When computing the Bayesian evidence $\log Z$ for an EOS family
 - When you want to reweight an existing EOS prior sample with jester's multi-messenger likelihoods
 
+**Supported likelihoods.** Because the EOS is only known through its tabulated $(M, \Lambda, R)$ curve, `likelihoods` may only contain types that depend purely on these neutron-star observables: `gw`, `nicer`, `radio`, and `zero`. Likelihoods that need EOS-level structure (density, pressure, sound speed, ...) — `gw_resampled`, `nicer_kde`, `chieft`, `constraints_eos`, `constraints_tov`, `constraints_esym`, `constraints_gamma`, `rex` — are rejected at config-validation time with a clear error, since that information is not available from tabulated curves.
+
 ::::
 
 ---

@@ -4,7 +4,10 @@ EOS Reweighting
 ===============
 
 Unlike the other samplers on this page, EOS reweighting does not sample a parametric equation-of-state model at all. Instead, it takes a fixed, discrete set of tabulated EOS curves: for example, a prior sample produced elsewhere, or a family of curves from a nuclear-theory calculation, or even a non-parametric method such as Gaussian processes.
-Given these EOSs, we can evaluate jester's GPU-accelerated likelihoods (GW, NICER, radio, :math:`\chi`\ EFT, ...) directly on each curve. The result is a discrete posterior over the input EOS set. 
+Given these EOSs, we can evaluate jester's likelihoods directly on each curve. The result is a discrete posterior over the input EOS set.
+Since ``jester`` is quite fast due to JAX, we can evaluate 100 000 EOSs in under 1 minute on a laptop, offering a flexible and fast way to reweight any EOS set against the GW, NICER, and radio-timing data.
+
+Because each EOS is only known through its tabulated :math:`(M, \Lambda, R)` curve, only likelihoods that depend purely on these neutron-star observables can be used: GW (``gw``), NICER (``nicer``), radio timing (``radio``), and the data-free ``zero`` likelihood. Likelihoods that need the underlying EOS structure — density, pressure, sound speed, and so on, such as :math:`\chi`\ EFT or the EOS/TOV/spectral constraint likelihoods — are not available in this mode, since that information is not part of the tabulated input. Support for these may be added in the future by also tabulating the relevant EOS quantities. The config validator raises a clear error if an unsupported likelihood type is enabled.
 
 This is quite similar (and in fact, heavily inspired by) the ``lwp`` EOS reweighting pipeline (available on the LIGO GitLab https://git.ligo.org/reed.essick/lwp), but using the ``jester`` functionalities, bridging between ``jester`` and any external EOS-generation pipelines. Any codebase that can produce a set of :math:`(M, \Lambda, R)` curves can have those curves scored by ``jester``'s likelihood stack without needing to reimplement, e.g., the GW and NICER likelihoods.
 
@@ -22,7 +25,7 @@ Configuration
      type: "eos-reweighting"
      eos_file: "path/to/eos.npz"    # NPZ with keys: masses, lambdas, radii
      n_grid: 200                    # mass-grid points (default: 200)
-     m_min: 1.0                     # lower mass bound in M_sun (default: 0.5)
+     m_min: 1.0                     # lower mass bound in M_sun (default: 1.0)
      m_max: null                    # upper bound; null -> max(M_TOV) across curves, capped at 3.0 M_sun
      batch_size: 1000                # lax.map batch size (default: 1000); tune to fit memory requirements
      output_dir: "outdir/eos_reweighting/"
