@@ -16,6 +16,7 @@
       ~InferenceResult.__init__
       ~InferenceResult.add_derived_eos
       ~InferenceResult.add_eos_from_transform
+      ~InferenceResult.from_eos_reweighting
       ~InferenceResult.from_sampler
       ~InferenceResult.load
       ~InferenceResult.save

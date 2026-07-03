@@ -338,7 +338,7 @@ uv run sphinx-build -W --keep-going docs docs/_build/html
 
 ## Type Hinting Standards
 
-**All new code MUST include comprehensive type hints.**
+**All new code MUST include comprehensive type hints.** Tests are the exception — type hints are encouraged there but not strictly enforced, since test code prioritizes readability and fixture flexibility over strict typing.
 
 ```python
 # Standard library types (Python 3.10+ syntax)

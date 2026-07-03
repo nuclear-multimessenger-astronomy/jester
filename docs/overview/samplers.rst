@@ -26,9 +26,17 @@ Normalizing flow-enhanced MCMC for efficient exploration of complex posteriors.
 
 :doc:`samplers/flowmc`
 
+EOS Reweighting
+----------------
+
+Evaluates jester's likelihoods on a fixed, tabulated set of EOS curves via importance sampling, rather than sampling a parametric EOS model.
+
+:doc:`samplers/eos_reweighting`
+
 .. toctree::
    :hidden:
 
    samplers/smc
    samplers/nested_sampling
    samplers/flowmc
+   samplers/eos_reweighting

@@ -8,6 +8,7 @@ import time
 import warnings
 import json
 from pathlib import Path
+from typing import cast
 import numpy as np
 import jax
 import jax.numpy as jnp
@@ -23,6 +24,7 @@ from .config.schema import (
     BaseMetamodelEOSConfig,
     GWLikelihoodConfig,
     GWEventConfig,
+    EOSReweightingInferenceConfig,
 )
 from .priors.parser import parse_prior_file
 from .base.prior import CombinePrior
@@ -640,6 +642,88 @@ def generate_eos_samples(
     logger.info("Derived EOS quantities added to InferenceResult")
 
 
+def run_eos_reweighting(config_path: str) -> None:
+    r"""Run EOS reweighting inference.
+
+    Loads an :class:`~jesterTOV.inference.config.schemas.eos_reweighting.EOSReweightingInferenceConfig`,
+    evaluates jester's likelihoods on each tabulated EOS in the set, and
+    saves the evidence and posterior weights to HDF5.
+
+    Parameters
+    ----------
+    config_path : str
+        Path to YAML configuration file with ``sampler.type: "eos-reweighting"``.
+    """
+    import time
+    import yaml as _yaml
+
+    logger.info(f"EOS reweighting mode — loading config from {config_path}")
+
+    with open(config_path) as _f:
+        raw = _yaml.safe_load(_f)
+
+    if raw is None:
+        raise ValueError(f"Configuration file is empty: {config_path}")
+
+    config = EOSReweightingInferenceConfig.model_validate(raw)
+
+    if config.debug_nans:
+        logger.info("Enabling JAX NaN debugging")
+        jax.config.update("jax_debug_nans", True)
+
+    outdir = Path(config.sampler.output_dir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Output directory: {outdir}")
+    logger.info(f"JAX devices: {jax.devices()}")
+
+    # Prepare GW normalizing flows if any GW event uses from_bilby_result / from_npz_file
+    config = cast(
+        EOSReweightingInferenceConfig,
+        prepare_gw_flows(config, outdir),  # type: ignore[arg-type]
+    )
+
+    logger.info("Creating combined likelihood...")
+    likelihood = create_combined_likelihood(config.likelihoods)
+
+    if config.dry_run:
+        logger.info(
+            "Dry run complete — config validated and likelihoods loaded successfully."
+        )
+        return
+
+    from .samplers.eos_reweighting import EOSReweightingSampler
+
+    sampler = EOSReweightingSampler(
+        likelihood=likelihood,  # type: ignore[arg-type]
+        config=config.sampler,  # type: ignore[arg-type]
+    )
+
+    key = jax.random.key(config.seed)
+    logger.info("Starting EOS reweighting...")
+    t0 = time.perf_counter()
+    output = sampler.sample(key)
+    runtime = time.perf_counter() - t0
+    logger.info(f"EOS reweighting finished in {runtime:.1f}s")
+
+    result = InferenceResult.from_eos_reweighting(output, config, runtime=runtime)
+    result_path = outdir / "result.h5"
+    result.save(result_path)
+    logger.info(f"Results saved to {result_path}")
+
+    if config.postprocessing.enabled:
+        logger.info("=" * 60)
+        logger.info("Running postprocessing...")
+        logger.info("=" * 60)
+        from .postprocessing.postprocessing import generate_eos_reweighting_plots
+
+        generate_eos_reweighting_plots(
+            outdir=str(outdir),
+            injection_eos_path=config.postprocessing.injection_eos_path,
+            plot_format=config.postprocessing.plot_format,
+        )
+        logger.info(f"\nPostprocessing complete! Plots saved to {outdir}")
+
+
 # TODO: there are some calls that check specific types of samplers/configs/...
 # Ideally we should remove this and just have a small loop that prints over all available
 # attributes of the config/sampler/likelihood/transform/prior objects, so that we don't have to update this function every time we add a new sampler type or likelihood type or EOS type, etc. We can still have some special handling for certain fields (e.g., if chieft enabled then print nbreak bounds, etc.) but in general we should just loop over all fields and print them in a structured way (e.g., using Pydantic's model_dump() with some formatting for logging)
@@ -657,6 +741,19 @@ def main(config_path: str) -> None:
 
     _vi = get_version_info()
     logger.info(f"jesterTOV version {_vi['version']} (git {_vi['git_hash']})")
+
+    # Peek at YAML to branch early for sampler types that don't use the standard pipeline
+    import yaml as _yaml
+
+    with open(config_path) as _f:
+        _raw_peek = _yaml.safe_load(_f)
+    if isinstance(_raw_peek, dict):
+        _sampler_peek = _raw_peek.get("sampler", {})
+        if (
+            isinstance(_sampler_peek, dict)
+            and _sampler_peek.get("type") == "eos-reweighting"
+        ):
+            return run_eos_reweighting(config_path)
 
     # Load configuration
     logger.info(f"Loading configuration from {config_path}")
@@ -795,9 +892,9 @@ def main(config_path: str) -> None:
         logger.info(f"  Target MCMC steps: {config.sampler.n_target}")
         logger.info(f"  Termination dlogZ: {config.sampler.termination_dlogz}")
     elif config.sampler.type in ["smc-rw", "smc-nuts"]:
-        logger.info(f"  Particles: {config.sampler.n_particles}")
-        logger.info(f"  MCMC steps: {config.sampler.n_mcmc_steps}")
-        logger.info(f"  Target ESS: {config.sampler.target_ess}")
+        logger.info(f"  Particles: {config.sampler.n_particles}")  # type: ignore[union-attr]
+        logger.info(f"  MCMC steps: {config.sampler.n_mcmc_steps}")  # type: ignore[union-attr]
+        logger.info(f"  Target ESS: {config.sampler.target_ess}")  # type: ignore[union-attr]
 
     # Log shared sampler config fields
     logger.info(f"  EOS samples to generate: {config.sampler.n_eos_samples}")

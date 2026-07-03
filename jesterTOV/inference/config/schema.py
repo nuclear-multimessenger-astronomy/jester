@@ -68,7 +68,14 @@ from .schemas.samplers import (
     BlackJAXNSAWConfig,
     SMCRandomWalkSamplerConfig,
     SMCNUTSSamplerConfig,
+    EOSReweightingConfig,
     SamplerConfig,
+)
+
+# EOS reweighting inference config (no transform/prior sections)
+from .schemas.eos_reweighting import (
+    EOSReweightingInferenceConfig,
+    EOSReweightingPostprocessingConfig,
 )
 
 
@@ -261,9 +268,12 @@ __all__ = [
     "BlackJAXNSAWConfig",
     "SMCRandomWalkSamplerConfig",
     "SMCNUTSSamplerConfig",
+    "EOSReweightingConfig",
     "SamplerConfig",
     # Other
     "PriorConfig",
     "PostprocessingConfig",
     "InferenceConfig",
+    "EOSReweightingInferenceConfig",
+    "EOSReweightingPostprocessingConfig",
 ]

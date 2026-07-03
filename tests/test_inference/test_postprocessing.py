@@ -11,6 +11,8 @@ from jesterTOV.inference.postprocessing.postprocessing import (
     setup_matplotlib,
     load_eos_data,
     load_prior_data,
+    load_eos_reweighting_data,
+    generate_eos_reweighting_plots,
     report_credible_interval,
     make_cornerplot,
     make_mass_radius_plot,
@@ -123,6 +125,94 @@ class TestLoadEOSData:
         # Should raise KeyError for missing fields
         with pytest.raises(KeyError):
             load_eos_data(str(temp_dir))
+
+
+class TestLoadEOSReweightingData:
+    """Test loading resampled posterior curves from an EOS reweighting result."""
+
+    @staticmethod
+    def _save_eos_reweighting_result(outdir, with_log_prob: bool = True):
+        posterior = {
+            "eos_index": np.arange(5),
+            "log_likelihood": np.array([-1.0, -2.0, -3.0, -4.0, -5.0]),
+            "posterior_weight": np.array([0.4, 0.3, 0.15, 0.1, 0.05]),
+            "masses_EOS": np.tile(np.linspace(1.0, 2.0, 20), (8, 1)),
+            "radii_EOS": np.random.rand(8, 20) + 10.0,
+            "Lambdas_EOS": np.random.rand(8, 20) * 100,
+            "resampled_eos_index": np.array([0, 0, 1, 2, 0, 1, 0, 3]),
+        }
+        if with_log_prob:
+            posterior["resampled_log_likelihood"] = np.array(
+                [-1.0, -1.0, -2.0, -3.0, -1.0, -2.0, -1.0, -4.0]
+            )
+        metadata = {"sampler": "eos_reweighting", "n_eos": 5, "n_resampled": 8}
+        result = InferenceResult(
+            sampler_type="eos_reweighting", posterior=posterior, metadata=metadata
+        )
+        result.save(outdir / "result.h5")
+
+    def test_load_success(self, temp_dir):
+        self._save_eos_reweighting_result(temp_dir)
+        data = load_eos_reweighting_data(str(temp_dir))
+
+        assert data["masses"].shape == (8, 20)
+        assert data["radii"].shape == (8, 20)
+        assert data["lambdas"].shape == (8, 20)
+        assert data["log_prob"].shape == (8,)
+        np.testing.assert_allclose(
+            data["log_prob"], [-1.0, -1.0, -2.0, -3.0, -1.0, -2.0, -1.0, -4.0]
+        )
+
+    def test_load_missing_file(self, temp_dir):
+        with pytest.raises(FileNotFoundError, match="Results file not found"):
+            load_eos_reweighting_data(str(temp_dir / "nonexistent"))
+
+    def test_load_missing_resampled_curves(self, temp_dir):
+        """A result without resampled EOS curves must raise a clear KeyError."""
+        posterior = {"log_prob": np.array([-1.0])}
+        metadata = {"sampler": "eos_reweighting"}
+        result = InferenceResult(
+            sampler_type="eos_reweighting", posterior=posterior, metadata=metadata
+        )
+        result.save(temp_dir / "result.h5")
+
+        with pytest.raises(KeyError, match="resampled posterior"):
+            load_eos_reweighting_data(str(temp_dir))
+
+    def test_load_falls_back_to_flat_log_prob(self, temp_dir):
+        """Missing resampled_log_likelihood should not raise, just warn."""
+        self._save_eos_reweighting_result(temp_dir, with_log_prob=False)
+        data = load_eos_reweighting_data(str(temp_dir))
+        assert np.all(data["log_prob"] == 0.0)
+
+
+class TestGenerateEOSReweightingPlots:
+    """Test the mass-radius/mass-Lambda/histogram postprocessing entry point."""
+
+    def test_generates_only_massradius_and_masslambda(self, temp_dir):
+        TestLoadEOSReweightingData._save_eos_reweighting_result(temp_dir)
+
+        generate_eos_reweighting_plots(str(temp_dir), plot_format="png")
+
+        figures_dir = temp_dir / "figures"
+        assert (figures_dir / "mass_radius_plot.png").exists()
+        assert (figures_dir / "mass_lambda_plot.png").exists()
+        # MTOV/R14/Lambda14 histograms only need the resampled M-R-Lambda
+        # curves, so they are produced too.
+        assert (figures_dir / "MTOV_histogram.png").exists()
+        assert (figures_dir / "R14_histogram.png").exists()
+        assert (figures_dir / "Lambda14_histogram.png").exists()
+        # No cornerplot/pressure-density/cs2/p3nsat histogram/contours —
+        # those need EOS-level structure (n, p, cs2, parameters) that
+        # eos-reweighting doesn't have.
+        assert not (figures_dir / "cornerplot.png").exists()
+        assert not (figures_dir / "pressure_density_plot.png").exists()
+        assert not (figures_dir / "cs2_density_plot.png").exists()
+        assert not (figures_dir / "p3nsat_histogram.png").exists()
+
+    def test_missing_result_file_does_not_raise(self, temp_dir):
+        # Should log an error and return, not raise.
+        generate_eos_reweighting_plots(str(temp_dir / "nonexistent"))
 
 
 class TestLoadPriorData:
@@ -569,6 +659,49 @@ class TestSplitIntoMonotoneBranches:
         assert branches[-1][1] == len(masses)
         for k in range(len(branches) - 1):
             assert branches[k][1] == branches[k + 1][0]
+
+    def test_zero_padded_tail_excluded_from_last_branch(self):
+        """Eos-reweighting curves share a common mass grid with Lambda/radius
+        zero-padded above each curve's own M_TOV. That drop to exactly zero
+        must not be spliced into the last branch — otherwise the plotted
+        line jumps from the last physical point straight to (Lambda=0),
+        which renders as a spurious near-horizontal segment when that point
+        lands far outside the visible axis range."""
+        masses = np.linspace(0.5, 4.0, 8)
+        lambdas = np.array([2000.0, 800.0, 300.0, 120.0, 50.0, 0.0, 0.0, 0.0])
+        branches = _split_into_monotone_branches(masses, lambdas)
+        assert len(branches) == 1
+        assert branches[0] == (0, 5)
+
+    def test_no_zero_padding_covers_full_range(self):
+        """Without any zero-padding, behaviour is unchanged (full range covered)."""
+        masses = np.linspace(0.5, 2.0, 6)
+        lambdas = np.array([2000.0, 800.0, 300.0, 120.0, 50.0, 20.0])
+        branches = _split_into_monotone_branches(masses, lambdas)
+        assert branches[-1][1] == len(masses)
+
+    def test_zero_padded_head_excluded_from_first_branch(self):
+        """Eos-reweighting curves can also be zero-padded *below* an EOS's
+        own minimum mass, when the shared grid's lower bound is below what
+        that EOS's family actually covers. The jump from that zero padding
+        up to the first real (typically very large, low-density) Lambda
+        value is a genuine increase and must not be mistaken for a physical
+        branch break."""
+        masses = np.linspace(0.1, 2.0, 8)
+        lambdas = np.array([0.0, 0.0, 5_000_000.0, 800.0, 300.0, 120.0, 50.0, 20.0])
+        branches = _split_into_monotone_branches(masses, lambdas)
+        assert len(branches) == 1
+        assert branches[0] == (2, 8)
+
+    def test_zero_padded_head_and_tail_excluded(self):
+        """Both leading and trailing zero-padding are excluded simultaneously."""
+        masses = np.linspace(0.1, 3.0, 10)
+        lambdas = np.array(
+            [0.0, 0.0, 5_000_000.0, 800.0, 300.0, 120.0, 50.0, 0.0, 0.0, 0.0]
+        )
+        branches = _split_into_monotone_branches(masses, lambdas)
+        assert len(branches) == 1
+        assert branches[0] == (2, 7)
 
     def test_plot_runs_without_error_when_unstable(self, tmp_path):
         """make_mass_radius_plot runs cleanly when multi-branch samples are present."""

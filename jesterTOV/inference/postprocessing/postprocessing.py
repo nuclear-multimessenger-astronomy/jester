@@ -299,6 +299,70 @@ def load_injection_eos(
         return None
 
 
+def load_eos_reweighting_data(outdir: str) -> Dict[str, Any]:
+    """Load resampled posterior curves from an EOS reweighting result.
+
+    Unlike :func:`load_eos_data` (used for the parametric samplers), this
+    only reads the equal-weight (M, :math:`\\Lambda`, R) posterior curves
+    produced by :meth:`~jesterTOV.inference.samplers.eos_reweighting.EOSReweightingSampler.sample`
+    via weighted resampling. There is no NEP/CSE parameter posterior,
+    density/pressure/cs2 profile, or TOV central-density diagnostic to load,
+    since the EOS enters only as a tabulated curve.
+
+    Parameters
+    ----------
+    outdir : str
+        Path to output directory containing ``result.h5``.
+
+    Returns
+    -------
+    dict
+        Dictionary with keys ``masses``, ``radii``, ``lambdas`` (resampled
+        posterior curves) and ``log_prob`` (per-draw log-likelihood, used
+        for the posterior-probability colour coding in the plots).
+
+    Raises
+    ------
+    FileNotFoundError
+        If ``result.h5`` is not found in the directory.
+    KeyError
+        If the result does not contain resampled posterior curves (e.g. it
+        was produced by an older version of jester without resampling).
+    """
+    from jesterTOV.inference.result import InferenceResult
+
+    filename = os.path.join(outdir, "result.h5")
+    if not os.path.exists(filename):
+        raise FileNotFoundError(f"Results file not found: {filename}")
+
+    result = InferenceResult.load(filename)
+    posterior = result.posterior
+
+    required = ["masses_EOS", "radii_EOS", "Lambdas_EOS"]
+    missing = [k for k in required if k not in posterior]
+    if missing:
+        raise KeyError(
+            f"EOS reweighting result at {filename} is missing resampled posterior "
+            f"curve(s) {missing}. Was it produced by "
+            "EOSReweightingSampler.sample()?"
+        )
+
+    log_prob = posterior.get("resampled_log_likelihood")
+    if log_prob is None:
+        logger.warning(
+            "No 'resampled_log_likelihood' found in result; using a flat "
+            "log_prob (uniform colouring) for the mass-radius/mass-Lambda plots."
+        )
+        log_prob = np.zeros(len(posterior["masses_EOS"]))
+
+    return {
+        "masses": posterior["masses_EOS"],
+        "radii": posterior["radii_EOS"],
+        "lambdas": posterior["Lambdas_EOS"],
+        "log_prob": np.asarray(log_prob),
+    }
+
+
 # ─── Data analysis helpers ────────────────────────────────────────────────────
 
 
@@ -309,6 +373,23 @@ def _split_into_monotone_branches(
 
     A branch break is detected wherever Lambda increases as mass increases,
     signalling a fold-back in M(pc) (twin-star / third-family scenario).
+
+    Tabulated EOS-reweighting curves are stored on a mass grid shared across
+    the whole EOS set, with Lambda/radius zero-padded both above each curve's
+    own M_TOV *and* below its own minimum mass (whenever the shared grid's
+    bounds extend past what a given EOS's family actually covers — see
+    :func:`~jesterTOV.inference.samplers.eos_reweighting.EOSReweightingSampler.load_and_grid`).
+    A drop from a real Lambda value straight to the zero padding above M_TOV
+    is a *decrease*, so it would not otherwise register as a branch break —
+    but plotting it would splice the last physical point directly to
+    (Lambda=0, M=M_TOV+one grid step), producing a spurious near-horizontal
+    segment when that point is far outside the visible axis range. Anything
+    at or past the last non-zero Lambda is therefore excluded. Conversely,
+    the zero padding *below* the curve's minimum mass jumps straight up to
+    the first real (typically very large, low-density) Lambda value — a
+    genuine *increase*, which would otherwise be mistaken for a physical
+    branch break — so anything before the first non-zero Lambda is excluded
+    too.
 
     Parameters
     ----------
@@ -323,13 +404,19 @@ def _split_into_monotone_branches(
         Each pair defines a half-open slice that is monotone decreasing in
         Lambda. Always contains at least one segment.
     """
+    nonzero = np.nonzero(lambdas > 0)[0]
+    if len(nonzero) == 0:
+        return [(0, len(masses))]
+    valid_start = int(nonzero[0])
+    valid_len = int(nonzero[-1]) + 1
+
     segments: list[tuple[int, int]] = []
-    start = 0
-    for j in range(1, len(lambdas)):
+    start = valid_start
+    for j in range(valid_start + 1, valid_len):
         if lambdas[j] > lambdas[j - 1]:
             segments.append((start, j))
             start = j
-    segments.append((start, len(masses)))
+    segments.append((start, valid_len))
     return segments
 
 
@@ -1229,12 +1316,54 @@ def make_parameter_histograms(
     logger.info("Creating parameter histograms...")
 
     m, r, l = data["masses"], data["radii"], data["lambdas"]
-    n, p = data["densities"], data["pressures"]
+    n, p = data.get("densities"), data.get("pressures")
 
-    MTOV_list = np.array([np.max(mass) for mass in m])
-    R14_list = np.array([np.interp(1.4, mass, radius) for mass, radius in zip(m, r)])
-    Lambda14_list = np.array([np.interp(1.4, mass, lam) for mass, lam in zip(m, l)])
-    p3nsat_list = np.array([np.interp(3.0, dens, press) for dens, press in zip(n, p)])
+    # For eos-reweighting curves, `masses` is a shared grid broadcast across
+    # all rows (with `radii`/`lambdas` zero-padded above each curve's own
+    # M_TOV), so np.max(mass) would just return the grid's global max for
+    # every sample. Use the mass at the last non-zero radius point instead;
+    # this is a no-op for the parametric samplers, whose family curves are
+    # never zero-padded.
+    def _mtov(mass_row: np.ndarray, radius_row: np.ndarray) -> float:
+        nonzero = np.nonzero(radius_row > 0)[0]
+        if len(nonzero) == 0:
+            return float(np.max(mass_row))
+        return float(mass_row[nonzero[-1]])
+
+    def _interp_on_branch(
+        target_mass: float,
+        mass_row: np.ndarray,
+        radius_row: np.ndarray,
+        value_row: np.ndarray,
+    ) -> float:
+        # Restrict interpolation to the curve's own physical branch (same
+        # nonzero-radius mask as `_mtov`), returning NaN if `target_mass`
+        # falls outside it instead of silently reading a zero-padded value.
+        nonzero = np.nonzero(radius_row > 0)[0]
+        if len(nonzero) == 0:
+            return float("nan")
+        lo, hi = mass_row[nonzero[0]], mass_row[nonzero[-1]]
+        if target_mass < lo or target_mass > hi:
+            return float("nan")
+        return float(np.interp(target_mass, mass_row[nonzero], value_row[nonzero]))
+
+    MTOV_list = np.array([_mtov(mass, radius) for mass, radius in zip(m, r)])
+    R14_list = np.array(
+        [_interp_on_branch(1.4, mass, radius, radius) for mass, radius in zip(m, r)]
+    )
+    Lambda14_list = np.array(
+        [
+            _interp_on_branch(1.4, mass, radius, lam)
+            for mass, radius, lam in zip(m, r, l)
+        ]
+    )
+    R14_list = R14_list[~np.isnan(R14_list)]
+    Lambda14_list = Lambda14_list[~np.isnan(Lambda14_list)]
+    p3nsat_list = (
+        np.array([np.interp(3.0, dens, press) for dens, press in zip(n, p)])
+        if n is not None and p is not None
+        else None
+    )
 
     _n_TOV_raw = data.get("n_TOV", None)
     n_TOV_list = (
@@ -1264,18 +1393,21 @@ def make_parameter_histograms(
             "MTOV": {"values": MTOV_list, "xlabel": r"$M_{\rm{TOV}}$ [$M_{\odot}$]"},
             "R14": {"values": R14_list, "xlabel": r"$R_{1.4}$ [km]"},
             "Lambda14": {"values": Lambda14_list, "xlabel": r"$\Lambda_{1.4}$"},
-            "p3nsat": {
-                "values": p3nsat_list,
-                "xlabel": r"$p(3n_{\rm{sat}})$ [MeV fm$^{-3}$]",
-            },
         }
     else:
         parameters = {
             "MTOV": {"values": MTOV_list, "xlabel": "M_TOV [M_sun]"},
             "R14": {"values": R14_list, "xlabel": "R_1.4 [km]"},
             "Lambda14": {"values": Lambda14_list, "xlabel": "Lambda_1.4"},
-            "p3nsat": {"values": p3nsat_list, "xlabel": "p(3n_sat) [MeV fm^-3]"},
         }
+
+    if p3nsat_list is not None:
+        label = (
+            r"$p(3n_{\rm{sat}})$ [MeV fm$^{-3}$]"
+            if TEX_ENABLED
+            else "p(3n_sat) [MeV fm^-3]"
+        )
+        parameters["p3nsat"] = {"values": p3nsat_list, "xlabel": label}
 
     if n_TOV_list is not None:
         label = r"$n_{\rm{TOV}}$ [$n_{\rm{sat}}$]" if TEX_ENABLED else "n_TOV [n_sat]"
@@ -1678,6 +1810,138 @@ def generate_all_plots(
     )
 
 
+def generate_eos_reweighting_plots(
+    outdir: str,
+    injection_eos_path: Optional[str] = None,
+    plot_format: str = "pdf",
+) -> None:
+    """Generate mass-radius and mass-Lambda plots for an EOS reweighting result.
+
+    EOS reweighting (:class:`~jesterTOV.inference.samplers.eos_reweighting.EOSReweightingSampler`)
+    only produces resampled (M, :math:`\\Lambda`, R) posterior curves — there is
+    no NEP/CSE parameter posterior, density/pressure/cs2 profile, or TOV
+    central-density diagnostic — so only the mass-radius/mass-Lambda plots and
+    the :math:`M_{\\rm{TOV}}`/:math:`R_{1.4}`/:math:`\\Lambda_{1.4}` histograms
+    are produced (no cornerplot, pressure-density, cs2, or contours).
+
+    Parameters
+    ----------
+    outdir : str
+        Output directory containing ``result.h5``.
+    injection_eos_path : str, optional
+        Path to NPZ file containing injection EOS data, by default None.
+    plot_format : str, optional
+        Output file format for all plots (``"pdf"`` or ``"png"``), by default ``"pdf"``.
+    """
+    logger.info(f"Generating EOS reweighting plots for directory: {outdir}")
+
+    figures_dir = os.path.join(outdir, "figures")
+    os.makedirs(figures_dir, exist_ok=True)
+    logger.info(f"Saving plots to: {figures_dir}")
+
+    try:
+        data = load_eos_reweighting_data(outdir)
+        logger.info("Data loaded successfully!")
+    except (FileNotFoundError, KeyError) as e:
+        logger.error(f"Error: {e}")
+        return
+
+    injection_data = None
+    if injection_eos_path is not None:
+        injection_data = load_injection_eos(injection_eos_path)
+        if injection_data is not None:
+            logger.info("Injection EOS data loaded successfully!")
+
+    try:
+        make_mass_radius_plot(
+            data,
+            None,
+            figures_dir,
+            injection_data=injection_data,
+            plot_format=plot_format,
+        )
+    except Exception as e:
+        logger.error(f"Failed to create mass-radius plot: {e}")
+        logger.warning("Continuing with other plots...")
+
+    try:
+        make_mass_lambda_plot(
+            data,
+            None,
+            figures_dir,
+            injection_data=injection_data,
+            plot_format=plot_format,
+        )
+    except Exception as e:
+        logger.error(f"Failed to create mass-Lambda plot: {e}")
+        logger.warning("Continuing with other plots...")
+
+    try:
+        make_parameter_histograms(
+            data,
+            figures_dir,
+            injection_data=injection_data,
+            plot_format=plot_format,
+        )
+    except Exception as e:
+        logger.error(f"Failed to create parameter histograms: {e}")
+        logger.warning("Continuing with other plots...")
+
+    logger.info(
+        f"All plotting scripts executed and generated plots saved to {figures_dir}"
+    )
+
+
+def run_eos_reweighting_postprocessing_from_config(config_path: str) -> None:
+    """Run postprocessing for an EOS reweighting run from a YAML config file.
+
+    Parameters
+    ----------
+    config_path : str
+        Path to YAML configuration file with ``sampler.type: "eos-reweighting"``.
+    """
+    import yaml as _yaml
+
+    from jesterTOV.inference.config.schemas.eos_reweighting import (
+        EOSReweightingInferenceConfig,
+    )
+
+    logger.info(f"Loading EOS reweighting configuration from {config_path}")
+    with open(config_path) as f:
+        raw = _yaml.safe_load(f)
+    if raw is None:
+        raise ValueError(f"Configuration file is empty: {config_path}")
+
+    config = EOSReweightingInferenceConfig.model_validate(raw)
+
+    if not config.postprocessing.enabled:
+        logger.warning(
+            "Postprocessing is disabled in config. "
+            "Set postprocessing.enabled: true to run."
+        )
+        return
+
+    outdir = config.sampler.output_dir
+
+    logger.info("=" * 60)
+    logger.info("Running EOS reweighting postprocessing from config...")
+    logger.info("=" * 60)
+    logger.info(f"Output directory: {outdir}")
+    logger.info(f"Injection EOS: {config.postprocessing.injection_eos_path}")
+    logger.info(f"Plot format: {config.postprocessing.plot_format}")
+    logger.info("=" * 60)
+
+    generate_eos_reweighting_plots(
+        outdir=outdir,
+        injection_eos_path=config.postprocessing.injection_eos_path,
+        plot_format=config.postprocessing.plot_format,
+    )
+
+    logger.info(
+        f"\nPostprocessing complete! Plots saved to {os.path.join(outdir, 'figures')}"
+    )
+
+
 def run_from_config(config_path: str) -> None:
     """Run postprocessing from a YAML config file.
 
@@ -1686,6 +1950,13 @@ def run_from_config(config_path: str) -> None:
     config_path : str
         Path to YAML configuration file.
     """
+    import yaml as _yaml
+
+    with open(config_path) as f:
+        _raw_peek = _yaml.safe_load(f)
+    if (_raw_peek or {}).get("sampler", {}).get("type") == "eos-reweighting":
+        return run_eos_reweighting_postprocessing_from_config(config_path)
+
     from jesterTOV.inference.config.parser import load_config
 
     logger.info(f"Loading configuration from {config_path}")

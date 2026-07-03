@@ -16,6 +16,8 @@ Try ``jester`` right away in your browser and infer the neutron star equation of
 
 Want to run locally? Check the installation instructions below.
 
+Do you have your own EOS set, and you just wish to compute their likelihoods according to multimessenger data? Check out the reweighting example in :doc:`examples/inference/reweighting/reweighting`: it only takes 1 minute on a laptop to process 10k samples.
+
 
 What's in ``jester``?
 =======================
@@ -57,7 +59,8 @@ See the :doc:`overview/` guide for detailed explanations about what is implement
 
        - :doc:`Sequential Monte Carlo <overview/samplers/smc>`
        - :doc:`Nested Sampling <overview/samplers/nested_sampling>`
-       - :doc:`FlowMC (normalizing flows) <overview/samplers/flowmc>` 
+       - :doc:`FlowMC (normalizing flows) <overview/samplers/flowmc>`
+       - :doc:`EOS Reweighting <overview/samplers/eos_reweighting>`
 
 
 Curious for more?
@@ -134,6 +137,7 @@ Contents
    inference/training_flows
    inference/cit_cluster
    examples/inference/result
+   examples/inference/reweighting/reweighting
 
 .. toctree::
    :maxdepth: 2
