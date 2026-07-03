@@ -12,6 +12,7 @@ from .schema import (
     # TOV
     BaseTOVConfig,
     GRTOVConfig,
+    OdeConfig,
     TOVConfig,
     # Likelihoods
     BaseLikelihoodConfig,
@@ -53,6 +54,7 @@ __all__ = [
     # TOV
     "BaseTOVConfig",
     "GRTOVConfig",
+    "OdeConfig",
     "TOVConfig",
     # Likelihoods
     "BaseLikelihoodConfig",

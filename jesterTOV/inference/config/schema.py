@@ -38,6 +38,7 @@ from .schemas.tov import (
     BaseTOVConfig,
     GRTOVConfig,
     AnisotropyTOVConfig,
+    OdeConfig,
     TOVConfig,
 )
 
@@ -244,6 +245,7 @@ __all__ = [
     "BaseTOVConfig",
     "GRTOVConfig",
     "AnisotropyTOVConfig",
+    "OdeConfig",
     "TOVConfig",
     # Likelihoods
     "BaseLikelihoodConfig",

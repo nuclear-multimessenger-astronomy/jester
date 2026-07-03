@@ -1,9 +1,15 @@
 """Unit tests for TOV equation solver."""
 
+import importlib.util
+
 import pytest
+import jax
 import jax.numpy as jnp
 from jesterTOV import utils
+from jesterTOV.tov.data_classes import EOSData
 from jesterTOV.tov.gr import _tov_ode, _calc_k2, GRTOVSolver
+
+_HAS_MODAX = importlib.util.find_spec("solvers") is not None
 
 
 class TestTOVODE:
@@ -333,3 +339,104 @@ def test_calc_k2_parameter_variations(R, M, H, b):
         assert jnp.isfinite(k2)
         assert k2 > 0
         assert k2 < 10000  # Reasonable upper bound
+
+
+class TestTOVSolverBackends:
+    """GRTOVSolver correctness under each pluggable ODE backend.
+
+    ``backend="modax"`` requires the optional ``jesterTOV[modax]`` extra;
+    tests are skipped (not failed) when it isn't installed.
+    """
+
+    @pytest.mark.parametrize(
+        "backend,algorithm",
+        [
+            ("diffrax", "Dopri5"),
+            pytest.param(
+                "modax",
+                "Tsit5",
+                marks=pytest.mark.skipif(not _HAS_MODAX, reason="modax not installed"),
+            ),
+        ],
+    )
+    def test_solve_basic(self, sample_eos_data, backend, algorithm):
+        """Same physical checks as test_tov_solver_basic, per backend."""
+        pc = float(sample_eos_data.ps[25])
+        solver = GRTOVSolver(ode_backend=backend, ode_algorithm=algorithm)
+        solution = solver.solve(sample_eos_data, pc, {})
+
+        assert jnp.isfinite(solution.M)
+        assert jnp.isfinite(solution.R)
+        assert jnp.isfinite(solution.k2)
+        assert solution.M > 0
+        assert solution.R > 0
+        assert solution.k2 > 0
+
+        compactness = solution.M / solution.R
+        assert compactness < 0.5
+        assert compactness > 0.01
+
+    def test_solve_backend_parity(self, sample_eos_data):
+        """diffrax and modax should agree closely on the same star."""
+        pytest.importorskip("solvers", reason="modax not installed")
+
+        pc = float(sample_eos_data.ps[25])
+        sol_diffrax = GRTOVSolver(ode_backend="diffrax", ode_algorithm="Dopri5").solve(
+            sample_eos_data, pc, {}
+        )
+        sol_modax = GRTOVSolver(ode_backend="modax", ode_algorithm="Tsit5").solve(
+            sample_eos_data, pc, {}
+        )
+
+        assert jnp.isclose(sol_diffrax.M, sol_modax.M, rtol=1e-2)
+        assert jnp.isclose(sol_diffrax.R, sol_modax.R, rtol=1e-2)
+
+    def test_construct_family_backend_parity(self, sample_eos_data):
+        """construct_family (jax.vmap over a pc grid) should also agree closely."""
+        pytest.importorskip("solvers", reason="modax not installed")
+
+        fam_diffrax = GRTOVSolver(ode_backend="diffrax", ode_algorithm="Dopri5").construct_family(
+            sample_eos_data, ndat=20, min_nsat=0.75
+        )
+        fam_modax = GRTOVSolver(ode_backend="modax", ode_algorithm="Tsit5").construct_family(
+            sample_eos_data, ndat=20, min_nsat=0.75
+        )
+
+        mtov_diffrax = jnp.max(fam_diffrax.masses)
+        mtov_modax = jnp.max(fam_modax.masses)
+        assert jnp.isfinite(mtov_diffrax)
+        assert jnp.isfinite(mtov_modax)
+        assert jnp.isclose(mtov_diffrax, mtov_modax, rtol=1e-2)
+
+    def test_modax_backend_does_not_support_jax_grad(self, sample_eos_data):
+        """Known limitation: modax's adaptive lax.while_loop has no custom_vjp,
+        so jax.grad (reverse-mode AD) raises. jax.jvp (forward-mode) works.
+        Documented so a future modax upgrade that fixes this is caught by a
+        newly-*failing* assertion here, not silently missed."""
+        pytest.importorskip("solvers", reason="modax not installed")
+
+        def mtov(pressure_scale):
+            eos_data = sample_eos_data._replace(ps=sample_eos_data.ps * pressure_scale)
+            solver = GRTOVSolver(ode_backend="modax", ode_algorithm="Tsit5")
+            fam = solver.construct_family(eos_data, ndat=10, min_nsat=0.75)
+            return jnp.max(fam.masses)
+
+        with pytest.raises(ValueError, match="Reverse-mode differentiation"):
+            jax.grad(mtov)(1.0)
+
+    def test_invalid_backend_algorithm_combo_raises(self):
+        """Requesting an algorithm a backend doesn't support fails at solve time."""
+        solver = GRTOVSolver(ode_backend="diffrax", ode_algorithm="not_a_real_algorithm")
+        with pytest.raises(ValueError):
+            solver.solve(
+                EOSData(
+                    ns=jnp.array([1.0]),
+                    ps=jnp.array([1.0]),
+                    hs=jnp.array([1.0]),
+                    es=jnp.array([1.0]),
+                    dloge_dlogps=jnp.array([1.0]),
+                    cs2=jnp.array([1.0]),
+                ),
+                1.0,
+                {},
+            )

@@ -1,10 +1,14 @@
 """Unit tests for post-TOV equation solver (modified gravity)."""
 
+import importlib.util
+
 import pytest
 import jax.numpy as jnp
 from jesterTOV.tov.gr import GRTOVSolver
 from jesterTOV.tov.anisotropy import AnisotropyTOVSolver
 from jesterTOV.tov.data_classes import EOSData
+
+_HAS_MODAX = importlib.util.find_spec("solvers") is not None
 
 
 @pytest.fixture
@@ -297,3 +301,55 @@ def test_post_solver_individual_mg_params(sample_eos_data_post, mg_param, value)
 
     except Exception as e:
         pytest.skip(f"Post-TOV solver failed for {mg_param}={value}: {e}")
+
+
+class TestAnisotropyTOVSolverBackends:
+    """AnisotropyTOVSolver correctness under each pluggable ODE backend."""
+
+    @pytest.mark.parametrize(
+        "backend,algorithm",
+        [
+            ("diffrax", "Dopri5"),
+            pytest.param(
+                "modax",
+                "Tsit5",
+                marks=pytest.mark.skipif(not _HAS_MODAX, reason="modax not installed"),
+            ),
+        ],
+    )
+    def test_solve_basic(self, sample_eos_data_post, backend, algorithm):
+        pc = sample_eos_data_post.ps[25]
+        solver = AnisotropyTOVSolver(ode_backend=backend, ode_algorithm=algorithm)
+        solution = solver.solve(
+            sample_eos_data_post,
+            pc,
+            {"lambda_BL": 0.1, "lambda_DY": 0.05, "lambda_HB": 1.2},
+        )
+
+        assert jnp.isfinite(solution.M)
+        assert jnp.isfinite(solution.R)
+        assert jnp.isfinite(solution.k2)
+        assert solution.M > 0
+        assert solution.R > 0
+        assert solution.k2 > 0
+
+        compactness = solution.M / solution.R
+        assert compactness < 0.5
+        assert compactness > 0.01
+
+    def test_solve_backend_parity(self, sample_eos_data_post):
+        """diffrax and modax should agree closely on the same star."""
+        pytest.importorskip("solvers", reason="modax not installed")
+
+        pc = sample_eos_data_post.ps[25]
+        mg_params = {"lambda_BL": 0.1, "lambda_DY": 0.05, "lambda_HB": 1.2}
+
+        sol_diffrax = AnisotropyTOVSolver(
+            ode_backend="diffrax", ode_algorithm="Dopri5"
+        ).solve(sample_eos_data_post, pc, mg_params)
+        sol_modax = AnisotropyTOVSolver(ode_backend="modax", ode_algorithm="Tsit5").solve(
+            sample_eos_data_post, pc, mg_params
+        )
+
+        assert jnp.isclose(sol_diffrax.M, sol_modax.M, rtol=1e-2)
+        assert jnp.isclose(sol_diffrax.R, sol_modax.R, rtol=1e-2)

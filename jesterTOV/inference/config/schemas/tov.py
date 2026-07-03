@@ -6,6 +6,45 @@ from pydantic import ConfigDict, Discriminator, Field
 from ._base import JesterBaseModel
 
 
+class OdeConfig(JesterBaseModel):
+    """Configuration for the ODE backend used to integrate the TOV equations.
+
+    Shared/embedded (not a discriminated union) so every TOV solver config
+    inherits it for free without duplicating fields. ``algorithm`` is
+    validated against the selected backend's supported algorithm set at
+    solver-construction time (in ``_create_tov_solver``), not via a Pydantic
+    ``Literal``, so this config stays agnostic to which backends exist.
+
+    Attributes
+    ----------
+    backend : Literal["diffrax", "modax"]
+        ODE integration library to use (default: "diffrax")
+    algorithm : str
+        Backend-specific integrator name, e.g. "Dopri5", "Tsit5", "Rodas5P"
+        (default: "Dopri5")
+    rtol : float
+        Relative tolerance for adaptive step-size control (default: 1e-5)
+    atol : float
+        Absolute tolerance for adaptive step-size control (default: 1e-6)
+    max_steps : int
+        Maximum number of integration steps (default: 4096, matching
+        diffrax's own default)
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    backend: Literal["diffrax", "modax"] = "diffrax"
+    algorithm: str = Field(
+        default="Dopri5",
+        description="Backend-specific integrator name (e.g. Dopri5, Tsit5, Rodas5P)",
+    )
+    rtol: float = Field(default=1e-5, gt=0.0, description="Relative tolerance")
+    atol: float = Field(default=1e-6, gt=0.0, description="Absolute tolerance")
+    max_steps: int = Field(
+        default=4096, gt=0, description="Maximum number of integration steps"
+    )
+
+
 class BaseTOVConfig(JesterBaseModel):
     """Base configuration shared by all TOV solvers.
 
@@ -19,6 +58,8 @@ class BaseTOVConfig(JesterBaseModel):
         Number of data points for TOV integration (default: 100)
     nb_masses : int
         Number of masses to sample (default: 100)
+    ode : OdeConfig
+        ODE backend/algorithm/tolerance configuration for the TOV integration
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -38,6 +79,10 @@ class BaseTOVConfig(JesterBaseModel):
         default=100,
         gt=0,
         description="Number of masses to sample when constructing the M-R-Λ family",
+    )
+    ode: OdeConfig = Field(
+        default_factory=OdeConfig,
+        description="ODE backend/algorithm/tolerance configuration",
     )
 
 

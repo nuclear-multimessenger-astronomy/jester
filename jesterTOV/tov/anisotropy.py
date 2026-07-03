@@ -14,9 +14,9 @@ The three models are reviewed in Rahmansyah et al., Eur. Phys. J. C 80, 769 (202
 
 import jax
 import jax.numpy as jnp
-from diffrax import diffeqsolve, ODETerm, Dopri5, SaveAt, PIDController
 
 from jesterTOV import utils
+from jesterTOV.tov.backends import solve_ode
 from jesterTOV.tov.base import TOVSolverBase
 from jesterTOV.tov.data_classes import EOSData, TOVSolution
 
@@ -222,6 +222,31 @@ class AnisotropyTOVSolver(TOVSolverBase):
         - Cosenza et al. 1981 (lambda_HB)
     """
 
+    def __init__(
+        self,
+        ode_backend: str = "diffrax",
+        ode_algorithm: str = "Dopri5",
+        ode_rtol: float = 1e-5,
+        ode_atol: float = 1e-6,
+        ode_max_steps: int = 4096,
+    ):
+        """Initialize with ODE integration settings.
+
+        Args:
+            ode_backend: ODE library to integrate the post-TOV equations with
+                ("diffrax" or "modax").
+            ode_algorithm: Backend-specific integrator name (e.g. "Dopri5",
+                "Tsit5", "Rodas5P").
+            ode_rtol: Relative tolerance for adaptive step-size control.
+            ode_atol: Absolute tolerance for adaptive step-size control.
+            ode_max_steps: Maximum number of integration steps.
+        """
+        self.ode_backend = ode_backend
+        self.ode_algorithm = ode_algorithm
+        self.ode_rtol = ode_rtol
+        self.ode_atol = ode_atol
+        self.ode_max_steps = ode_max_steps
+
     def solve(
         self, eos_data: EOSData, pc: float, tov_params: dict[str, float]
     ) -> TOVSolution:
@@ -288,28 +313,25 @@ class AnisotropyTOVSolver(TOVSolverBase):
 
         y0 = (r0, m0, H0, b0)
 
-        sol = diffeqsolve(
-            ODETerm(_tov_ode),
-            Dopri5(scan_kind="bounded"),
-            t0=h0,
-            t1=0,
-            dt0=dh,
+        result = solve_ode(
+            rhs=_tov_ode,
             y0=y0,
+            t0=h0,
+            t1=0.0,
+            dt0=dh,
             args=eos_dict,
-            saveat=SaveAt(t1=True),
-            stepsize_controller=PIDController(rtol=1e-5, atol=1e-6),
-            throw=False,
+            backend=self.ode_backend,
+            algorithm=self.ode_algorithm,
+            rtol=self.ode_rtol,
+            atol=self.ode_atol,
+            max_steps=self.ode_max_steps,
         )
 
-        # Extract solution values (throw=False guarantees ys is populated)
-        R = sol.ys[0][-1]  # type: ignore[index]
-        M = sol.ys[1][-1]  # type: ignore[index]
-        H = sol.ys[2][-1]  # type: ignore[index]
-        b = sol.ys[3][-1]  # type: ignore[index]
+        R, M, H, b = result.ys_final
 
         k2 = _calc_k2(R, M, H, b)
 
-        return TOVSolution(M=M, R=R, k2=k2)
+        return TOVSolution(M=M, R=R, k2=k2)  # type: ignore[arg-type]
 
     def get_required_parameters(self) -> list[str]:
         """

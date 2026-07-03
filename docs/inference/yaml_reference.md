@@ -156,7 +156,28 @@ eos:
 
 The `tov` section configures the Tolman–Oppenheimer–Volkoff (TOV) equation solver used to compute neutron star structure (mass, radius, tidal deformability). For a conceptual overview of all available solvers, see {ref}`overview-tov`. The Pydantic base schema is {class}`~jesterTOV.inference.config.schema.BaseTOVConfig`.
 
-Three solver types are supported: `"gr"` (standard GR), `"anisotropy"` (phenomenological parametrizations to include pressure anisotropy), and `"scalar_tensor"` (scalar-tensor gravity). All solvers share the base fields `min_nsat_TOV`, `ndat_TOV`, and `nb_masses`; the beyond-GR solvers additionally require theory parameters that must be included in the prior file.
+Three solver types are supported: `"gr"` (standard GR), `"anisotropy"` (phenomenological parametrizations to include pressure anisotropy), and `"scalar_tensor"` (scalar-tensor gravity). All solvers share the base fields `min_nsat_TOV`, `ndat_TOV`, `nb_masses`, and `ode`; the beyond-GR solvers additionally require theory parameters that must be included in the prior file.
+
+### ODE backend
+
+Every solver integrates its equations via a pluggable ODE backend, configured through the shared `ode` sub-section (`gr` and `anisotropy` solvers only, for now). The Pydantic schema is {class}`~jesterTOV.inference.config.schema.OdeConfig`.
+
+```yaml
+tov:
+  type: "gr"
+  ode:
+    backend: "diffrax"    # "diffrax" (default) or "modax"
+    algorithm: "Dopri5"   # backend-specific integrator name
+    rtol: 1e-5            # relative tolerance
+    atol: 1e-6             # absolute tolerance
+    max_steps: 4096         # maximum integration steps
+```
+
+- **`backend`** (`Literal["diffrax", "modax"]`, default: `"diffrax"`) - ODE integration library. `"modax"` requires the optional `jesterTOV[modax]` extra to be installed, and currently has **no reverse-mode autodiff** (`jax.grad` fails; forward-mode `jax.jvp` works) — usable only with gradient-free samplers (e.g. `smc-rw`), not `smc-nuts` or `flowmc`.
+- **`algorithm`** (`str`, default: `"Dopri5"`) - Backend-specific integrator name. diffrax supports `"Dopri5"`, `"Dopri8"`, `"Tsit5"`; modax supports `"Tsit5"`, `"Rodas5P"`, `"KenCarp5"`. An unsupported backend/algorithm combination raises a clear error at solver-construction time.
+- **`rtol`** (`float`, default: `1e-5`) - Relative tolerance for adaptive step-size control
+- **`atol`** (`float`, default: `1e-6`) - Absolute tolerance for adaptive step-size control
+- **`max_steps`** (`int`, default: `4096`) - Maximum number of integration steps (matches diffrax's own default); raise this if you hit the known "TOV solver max_steps" issue for stiff EOS configurations
 
 ### General Relativity
 
@@ -171,6 +192,7 @@ tov:
   min_nsat_TOV: 0.75  # Minimum central density for TOV integration (in units of n_sat)
   ndat_TOV: 100       # Number of data points for TOV integration
   nb_masses: 100      # Number of masses for M-R-Λ family construction
+  # ode: {backend: "diffrax", algorithm: "Dopri5", rtol: 1e-5, atol: 1e-6, max_steps: 4096}  # optional, see "ODE backend" above
 ```
 
 **Field Details:**
@@ -179,6 +201,7 @@ tov:
 - **`min_nsat_TOV`** (`float`, default: `0.75`) - Minimum central density for TOV integration in units of saturation density
 - **`ndat_TOV`** (`int`, default: `100`) - Number of data points for TOV integration
 - **`nb_masses`** (`int`, default: `100`) - Number of masses to sample when constructing the M-R-Λ family (see {class}`~jesterTOV.tov.data_classes.FamilyData`)
+- **`ode`** (`OdeConfig`, optional) - ODE backend/algorithm/tolerance configuration; see "ODE backend" above
 
 ::::
 
@@ -194,6 +217,7 @@ tov:
   min_nsat_TOV: 0.75  # Minimum central density for TOV integration (in units of n_sat)
   ndat_TOV: 100       # Number of data points for TOV integration
   nb_masses: 100      # Number of masses for M-R-Λ family construction
+  # ode: {backend: "diffrax", algorithm: "Dopri5", rtol: 1e-5, atol: 1e-6, max_steps: 4096}  # optional, see "ODE backend" above
 ```
 
 **Field Details:**
@@ -202,6 +226,7 @@ tov:
 - **`min_nsat_TOV`** (`float`, default: `0.75`) - Minimum central density for TOV integration in units of saturation density
 - **`ndat_TOV`** (`int`, default: `100`) - Number of data points for TOV integration
 - **`nb_masses`** (`int`, default: `100`) - Number of masses to sample when constructing the M-R-Λ family
+- **`ode`** (`OdeConfig`, optional) - ODE backend/algorithm/tolerance configuration; see "ODE backend" above
 
 **Required prior parameters:**
 

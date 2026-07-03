@@ -24,6 +24,7 @@ from jesterTOV.inference.config.schema import (
     BaseTOVConfig,
     GRTOVConfig,
     AnisotropyTOVConfig,
+    OdeConfig,
 )
 from jesterTOV.inference.likelihoods.constraints import check_all_constraints
 from jesterTOV.logging_config import get_logger
@@ -295,15 +296,47 @@ class JesterTransform(NtoMTransform):
             If TOV solver config class is not implemented yet
         """
         if isinstance(config, GRTOVConfig):
-            return GRTOVSolver()
+            JesterTransform._validate_ode_config(config.ode)
+            return GRTOVSolver(
+                ode_backend=config.ode.backend,
+                ode_algorithm=config.ode.algorithm,
+                ode_rtol=config.ode.rtol,
+                ode_atol=config.ode.atol,
+                ode_max_steps=config.ode.max_steps,
+            )
 
         elif isinstance(config, AnisotropyTOVConfig):
             from jesterTOV.tov.anisotropy import AnisotropyTOVSolver
 
-            return AnisotropyTOVSolver()
+            JesterTransform._validate_ode_config(config.ode)
+            return AnisotropyTOVSolver(
+                ode_backend=config.ode.backend,
+                ode_algorithm=config.ode.algorithm,
+                ode_rtol=config.ode.rtol,
+                ode_atol=config.ode.atol,
+                ode_max_steps=config.ode.max_steps,
+            )
 
         else:
             raise ValueError(f"Unknown TOV solver type: {type(config).__name__}")
+
+    @staticmethod
+    def _validate_ode_config(ode_config: OdeConfig) -> None:
+        """Fail fast on an ODE backend/algorithm combination no backend supports.
+
+        Kept out of the Pydantic schema (which stays backend-agnostic, no
+        combinatorial discriminated union of backend x algorithm) and
+        checked here instead, at solver-construction time.
+        """
+        from jesterTOV.tov.backends import BACKEND_REGISTRY
+
+        backend = BACKEND_REGISTRY[ode_config.backend]
+        if ode_config.algorithm not in backend.SUPPORTED_ALGORITHMS:
+            raise ValueError(
+                f"ODE backend {ode_config.backend!r} does not support "
+                f"algorithm={ode_config.algorithm!r}; choose one of "
+                f"{sorted(backend.SUPPORTED_ALGORITHMS)}"
+            )
 
     def get_eos_type(self) -> str:
         """Return EOS type identifier.
