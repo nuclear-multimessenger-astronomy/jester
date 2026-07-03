@@ -1330,9 +1330,35 @@ def make_parameter_histograms(
             return float(np.max(mass_row))
         return float(mass_row[nonzero[-1]])
 
+    def _interp_on_branch(
+        target_mass: float,
+        mass_row: np.ndarray,
+        radius_row: np.ndarray,
+        value_row: np.ndarray,
+    ) -> float:
+        # Restrict interpolation to the curve's own physical branch (same
+        # nonzero-radius mask as `_mtov`), returning NaN if `target_mass`
+        # falls outside it instead of silently reading a zero-padded value.
+        nonzero = np.nonzero(radius_row > 0)[0]
+        if len(nonzero) == 0:
+            return float("nan")
+        lo, hi = mass_row[nonzero[0]], mass_row[nonzero[-1]]
+        if target_mass < lo or target_mass > hi:
+            return float("nan")
+        return float(np.interp(target_mass, mass_row[nonzero], value_row[nonzero]))
+
     MTOV_list = np.array([_mtov(mass, radius) for mass, radius in zip(m, r)])
-    R14_list = np.array([np.interp(1.4, mass, radius) for mass, radius in zip(m, r)])
-    Lambda14_list = np.array([np.interp(1.4, mass, lam) for mass, lam in zip(m, l)])
+    R14_list = np.array(
+        [_interp_on_branch(1.4, mass, radius, radius) for mass, radius in zip(m, r)]
+    )
+    Lambda14_list = np.array(
+        [
+            _interp_on_branch(1.4, mass, radius, lam)
+            for mass, radius, lam in zip(m, r, l)
+        ]
+    )
+    R14_list = R14_list[~np.isnan(R14_list)]
+    Lambda14_list = Lambda14_list[~np.isnan(Lambda14_list)]
     p3nsat_list = (
         np.array([np.interp(3.0, dens, press) for dens, press in zip(n, p)])
         if n is not None and p is not None

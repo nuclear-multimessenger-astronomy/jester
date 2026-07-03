@@ -8,6 +8,7 @@ import time
 import warnings
 import json
 from pathlib import Path
+from typing import cast
 import numpy as np
 import jax
 import jax.numpy as jnp
@@ -676,7 +677,10 @@ def run_eos_reweighting(config_path: str) -> None:
     logger.info(f"JAX devices: {jax.devices()}")
 
     # Prepare GW normalizing flows if any GW event uses from_bilby_result / from_npz_file
-    config = prepare_gw_flows(config, outdir)  # type: ignore[arg-type]
+    config = cast(
+        EOSReweightingInferenceConfig,
+        prepare_gw_flows(config, outdir),  # type: ignore[arg-type]
+    )
 
     logger.info("Creating combined likelihood...")
     likelihood = create_combined_likelihood(config.likelihoods)
@@ -743,8 +747,13 @@ def main(config_path: str) -> None:
 
     with open(config_path) as _f:
         _raw_peek = _yaml.safe_load(_f)
-    if (_raw_peek or {}).get("sampler", {}).get("type") == "eos-reweighting":
-        return run_eos_reweighting(config_path)
+    if isinstance(_raw_peek, dict):
+        _sampler_peek = _raw_peek.get("sampler", {})
+        if (
+            isinstance(_sampler_peek, dict)
+            and _sampler_peek.get("type") == "eos-reweighting"
+        ):
+            return run_eos_reweighting(config_path)
 
     # Load configuration
     logger.info(f"Loading configuration from {config_path}")

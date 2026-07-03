@@ -32,3 +32,11 @@ Moreover, the ``flowMC`` sampler and the ``EOSReweightingSampler`` (likelihood r
    jester_sampler.SamplerOutput
    flowmc.FlowMCSampler
    eos_reweighting.EOSReweightingSampler
+
+Sampler Functions
+-----------------
+
+.. autosummary::
+   :toctree: _autosummary
+
+   eos_reweighting.resample_eos_posterior

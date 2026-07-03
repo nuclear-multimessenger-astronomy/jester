@@ -13,7 +13,7 @@ import h5py
 import numpy as np
 from jaxtyping import Array
 
-from .config.schema import InferenceConfig
+from .config.schema import EOSReweightingInferenceConfig, InferenceConfig
 from .samplers.jester_sampler import JesterSampler, SamplerOutput
 from jesterTOV.logging_config import get_logger
 
@@ -297,7 +297,7 @@ class InferenceResult:
     def from_eos_reweighting(
         cls,
         output: "SamplerOutput",
-        config: Any,
+        config: EOSReweightingInferenceConfig,
         runtime: float,
     ) -> "InferenceResult":
         """Create InferenceResult from an EOS reweighting run.
@@ -315,13 +315,15 @@ class InferenceResult:
         -------
         InferenceResult
         """
-        posterior: Dict[str, np.ndarray] = {}
+        posterior: dict[str, np.ndarray] = {}
         for key, value in output.samples.items():
             posterior[key] = np.array(value)
         posterior["log_prob"] = np.array(output.log_prob)
 
         config_dict = config.model_dump()
         config_json = json.dumps(config_dict, indent=2)
+
+        n_resampled = int(output.metadata.get("N_resampled", 0))
 
         # Flatten evidence scalars as individual metadata keys so they survive
         # the HDF5 attribute serialisation (dicts are not supported as attrs).
@@ -330,11 +332,12 @@ class InferenceResult:
         # posterior["masses_EOS"]/"Lambdas_EOS"/"radii_EOS" (see
         # EOSReweightingSampler.sample and resample_eos_posterior).
         ev = output.metadata.get("evidence", {})
-        metadata: Dict[str, Any] = {
+        metadata: dict[str, Any] = {
             "sampler": "eos_reweighting",
             "sampling_time": float(runtime),
+            "n_samples": n_resampled,
             "n_eos": int(output.metadata.get("N_eos", 0)),
-            "n_resampled": int(output.metadata.get("N_resampled", 0)),
+            "n_resampled": n_resampled,
             "seed": int(config.seed),
             "creation_timestamp": datetime.now().isoformat(),
             "config_json": config_json,

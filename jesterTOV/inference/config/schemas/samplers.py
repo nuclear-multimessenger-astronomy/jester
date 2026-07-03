@@ -284,8 +284,8 @@ class EOSReweightingConfig(BaseSamplerConfig):
     m_min : float
         Minimum mass for interpolation grid in :math:`M_\odot` (default: 1.0)
     m_max : float | None
-        Maximum mass for grid in :math:`M_\odot`. None → use min(M_TOV) across
-        all curves.
+        Maximum mass for grid in :math:`M_\odot`. None → use max(M_TOV) across
+        all curves, capped at 3.0 :math:`M_\odot`.
     batch_size : int
         Number of EOS curves processed simultaneously by JAX (default: 1000).
         Progress is logged after each batch. Choose a value that fits in

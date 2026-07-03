@@ -31,6 +31,7 @@ Schema Classes
    schema.EOSReweightingConfig
    schema.EOSReweightingInferenceConfig
    schema.PostprocessingConfig
+   schemas.eos_reweighting.EOSReweightingPostprocessingConfig
 
 Parser Functions
 ----------------

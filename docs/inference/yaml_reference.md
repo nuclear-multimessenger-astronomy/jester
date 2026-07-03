@@ -781,7 +781,7 @@ sampler:
   # Mass interpolation grid
   n_grid: 200        # number of grid points (default: 200)
   m_min: 1.0         # lower bound in M_sun (default: 1.0)
-  m_max: null        # upper bound in M_sun; null → max(M_TOV) across all curves
+  m_max: null        # upper bound in M_sun; null → max(M_TOV) across all curves, capped at 3.0 M_sun
 
   # JAX batch size for lax.map over EOS curves (default: 1000)
   # Tune (with trial-and-error) to a value that fits in memory, there is no automatic OOM recovery.
@@ -805,7 +805,7 @@ postprocessing:
 
 | Key | Shape | Description |
 |---|---|---|
-| `masses` | `[n_points]` or `[N, n_points]` | Gravitational mass in $M_\odot$, monotone increasing |
+| `masses` | `[n_points]` or `[N, n_points]` | Mass in $M_\odot$, monotone increasing |
 | `lambdas` | same as `masses` | Dimensionless tidal deformability $\Lambda$ |
 | `radii` | same as `masses` | Radius in km |
 
@@ -816,16 +816,11 @@ postprocessing:
 - `posterior/parameters/log_likelihood` — log-likelihood per input EOS
 - `posterior/parameters/posterior_weight` — normalised posterior weight per input EOS
 - `posterior/derived_eos/masses_EOS`, `Lambdas_EOS`, `radii_EOS` — resampled equal-weight posterior curves
-- `posterior/parameters/resampled_eos_index`, `resampled_log_likelihood` — provenance of each resampled draw
+- `posterior/parameters/resampled_eos_index`, `resampled_log_likelihood` — each resampled draw's origin
 - `metadata/log_Z`, `metadata/log_Z_std`, `metadata/N_eff`, `metadata/N_eff_fraction` — evidence scalars
 - `metadata/n_eos`, `metadata/n_resampled` — number of input curves and resampled posterior draws
 
-**When to use:**
-- When collaborators provide tabulated EOS sets from e.g. nuclear-theory calculations
-- When computing the Bayesian evidence $\log Z$ for an EOS family
-- When you want to reweight an existing EOS prior sample with jester's multi-messenger likelihoods
-
-**Supported likelihoods.** Because the EOS is only known through its tabulated $(M, \Lambda, R)$ curve, `likelihoods` may only contain types that depend purely on these neutron-star observables: `gw`, `nicer`, `radio`, and `zero`. Likelihoods that need EOS-level structure (density, pressure, sound speed, ...) — `gw_resampled`, `nicer_kde`, `chieft`, `constraints_eos`, `constraints_tov`, `constraints_esym`, `constraints_gamma`, `rex` — are rejected at config-validation time with a clear error, since that information is not available from tabulated curves.
+**Supported likelihoods.** Because the EOS is only known through its tabulated $(M, \Lambda, R)$ curve, `likelihoods` may only contain types that depend purely on these neutron-star observables: `gw`, `nicer`, `radio`, and `zero`. Likelihoods that need EOS-level structure (density, pressure, sound speed, ...) — `gw_resampled`, `nicer_kde`, `chieft`, `constraints_eos`, `constraints_tov`, `constraints_esym`, `constraints_gamma`, `rex` — are rejected at config-validation time with a clear error, since they need information not available from tabulated curves or require additional sampling.
 
 **Postprocessing.** Because the resampled posterior only contains $(M, \Lambda, R)$ curves, postprocessing for this sampler produces only the mass-radius and mass-Lambda plots — there is no NEP/CSE parameter posterior, density/pressure/cs2 profile, or TOV central-density diagnostic available to build a cornerplot, pressure-density plot, cs2 plot, histograms, or contours from. The top-level `postprocessing` block uses the lighter {class}`~jesterTOV.inference.config.schemas.eos_reweighting.EOSReweightingPostprocessingConfig` schema (`enabled`, `injection_eos_path`, `plot_format` only) rather than the full {class}`~jesterTOV.inference.config.schema.PostprocessingConfig` used by the parametric samplers. `injection_eos_path` follows the same NPZ format as for the other samplers (see the "Postprocessing" section above) and is typically one of the tabulated EOS files under `jesterTOV/tabulated_eos/lalsuite/` when validating against a known injected EOS. Postprocessing runs automatically after `run_jester_inference config.yaml` (unless `postprocessing.enabled: false`), and can also be triggered standalone with `run_jester_postprocessing config.yaml`.
 

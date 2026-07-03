@@ -133,6 +133,7 @@ All contributions must meet these requirements:
   def my_function(x: float, y: Array) -> Float[Array, "n"]:
       ...
   ```
+  Tests are the exception: type hints are welcome but not strictly enforced there.
 
 - **JAX compatibility** - Ensure the code is compatible with `JAX` operations (`jit`, `vmap`, `grad`,...) in case they get used in inference 
 

@@ -139,9 +139,9 @@ class EOSReweightingSampler(JesterSampler):
         radii_list: list[np.ndarray],
         m_tov_list: list[float],
     ) -> tuple[Float[Array, "N L"], Float[Array, "N L"], Float[Array, "N L"]]:
-        """Interpolate a list of ragged (M, Lambda, R) curves onto a shared mass grid.
+        r"""Interpolate a list of ragged (M, Lambda, R) curves onto a shared mass grid.
 
-        Values above each curve's own :math:`M_\\mathrm{TOV}` are set to zero.
+        Values above each curve's own :math:`M_\mathrm{TOV}` are set to zero.
         """
         lam_interp_list: list[np.ndarray] = []
         rad_interp_list: list[np.ndarray] = []
@@ -233,6 +233,8 @@ class EOSReweightingSampler(JesterSampler):
         lambdas_list: list[np.ndarray] = []
         radii_list: list[np.ndarray] = []
         m_tov_list: list[float] = []
+        n_total = 0
+        n_discarded = 0
 
         for path in paths:
             data = np.load(path)
@@ -261,17 +263,46 @@ class EOSReweightingSampler(JesterSampler):
                 )
 
             for i in range(m.shape[0]):
-                masses_list.append(m[i])
-                lambdas_list.append(lam[i])
-                radii_list.append(rad[i])
+                n_total += 1
+                m_i, lam_i, rad_i = m[i], lam[i], rad[i]
+                if (
+                    np.any(np.isnan(m_i))
+                    or np.any(np.isnan(lam_i))
+                    or np.any(np.isnan(rad_i))
+                    or np.any(m_i < 0)
+                    or np.any(lam_i < 0)
+                    or np.any(rad_i < 0)
+                ):
+                    n_discarded += 1
+                    continue
 
-                nonzero = np.nonzero(rad[i] > 0)[0]
+                # `_regrid` uses np.interp, which requires the mass array to
+                # be monotonically increasing; sort defensively rather than
+                # trusting the NPZ file's row order.
+                order = np.argsort(m_i)
+                m_i, lam_i, rad_i = m_i[order], lam_i[order], rad_i[order]
+
+                masses_list.append(m_i)
+                lambdas_list.append(lam_i)
+                radii_list.append(rad_i)
+
+                nonzero = np.nonzero(rad_i > 0)[0]
                 m_tov = (
-                    float(m[i][nonzero[-1]])
-                    if len(nonzero) > 0
-                    else float(np.max(m[i]))
+                    float(m_i[nonzero[-1]]) if len(nonzero) > 0 else float(np.max(m_i))
                 )
                 m_tov_list.append(m_tov)
+
+        if n_discarded > 0:
+            logger.warning(
+                f"Discarded {n_discarded}/{n_total} "
+                f"({100.0 * n_discarded / n_total:.1f}%) non-physical EOS curves "
+                "(NaN or negative mass/radius/lambda values)."
+            )
+        if len(masses_list) == 0:
+            raise ValueError(
+                "All EOS curves were discarded as non-physical "
+                "(NaN or negative mass/radius/lambda values)."
+            )
 
         m_tov_arr = np.asarray(m_tov_list)
         max_m_tov = float(np.max(m_tov_arr))

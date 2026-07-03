@@ -16,6 +16,8 @@ Try ``jester`` right away in your browser and infer the neutron star equation of
 
 Want to run locally? Check the installation instructions below.
 
+Do you have your own EOS set, and you just wish to compute their likelihoods according to multimessenger data? Check out the reweighting example in :doc:`examples/inference/reweighting/reweighting`: it only takes 1 minute on a laptop to process 10k samples.
+
 
 What's in ``jester``?
 =======================
