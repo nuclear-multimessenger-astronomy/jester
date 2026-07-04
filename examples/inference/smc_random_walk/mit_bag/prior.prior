@@ -1,0 +1,5 @@
+# MIT bag model EOS prior: single bag-constant parameter B, range matches
+# CompactObject's own inference example
+# (Test_Case/test_Bayesian_inference_MITbag_EOS.ipynb, B in [20, 100] MeV/fm^3).
+
+B = UniformPrior(20.0, 100.0, parameter_names=["B"])

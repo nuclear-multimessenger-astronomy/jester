@@ -11,13 +11,15 @@ class BaseEOSConfig(JesterBaseModel):
 
     Attributes
     ----------
-    crust_name : Literal["DH", "BPS", "SLy"]
-        Name of crust model to use (default: "DH")
+    crust_name : Literal["DH", "BPS", "SLy", "Tolos"]
+        Name of crust model to use (default: "DH"). "Tolos" (Tolos, Centelles & Ramos
+        2017 outer-crust table) is the crust the RMF EOS was validated against in its
+        reference implementation (CompactObject) -- see :class:`RMFEOSConfig`.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    crust_name: Literal["DH", "BPS", "SLy"] = "DH"
+    crust_name: Literal["DH", "BPS", "SLy", "Tolos"] = "DH"
 
 
 class BaseMetamodelEOSConfig(BaseEOSConfig):
@@ -166,6 +168,99 @@ class SpectralEOSConfig(BaseEOSConfig):
         return v
 
 
+class RMFEOSConfig(BaseEOSConfig):
+    r"""Configuration for the relativistic mean-field (RMF) EOS.
+
+    Attributes
+    ----------
+    type : Literal["rmf"]
+        EOS type identifier
+    crust_name : Literal["DH", "BPS", "SLy", "Tolos"]
+        Crust model. Defaults to "Tolos" for this EOS type specifically (overriding
+        :class:`BaseEOSConfig`'s "DH" default), matching the crust this RMF
+        parametrization was fit and validated against in its reference implementation
+        (CompactObject) -- joining it to "DH" instead produces a real pressure
+        discontinuity at the crust-core junction.
+    rho_0 : float
+        RMF model's intrinsic nuclear saturation density [:math:`\mathrm{fm}^{-3}`]
+        (default: 0.1505, matches the reference implementation).
+    dt : float
+        Density grid step size, in units of ``rho_0`` (default: 0.05).
+    ndat_full : int
+        Number of raw density grid points for the warm-started field continuation
+        (default: 124, matches the reference implementation).
+    min_core_nsat_rmf : float
+        Minimum density the RMF core table may start at, as a fraction of ``rho_0``
+        (default: 1.0). This nucleonic RMF model produces unphysical negative pressure
+        well below saturation density.
+    newton_max_steps : int
+        Maximum Levenberg-Marquardt iterations per density point (default: 200).
+    root_rtol : float
+        Relative tolerance for the field-equation root solve (default: 1e-10).
+    root_atol : float
+        Absolute tolerance for the field-equation root solve (default: 1e-10).
+    """
+
+    type: Literal["rmf"] = "rmf"
+    crust_name: Literal["DH", "BPS", "SLy", "Tolos"] = "Tolos"
+    rho_0: float = 0.1505
+    dt: float = 0.05
+    ndat_full: int = 124
+    min_core_nsat_rmf: float = 1.0
+    newton_max_steps: int = 200
+    root_rtol: float = 1e-10
+    root_atol: float = 1e-10
+
+
+class MITBagEOSConfig(BaseEOSConfig):
+    r"""Configuration for the MIT bag model EOS (self-bound strange quark matter).
+
+    Attributes
+    ----------
+    type : Literal["mit_bag"]
+        EOS type identifier
+    crust_name : Literal["DH", "BPS", "SLy", "Tolos"]
+        Unused for this EOS type: strange quark matter is self-bound (no crust),
+        so this field is accepted for interface consistency but ignored. Kept at
+        the :class:`BaseEOSConfig` default.
+    n_points : int
+        Number of energy-density grid points (default: 1000, matches the reference
+        implementation).
+    e_max_over_b : float
+        Upper end of the energy-density grid, in units of the bag constant
+        (default: 10.0, matches the reference implementation).
+    """
+
+    type: Literal["mit_bag"] = "mit_bag"
+    n_points: int = 1000
+    e_max_over_b: float = 10.0
+
+
+class StrangeonEOSConfig(BaseEOSConfig):
+    r"""Configuration for the strangeon matter EOS (self-bound strangeon stars).
+
+    Attributes
+    ----------
+    type : Literal["strangeon"]
+        EOS type identifier
+    crust_name : Literal["DH", "BPS", "SLy", "Tolos"]
+        Unused for this EOS type: strangeon matter is self-bound (no crust), so
+        this field is accepted for interface consistency but ignored. Kept at the
+        :class:`BaseEOSConfig` default.
+    Nq : int
+        Number of quarks per strangeon (default: 18, matches the reference
+        implementation's own inference examples). Fixed model-selection choice,
+        not sampled.
+    n_points : int
+        Number of strangeon-density grid points (default: 2000, matches the
+        reference implementation).
+    """
+
+    type: Literal["strangeon"] = "strangeon"
+    Nq: int = 18
+    n_points: int = 2000
+
+
 # Discriminated union of all EOS types
 EOSConfig = Annotated[
     Union[
@@ -173,6 +268,9 @@ EOSConfig = Annotated[
         MetamodelCSEEOSConfig,
         MetamodelPeakCSEEOSConfig,
         SpectralEOSConfig,
+        RMFEOSConfig,
+        MITBagEOSConfig,
+        StrangeonEOSConfig,
     ],
     Discriminator("type"),
 ]

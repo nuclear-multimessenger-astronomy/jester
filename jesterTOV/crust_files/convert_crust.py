@@ -39,5 +39,37 @@ def convert_DH_crust(
     np.savez("./DH.npz", n=n, e=e, p=p)
 
 
+def convert_tolos_crust(source_path: str):
+    """
+    Convert CompactObject's Tolos_crust_out.txt (Tolos, Centelles & Ramos 2017 outer-crust
+    table, as bundled with CompactObject/Test_Case/Tolos_crust_out.txt) to jester's npz
+    format. Saved as Tolos.npz in the current directory.
+
+    This is the crust CompactObject's own RMF_EOS.py example notebook validates against
+    (not DH) -- use this crust when validating jester's RMF_EOS_model against
+    CompactObject's reference tables, since the RMF core parametrization and this crust
+    were fit to join smoothly together, unlike DH.
+
+    Note this table only covers the outer crust (n up to ~2.6e-4 fm^-3); CompactObject
+    bridges the remaining gap up to the RMF core's starting density with an analytic
+    polytrope expressed directly in (energy density, pressure) space with no associated
+    number density, so it cannot be ported into jester's (n, p, e) triplet format as-is.
+    Only the outer-crust table (which does have n) is converted here.
+
+    Args:
+        source_path (str): Path to Tolos_crust_out.txt (columns: n [fm^-3], Z, A,
+            energy density [g/cm^3], pressure [dyn/cm^2], adiabatic index).
+    """
+    raw = np.genfromtxt(source_path)
+    n = raw[:, 0]
+    e_g_cm_inv3 = raw[:, 3]
+    p_dyn_cm2 = raw[:, 4]
+
+    e = e_g_cm_inv3 * utils.g_cm_inv3_to_MeV_fm_inv3
+    p = p_dyn_cm2 * utils.dyn_cm2_to_MeV_fm_inv3
+
+    np.savez("./Tolos.npz", n=n, e=e, p=p)
+
+
 if __name__ == "__main__":
     convert_DH_crust()

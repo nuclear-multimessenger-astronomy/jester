@@ -8,6 +8,9 @@ from .schema import (
     MetamodelEOSConfig,
     MetamodelCSEEOSConfig,
     SpectralEOSConfig,
+    RMFEOSConfig,
+    MITBagEOSConfig,
+    StrangeonEOSConfig,
     EOSConfig,
     # TOV
     BaseTOVConfig,
@@ -49,6 +52,9 @@ __all__ = [
     "MetamodelEOSConfig",
     "MetamodelCSEEOSConfig",
     "SpectralEOSConfig",
+    "RMFEOSConfig",
+    "MITBagEOSConfig",
+    "StrangeonEOSConfig",
     "EOSConfig",
     # TOV
     "BaseTOVConfig",

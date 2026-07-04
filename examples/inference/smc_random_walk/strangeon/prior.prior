@@ -1,0 +1,7 @@
+# Strangeon matter EOS prior: two sampled parameters (epsilon, ns), ranges match
+# CompactObject's own inference example
+# (Test_Case/test_Bayesian_inference_Strangeon_EOS.ipynb). Nq=18 is fixed (not
+# sampled, see config.yaml's eos.Nq), matching that same notebook.
+
+epsilon = UniformPrior(10.0, 170.0, parameter_names=["epsilon"])   # potential well depth, MeV
+ns = UniformPrior(0.17, 0.36, parameter_names=["ns"])              # surface baryon density, fm^-3

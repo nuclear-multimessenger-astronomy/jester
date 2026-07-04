@@ -21,6 +21,9 @@ from jesterTOV.inference.config.schema import (
     MetamodelCSEEOSConfig,
     MetamodelPeakCSEEOSConfig,
     SpectralEOSConfig,
+    RMFEOSConfig,
+    MITBagEOSConfig,
+    StrangeonEOSConfig,
     BaseTOVConfig,
     GRTOVConfig,
     AnisotropyTOVConfig,
@@ -268,6 +271,36 @@ class JesterTransform(NtoMTransform):
                 n_points_high=config.n_points_high,
                 reparametrized=config.reparametrized,
                 sigma_scale=config.sigma_scale,
+            )
+
+        elif isinstance(config, RMFEOSConfig):
+            from jesterTOV.eos.rmf import RMF_EOS_model
+
+            return RMF_EOS_model(
+                crust_name=config.crust_name,
+                rho_0=config.rho_0,
+                dt=config.dt,
+                ndat_full=config.ndat_full,
+                min_core_nsat_rmf=config.min_core_nsat_rmf,
+                newton_max_steps=config.newton_max_steps,
+                root_rtol=config.root_rtol,
+                root_atol=config.root_atol,
+            )
+
+        elif isinstance(config, MITBagEOSConfig):
+            from jesterTOV.eos.mit_bag import MITBag_EOS_model
+
+            return MITBag_EOS_model(
+                n_points=config.n_points,
+                e_max_over_b=config.e_max_over_b,
+            )
+
+        elif isinstance(config, StrangeonEOSConfig):
+            from jesterTOV.eos.strangeon import StrangeonEOS_model
+
+            return StrangeonEOS_model(
+                Nq=config.Nq,
+                n_points=config.n_points,
             )
 
         else:
