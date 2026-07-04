@@ -131,4 +131,6 @@ class TestMITBagEOSModel:
         assert jnp.all(jnp.isfinite(family.masses))
         assert jnp.all(jnp.isfinite(family.radii))
         assert jnp.all(jnp.isfinite(family.lambdas))
-        assert jnp.max(family.masses) > 0.5, "should produce at least sub-solar-mass stars"
+        assert (
+            jnp.max(family.masses) > 0.5
+        ), "should produce at least sub-solar-mass stars"

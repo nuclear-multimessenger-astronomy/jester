@@ -124,7 +124,10 @@ class StrangeonEOS_model(Interpolate_EOS_model):
         n_max = 0.16 * 8.0 * 3.0 / Nq
         n = jnp.linspace(n_min, n_max, self.n_points)
 
-        e = 2.0 * epsilon * (_A12 * sigma**4 * n**5 - _A6 * sigma**2 * n**3) + n * Nq * _MQ
+        e = (
+            2.0 * epsilon * (_A12 * sigma**4 * n**5 - _A6 * sigma**2 * n**3)
+            + n * Nq * _MQ
+        )
         p = 4.0 * epsilon * (2.0 * _A12 * sigma**4 * n**5 - _A6 * sigma**2 * n**3)
 
         # Strangeon number density -> baryon number density (see module docstring).

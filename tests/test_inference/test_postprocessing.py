@@ -20,6 +20,8 @@ from jesterTOV.inference.postprocessing.postprocessing import (
     make_cs2_plot,
     make_parameter_histograms,
     _split_into_monotone_branches,
+    _get_valid_indices,
+    M_MIN,
 )
 from jesterTOV.inference.result import InferenceResult
 
@@ -517,6 +519,56 @@ class TestPlotGeneration:
         make_pressure_density_plot(data=data, prior_data=None, outdir=str(temp_dir))
         assert (temp_dir / "pressure_density_plot.pdf").exists()
         plt.close("all")
+
+
+class TestGetValidIndices:
+    """Test _get_valid_indices, in particular the M_MIN gate on the lambda check.
+
+    Regression coverage for a bug found via self-bound EOS (MIT bag/strangeon)
+    posterior samples: with min_nsat_TOV at or below the model's own surface
+    density, the lowest-pc family point is a numerically degenerate near-zero-mass
+    "star" whose tidal Love number computation is ill-conditioned and routinely
+    returns a large spurious negative lambda, even though every astrophysically
+    relevant point on the same curve is fine. That single degenerate point should
+    not invalidate the whole sample (see rmf_eos/FINDINGS.md).
+    """
+
+    def test_negative_lambda_at_degenerate_zero_mass_point_is_ignored(self):
+        """A negative lambda only at a mass below M_MIN should not invalidate the sample."""
+        n_eos_points = 10
+        masses = np.tile(np.linspace(1e-30, 2.0, n_eos_points), (1, 1))
+        radii = np.tile(np.linspace(1e-12, 12.0, n_eos_points), (1, 1))
+        lambdas = np.tile(np.linspace(100.0, 1000.0, n_eos_points), (1, 1))
+        lambdas[0, 0] = -1e19  # degenerate near-zero-mass point: spurious negative
+
+        data = {
+            "masses": masses,
+            "radii": radii,
+            "lambdas": lambdas,
+            "log_prob": np.array([-10.0]),
+        }
+
+        valid, _ = _get_valid_indices(data)
+        assert valid == [0]
+
+    def test_negative_lambda_above_m_min_is_rejected(self):
+        """A negative lambda at an astrophysically relevant mass should still invalidate the sample."""
+        n_eos_points = 10
+        masses = np.tile(np.linspace(1e-30, 2.0, n_eos_points), (1, 1))
+        radii = np.tile(np.linspace(1e-12, 12.0, n_eos_points), (1, 1))
+        lambdas = np.tile(np.linspace(100.0, 1000.0, n_eos_points), (1, 1))
+        above_m_min = np.where(masses[0] > M_MIN)[0][0]
+        lambdas[0, above_m_min] = -1.0
+
+        data = {
+            "masses": masses,
+            "radii": radii,
+            "lambdas": lambdas,
+            "log_prob": np.array([-10.0]),
+        }
+
+        valid, _ = _get_valid_indices(data)
+        assert valid == []
 
 
 class TestPlotErrorHandling:

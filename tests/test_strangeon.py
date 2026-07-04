@@ -64,7 +64,9 @@ class TestStrangeonEOSModel:
         n_min_baryon_expected = n_min_strangeon * (Nq / 3.0)
 
         assert jnp.allclose(
-            eos_data.ns[0] / utils.fm_inv3_to_geometric, n_min_baryon_expected, rtol=1e-6
+            eos_data.ns[0] / utils.fm_inv3_to_geometric,
+            n_min_baryon_expected,
+            rtol=1e-6,
         )
 
     def test_construct_eos_missing_parameter_raises(self, strangeon_params):
@@ -135,4 +137,6 @@ class TestStrangeonEOSModel:
         assert jnp.all(jnp.isfinite(family.masses))
         assert jnp.all(jnp.isfinite(family.radii))
         assert jnp.all(jnp.isfinite(family.lambdas))
-        assert jnp.max(family.masses) > 0.1, "should produce at least some finite-mass stars"
+        assert (
+            jnp.max(family.masses) > 0.1
+        ), "should produce at least some finite-mass stars"

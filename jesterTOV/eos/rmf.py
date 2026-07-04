@@ -72,11 +72,14 @@ def _safe_sqrt(x: Array) -> Array:
 def _initial_values(rho: Array, theta: Array) -> Array:
     """Analytic leading-order-in-density seed for the field equations, used only to
     initialize the sequential density continuation at its lowest density point."""
-    m_sig, m_w, m_rho, g_sigma, g_omega, g_rho, _kappa, _lambda_0, _zeta, Lambda_w = theta
+    m_sig, m_w, m_rho, g_sigma, g_omega, g_rho, _kappa, _lambda_0, _zeta, Lambda_w = (
+        theta
+    )
     sigma = g_sigma * rho / (m_sig**2)
     rho_03 = -g_rho * rho / (2.0 * (m_rho**2))
     omega = rho * (
-        ((m_w**2) / g_omega + 2.0 * Lambda_w * (g_rho * rho_03) ** 2 * g_omega) ** (-1.0)
+        ((m_w**2) / g_omega + 2.0 * Lambda_w * (g_rho * rho_03) ** 2 * g_omega)
+        ** (-1.0)
     )
     m_eff = _M_N - g_sigma * sigma
     mu_n = m_eff + g_omega * omega + g_rho * rho_03 * (-0.5)
@@ -193,12 +196,19 @@ def _energy_density_pressure(
         + lambda_0 * (g_sigma * sigma) ** 4 / 24.0
     )
     omega_terms = 0.5 * (omega * m_w) ** 2 + zeta * (g_omega * omega) ** 4 / 8.0
-    rho_terms = 0.5 * (rho_03 * m_rho) ** 2 + 3.0 * Lambda_w * (
-        g_rho * rho_03 * g_omega * omega
-    ) ** 2
+    rho_terms = (
+        0.5 * (rho_03 * m_rho) ** 2
+        + 3.0 * Lambda_w * (g_rho * rho_03 * g_omega * omega) ** 2
+    )
 
     energy_density = (
-        energy_p + energy_n + energy_le + energy_lmu + sigma_terms + omega_terms + rho_terms
+        energy_p
+        + energy_n
+        + energy_le
+        + energy_lmu
+        + sigma_terms
+        + omega_terms
+        + rho_terms
     )
     pressure = multi - energy_density
     proton_fraction = rho_Bp / rho

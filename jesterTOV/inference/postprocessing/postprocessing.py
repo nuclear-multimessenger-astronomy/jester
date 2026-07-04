@@ -113,7 +113,10 @@ HDI_PROB = 0.90  # 90% highest density interval
 M_MIN = 0.75  # [M_sun]
 M_MAX = 3.5  # [M_sun]
 R_MIN = 6.0  # [km]
-R_MAX = 18.0  # [km]
+# 20.0 (not the more typical hadronic-EOS ~15-18 km) so genuinely physical
+# self-bound quark/strangeon stars near the soft end of their prior (e.g. MIT bag at
+# low B) aren't flagged as unphysical -- those can reach ~19 km at M ~ 3 Msun.
+R_MAX = 20.0  # [km]
 
 PRIOR_DIR = "./outdir/"
 
@@ -472,8 +475,20 @@ def _get_valid_indices(data: Dict[str, Any]) -> tuple[list[int], float]:
     """Return indices of valid posterior samples and the maximum TOV mass.
 
     A sample is considered invalid if it contains NaN masses/radii/lambdas,
-    any negative lambdas, radii exceeding ``R_MAX`` for masses above ``M_MIN``,
-    or a failed n_TOV computation (value ≤ 0).
+    a negative lambda at a mass above ``M_MIN``, radii exceeding ``R_MAX`` for
+    masses above ``M_MIN``, or a failed n_TOV computation (value ≤ 0).
+
+    The ``M_MIN`` gate on the lambda check (mirroring the existing radius check)
+    matters most for self-bound EOS (e.g. MIT bag, strangeon): with ``min_nsat_TOV``
+    at or below the model's own surface density, the lowest-``pc`` point in the
+    family is a numerically degenerate near-zero-mass "star" (mass, radius ~ 1e-30),
+    for which the tidal Love number computation is ill-conditioned and routinely
+    returns a large spurious negative lambda -- despite every other point on the
+    same curve (including the astrophysically relevant ones) being perfectly fine.
+    Without the gate, that single degenerate point invalidated the *entire* curve
+    for every plot that calls this function (M-R, M-Lambda, p-n, cs2-n, ...), even
+    though only the M-R-Lambda family plots actually depend on the M-R-Lambda
+    solution at all.
 
     Parameters
     ----------
@@ -508,7 +523,7 @@ def _get_valid_indices(data: Dict[str, Any]) -> tuple[list[int], float]:
     for i in range(nb_samples):
         if any(np.isnan(m[i])) or any(np.isnan(r[i])) or any(np.isnan(l[i])):
             continue
-        if any(l[i] < 0):
+        if any((m[i] > M_MIN) * (l[i] < 0)):
             continue
         if any((m[i] > M_MIN) * (r[i] > R_MAX)):
             continue

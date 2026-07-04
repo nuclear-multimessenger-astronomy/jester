@@ -97,7 +97,9 @@ class TestRMFEOSModel:
 
     def test_construct_eos_vmap_compatible(self, rmf_params):
         model = RMF_EOS_model()
-        batch_params = {k: jnp.array([v, v * 1.01, v * 0.99]) for k, v in rmf_params.items()}
+        batch_params = {
+            k: jnp.array([v, v * 1.01, v * 0.99]) for k, v in rmf_params.items()
+        }
         construct = jax.jit(jax.vmap(model.construct_eos))
         eos_data = construct(batch_params)
         assert eos_data.ns.shape[0] == 3
@@ -116,4 +118,6 @@ class TestRMFEOSModel:
         assert jnp.all(jnp.isfinite(family.masses))
         assert jnp.all(jnp.isfinite(family.radii))
         assert jnp.all(jnp.isfinite(family.lambdas))
-        assert jnp.max(family.masses) > 0.5, "should produce at least sub-solar-mass stars"
+        assert (
+            jnp.max(family.masses) > 0.5
+        ), "should produce at least sub-solar-mass stars"
