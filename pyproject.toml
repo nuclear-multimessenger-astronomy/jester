@@ -140,7 +140,10 @@ order-by-type = false
 [tool.pyright]
 reportIncompatibleMethodOverride = true
 include = ["jesterTOV"]
-exclude = ["jesterTOV/tabulated_eos/generate_lalsuite_eos.py"]
+exclude = [
+    "jesterTOV/tabulated_eos/generate_lalsuite_eos.py",
+    "jesterTOV/crust_files/convert_nucleardatapy_crusts.py",
+]
 
 # pyproject.toml
 [tool.pytest.ini_options]
