@@ -1822,7 +1822,9 @@ def generate_eos_reweighting_plots(
     no NEP/CSE parameter posterior, density/pressure/cs2 profile, or TOV
     central-density diagnostic — so only the mass-radius/mass-Lambda plots and
     the :math:`M_{\\rm{TOV}}`/:math:`R_{1.4}`/:math:`\\Lambda_{1.4}` histograms
-    are produced (no cornerplot, pressure-density, cs2, or contours).
+    are produced (no cornerplot, pressure-density, cs2, or contours). If
+    ``injection_eos_path`` is given, a mass-Lambda ratio plot comparing the
+    posterior to the injected EOS is also produced.
 
     Parameters
     ----------
@@ -1875,6 +1877,15 @@ def generate_eos_reweighting_plots(
     except Exception as e:
         logger.error(f"Failed to create mass-Lambda plot: {e}")
         logger.warning("Continuing with other plots...")
+
+    if injection_data is not None:
+        try:
+            make_mass_lambda_ratio_plot(
+                data, figures_dir, injection_data, plot_format=plot_format
+            )
+        except Exception as e:
+            logger.error(f"Failed to create mass-Lambda ratio plot: {e}")
+            logger.warning("Continuing with other plots...")
 
     try:
         make_parameter_histograms(
