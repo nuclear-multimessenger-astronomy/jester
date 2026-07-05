@@ -37,10 +37,6 @@
       ~SMCRandomWalkSamplerConfig.schema_json
       ~SMCRandomWalkSamplerConfig.update_forward_refs
       ~SMCRandomWalkSamplerConfig.validate
-      ~SMCRandomWalkSamplerConfig.validate_base_positive
-      ~SMCRandomWalkSamplerConfig.validate_fraction
-      ~SMCRandomWalkSamplerConfig.validate_positive
-      ~SMCRandomWalkSamplerConfig.validate_positive_float
    
    
 

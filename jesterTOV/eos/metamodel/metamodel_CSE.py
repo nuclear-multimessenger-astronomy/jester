@@ -175,8 +175,11 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
 
         # Re-interpolate to a fixed-size array up to nbreak
         # This maintains JAX compatibility while allowing variable nbreak
-        n_metamodel = jnp.linspace(
-            n_metamodel_full[0], nbreak, self.ndat_metamodel, endpoint=True
+        n_metamodel = jnp.logspace(
+            jnp.log10(n_metamodel_full[0]),
+            jnp.log10(nbreak),
+            self.ndat_metamodel,
+            endpoint=True,
         )
         p_metamodel = jnp.interp(n_metamodel, n_metamodel_full, p_metamodel_full)
         e_metamodel = jnp.interp(n_metamodel, n_metamodel_full, e_metamodel_full)
@@ -221,7 +224,7 @@ class MetaModel_with_CSE_EOS_model(Interpolate_EOS_model):
             dloge_dlogps=dloge_dlogps,
             cs2=cs2,
             mu=mu,
-            extra_constraints=None,
+            extra_constraints=mm_output.extra_constraints,
         )
 
     def get_required_parameters(self) -> list[str]:

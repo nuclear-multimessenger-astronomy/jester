@@ -37,7 +37,6 @@
       ~BaseSamplerConfig.schema_json
       ~BaseSamplerConfig.update_forward_refs
       ~BaseSamplerConfig.validate
-      ~BaseSamplerConfig.validate_base_positive
    
    
 

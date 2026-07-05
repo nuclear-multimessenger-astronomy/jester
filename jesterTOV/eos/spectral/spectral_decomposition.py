@@ -226,11 +226,6 @@ class SpectralDecomposition_EOS_model(Interpolate_EOS_model):
             f"Initialized SpectralDecomposition_EOS_model with crust={crust_name}, "
             f"n_points={n_points_high}"
         )
-        if reparametrized:
-            logger.warning(
-                "Spectral EOS reparametrization is experimental. "
-                "Results should be carefully verified against the original parametrization."
-            )
 
         # Convert reference pressure to MeV fm⁻³ for internal use
         self.p0_nuclear = self.p0_geom / utils.MeV_fm_inv3_to_geometric

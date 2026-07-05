@@ -4,6 +4,8 @@ This file provides guidance to Claude Code when working with the JESTER reposito
 
 ## IMPORTANT GUIDELINES
 
+**Contributing guide**: `CONTRIBUTING.md` at the repo root is the authoritative reference for development workflow, PR requirements, and how to add new EOS models, TOV solvers, and likelihoods. Always consult it when working on new features or before opening a PR.
+
 **Testing Philosophy**: When tests fail, investigate root causes rather than modifying tests to pass.
 
 **Examples**: In the examples, you will sometimes find `submit.sh` files for submitting the tests on a cluster. These might have hardcoded paths etc, but ignore those: these files are just intended as an example and they should not be judged so rigourously as the source code.
@@ -13,6 +15,8 @@ This file provides guidance to Claude Code when working with the JESTER reposito
 **Documentation Style**: Write clear, concise documentation in full sentences as if by a human researcher. Avoid LLM-like verbosity.
 
 **Documentation Maintenance**: When making changes to source code (adding/removing/renaming classes, functions, or modules), check if API reference documentation needs updating. Module overview pages in `docs/api/` should list all public classes/functions. See `docs/CLAUDE.md` for detailed documentation guidelines. In case a major refactoring is done, changing the layout of the repo, then we have to check the API references automatic docs building is up to date.
+
+**Sphinx warnings are errors**: CI runs `sphinx-build -W --keep-going`, which turns every Sphinx warning into a build failure that blocks merging. After any documentation or docstring change, always verify locally with `uv run sphinx-build -W --keep-going docs docs/_build/html` before committing. Common pitfalls: unexpected indentation in docstrings (e.g. a `:` followed by a more-indented line), inline bracket-wrapped lists in return descriptions, and missing or malformed cross-references.
 
 **Math Formatting in Docstrings**: All mathematical expressions in docstrings must use Sphinx/reStructuredText formatting for proper rendering in documentation:
 - Use `:math:` role for inline math: `:math:`\Gamma(x)`
@@ -25,6 +29,8 @@ This file provides guidance to Claude Code when working with the JESTER reposito
 **GitHub Issue Comments**: When posting comments on GitHub issues, always identify as "Claude" or "Claude Code" to make it clear the comment is AI-generated. Never post as if you were the human user. This maintains transparency about AI contributions to the project.
 
 **Backwards compatibility**: There has not been a release yet, so don't worry about breaking changes for now. Focus on code quality, testing, and documentation over supporting legacy APIs!
+
+**Postprocessing plots**: Every `make_*` plot call in `generate_all_plots` (`jesterTOV/inference/postprocessing/postprocessing.py`) must be wrapped in a `try/except Exception` block so that a missing LaTeX installation or any other rendering failure does not abort the full postprocessing run. See `jesterTOV/inference/CLAUDE.md` for the required pattern. LaTeX availability is checked with `shutil.which("latex")` in `setup_matplotlib` and TeX rendering is disabled globally when it is absent.
 
 **Extending JESTER**: When users mention working on adding new components, refer them to the relevant developer guide:
 - **Adding a new EOS model**: See `docs/developer_guide/adding_new_eos.md` for complete checklist (EOS class, schema updates, factory registration, tests, documentation)
@@ -146,7 +152,7 @@ value = array.item()  # type: ignore[union-attr]
      - Nuclear empirical parameter (NEP) based EOS
      - Reference: Margueron et al. (PRD 103, 045803, 2021)
      - Required parameters: 9 NEPs (E_sat, K_sat, Q_sat, Z_sat, E_sym, L_sym, K_sym, Q_sym, Z_sym)
-     - Combines realistic crust (BPS, DH, DH_fixed, SLy) with core meta-model
+     - Combines realistic crust (BPS, DH, SLy) with core meta-model
   2. **MetaModel_with_CSE_EOS_model** (`eos/metamodel/metamodel_CSE.py`)
      - MetaModel with Crust-core-Saturation Extension
      - Parameters: 9 NEPs + nbreak + nb_CSE grid parameters (typically 4-8)
@@ -302,11 +308,18 @@ uv run pytest tests/
 
 **CI/CD Configuration**:
 - **Regular CI** (`.github/workflows/ci.yml`): Runs on every PR, skips `@slow` tests
-- **Nightly CI** (`.github/workflows/nightly.yml`): Runs daily at 2 AM UTC, includes all E2E tests
+- **Nightly CI** (`.github/workflows/nightly.yml`): Runs daily at 2 AM UTC, includes all E2E tests and executes all Jupyter notebooks under `docs/examples/` (via `notebooks` job)
+
+**Jupyter Notebooks** (`docs/examples/`):
+- All `docs/examples/**/*.ipynb` notebooks are executed nightly by the `notebooks` CI job
+- They also render into the documentation website via `nbsphinx`
+- Add new notebooks here to showcase basic functionality; they are picked up automatically
+- See `CONTRIBUTING.md` → "Jupyter Notebooks" for the full workflow
 
 **CI/CD Test Dependencies**:
 - LaTeX packages (texlive-latex-base, texlive-latex-extra, dvipng, cm-super) for matplotlib plotting tests
 - IPython (added to `[tests]` dependencies) required by fastprogress (BlackJAX transitive dependency)
+- `pandoc` installed in the `notebooks` CI job (required by `nbsphinx`/`nbconvert`)
 
 ## Code Quality Standards
 
@@ -325,7 +338,7 @@ uv run sphinx-build -W --keep-going docs docs/_build/html
 
 ## Type Hinting Standards
 
-**All new code MUST include comprehensive type hints.**
+**All new code MUST include comprehensive type hints.** Tests are the exception — type hints are encouraged there but not strictly enforced, since test code prioritizes readability and fixture flexibility over strict typing.
 
 ```python
 # Standard library types (Python 3.10+ syntax)
@@ -359,8 +372,7 @@ jesterTOV/inference/
 ├── config/                      # YAML parsing, Pydantic validation
 │   ├── schema.py                # Thin aggregator: InferenceConfig + re-exports
 │   ├── schemas/                 # Domain-specific config sub-modules (eos, tov, likelihoods, samplers)
-│   ├── parser.py                # YAML loading functions
-│   └── generate_yaml_reference.py  # Auto-generate documentation
+│   └── parser.py                # YAML loading functions
 ├── priors/                      # Prior specification system
 │   └── parser.py                # Parse .prior files (bilby-style Python)
 ├── flows/                       # Normalizing flow utilities for GW likelihoods

@@ -144,7 +144,7 @@ def realistic_nep_stiff():
     """Realistic stiff EOS NEP parameters for testing (should produce ~2 Msun NS)."""
     return {
         "E_sat": -16.0,
-        "K_sat": 240.0,  # Stiff
+        "K_sat": 300.0,  # Stiff
         "Q_sat": 0.0,
         "Z_sat": 0.0,
         "E_sym": 32.0,

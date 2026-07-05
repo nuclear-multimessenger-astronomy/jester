@@ -1,7 +1,9 @@
 """Tests for inference likelihood system (base, factory, specific likelihoods)."""
 
 import pytest
+import jax
 import jax.numpy as jnp
+from unittest.mock import MagicMock, patch
 
 from jesterTOV.inference.config import schema
 from jesterTOV.inference.likelihoods import factory
@@ -9,6 +11,7 @@ from jesterTOV.inference.likelihoods.combined import ZeroLikelihood, CombinedLik
 from jesterTOV.inference.likelihoods.constraints import (
     ConstraintEOSLikelihood,
     ConstraintTOVLikelihood,
+    ConstraintEsymLikelihood,
     ConstraintGammaLikelihood,
     check_tov_validity,
     check_causality_violation,
@@ -319,6 +322,129 @@ class TestConstraintGammaLikelihood:
         assert result == 0.0
 
 
+class TestConstraintEsymLikelihood:
+    """Test ConstraintEsymLikelihood (symmetry energy constraint for metamodel EOS)."""
+
+    def test_constraint_esym_likelihood_valid(self):
+        """Returns 0.0 when no esym violations."""
+        likelihood = ConstraintEsymLikelihood()
+        params = {"n_esym_violations": 0.0}
+        result = likelihood.evaluate(params)
+        assert float(result) == 0.0
+
+    def test_constraint_esym_likelihood_with_violations(self):
+        """Penalty is proportional to number of violation points."""
+        likelihood = ConstraintEsymLikelihood(penalty_esym=-1e10)
+        params = {"n_esym_violations": 5.0}
+        result = likelihood.evaluate(params)
+        assert float(result) == -5e10
+
+    def test_constraint_esym_likelihood_missing_key(self):
+        """Missing key defaults to 0 → 0.0 log-likelihood."""
+        likelihood = ConstraintEsymLikelihood()
+        result = likelihood.evaluate({})
+        assert float(result) == 0.0
+
+    def test_constraint_esym_likelihood_non_metamodel_params(self):
+        """No n_esym_violations key (non-metamodel transform) → returns 0.0."""
+        likelihood = ConstraintEsymLikelihood()
+        params = {
+            "masses_EOS": jnp.array([1.4, 2.0]),
+            "radii_EOS": jnp.array([12.0, 11.0]),
+        }
+        result = likelihood.evaluate(params)
+        assert float(result) == 0.0
+
+    def test_metamodel_good_params_zero_violations(self):
+        """MetaModel with typical NEPs stores zero esym violations in extra_constraints."""
+        from jesterTOV.eos.metamodel.base import MetaModel_EOS_model
+
+        eos = MetaModel_EOS_model()
+        params = {
+            "E_sat": -16.0,
+            "K_sat": 230.0,
+            "Q_sat": 300.0,
+            "Z_sat": -500.0,
+            "E_sym": 32.0,
+            "L_sym": 60.0,
+            "K_sym": -100.0,
+            "Q_sym": 0.0,
+            "Z_sym": 0.0,
+        }
+        eos_data = eos.construct_eos(params)
+        assert eos_data.extra_constraints is not None
+        assert "n_esym_violations" in eos_data.extra_constraints
+        assert float(eos_data.extra_constraints["n_esym_violations"]) == 0.0
+
+    def test_metamodel_bad_params_nonzero_violations(self):
+        """MetaModel with pathological NEPs (very negative L_sym) gives esym < 0."""
+        from jesterTOV.eos.metamodel.base import MetaModel_EOS_model
+
+        eos = MetaModel_EOS_model()
+        params = {
+            "E_sat": -16.0,
+            "K_sat": 230.0,
+            "Q_sat": 300.0,
+            "Z_sat": -500.0,
+            "E_sym": 5.0,
+            "L_sym": -200.0,
+            "K_sym": -400.0,
+            "Q_sym": 0.0,
+            "Z_sym": 0.0,
+        }
+        eos_data = eos.construct_eos(params)
+        assert eos_data.extra_constraints is not None
+        assert float(eos_data.extra_constraints["n_esym_violations"]) > 0.0
+
+    def test_metamodel_cse_propagates_violations(self):
+        """MetaModel+CSE propagates esym violations from the inner metamodel."""
+        from jesterTOV.eos.metamodel.metamodel_CSE import MetaModel_with_CSE_EOS_model
+
+        eos = MetaModel_with_CSE_EOS_model(nb_CSE=4)
+        good_params = {
+            "E_sat": -16.0,
+            "K_sat": 230.0,
+            "Q_sat": 300.0,
+            "Z_sat": -500.0,
+            "E_sym": 32.0,
+            "L_sym": 60.0,
+            "K_sym": -100.0,
+            "Q_sym": 0.0,
+            "Z_sym": 0.0,
+            "nbreak": 0.24,
+        }
+        for i in range(4):
+            good_params[f"n_CSE_{i}_u"] = (i + 1) / 5.0
+            good_params[f"cs2_CSE_{i}"] = 0.3
+        good_params["cs2_CSE_4"] = 0.3
+
+        eos_data = eos.construct_eos(good_params)
+        assert eos_data.extra_constraints is not None
+        assert "n_esym_violations" in eos_data.extra_constraints
+        assert float(eos_data.extra_constraints["n_esym_violations"]) == 0.0
+
+    def test_full_pipeline_likelihood_evaluates(self):
+        """ConstraintEsymLikelihood evaluates correctly on metamodel extra_constraints."""
+        from jesterTOV.eos.metamodel.base import MetaModel_EOS_model
+
+        eos = MetaModel_EOS_model()
+        bad_params = {
+            "E_sat": -16.0,
+            "K_sat": 230.0,
+            "Q_sat": 300.0,
+            "Z_sat": -500.0,
+            "E_sym": 5.0,
+            "L_sym": -200.0,
+            "K_sym": -400.0,
+            "Q_sym": 0.0,
+            "Z_sym": 0.0,
+        }
+        eos_data = eos.construct_eos(bad_params)
+        likelihood = ConstraintEsymLikelihood(penalty_esym=-1e10)
+        logL = likelihood.evaluate(eos_data.extra_constraints)  # type: ignore[arg-type]
+        assert float(logL) < -1e8
+
+
 class TestConstraintTOVLikelihood:
     """Test ConstraintTOVLikelihood (TOV-level constraints only)."""
 
@@ -495,6 +621,16 @@ class TestLikelihoodFactory:
 
         assert isinstance(likelihood, ConstraintTOVLikelihood)
         assert likelihood.penalty_tov == -1e10
+
+    def test_create_constraint_esym_likelihood(self):
+        """Test creating ConstraintEsymLikelihood via factory."""
+        config = schema.EsymConstraintsLikelihoodConfig(
+            enabled=True,
+            penalty_esym=-1e10,
+        )
+        likelihood = factory.create_likelihood(config)
+        assert isinstance(likelihood, ConstraintEsymLikelihood)
+        assert likelihood.penalty_esym == -1e10
 
     def test_create_constraint_gamma_likelihood(self):
         """Test creating ConstraintGammaLikelihood via factory."""
@@ -820,3 +956,194 @@ class TestLikelihoodIntegration:
         result = combined.evaluate(params)
         # Should sum both penalties
         assert result == -2e10
+
+
+def _make_mock_flow() -> MagicMock:
+    """Create a mock Flow with realistic sample/log_prob behaviour."""
+    flow = MagicMock()
+    # sample returns (N, 2) array of (mass, radius) pairs
+    flow.sample.side_effect = lambda k, shape: jax.random.uniform(
+        k,
+        shape=(*shape, 2),
+        minval=jnp.array([1.0, 10.0]),
+        maxval=jnp.array([2.5, 14.0]),
+    )
+    # log_prob returns a scalar
+    flow.log_prob.return_value = jnp.array(-2.5)
+    return flow
+
+
+class TestNICERLikelihoodGroups:
+    """Tests that NICERLikelihood handles one or both analysis groups correctly."""
+
+    def _make_params(self) -> dict:
+        masses = jnp.linspace(1.0, 2.5, 50)
+        radii = jnp.linspace(13.0, 11.0, 50)
+        return {"masses_EOS": masses, "radii_EOS": radii}
+
+    def test_raises_when_neither_group_provided(self):
+        """NICERLikelihood must raise if both model dirs are None."""
+        from jesterTOV.inference.likelihoods.nicer import NICERLikelihood
+
+        with pytest.raises(ValueError, match="At least one"):
+            NICERLikelihood("J0437", amsterdam_model_dir=None, maryland_model_dir=None)
+
+    def test_amsterdam_only_initialization(self):
+        """Amsterdam-only: flow is loaded and masses are pre-sampled."""
+        from jesterTOV.inference.likelihoods.nicer import NICERLikelihood
+
+        mock_flow = _make_mock_flow()
+
+        with patch(
+            "jesterTOV.inference.flows.flow.Flow.from_directory", return_value=mock_flow
+        ):
+            likelihood = NICERLikelihood(
+                "J0437",
+                amsterdam_model_dir="/fake/amsterdam",
+                maryland_model_dir=None,
+                N_masses_evaluation=10,
+                seed=42,
+            )
+
+        assert likelihood.amsterdam_flow is mock_flow
+        assert likelihood.maryland_flow is None
+        assert likelihood.amsterdam_fixed_mass_samples is not None
+        assert likelihood.maryland_fixed_mass_samples is None
+        assert likelihood.amsterdam_fixed_mass_samples.shape == (10,)
+
+    def test_maryland_only_initialization(self):
+        """Maryland-only: flow is loaded and masses are pre-sampled."""
+        from jesterTOV.inference.likelihoods.nicer import NICERLikelihood
+
+        mock_flow = _make_mock_flow()
+
+        with patch(
+            "jesterTOV.inference.flows.flow.Flow.from_directory", return_value=mock_flow
+        ):
+            likelihood = NICERLikelihood(
+                "J0614",
+                amsterdam_model_dir=None,
+                maryland_model_dir="/fake/maryland",
+                N_masses_evaluation=10,
+                seed=42,
+            )
+
+        assert likelihood.amsterdam_flow is None
+        assert likelihood.maryland_flow is mock_flow
+        assert likelihood.amsterdam_fixed_mass_samples is None
+        assert likelihood.maryland_fixed_mass_samples is not None
+        assert likelihood.maryland_fixed_mass_samples.shape == (10,)
+
+    def test_both_groups_initialization(self):
+        """Both groups: both flows are loaded and masses pre-sampled."""
+        from jesterTOV.inference.likelihoods.nicer import NICERLikelihood
+
+        mock_amsterdam = _make_mock_flow()
+        mock_maryland = _make_mock_flow()
+
+        with patch(
+            "jesterTOV.inference.flows.flow.Flow.from_directory",
+            side_effect=[mock_amsterdam, mock_maryland],
+        ):
+            likelihood = NICERLikelihood(
+                "J0030",
+                amsterdam_model_dir="/fake/amsterdam",
+                maryland_model_dir="/fake/maryland",
+                N_masses_evaluation=10,
+                seed=42,
+            )
+
+        assert likelihood.amsterdam_flow is mock_amsterdam
+        assert likelihood.maryland_flow is mock_maryland
+        assert likelihood.amsterdam_fixed_mass_samples is not None
+        assert likelihood.maryland_fixed_mass_samples is not None
+
+    def test_amsterdam_only_evaluate_returns_finite(self):
+        """Amsterdam-only evaluate returns a finite log-likelihood."""
+        from jesterTOV.inference.likelihoods.nicer import NICERLikelihood
+
+        mock_flow = _make_mock_flow()
+
+        with patch(
+            "jesterTOV.inference.flows.flow.Flow.from_directory", return_value=mock_flow
+        ):
+            likelihood = NICERLikelihood(
+                "J0437",
+                amsterdam_model_dir="/fake/amsterdam",
+                maryland_model_dir=None,
+                N_masses_evaluation=10,
+                N_masses_batch_size=5,
+                seed=42,
+            )
+
+        result = likelihood.evaluate(self._make_params())
+
+        assert jnp.isfinite(result), f"Expected finite log-likelihood, got {result}"
+
+    def test_maryland_only_evaluate_returns_finite(self):
+        """Maryland-only evaluate returns a finite log-likelihood."""
+        from jesterTOV.inference.likelihoods.nicer import NICERLikelihood
+
+        mock_flow = _make_mock_flow()
+
+        with patch(
+            "jesterTOV.inference.flows.flow.Flow.from_directory", return_value=mock_flow
+        ):
+            likelihood = NICERLikelihood(
+                "J0614",
+                amsterdam_model_dir=None,
+                maryland_model_dir="/fake/maryland",
+                N_masses_evaluation=10,
+                N_masses_batch_size=5,
+                seed=42,
+            )
+
+        result = likelihood.evaluate(self._make_params())
+
+        assert jnp.isfinite(result), f"Expected finite log-likelihood, got {result}"
+
+    def test_single_group_equals_that_group_logL(self):
+        """Single-group result equals the per-group log-mean (no averaging dilution)."""
+        from jesterTOV.inference.likelihoods.nicer import NICERLikelihood
+
+        mock_amsterdam = _make_mock_flow()
+        mock_maryland = _make_mock_flow()
+
+        with patch(
+            "jesterTOV.inference.flows.flow.Flow.from_directory",
+            side_effect=[mock_amsterdam],
+        ):
+            lhood_amsterdam_only = NICERLikelihood(
+                "J0030",
+                amsterdam_model_dir="/fake/amsterdam",
+                maryland_model_dir=None,
+                N_masses_evaluation=10,
+                N_masses_batch_size=5,
+                seed=42,
+            )
+
+        with patch(
+            "jesterTOV.inference.flows.flow.Flow.from_directory",
+            side_effect=[mock_amsterdam, mock_maryland],
+        ):
+            lhood_both = NICERLikelihood(
+                "J0030",
+                amsterdam_model_dir="/fake/amsterdam",
+                maryland_model_dir="/fake/maryland",
+                N_masses_evaluation=10,
+                N_masses_batch_size=5,
+                seed=42,
+            )
+
+        params = self._make_params()
+        result_single = lhood_amsterdam_only.evaluate(params)
+        result_both = lhood_both.evaluate(params)
+
+        # With a constant mock log_prob=-2.5, single-group result == both-groups result
+        # because logsumexp([x, x]) - log(2) == x
+        assert jnp.isfinite(result_single)
+        assert jnp.isfinite(result_both)
+        assert jnp.allclose(result_single, result_both, atol=1e-5), (
+            f"Single-group ({result_single:.4f}) != both-groups ({result_both:.4f}) "
+            "for constant mock log_prob"
+        )

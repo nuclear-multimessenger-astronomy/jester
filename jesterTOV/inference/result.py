@@ -13,14 +13,18 @@ import h5py
 import numpy as np
 from jaxtyping import Array
 
-from .config.schema import InferenceConfig
-from .samplers.jester_sampler import JesterSampler
+from .config.schema import EOSReweightingInferenceConfig, InferenceConfig
+from .samplers.jester_sampler import JesterSampler, SamplerOutput
 from jesterTOV.logging_config import get_logger
 
 logger = get_logger("jester")
 
 SamplerType = Literal[
-    "flowmc", "blackjax_smc_rw", "blackjax_smc_nuts", "blackjax_ns_aw"
+    "flowmc",
+    "blackjax_smc_rw",
+    "blackjax_smc_nuts",
+    "blackjax_ns_aw",
+    "eos_reweighting",
 ]
 
 
@@ -289,6 +293,66 @@ class InferenceResult:
             fixed_params=fixed_params,
         )
 
+    @classmethod
+    def from_eos_reweighting(
+        cls,
+        output: "SamplerOutput",
+        config: EOSReweightingInferenceConfig,
+        runtime: float,
+    ) -> "InferenceResult":
+        """Create InferenceResult from an EOS reweighting run.
+
+        Parameters
+        ----------
+        output : SamplerOutput
+            Output from :class:`~jesterTOV.inference.samplers.EOSReweightingSampler`.
+        config : EOSReweightingInferenceConfig
+            Configuration used for the run.
+        runtime : float
+            Wall-clock runtime in seconds.
+
+        Returns
+        -------
+        InferenceResult
+        """
+        posterior: dict[str, np.ndarray] = {}
+        for key, value in output.samples.items():
+            posterior[key] = np.array(value)
+        posterior["log_prob"] = np.array(output.log_prob)
+
+        config_dict = config.model_dump()
+        config_json = json.dumps(config_dict, indent=2)
+
+        n_resampled = int(output.metadata.get("N_resampled", 0))
+
+        # Flatten evidence scalars as individual metadata keys so they survive
+        # the HDF5 attribute serialisation (dicts are not supported as attrs).
+        # posterior_weights is already stored in posterior["posterior_weight"];
+        # the resampled equal-weight posterior curves are stored in
+        # posterior["masses_EOS"]/"Lambdas_EOS"/"radii_EOS" (see
+        # EOSReweightingSampler.sample and resample_eos_posterior).
+        ev = output.metadata.get("evidence", {})
+        metadata: dict[str, Any] = {
+            "sampler": "eos_reweighting",
+            "sampling_time": float(runtime),
+            "n_samples": n_resampled,
+            "n_eos": int(output.metadata.get("N_eos", 0)),
+            "n_resampled": n_resampled,
+            "seed": int(config.seed),
+            "creation_timestamp": datetime.now().isoformat(),
+            "config_json": config_json,
+            "log_Z": float(ev.get("log_Z", float("nan"))),
+            "log_Z_std": float(ev.get("log_Z_std", float("nan"))),
+            "N_eff": float(ev.get("N_eff", float("nan"))),
+            "N_eff_fraction": float(ev.get("N_eff_fraction", float("nan"))),
+        }
+
+        return cls(
+            sampler_type="eos_reweighting",
+            posterior=posterior,
+            metadata=metadata,
+        )
+
     def add_derived_eos(self, eos_dict: Dict[str, Array]) -> None:
         """Add derived EOS quantities to posterior.
 
@@ -380,6 +444,7 @@ class InferenceResult:
             "p",
             "e",
             "cs2",
+            "n_TOV",
         }
         param_samples = {
             k: v for k, v in self.posterior.items() if k not in exclude_keys
@@ -422,7 +487,16 @@ class InferenceResult:
 
         # Add transformed outputs to posterior (EOS quantities only, not input parameters)
         # Filter out input parameters from transformed_samples to avoid overwriting full posterior arrays
-        eos_keys = {"masses_EOS", "radii_EOS", "Lambdas_EOS", "n", "p", "e", "cs2"}
+        eos_keys = {
+            "masses_EOS",
+            "radii_EOS",
+            "Lambdas_EOS",
+            "n",
+            "p",
+            "e",
+            "cs2",
+            "n_TOV",
+        }
         eos_only = {k: v for k, v in transformed_samples.items() if k in eos_keys}
         self.add_derived_eos(eos_only)
 
@@ -498,6 +572,7 @@ class InferenceResult:
                 "p",
                 "e",
                 "cs2",
+                "n_TOV",
             }
             sampler_specific_keys = {"weights", "ess", "logL", "logL_birth"}
 
@@ -750,6 +825,19 @@ class InferenceResult:
                 f"  Evidence: log(Z) = {self.metadata.get('logZ', 0):.2f} ± {self.metadata.get('logZ_err', 0):.2f}"
             )
 
+        elif self.sampler_type == "eos_reweighting":
+            lines.append("\nEOS Reweighting:")
+            lines.append(f"  N_EOS: {self.metadata.get('n_eos', '?')}")
+            log_Z = self.metadata.get("log_Z", float("nan"))
+            log_Z_std = self.metadata.get("log_Z_std", float("nan"))
+            N_eff = self.metadata.get("N_eff", float("nan"))
+            N_eff_frac = self.metadata.get("N_eff_fraction", float("nan"))
+            lines.append(f"  log Z = {log_Z:.3f} ± {log_Z_std:.3f}")
+            lines.append(f"  N_eff = {N_eff:.1f}  ({N_eff_frac * 100:.1f}%)")
+            lines.append(
+                f"  Resampled posterior draws: {self.metadata.get('n_resampled', '?')}"
+            )
+
         # Posterior info
         # Extract parameter keys (excluding special fields)
         param_keys = [
@@ -765,6 +853,7 @@ class InferenceResult:
                 "p",
                 "e",
                 "cs2",
+                "n_TOV",
                 "_sampler_specific",
             }
         ]

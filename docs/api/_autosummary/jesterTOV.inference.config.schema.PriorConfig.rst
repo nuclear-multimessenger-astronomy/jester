@@ -37,7 +37,6 @@
       ~PriorConfig.schema_json
       ~PriorConfig.update_forward_refs
       ~PriorConfig.validate
-      ~PriorConfig.validate_file_extension
    
    
 

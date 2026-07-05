@@ -492,6 +492,12 @@ class BlackjaxSMCSampler(BlackjaxSampler):
         assert self._weights is not None
         ess = jnp.sum(self._weights) ** 2 / jnp.sum(self._weights**2)
 
+        # Resample to uniform weights so saved particles are i.i.d. posterior draws.
+        key, resample_key = jax.random.split(key)
+        resample_idx = systematic(resample_key, self._weights, self.config.n_particles)
+        self._particles_flat = self._particles_flat[resample_idx]
+        self._weights = jnp.ones(self.config.n_particles) / self.config.n_particles
+
         # Compute summary statistics
         mean_ess = float(jnp.mean(ess_history[:steps]))
         min_ess = float(jnp.min(ess_history[:steps]))

@@ -9,6 +9,7 @@ from jesterTOV.eos.base import Interpolate_EOS_model
 from jesterTOV.eos.metamodel import (
     MetaModel_EOS_model,
     MetaModel_with_CSE_EOS_model,
+    MetaModel_with_peakCSE_EOS_model,
 )
 from jesterTOV.eos.spectral import SpectralDecomposition_EOS_model
 from jesterTOV.tov.base import TOVSolverBase
@@ -18,6 +19,7 @@ from jesterTOV.inference.config.schema import (
     BaseEOSConfig,
     MetamodelEOSConfig,
     MetamodelCSEEOSConfig,
+    MetamodelPeakCSEEOSConfig,
     SpectralEOSConfig,
     BaseTOVConfig,
     GRTOVConfig,
@@ -249,6 +251,17 @@ class JesterTransform(NtoMTransform):
                 crust_name=config.crust_name,
             )
 
+        elif isinstance(config, MetamodelPeakCSEEOSConfig):
+            return MetaModel_with_peakCSE_EOS_model(
+                nsat=0.16,
+                nmin_MM_nsat=config.nmin_MM_nsat,
+                nmax_nsat=config.nmax_nsat,
+                max_nbreak_nsat=max_nbreak_nsat,
+                ndat_metamodel=config.ndat_metamodel,
+                ndat_CSE=config.ndat_CSE,
+                crust_name=config.crust_name,
+            )
+
         elif isinstance(config, SpectralEOSConfig):
             return SpectralDecomposition_EOS_model(
                 crust_name=config.crust_name,
@@ -372,6 +385,11 @@ class JesterTransform(NtoMTransform):
             cs2=eos_data.cs2,
             extra_constraints=eos_data.extra_constraints,
         )
+
+        # n_TOV: maximum density inside a NS, reached at MTOV.
+        pc_TOV = jnp.power(10.0, family_data.log10pcs[-1])
+        n_TOV = jnp.interp(pc_TOV, eos_data.ps, eos_data.ns)
+        result["n_TOV"] = jnp.nan_to_num(n_TOV, nan=0.0, posinf=0.0, neginf=0.0)
 
         return result
 

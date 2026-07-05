@@ -52,3 +52,10 @@ dl.py.class {
 .component-grid a {
   text-decoration: none;
 }
+
+.math {
+    text-align: left;
+}
+.eqno {
+    float: right;
+}

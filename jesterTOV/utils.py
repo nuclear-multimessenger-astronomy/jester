@@ -80,41 +80,45 @@ roots_vmap = vmap(partial(jnp.roots, strip_zeros=False), in_axes=0, out_axes=0)
 def cubic_root_for_proton_fraction(coefficients):
     r"""Solve cubic equation for proton fraction in beta-equilibrium.
 
-    This function solves the cubic equation that arises from the
-    beta-equilibrium condition in neutron star matter using Cardano's
-    formula for exact analytical solution. The cubic equation has the
-    form ax^3 + bx^2 + cx + d = 0, where the coefficients are related
-    to the symmetry energy and electron chemical potential.
+    Solves :math:`ay^3 + by^2 + cy + d = 0` for the real root
+    :math:`y = x_p^{1/3}` that satisfies :math:`y \in (0, 1)`.
 
-    This function is vectorized to handle multiple coefficient sets
-    simultaneously for different densities.
+    Uses the Numerical Recipes A,B branch (§5.6, Press et al.) which avoids
+    complex arithmetic. When :math:`E_{\rm sym} > 0` (i.e. :math:`a > 0`),
+    the discriminant :math:`D = R^2 - Q^3 > 0` is guaranteed, so the
+    three-root Viète branch is provably unreachable and omitted.
+
+    When :math:`a \le 0` (unphysical :math:`E_{\rm sym} \le 0`), the guard
+    returns ``0.0`` for all three negative-Esym sub-regimes, including the
+    large-negative-Esym case where the previous Cardano implementation
+    returned a spurious root near :math:`y = 1`.
 
     Args:
-        coefficients: Array of cubic polynomial coefficients [a, b, c, d]
+        coefficients: Array of cubic polynomial coefficients ``[a, b, c, d]``.
 
     Returns:
-        Array of three roots of the cubic equation (may be complex)
+        Real root :math:`y = x_p^{1/3}`, or ``0.0`` when no physical root
+        exists (:math:`E_{\rm sym} \le 0`).
     """
     a, b, c, d = coefficients
 
-    # Cardano's formula implementation
-    f = ((3.0 * c / a) - ((b**2) / (a**2))) / 3.0
-    g = (((2.0 * (b**3)) / (a**3)) - ((9.0 * b * c) / (a**2)) + (27.0 * d / a)) / 27.0
-    g_squared = g**2
-    f_cubed = f**3
-    h = g_squared / 4.0 + f_cubed / 27.0
+    # Monic form: y^3 + a y^2 + b y + c = 0
+    a_nr = b / a  # = 0 for our b=0 cubic
+    b_nr = c / a  # = p = c/a
+    c_nr = d / a  # = q = d/a
 
-    R = -(g / 2.0) + jnp.sqrt(h)
-    S = jnp.cbrt(R)
-    T = -(g / 2.0) - jnp.sqrt(h)
-    U = jnp.cbrt(T)
+    # Convert to the expression for numerical recipes (NR) from Press et al.:
+    # NR Q, R  (for b=0: Q = -p/3, R = q/2)
+    Q = (a_nr**2 - 3.0 * b_nr) / 9.0
+    R = (2.0 * a_nr**3 - 9.0 * a_nr * b_nr + 27.0 * c_nr) / 54.0
 
-    # Three roots of the cubic equation
-    x1 = (S + U) - (b / (3.0 * a))
-    x2 = -(S + U) / 2 - (b / (3.0 * a)) + (S - U) * jnp.sqrt(3.0) * 0.5j
-    x3 = -(S + U) / 2 - (b / (3.0 * a)) - (S - U) * jnp.sqrt(3.0) * 0.5j
+    # A, B formula  (D = R^2 - Q^3 > 0 guaranteed when a > 0)
+    inner = jnp.maximum(R**2 - Q**3, 0.0)  # clamp against floating-point noise
+    A = -jnp.sign(R) * jnp.cbrt(jnp.abs(R) + jnp.sqrt(inner))
+    B = jnp.where(A != 0.0, Q / A, 0.0)
+    root = (A + B) - a_nr / 3.0  # type: ignore[operator]
 
-    return jnp.array([x1, x2, x3])
+    return jnp.where(a > 0.0, root, 0.0)
 
 
 def cumtrapz(y, x):

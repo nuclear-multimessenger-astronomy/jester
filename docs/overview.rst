@@ -1,3 +1,5 @@
+:orphan:
+
 Welcome to JESTER! This guide introduces the core concepts and components of the library.
 
 Overview
@@ -23,30 +25,30 @@ Nested sampling: Implemented in blackjax in this specific fork
 
 flowMC (GitHub): Normalizing flow-enhanced MCMC sampling
 
-**Equation of State (EOS) Models**
+**Equation of state (EOS) models**
    Overview of EOS parametrizations available in JESTER.
 
    :doc:`overview/eos`
 
-**TOV Solvers**
+**TOV solvers**
    Introduction to Tolman-Oppenheimer-Volkoff equation solvers.
 
    :doc:`overview/tov_solvers`
+
+**Likelihood constraints**
+   Observational constraints from multi-messenger astronomy.
+
+   :doc:`overview/likelihoods`
 
 **Samplers**
    Bayesian sampling methods for EOS inference.
 
    :doc:`overview/samplers`
 
-**Likelihood Constraints**
-   Observational constraints from multi-messenger astronomy.
-
-   :doc:`overview/likelihoods`
-
 .. toctree::
    :hidden:
 
    overview/eos
    overview/tov_solvers
-   overview/samplers
    overview/likelihoods
+   overview/samplers

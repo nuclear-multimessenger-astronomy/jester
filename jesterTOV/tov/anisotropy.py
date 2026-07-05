@@ -1,14 +1,15 @@
 r"""
-Post-TOV equation solver with beyond-GR corrections.
+TOV solver with phenomenological pressure anisotropy corrections.
 
-This module extends the standard TOV equations to include phenomenological
-modifications that parameterize deviations from General Relativity. The
-modifications are implemented through additional sigma terms in the pressure
-gradient equation.
+This module extends the standard TOV equations to include phenomenological pressure
+anisotropy, parametrized through three independently switchable correction terms.
+The three models are reviewed in Rahmansyah et al., Eur. Phys. J. C 80, 769 (2020):
+
+- Bowers & Liang, Astrophys. J. 188, 657 (1974)
+- Horvat, Ilijic & Marunovic, Class. Quantum Grav. 28, 025009 (2011)
+- Cosenza, Herrera, Esculpi & Witten, J. Math. Phys. 22, 118 (1981)
 
 **Units:** All calculations are performed in geometric units where :math:`G = c = 1`.
-
-**Reference:** Yagi & Yunes, Phys. Rev. D 88, 023009 (2013)
 """
 
 import jax
@@ -20,7 +21,7 @@ from jesterTOV.tov.base import TOVSolverBase
 from jesterTOV.tov.data_classes import EOSData, TOVSolution
 
 
-def _sigma_func(p, e, m, r, lambda_BL, lambda_DY, lambda_HB, gamma, alpha, beta):
+def _sigma_func(p, e, m, r, lambda_BL, lambda_DY, lambda_HB):
     r"""
     Compute the non-GR correction term sigma for post-TOV equations.
 
@@ -28,12 +29,12 @@ def _sigma_func(p, e, m, r, lambda_BL, lambda_DY, lambda_HB, gamma, alpha, beta)
     General Relativity that appear as additional terms in the TOV equations.
     The corrections are parameterized by several coupling constants.
 
-    The sigma function includes:
+    The sigma function includes three independently parametrized models, reviewed in
+    Rahmansyah et al. (2020), Eqs. (12)–(14):
 
-    - **Bowers-and-Liang**: :math:`\sigma_{\mathrm{BL}} = -\frac{\lambda_{\mathrm{BL}}\epsilon^2 r^2}{3}\left(1 + \frac{3p}{\epsilon}\right)\frac{\left(1 + \frac{p}{\epsilon}\right)}{\left(1 - \frac{2M}{r}\right)}`
-    - **Horvat et al.**: :math:`\sigma_{\mathrm{DY}} = \lambda_{\mathrm{DY}} \frac{2m}{r} p`
-    - **Cosenza et al.**: :math:`\sigma_{\mathrm{HB}} = -(\frac{1}{\lambda_{\mathrm{HB}}} - 1) \frac{r}{2} \frac{dp}{dr}`
-    - **Post-Newtonian**: :math:`\sigma_{\mathrm{PN}} = \gamma \frac{2m}{r} p \tanh(\alpha(\frac{m}{r} - \beta))`
+    - **Bowers & Liang** (1974): :math:`\sigma_{\mathrm{BL}} = -\frac{\lambda_{\mathrm{BL}}\varepsilon^2 r^2}{3}\left(1 + \frac{3p}{\varepsilon}\right)\frac{\left(1 + \frac{p}{\varepsilon}\right)}{\left(1 - \frac{2m}{r}\right)}`
+    - **Horvat et al.** (2011): :math:`\sigma_{\mathrm{DY}} = \lambda_{\mathrm{DY}} \frac{2m}{r} p`
+    - **Cosenza et al.** (1981): :math:`\sigma_{\mathrm{HB}} = -\!\left(\frac{1}{\lambda_{\mathrm{HB}}} - 1\right) \frac{r}{2} \frac{dp}{dr}`
 
     Parameters
     ----------
@@ -46,17 +47,11 @@ def _sigma_func(p, e, m, r, lambda_BL, lambda_DY, lambda_HB, gamma, alpha, beta)
     r : float
         Current radius
     lambda_BL : float
-        Bowers-Liang coupling parameter
+        Bowers-Liang coupling parameter (Bowers & Liang 1974)
     lambda_DY : float
-        Doneva-Yazadjiev coupling parameter
+        Horvat et al. coupling parameter (Horvat, Ilijic & Marunovic 2011)
     lambda_HB : float
-        Herrera-Barreto coupling parameter
-    gamma : float
-        Post-Newtonian amplitude parameter
-    alpha : float
-        Post-Newtonian steepness parameter
-    beta : float
-        Post-Newtonian transition point parameter
+        Cosenza et al. coupling parameter (Cosenza et al. 1981)
 
     Returns
     -------
@@ -67,13 +62,10 @@ def _sigma_func(p, e, m, r, lambda_BL, lambda_DY, lambda_HB, gamma, alpha, beta)
     A = 1.0 / (1.0 - 2.0 * m / r)
     dpdr = -(e + p) * (m + 4.0 * jnp.pi * r * r * r * p) / r / r * A
     sigma = 0.0
-    # models reviewed in https://doi.org/10.1140/epjc/s10052-020-8361-4
-    # in Eq. 12, the power of epsilon should be 2
+    # Rahmansyah et al. (2020) Eqs. (12)–(14); note Eq. 12 has epsilon^2 (not epsilon^1)
     sigma += -lambda_BL * r * r / 3.0 * (e + 3.0 * p) * (e + p) * A
     sigma += lambda_DY * 2.0 * m / r * p
     sigma += -(1.0 / lambda_HB - 1.0) * r / 2.0 * dpdr
-    # post-Newtonian modification
-    sigma += gamma * 2.0 * m / r * p * jnp.tanh(alpha * (m / r - beta))
     return sigma
 
 
@@ -117,9 +109,6 @@ def _tov_ode(h, y, eos):
         eos["lambda_BL"],
         eos["lambda_DY"],
         eos["lambda_HB"],
-        eos["gamma"],
-        eos["alpha"],
-        eos["beta"],
     )
     dsigmadp_fn = jax.grad(_sigma_func, argnums=0)  # Gradient w.r.t. p
     dsigmade_fn = jax.grad(_sigma_func, argnums=1)  # Gradient w.r.t. e
@@ -131,9 +120,6 @@ def _tov_ode(h, y, eos):
         eos["lambda_BL"],
         eos["lambda_DY"],
         eos["lambda_HB"],
-        eos["gamma"],
-        eos["alpha"],
-        eos["beta"],
     )
     dsigmadp += dedp * dsigmade_fn(
         p,
@@ -143,9 +129,6 @@ def _tov_ode(h, y, eos):
         eos["lambda_BL"],
         eos["lambda_DY"],
         eos["lambda_HB"],
-        eos["gamma"],
-        eos["alpha"],
-        eos["beta"],
     )
 
     A = 1.0 / (1.0 - 2.0 * m / r)
@@ -231,11 +214,12 @@ class AnisotropyTOVSolver(TOVSolverBase):
     .. math::
         \\frac{dp}{dr} = -\\frac{[\\varepsilon(r) + p(r)][m(r) + 4\\pi r^3 p(r)]}{r[r - 2m(r)]} - \\frac{2\\sigma(r)}{r}
 
-    The sigma function includes:
-        - Bowers-and-Liang corrections (lambda_BL)
-        - Horvat et al. corrections (lambda_DY)
-        - Cosenza et al. corrections (lambda_HB)
-        - Post-Newtonian corrections (gamma, alpha, beta)
+    The sigma function includes three independently parametrized models
+    (Rahmansyah et al. 2020, Eqs. 12–14):
+
+        - Bowers & Liang 1974 (lambda_BL)
+        - Horvat, Ilijic & Marunovic 2011 (lambda_DY)
+        - Cosenza et al. 1981 (lambda_HB)
     """
 
     def solve(
@@ -266,9 +250,6 @@ class AnisotropyTOVSolver(TOVSolverBase):
         lambda_BL = tov_params["lambda_BL"]
         lambda_DY = tov_params["lambda_DY"]
         lambda_HB = tov_params["lambda_HB"]
-        gamma = tov_params["gamma"]
-        alpha = tov_params["alpha"]
-        beta = tov_params["beta"]
 
         # Convert EOSData to dictionary for ODE solver
         eos_dict = {
@@ -280,9 +261,6 @@ class AnisotropyTOVSolver(TOVSolverBase):
             "lambda_BL": lambda_BL,
             "lambda_DY": lambda_DY,
             "lambda_HB": lambda_HB,
-            "gamma": gamma,
-            "alpha": alpha,
-            "beta": beta,
         }
 
         # Extract EOS arrays
@@ -335,9 +313,12 @@ class AnisotropyTOVSolver(TOVSolverBase):
 
     def get_required_parameters(self) -> list[str]:
         """
-        Post-TOV requires 6 additional theory parameters.
+        Anisotropy solver requires 3 additional coupling parameters.
 
         Returns:
-            list[str]: ["lambda_BL", "lambda_DY", "lambda_HB", "gamma", "alpha", "beta"]
+            list[str]: ["lambda_BL", "lambda_DY", "lambda_HB"] corresponding to
+                the Bowers-Liang, Horvat et al., and Cosenza et al. models.
+                Set to ``0.0``, ``0.0``, and ``1.0`` respectively to recover
+                the standard isotropic GR equations.
         """
-        return ["lambda_BL", "lambda_DY", "lambda_HB", "gamma", "alpha", "beta"]
+        return ["lambda_BL", "lambda_DY", "lambda_HB"]

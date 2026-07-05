@@ -4,6 +4,7 @@ from typing import Literal, Union, Annotated
 from pydantic import field_validator, ConfigDict, Discriminator
 
 from ._base import JesterBaseModel
+from jesterTOV.eos.crust import Crust
 
 
 class BaseEOSConfig(JesterBaseModel):
@@ -11,13 +12,25 @@ class BaseEOSConfig(JesterBaseModel):
 
     Attributes
     ----------
-    crust_name : Literal["DH", "BPS", "DH_fixed", "SLy"]
-        Name of crust model to use (default: "DH")
+    crust_name : str
+        Name of crust model to use (default: "DH"). Must match one of the
+        ``.npz`` files available in ``jesterTOV/crust_files`` (see
+        :meth:`Crust.list_available`).
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    crust_name: Literal["DH", "BPS", "DH_fixed", "SLy"] = "DH"
+    crust_name: str = "DH"
+
+    @field_validator("crust_name")
+    @classmethod
+    def _validate_crust_name(cls, v: str) -> str:
+        available = Crust.list_available()
+        if v not in available:
+            raise ValueError(
+                f"crust_name '{v}' not found. Available crusts: {sorted(available)}"
+            )
+        return v
 
 
 class BaseMetamodelEOSConfig(BaseEOSConfig):
@@ -59,8 +72,7 @@ class MetamodelEOSConfig(BaseMetamodelEOSConfig):
 
     @field_validator("nb_CSE")
     @classmethod
-    def validate_nb_cse(cls, v: int) -> int:
-        """Validate that nb_CSE is 0 for standard metamodel."""
+    def _validate_nb_cse(cls, v: int) -> int:
         if v != 0:
             raise ValueError(
                 "nb_CSE must be 0 for type='metamodel'. "
@@ -94,14 +106,33 @@ class MetamodelCSEEOSConfig(BaseMetamodelEOSConfig):
 
     @field_validator("nb_CSE")
     @classmethod
-    def validate_nb_cse(cls, v: int) -> int:
-        """Validate that nb_CSE is positive for metamodel_cse."""
+    def _validate_nb_cse(cls, v: int) -> int:
         if v <= 0:
             raise ValueError(
                 "nb_CSE must be > 0 for type='metamodel_cse'. "
                 "Use type='metamodel' for standard metamodel without CSE."
             )
         return v
+
+
+class MetamodelPeakCSEEOSConfig(BaseMetamodelEOSConfig):
+    """Configuration for MetaModel with peakCSE extension.
+
+    Attributes
+    ----------
+    type : Literal["metamodel_peak_cse"]
+        EOS type identifier
+    ndat_CSE : int
+        Number of density grid points for the peakCSE region (default: 100)
+    max_nbreak_nsat : float | None
+        Maximum allowed breaking density in units of nsat (default: None,
+        meaning no upper bound beyond the prior). If specified, the metamodel
+        grid is only computed up to this density, which can speed up inference.
+    """
+
+    type: Literal["metamodel_peak_cse"] = "metamodel_peak_cse"
+    ndat_CSE: int = 100
+    max_nbreak_nsat: float | None = None
 
 
 class SpectralEOSConfig(BaseEOSConfig):
@@ -139,8 +170,7 @@ class SpectralEOSConfig(BaseEOSConfig):
 
     @field_validator("nb_CSE")
     @classmethod
-    def validate_nb_cse(cls, v: int) -> int:
-        """Validate that nb_CSE is 0 for spectral."""
+    def _validate_nb_cse(cls, v: int) -> int:
         if v != 0:
             raise ValueError(
                 "nb_CSE must be 0 for type='spectral'. "
@@ -151,6 +181,11 @@ class SpectralEOSConfig(BaseEOSConfig):
 
 # Discriminated union of all EOS types
 EOSConfig = Annotated[
-    Union[MetamodelEOSConfig, MetamodelCSEEOSConfig, SpectralEOSConfig],
+    Union[
+        MetamodelEOSConfig,
+        MetamodelCSEEOSConfig,
+        MetamodelPeakCSEEOSConfig,
+        SpectralEOSConfig,
+    ],
     Discriminator("type"),
 ]

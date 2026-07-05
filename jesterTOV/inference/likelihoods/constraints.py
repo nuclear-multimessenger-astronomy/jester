@@ -368,6 +368,72 @@ class ConstraintGammaLikelihood(LikelihoodBase):
         return penalty_gamma
 
 
+class ConstraintEsymLikelihood(LikelihoodBase):
+    """
+    Symmetry energy constraint likelihood for metamodel EOS.
+
+    This likelihood penalises configurations where the symmetry energy
+    :math:`e_{\\rm sym}(n)` computed by the metamodel goes negative.
+    A negative symmetry energy implies pure neutron matter is more bound
+    than symmetric nuclear matter, which is unphysical.
+
+    The metamodel transform must add the violation count to its output dictionary:
+
+    - ``n_esym_violations``: number of density grid points where :math:`e_{\\rm sym} < 0`
+
+    Parameters
+    ----------
+    penalty_esym : float, optional
+        Log-likelihood penalty per violation point (default: -1e10).
+
+    Examples
+    --------
+    .. code-block:: yaml
+
+        - type: "constraints_esym"
+          enabled: true
+          penalty_esym: -1.0e10
+
+    Notes
+    -----
+    Only relevant for metamodel, metamodel+CSE, and metamodel+peakCSE EOS
+    parametrisations.  For other EOS types (spectral, piecewise polytrope) the
+    ``n_esym_violations`` key will not be present in the transform output, so this
+    likelihood returns 0.0 gracefully.
+
+    See Also
+    --------
+    ConstraintEOSLikelihood : General EOS-level constraints
+    ConstraintGammaLikelihood : Gamma bound constraints for spectral EOS
+    """
+
+    penalty_esym: float
+
+    def __init__(self, penalty_esym: float = -1e10) -> None:
+        super().__init__()
+        self.penalty_esym = float(penalty_esym)
+
+    def evaluate(self, params: dict[str, Float | Array]) -> Float:
+        """
+        Evaluate symmetry energy constraint log likelihood.
+
+        Returns 0.0 if :math:`e_{\\rm sym} \\geq 0` everywhere, applies penalty otherwise.
+        Uses ``jnp.where`` for JAX compatibility.
+
+        Parameters
+        ----------
+        params : dict[str, float | Array]
+            Must contain ``n_esym_violations`` from the metamodel transform.
+
+        Returns
+        -------
+        Float
+            Total penalty (0.0 if valid, large negative if :math:`e_{\\rm sym} < 0` anywhere).
+        """
+        n_esym_violations = params.get("n_esym_violations", 0.0)
+        return n_esym_violations * self.penalty_esym
+
+
 class ConstraintTOVLikelihood(LikelihoodBase):
     """
     TOV-level constraint likelihood for enforcing valid TOV integration.

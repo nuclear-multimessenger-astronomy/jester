@@ -16,13 +16,14 @@
       ~MetaModel_EOS_model.__init__
       ~MetaModel_EOS_model.compute_b
       ~MetaModel_EOS_model.compute_cs2
-      ~MetaModel_EOS_model.compute_energy
+      ~MetaModel_EOS_model.compute_energy_nucleons
       ~MetaModel_EOS_model.compute_f_1
       ~MetaModel_EOS_model.compute_f_star
       ~MetaModel_EOS_model.compute_f_star2
       ~MetaModel_EOS_model.compute_f_star3
-      ~MetaModel_EOS_model.compute_pressure
+      ~MetaModel_EOS_model.compute_pressure_nucleons
       ~MetaModel_EOS_model.compute_proton_fraction
+      ~MetaModel_EOS_model.compute_u
       ~MetaModel_EOS_model.compute_v
       ~MetaModel_EOS_model.compute_x
       ~MetaModel_EOS_model.construct_eos

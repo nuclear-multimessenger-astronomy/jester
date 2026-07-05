@@ -16,9 +16,11 @@ Schema Classes
    schema.BaseEOSConfig
    schema.MetamodelEOSConfig
    schema.MetamodelCSEEOSConfig
+   schema.MetamodelPeakCSEEOSConfig
    schema.SpectralEOSConfig
    schema.BaseTOVConfig
    schema.GRTOVConfig
+   schema.AnisotropyTOVConfig
    schema.PriorConfig
    schema.LikelihoodConfig
    schema.BaseSamplerConfig
@@ -26,7 +28,10 @@ Schema Classes
    schema.BlackJAXNSAWConfig
    schema.SMCRandomWalkSamplerConfig
    schema.SMCNUTSSamplerConfig
+   schema.EOSReweightingConfig
+   schema.EOSReweightingInferenceConfig
    schema.PostprocessingConfig
+   schemas.eos_reweighting.EOSReweightingPostprocessingConfig
 
 Parser Functions
 ----------------

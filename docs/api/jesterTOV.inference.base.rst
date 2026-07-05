@@ -15,6 +15,10 @@ Base Classes
    likelihood.LikelihoodBase
    prior.Prior
    prior.UniformPrior
+   prior.MultivariateGaussianPrior
+   prior.Fixed
    prior.CombinePrior
+   prior.SequentialTransformPrior
+   prior.LogisticDistribution
    transform.NtoMTransform
    transform.BijectiveTransform

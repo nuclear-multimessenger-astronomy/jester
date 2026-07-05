@@ -6,6 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - You do not know everything about samplers. Instead of just doing something that "seems right", please ask more information about samplers and best practices. We can provide src code. *Better to ask for help than to make wrong assumptions and write sloppy code!*
 - **blackjax**: For this, the src code is available at `/Users/Woute029/Documents/Code/projects/jester_review/blackjax`: use this to understand how to properly use blackjax samplers and best practices!
+- **Postprocessing plot functions**: Every `make_*` plot function call in `generate_all_plots` (in `postprocessing/postprocessing.py`) **must** be wrapped in a `try/except Exception` block that logs the error and continues. This ensures a missing LaTeX installation or any other rendering failure does not abort the entire postprocessing run. The pattern is:
+  ```python
+  try:
+      make_my_plot(...)
+  except Exception as e:
+      logger.error(f"Failed to create my plot: {e}")
+      logger.warning("Continuing with other plots...")
+  ```
 
 ## Module Overview
 
@@ -47,10 +55,9 @@ When a user asks to change a default value (e.g. `penalty_value`), update **all*
 
 1. **`likelihoods/<name>.py`** — `__init__` signature default(s) and docstring(s)
 2. **`config/schemas/likelihoods.py`** — `Field(default=...)` and any docstring YAML example
-3. **`config/generate_yaml_reference.py`** — hardcoded `"example"` and `"default"` strings for the affected likelihood type(s); the generator does **not** read Pydantic defaults automatically
-4. **`docs/inference/yaml_reference.md`** — regenerate: `uv run python -m jesterTOV.inference.config.generate_yaml_reference`
-5. **`examples/inference/**/config.yaml`** — remove or update the now-redundant explicit value
-6. **`tests/test_inference/test_config.py`** — update any assertion on the old default
+3. **`docs/inference/yaml_reference.md`** — update the relevant field entry by hand
+4. **`examples/inference/**/config.yaml`** — remove or update the now-redundant explicit value
+5. **`tests/test_inference/test_config.py`** — update any assertion on the old default
 
 The factory (`likelihoods/factory.py`) passes `config.<field>` through, so no change needed there.
 
@@ -58,7 +65,7 @@ The factory (`likelihoods/factory.py`) passes `config.<field>` through, so no ch
 - `docs/inference_index.md` - Navigation hub
 - `docs/inference_quickstart.md` - Quick start guide
 - `docs/inference.md` - Complete reference
-- `docs/inference_yaml_reference.md` - Auto-generated YAML reference
+- `docs/inference/yaml_reference.md` - Hand-maintained YAML reference
 
 Full details in `jesterTOV/inference/CLAUDE.md`
 
@@ -81,8 +88,7 @@ jesterTOV/inference/
 │       ├── tov.py       #   BaseTOVConfig + GRTOVConfig
 │       ├── likelihoods.py #  All likelihood configs (incl. GWEventConfig)
 │       └── samplers.py  #   All sampler configs
-│   ├── parser.py        # YAML loading
-│   └── generate_yaml_reference.py  # Auto-generate docs
+│   └── parser.py        # YAML loading
 ├── priors/              # Prior specification system
 │   └── parser.py        # Parse .prior files (bilby-style Python format)
 ├── flows/               # Normalizing flow utilities for GW likelihoods
@@ -185,7 +191,7 @@ Save to outdir/{result_id}.h5
      - `MetaModel_EOS_model` - Nuclear empirical parameters (9 NEPs)
        - Reference: Margueron et al. (PRD 103, 045803, 2021)
        - Required: E_sat, K_sat, Q_sat, Z_sat, E_sym, L_sym, K_sym, Q_sym, Z_sym
-       - Crust options: BPS, DH, DH_fixed, SLy
+       - Crust options: BPS, DH, SLy
      - `MetaModel_with_CSE_EOS_model` - MetaModel + crust-core-saturation extension
        - Required: 9 NEPs + nbreak + nb_CSE grid parameters (typically 4-8)
      - `SpectralDecomposition_EOS_model` - Spectral representation
@@ -363,10 +369,7 @@ Configuration files use YAML with Pydantic validation. See `examples/inference/*
 9. `GammaConstraintsLikelihoodConfig` - Spectral gamma bounds
 10. `ZeroLikelihoodConfig` - Prior-only sampling (no data)
 
-**IMPORTANT**: When modifying any file under `config/schemas/`, regenerate YAML documentation:
-```bash
-uv run python -m jesterTOV.inference.config.generate_yaml_reference
-```
+**IMPORTANT**: When modifying any file under `config/schemas/`, update `docs/inference/yaml_reference.md` by hand to keep the user documentation in sync.
 
 ### Prior Specification
 
@@ -462,10 +465,7 @@ Transforms convert between parameter spaces. Two types:
        likelihood = MyNewLikelihood(data)
    ```
 
-5. **Regenerate YAML docs**:
-   ```bash
-   uv run python -m jesterTOV.inference.config.generate_yaml_reference
-   ```
+5. **Update YAML docs**: Open `docs/inference/yaml_reference.md` and add an entry for your new likelihood type under the appropriate category.
 
 6. **Add tests** in `tests/test_inference/test_likelihoods.py`
 
@@ -515,7 +515,7 @@ Transforms convert between parameter spaces. Two types:
    ]
    ```
 
-4. **Regenerate YAML docs** and **add tests**
+4. **Update YAML docs** (`docs/inference/yaml_reference.md`) and **add tests**
 
 **No need to create new transform classes** - `JesterTransform` handles all EOS × TOV combinations automatically!
 
@@ -572,7 +572,7 @@ Transforms convert between parameter spaces. Two types:
    ]
    ```
 
-4. **Regenerate YAML docs** and **add tests**
+4. **Update YAML docs** (`docs/inference/yaml_reference.md`) and **add tests**
 
 ### Adding a New Sampler
 
@@ -581,7 +581,7 @@ Transforms convert between parameter spaces. Two types:
 3. Add to `SAMPLER_REGISTRY` in `samplers/jester_sampler.py`
 4. Add Pydantic config to `config/schema.py`
 5. Update `SamplerConfig` discriminated union
-6. Regenerate YAML docs and add tests
+6. Update `docs/inference/yaml_reference.md` and add tests
 
 ### Testing Configuration Changes
 

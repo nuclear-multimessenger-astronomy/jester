@@ -45,12 +45,36 @@ uv run pre-commit run --all-files
 # Build docs locally
 uv run sphinx-build docs docs/_build/html
 
-# Build in strict mode (same as CI)
+# Build in strict mode (same as CI) — ALWAYS run this before opening a PR
 uv run sphinx-build -W --keep-going docs docs/_build/html
 
 # Open in browser
 open docs/_build/html/index.html  # macOS
 ```
+
+One can also use `sphinx-autobuild` to automatically build the documentation on any edit, to quickly check and iterate:
+```bash
+uv run sphinx-autobuild docs docs/_build/html
+```
+
+> **Sphinx warnings are treated as errors in CI.** The `-W` flag used by the CI pipeline turns every Sphinx warning (undefined references, unexpected indentation, missing docstrings, etc.) into a hard build failure. A PR cannot be merged if the docs build fails. Always run the strict-mode build locally before pushing to catch issues early — it is much faster to fix a warning locally than to iterate on CI.
+
+> **Note — `.. plot::` directive caching:** Sphinx caches the output of `.. plot::` directives
+> and only regenerates them when the **Python script file** changes, not when any data files
+> it reads change. If you update a data file (e.g. an `.npz` posterior file) that an embedded
+> plot script reads, you must force regeneration manually:
+>
+> ```bash
+> # Clear the cached plot output for a specific page, then rebuild
+> rm -rf docs/_build/html/plot_directive/overview/likelihoods/
+> uv run sphinx-build docs docs/_build/html
+> ```
+>
+> Alternatively, touch the script file to trigger a rebuild:
+> ```bash
+> touch docs/overview/likelihoods/nicer_mr_plot.py
+> uv run sphinx-build docs docs/_build/html
+> ```
 
 ## Contributing New Features
 
@@ -109,6 +133,7 @@ All contributions must meet these requirements:
   def my_function(x: float, y: Array) -> Float[Array, "n"]:
       ...
   ```
+  Tests are the exception: type hints are welcome but not strictly enforced there.
 
 - **JAX compatibility** - Ensure the code is compatible with `JAX` operations (`jit`, `vmap`, `grad`,...) in case they get used in inference 
 
@@ -144,17 +169,27 @@ All contributions must meet these requirements:
 
 - **Docstrings** - All public functions and classes
 - **Math formatting** - Use reStructuredText `:math:` or `.. math::`
+- **Citations** - Use `sphinxcontrib.bibtex` with `:cite:` directives; the bibliography style is set to `"unsrt"` in `conf.py`, which renders numeric labels `[1]`, `[2]`, etc. Keep it that way — do not switch to `"alpha"`.
 - **User guide** - Add page to `docs/overview/` explaining the feature
 - **API reference** - Auto-generated from docstrings (check it renders correctly)
 - **Example config** - Provide working example in `examples/`
 
+### Jupyter Notebooks
+
+`docs/examples/` is the home for Jupyter notebooks that showcase basic JESTER functionality (e.g. constructing an EOS, solving the TOV equations, using automatic differentiation). These notebooks serve a dual purpose: they are rendered into the documentation website via `nbsphinx`, and they are executed every night by the CI pipeline to verify that the code they demonstrate still runs correctly.
+
+**Adding a new notebook:**
+
+1. Place it under `docs/examples/<topic>/your_notebook.ipynb`.
+2. Add it to the relevant `toctree` in `docs/examples/index.rst` (or create a new subdirectory with its own `index.rst`).
+3. Make sure all cells produce clean output when executed top-to-bottom — the nightly CI run (`notebooks` job in `.github/workflows/nightly.yml`) picks up all `docs/examples/**/*.ipynb` files automatically.
+4. Keep runtimes reasonable (a few minutes at most); the job has a 30-minute timeout.
+
+> **Notebooks are a living contract with the user.** If a refactor breaks a notebook cell, the nightly CI will catch it the same night. Keep notebooks focused on demonstrating correct, working code rather than exploring one-off experiments — those belong in `jester-review-scripts/`.
+
 **After schema changes:**
 
-The documentation page about settings for the config files is automatically generated to ensure it is up to date with the source code. For this, run:s
-```bash
-# Regenerate YAML reference
-uv run python -m jesterTOV.inference.config.generate_yaml_reference
-```
+Update `docs/inference/yaml_reference.md` by hand to reflect any new or changed fields. This file is the authoritative user-facing reference and is maintained manually.
 
 ### Configuration Integration
 
@@ -201,7 +236,7 @@ For new EOS/TOV/Likelihood features:
 ### What Reviewers (and CI/CD pipeline) Look For
 
 - All tests pass (including type checking)
-- Documentation builds without warnings
+- **Documentation builds without warnings** — Sphinx runs with `-W` in CI so any warning blocks the merge. Run `uv run sphinx-build -W --keep-going docs docs/_build/html` locally before pushing.
 - Code follows project conventions (see `CLAUDE.md`)
 - Comprehensive tests covering edge cases
 - Clear commit messages

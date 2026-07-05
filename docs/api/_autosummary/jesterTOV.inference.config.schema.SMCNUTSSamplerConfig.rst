@@ -37,10 +37,6 @@
       ~SMCNUTSSamplerConfig.schema_json
       ~SMCNUTSSamplerConfig.update_forward_refs
       ~SMCNUTSSamplerConfig.validate
-      ~SMCNUTSSamplerConfig.validate_base_positive
-      ~SMCNUTSSamplerConfig.validate_fraction
-      ~SMCNUTSSamplerConfig.validate_positive
-      ~SMCNUTSSamplerConfig.validate_positive_float
    
    
 

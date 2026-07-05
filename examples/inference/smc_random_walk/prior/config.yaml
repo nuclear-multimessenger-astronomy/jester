@@ -33,6 +33,7 @@ sampler:
   output_dir: ./outdir/
 
 postprocessing:
+  plot_format: "png"
   enabled: true
   make_cornerplot: false
   make_massradius: true

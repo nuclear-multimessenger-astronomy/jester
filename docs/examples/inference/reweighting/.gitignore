@@ -1,0 +1,8 @@
+# Zenodo HDF5 downloads (cached, ~192 MB each)
+data/*.h5
+
+# Converted NPZ EOS sets (derived from the HDF5 downloads)
+eos_sets/*.npz
+
+# Inference output
+outdir/

@@ -298,23 +298,75 @@ class TestMetaModelEOSModel:
         """Test that proton fraction stays within physical bounds."""
         model = MetaModel_EOS_model(**metamodel_params)
 
-        # Create coefficient array for symmetry energy
-        coefficient_sym = jnp.array(
+        v_sat = jnp.array(
             [
-                nep_dict["E_sym"],
-                nep_dict["L_sym"],
-                nep_dict["K_sym"],
-                nep_dict["Q_sym"],
-                nep_dict["Z_sym"],
+                nep_dict["E_sat"] + model.v_sat_0_no_NEP,
+                0.0 + model.v_sat_1_no_NEP,
+                nep_dict["K_sat"] + model.v_sat_2_no_NEP,
+                nep_dict["Q_sat"] + model.v_sat_3_no_NEP,
+                nep_dict["Z_sat"] + model.v_sat_4_no_NEP,
+            ]
+        )
+        v_sym2 = jnp.array(
+            [
+                nep_dict["E_sym"] + model.v_sym2_0_no_NEP,
+                nep_dict["L_sym"] + model.v_sym2_1_no_NEP,
+                nep_dict["K_sym"] + model.v_sym2_2_no_NEP,
+                nep_dict["Q_sym"] + model.v_sym2_3_no_NEP,
+                nep_dict["Z_sym"] + model.v_sym2_4_no_NEP,
             ]
         )
 
         n_test = jnp.linspace(0.2, 1.0, 10)  # Test range of densities
-        yp = model.compute_proton_fraction(coefficient_sym, n_test)
+        yp = model.compute_proton_fraction(v_sat, v_sym2, n_test)
 
         # Proton fraction should be between 0 and 0.5 for neutron star matter
         assert jnp.all(yp >= 0.0)
         assert jnp.all(yp <= 0.5)
+
+    def test_metamodel_proton_fraction_large_negative_esym(self, metamodel_params):
+        """Proton fraction is 0 when Esym turns large-negative at high density.
+
+        When |Esym| > c/4 (≈ 140 MeV at n ≈ 0.79 fm⁻³) the discriminant D > 0
+        but the cubic has no root in (0, 1).  The old complex Cardano formula
+        returned a spurious value near xp = 1 in this regime; the NR A,B-only
+        solver must return 0 via the ``a > 0`` guard.
+
+        Reference: script 10 in internal-jester-review/proton_fraction/cardano/.
+        """
+        model = MetaModel_EOS_model(**metamodel_params)
+
+        # NEP set that drives Esym to ≈ −140 MeV at n ≈ 0.79 fm⁻³
+        # (K_sym and Z_sym at extreme ends of prior; matches script 09/10 cases)
+        E_sym, L_sym, K_sym, Q_sym, Z_sym = 36.5, 60.0, -400.0, -1000.0, -2000.0
+        v_sat = jnp.array(
+            [
+                -16.0 + model.v_sat_0_no_NEP,
+                0.0 + model.v_sat_1_no_NEP,
+                230.0 + model.v_sat_2_no_NEP,
+                -300.0 + model.v_sat_3_no_NEP,
+                800.0 + model.v_sat_4_no_NEP,
+            ]
+        )
+        v_sym2 = jnp.array(
+            [
+                E_sym + model.v_sym2_0_no_NEP,
+                L_sym + model.v_sym2_1_no_NEP,
+                K_sym + model.v_sym2_2_no_NEP,
+                Q_sym + model.v_sym2_3_no_NEP,
+                Z_sym + model.v_sym2_4_no_NEP,
+            ]
+        )
+
+        n_test = jnp.linspace(0.08, 5 * 0.16, 200)
+        xp = model.compute_proton_fraction(v_sat, v_sym2, n_test)
+
+        assert jnp.all(jnp.isfinite(xp)), "NaN/Inf in proton fraction output"
+        assert jnp.all(xp >= 0.0), "Negative proton fraction detected"
+        assert jnp.all(xp <= 0.5), (
+            f"Proton fraction exceeds 0.5; max={float(xp.max()):.4f}. "
+            "This indicates the spurious-root bug was not fixed."
+        )
 
 
 class TestMetaModelWithCSEEOSModel:
@@ -448,9 +500,9 @@ class TestMetaModelIntegration:
 
 
 # Test fixtures and parameterized tests
-@pytest.mark.parametrize("crust_name", ["DH", "BPS"])
+@pytest.mark.parametrize("crust_name", Crust.list_available())
 def test_all_available_crusts(crust_name):
-    """Test that all available crust files can be loaded."""
+    """Test that every crust file shipped in jesterTOV/crust_files can be loaded."""
     crust = Crust(crust_name)
 
     assert len(crust) > 10

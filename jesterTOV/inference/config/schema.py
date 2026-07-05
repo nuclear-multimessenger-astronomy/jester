@@ -1,12 +1,7 @@
 r"""Pydantic models for inference configuration validation.
 
-IMPORTANT: When you modify these schemas, regenerate the YAML reference documentation:
-
-    uv run python -m jesterTOV.inference.config.generate_yaml_reference
-
-TODO: make this automatic in CI/CD, so this note can be removed and user is not burdened with it
-
-This ensures the user documentation stays in sync with the actual validation rules.
+When you modify these schemas, update ``docs/inference/yaml_reference.md`` by hand to
+keep the user documentation in sync with the actual validation rules.
 
 Schema organisation
 -------------------
@@ -21,6 +16,8 @@ This module assembles them into the top-level :class:`InferenceConfig` and re-ex
 every name so that existing imports (``from .schema import ...``) continue to work.
 """
 
+from typing import Literal
+
 from pydantic import Field, field_validator, ConfigDict
 
 from .schemas._base import JesterBaseModel
@@ -31,6 +28,7 @@ from .schemas.eos import (
     BaseMetamodelEOSConfig,
     MetamodelEOSConfig,
     MetamodelCSEEOSConfig,
+    MetamodelPeakCSEEOSConfig,
     SpectralEOSConfig,
     EOSConfig,
 )
@@ -55,6 +53,7 @@ from .schemas.likelihoods import (
     ChiEFTLikelihoodConfig,
     EOSConstraintsLikelihoodConfig,
     TOVConstraintsLikelihoodConfig,
+    EsymConstraintsLikelihoodConfig,
     GammaConstraintsLikelihoodConfig,
     DeprecatedConstraintsLikelihoodConfig,
     REXLikelihoodConfig,
@@ -70,7 +69,14 @@ from .schemas.samplers import (
     BlackJAXNSAWConfig,
     SMCRandomWalkSamplerConfig,
     SMCNUTSSamplerConfig,
+    EOSReweightingConfig,
     SamplerConfig,
+)
+
+# EOS reweighting inference config (no transform/prior sections)
+from .schemas.eos_reweighting import (
+    EOSReweightingInferenceConfig,
+    EOSReweightingPostprocessingConfig,
 )
 
 
@@ -94,8 +100,7 @@ class PriorConfig(JesterBaseModel):
 
     @field_validator("specification_file")
     @classmethod
-    def validate_file_extension(cls, v: str) -> str:
-        """Validate that specification file has .prior extension."""
+    def _validate_file_extension(cls, v: str) -> str:
         if not v.endswith(".prior"):
             raise ValueError(
                 f"Prior specification file must have .prior extension, got: {v}"
@@ -127,6 +132,10 @@ class PostprocessingConfig(JesterBaseModel):
         Generate parameter histograms (default: True)
     make_cs2 : bool
         Generate cs2-density plot (default: True)
+    make_contours : bool
+        Generate radii and pressure credible-interval contour plots (default: False)
+    plot_format : {"pdf", "png"}
+        Output file format for all plots (default: "pdf")
     prior_dir : str | None
         Directory containing prior samples for comparison (default: None)
     injection_eos_path : str | None
@@ -151,6 +160,8 @@ class PostprocessingConfig(JesterBaseModel):
     make_pressuredensity: bool = True
     make_histograms: bool = True
     make_cs2: bool = True
+    make_contours: bool = False
+    plot_format: Literal["pdf", "png"] = "pdf"
     prior_dir: str | None = None
     injection_eos_path: str | None = None
 
@@ -208,16 +219,14 @@ class InferenceConfig(JesterBaseModel):
 
     @field_validator("likelihoods")
     @classmethod
-    def validate_likelihoods(cls, v: list[LikelihoodConfig]) -> list[LikelihoodConfig]:
-        """Validate that at least one likelihood is enabled."""
+    def _validate_likelihoods(cls, v: list[LikelihoodConfig]) -> list[LikelihoodConfig]:
         if not any(lk.enabled for lk in v):
             raise ValueError("At least one likelihood must be enabled")
         return v
 
     @field_validator("seed")
     @classmethod
-    def validate_seed(cls, v: int) -> int:
-        """Validate that seed is non-negative."""
+    def _validate_seed(cls, v: int) -> int:
         if v < 0:
             raise ValueError(f"Seed must be non-negative, got: {v}")
         return v
@@ -229,6 +238,7 @@ __all__ = [
     "BaseMetamodelEOSConfig",
     "MetamodelEOSConfig",
     "MetamodelCSEEOSConfig",
+    "MetamodelPeakCSEEOSConfig",
     "SpectralEOSConfig",
     "EOSConfig",
     # TOV
@@ -247,6 +257,7 @@ __all__ = [
     "ChiEFTLikelihoodConfig",
     "EOSConstraintsLikelihoodConfig",
     "TOVConstraintsLikelihoodConfig",
+    "EsymConstraintsLikelihoodConfig",
     "GammaConstraintsLikelihoodConfig",
     "DeprecatedConstraintsLikelihoodConfig",
     "REXLikelihoodConfig",
@@ -259,9 +270,12 @@ __all__ = [
     "BlackJAXNSAWConfig",
     "SMCRandomWalkSamplerConfig",
     "SMCNUTSSamplerConfig",
+    "EOSReweightingConfig",
     "SamplerConfig",
     # Other
     "PriorConfig",
     "PostprocessingConfig",
     "InferenceConfig",
+    "EOSReweightingInferenceConfig",
+    "EOSReweightingPostprocessingConfig",
 ]

@@ -37,7 +37,6 @@
       ~SpectralEOSConfig.schema_json
       ~SpectralEOSConfig.update_forward_refs
       ~SpectralEOSConfig.validate
-      ~SpectralEOSConfig.validate_nb_cse
    
    
 

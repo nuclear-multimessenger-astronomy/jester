@@ -9,8 +9,8 @@ sys.path.insert(0, str(Path("..").resolve()))
 project = "JESTER"
 copyright = "2026, jesterTOV developers"
 author = "jesterTOV developers"
-release = "0.2.0"
-version = "0.2.0"
+release = "0.2.2"
+version = "0.2.2"
 
 # -- General configuration ---------------------------------------------------
 extensions = [
@@ -21,13 +21,18 @@ extensions = [
     "sphinx.ext.viewcode",
     "sphinx.ext.intersphinx",
     "sphinx.ext.githubpages",
+    "matplotlib.sphinxext.plot_directive",
     "myst_parser",
     "nbsphinx",
     "sphinx_copybutton",
     "sphinx_autodoc_typehints",
     "sphinxcontrib.mermaid",
     "sphinx_design",
+    "sphinxcontrib.bibtex",
 ]
+
+bibtex_bibfiles = ["references.bib"]
+bibtex_default_style = "unsrt"
 
 templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "CLAUDE.md"]
@@ -75,6 +80,7 @@ autodoc_default_options = {
     "members": True,
     "undoc-members": True,
     "show-inheritance": True,
+    "exclude-members": "model_config,model_post_init",
 }
 
 # Mock imports for optional dependencies that may not be available during docs build
@@ -125,6 +131,9 @@ suppress_warnings = [
     "ref.python",  # Suppress ambiguous python cross-reference warnings
     "sphinx_autodoc_typehints.forward_reference",  # Suppress forward reference warnings
     "sphinx_autodoc_typehints.guarded_import",  # Suppress guarded import warnings
+    "bibtex.duplicate_label",  # Per-page bibliographies share keys across pages; labels are correct
+    "bibtex.duplicate_citation",  # Same citation key cited across multiple pages with shared bibliography filter
+    "bibtex.missing_field",  # arXiv preprints legitimately lack journal fields
 ]
 
 # -- Nitpicky mode configuration ---------------------------------------------

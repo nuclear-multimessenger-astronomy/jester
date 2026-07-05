@@ -37,7 +37,6 @@
       ~MetamodelEOSConfig.schema_json
       ~MetamodelEOSConfig.update_forward_refs
       ~MetamodelEOSConfig.validate
-      ~MetamodelEOSConfig.validate_nb_cse
    
    
 

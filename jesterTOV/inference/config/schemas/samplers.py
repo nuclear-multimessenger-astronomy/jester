@@ -31,8 +31,7 @@ class BaseSamplerConfig(JesterBaseModel):
 
     @field_validator("n_eos_samples", "log_prob_batch_size")
     @classmethod
-    def validate_base_positive(cls, v: int) -> int:
-        """Validate that value is positive."""
+    def _validate_base_positive(cls, v: int) -> int:
         if v <= 0:
             raise ValueError(f"Value must be positive, got: {v}")
         return v
@@ -91,16 +90,14 @@ class FlowMCSamplerConfig(BaseSamplerConfig):
         "output_thinning",
     )
     @classmethod
-    def validate_positive(cls, v: int) -> int:
-        """Validate that value is positive."""
+    def _validate_positive(cls, v: int) -> int:
         if v <= 0:
             raise ValueError(f"Value must be positive, got: {v}")
         return v
 
     @field_validator("learning_rate")
     @classmethod
-    def validate_positive_float(cls, v: float) -> float:
-        """Validate that learning rate is positive."""
+    def _validate_positive_float(cls, v: float) -> float:
         if v <= 0:
             raise ValueError(f"Value must be positive, got: {v}")
         return v
@@ -141,16 +138,14 @@ class BlackJAXNSAWConfig(BaseSamplerConfig):
 
     @field_validator("n_delete_frac")
     @classmethod
-    def validate_delete_frac(cls, v: float) -> float:
-        """Validate that deletion fraction is in (0, 1]."""
+    def _validate_delete_frac(cls, v: float) -> float:
         if v <= 0 or v > 1:
             raise ValueError(f"n_delete_frac must be in (0, 1], got: {v}")
         return v
 
     @field_validator("n_live", "n_target", "max_mcmc", "max_proposals")
     @classmethod
-    def validate_positive(cls, v: int) -> int:
-        """Validate that value is positive."""
+    def _validate_positive(cls, v: int) -> int:
         if v <= 0:
             raise ValueError(f"Value must be positive, got: {v}")
         return v
@@ -183,24 +178,21 @@ class SMCRandomWalkSamplerConfig(BaseSamplerConfig):
 
     @field_validator("n_particles", "n_mcmc_steps")
     @classmethod
-    def validate_positive(cls, v: int) -> int:
-        """Validate that value is positive."""
+    def _validate_positive(cls, v: int) -> int:
         if v <= 0:
             raise ValueError(f"Value must be positive, got: {v}")
         return v
 
     @field_validator("target_ess")
     @classmethod
-    def validate_fraction(cls, v: float) -> float:
-        """Validate that value is in (0, 1]."""
+    def _validate_fraction(cls, v: float) -> float:
         if v <= 0 or v > 1:
             raise ValueError(f"Value must be in (0, 1], got: {v}")
         return v
 
     @field_validator("random_walk_sigma")
     @classmethod
-    def validate_positive_float(cls, v: float) -> float:
-        """Validate that value is positive."""
+    def _validate_positive_float(cls, v: float) -> float:
         if v <= 0:
             raise ValueError(f"Value must be positive, got: {v}")
         return v
@@ -245,26 +237,94 @@ class SMCNUTSSamplerConfig(BaseSamplerConfig):
 
     @field_validator("n_particles", "n_mcmc_steps")
     @classmethod
-    def validate_positive(cls, v: int) -> int:
-        """Validate that value is positive."""
+    def _validate_positive(cls, v: int) -> int:
         if v <= 0:
             raise ValueError(f"Value must be positive, got: {v}")
         return v
 
     @field_validator("target_ess", "target_acceptance", "adaptation_rate")
     @classmethod
-    def validate_fraction(cls, v: float) -> float:
-        """Validate that value is in (0, 1]."""
+    def _validate_fraction(cls, v: float) -> float:
         if v <= 0 or v > 1:
             raise ValueError(f"Value must be in (0, 1], got: {v}")
         return v
 
     @field_validator("init_step_size", "mass_matrix_base")
     @classmethod
-    def validate_positive_float(cls, v: float) -> float:
-        """Validate that value is positive."""
+    def _validate_positive_float(cls, v: float) -> float:
         if v <= 0:
             raise ValueError(f"Value must be positive, got: {v}")
+        return v
+
+
+class EOSReweightingConfig(BaseSamplerConfig):
+    r"""Configuration for EOS reweighting sampler.
+
+    This sampler evaluates jester's GPU-accelerated likelihoods on a discrete
+    set of tabulated EOS curves (M, :math:`\Lambda`, R tables), not necessarily
+    produced by jester itself, rather than sampling a parametric EOS model.
+    It computes the marginal log-likelihood per EOS and the Bayesian evidence :math:`\log Z`.
+
+    EOS tables must be NPZ files with keys:
+
+    - ``masses``: 1D float64 array in :math:`M_\odot`, monotone increasing
+    - ``lambdas``: 1D float64 array, dimensionless tidal deformability
+    - ``radii``: 1D float64 array in km (required)
+
+    For a file containing N EOS curves: arrays shaped ``[N, n_points]``.
+
+    Attributes
+    ----------
+    type : Literal["eos-reweighting"]
+        Sampler type identifier
+    eos_file : str
+        Path to an NPZ file containing EOS curves
+    n_grid : int
+        Number of mass grid points for common interpolation grid (default: 200)
+    m_min : float
+        Minimum mass for interpolation grid in :math:`M_\odot` (default: 1.0)
+    m_max : float | None
+        Maximum mass for grid in :math:`M_\odot`. None → use max(M_TOV) across
+        all curves, capped at 3.0 :math:`M_\odot`.
+    batch_size : int
+        Number of EOS curves processed simultaneously by JAX (default: 1000).
+        Progress is logged after each batch. Choose a value that fits in
+        memory; there is no automatic OOM recovery.
+    n_resample : int | None
+        Number of posterior EOS samples to draw (with replacement, weighted
+        by the normalised posterior weights) after evidence computation.
+        ``None`` (default) uses the Kish effective sample size
+        :math:`N_\mathrm{eff}`, rounded to the nearest integer.
+    """
+
+    type: Literal["eos-reweighting"] = "eos-reweighting"
+
+    eos_file: str
+
+    n_grid: int = Field(default=200, gt=10)
+    m_min: float = Field(default=1.0, gt=0.0)
+    m_max: float | None = None
+
+    batch_size: int = Field(
+        default=1000,
+        gt=0,
+        description="Number of EOS curves processed simultaneously by JAX. Progress is logged after each batch.",
+    )
+
+    n_resample: int | None = Field(
+        default=None,
+        description=(
+            "Number of posterior EOS samples to draw via weighted resampling "
+            "after evidence computation. None -> use N_eff (Kish effective "
+            "sample size, rounded)."
+        ),
+    )
+
+    @field_validator("n_resample")
+    @classmethod
+    def _validate_n_resample(cls, v: int | None) -> int | None:
+        if v is not None and v <= 0:
+            raise ValueError(f"n_resample must be positive, got: {v}")
         return v
 
 
@@ -275,6 +335,7 @@ SamplerConfig = Annotated[
         BlackJAXNSAWConfig,
         SMCRandomWalkSamplerConfig,
         SMCNUTSSamplerConfig,
+        EOSReweightingConfig,
     ],
     Discriminator("type"),
 ]

@@ -180,7 +180,7 @@ class Flow:
             shape: Shape of samples to generate (e.g., (1000,) for 1000 samples)
 
         Returns:
-            Samples in original scale as JAX array of shape (*shape, n_features)
+            Samples in original scale as JAX array of shape (``*shape``, n_features)
 
         Example:
             >>> samples = flow.sample(jax.random.key(0), (1000,))

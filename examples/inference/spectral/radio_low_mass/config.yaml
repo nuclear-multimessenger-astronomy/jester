@@ -24,7 +24,6 @@ likelihoods:
   - name: J0000
     mass_mean: 1.0
     mass_std: 0.1
-  nb_masses: 100
 sampler:
   type: smc-rw
   n_particles: 1000

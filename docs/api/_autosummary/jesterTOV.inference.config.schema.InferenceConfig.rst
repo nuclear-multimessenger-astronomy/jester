@@ -37,8 +37,6 @@
       ~InferenceConfig.schema_json
       ~InferenceConfig.update_forward_refs
       ~InferenceConfig.validate
-      ~InferenceConfig.validate_likelihoods
-      ~InferenceConfig.validate_seed
    
    
 
