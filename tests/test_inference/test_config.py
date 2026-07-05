@@ -7,6 +7,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from jesterTOV.inference.config import schema, parser
+from jesterTOV.eos.crust import Crust
 
 
 class TestEOSConfig:
@@ -80,6 +81,14 @@ class TestEOSConfig:
                 type="metamodel",
                 crust_name="InvalidCrust",  # type: ignore[arg-type]  # intentionally wrong
             )
+
+    @pytest.mark.parametrize("crust_name", Crust.list_available())
+    def test_all_available_crusts_accepted(self, crust_name):
+        """Every crust file in jesterTOV/crust_files must be a valid crust_name."""
+        config = schema.MetamodelEOSConfig(
+            type="metamodel", nb_CSE=0, crust_name=crust_name
+        )
+        assert config.crust_name == crust_name
 
     def test_default_values(self):
         """Test that default values are set correctly."""

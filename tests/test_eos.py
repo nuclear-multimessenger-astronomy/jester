@@ -500,9 +500,9 @@ class TestMetaModelIntegration:
 
 
 # Test fixtures and parameterized tests
-@pytest.mark.parametrize("crust_name", ["DH", "BPS"])
+@pytest.mark.parametrize("crust_name", Crust.list_available())
 def test_all_available_crusts(crust_name):
-    """Test that all available crust files can be loaded."""
+    """Test that every crust file shipped in jesterTOV/crust_files can be loaded."""
     crust = Crust(crust_name)
 
     assert len(crust) > 10

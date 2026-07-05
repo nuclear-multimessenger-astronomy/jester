@@ -4,6 +4,7 @@ from typing import Literal, Union, Annotated
 from pydantic import field_validator, ConfigDict, Discriminator
 
 from ._base import JesterBaseModel
+from jesterTOV.eos.crust import Crust
 
 
 class BaseEOSConfig(JesterBaseModel):
@@ -11,13 +12,25 @@ class BaseEOSConfig(JesterBaseModel):
 
     Attributes
     ----------
-    crust_name : Literal["DH", "BPS", "SLy"]
-        Name of crust model to use (default: "DH")
+    crust_name : str
+        Name of crust model to use (default: "DH"). Must match one of the
+        ``.npz`` files available in ``jesterTOV/crust_files`` (see
+        :meth:`Crust.list_available`).
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    crust_name: Literal["DH", "BPS", "SLy"] = "DH"
+    crust_name: str = "DH"
+
+    @field_validator("crust_name")
+    @classmethod
+    def _validate_crust_name(cls, v: str) -> str:
+        available = Crust.list_available()
+        if v not in available:
+            raise ValueError(
+                f"crust_name '{v}' not found. Available crusts: {sorted(available)}"
+            )
+        return v
 
 
 class BaseMetamodelEOSConfig(BaseEOSConfig):
