@@ -139,6 +139,14 @@ def create_likelihood(
                 "not create_likelihood directly"
             )
 
+        case MockMassRadiusLikelihoodConfig():
+            # Mock M-R likelihoods are handled specially in create_combined_likelihood
+            # (one likelihood is created per observation in the JSON file)
+            raise RuntimeError(
+                "Mock mass-radius likelihoods should be created via create_combined_likelihood, "
+                "not create_likelihood directly"
+            )
+
         case ChiEFTLikelihoodConfig():
             return ChiEFTLikelihood(
                 low_filename=config.low_filename,

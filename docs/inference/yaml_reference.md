@@ -588,27 +588,48 @@ Returns zero log-likelihood (uniform likelihood) for all EOS configurations. Use
 
 ::::
 
-### Mock Mass-Radius
+### Mock mass-radius
 
-Synthetic bivariate Gaussian mass-radius observations for testing and mock-data studies.
+Synthetic bivariate Gaussian mass-radius observations for testing the inference pipeline and for mock-data studies (e.g. forecasting how a hypothetical future measurement would constrain the EOS). The Python class is {class}`~jesterTOV.inference.likelihoods.mock_mr.MockMassRadiusLikelihood`.
 
-::::{dropdown} **Mock Mass-Radius Likelihood (type: "mock_mr")**
+::::{dropdown} **Mock Mass-Radius Likelihood**
 
 ```yaml
 - type: "mock_mr"
   enabled: true
-  parameters:
-    type: "mock_mr"  # Likelihood type identifier
-    json_file: "./mock_observations.json"  # Path to JSON file with mock observations
-    penalty_value: 0.0  # Log-likelihood penalty when sampled mass exceeds M_TOV
-    N_masses_evaluation: 100  # Number of mass samples for Monte-Carlo likelihood integration
-    N_masses_batch_size: 20  # Batch size for jax.lax.map processing
-    seed: 42  # Random seed for reproducible mass pre-sampling
+  json_file: "./mock_observations.json"  # Path to JSON file with mock observations
+  penalty_value: 0.0     # Log-likelihood penalty when sampled mass exceeds M_TOV (default: 0.0)
+  N_masses_evaluation: 100  # Number of mass samples for Monte-Carlo likelihood integration
+  N_masses_batch_size: 20   # Batch size for jax.lax.map processing (default: 20)
+  seed: 42                  # Random seed for reproducible mass pre-sampling (default: 42)
 ```
+
+**Field Details:**
+
+- **`json_file`** (`str`) - Path to a JSON file containing the list of mock mass-radius observations. Each entry must have the keys `name`, `mean_mass`, `mean_radius`, `std_mass`, `std_radius`, `correlation`
+- **`penalty_value`** (`float`, default: `0.0`) - Log-likelihood penalty applied when a pre-sampled mass exceeds :math:`M_\mathrm{TOV}`
+- **`N_masses_evaluation`** (`int`, default: `100`) - Number of `(mass, radius)` samples pre-drawn from the joint Gaussian at initialisation for Monte-Carlo likelihood integration
+- **`N_masses_batch_size`** (`int`, default: `20`) - Batch size passed to `jax.lax.map` when evaluating the pre-sampled masses
+- **`seed`** (`int`, default: `42`) - Random seed for reproducible mass pre-sampling
 
 **Description:**
 
-Constrains the M-R relation using synthetic bivariate Gaussian observations loaded from a JSON file. Each entry defines a mock pulsar measurement with mean mass and radius, their standard deviations, and the Pearson correlation. One likelihood per observation is created. The JSON file must be a list of objects with keys: name, mean_mass, mean_radius, std_mass, std_radius, correlation.
+Constrains the M-R relation using one or more synthetic bivariate Gaussian observations loaded from a JSON file. Each entry defines a mock pulsar measurement with a mean mass and radius, their standard deviations, and the Pearson correlation between the two; one `MockMassRadiusLikelihood` instance is created per entry. Masses are pre-sampled once at initialisation, and each likelihood call interpolates the EOS M-R curve at those masses and evaluates the bivariate Gaussian log-pdf, averaged via the log-sum-exp trick. The JSON file must be a list of objects with keys: `name`, `mean_mass`, `mean_radius`, `std_mass`, `std_radius`, `correlation`.
+
+Example `mock_observations.json`:
+
+```json
+[
+  {
+    "name": "PSR0",
+    "mean_mass": 1.4,
+    "mean_radius": 12.0,
+    "std_mass": 0.1,
+    "std_radius": 0.1,
+    "correlation": 0.1
+  }
+]
+```
 
 ::::
 

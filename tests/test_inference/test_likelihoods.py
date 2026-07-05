@@ -1,5 +1,7 @@
 """Tests for inference likelihood system (base, factory, specific likelihoods)."""
 
+import json
+
 import pytest
 import jax
 import jax.numpy as jnp
@@ -22,6 +24,7 @@ from jesterTOV.inference.likelihoods.constraints import (
 )
 from jesterTOV.inference.likelihoods.chieft import ChiEFTLikelihood
 from jesterTOV.inference.likelihoods.radio import RadioTimingLikelihood
+from jesterTOV.inference.likelihoods.mock_mr import MockMassRadiusLikelihood
 from jesterTOV.inference.base import LikelihoodBase
 
 
@@ -585,6 +588,123 @@ class TestRadioTimingLikelihood:
         assert result > -1000.0, f"Likelihood too negative: {result}"
 
 
+class TestMockMassRadiusLikelihood:
+    """Test MockMassRadiusLikelihood functionality."""
+
+    def test_initialization(self):
+        """Test MockMassRadiusLikelihood initializes correctly and pre-samples masses."""
+        likelihood = MockMassRadiusLikelihood(
+            psr_name="PSR0",
+            mean_mass=1.4,
+            mean_radius=12.0,
+            std_mass=0.1,
+            std_radius=0.5,
+            correlation=0.1,
+            N_masses_evaluation=50,
+            seed=0,
+        )
+
+        assert likelihood.psr_name == "PSR0"
+        assert likelihood.fixed_mass_samples.shape == (50,)
+        # Pre-sampled masses should be centred near mean_mass
+        assert 1.0 < float(jnp.mean(likelihood.fixed_mass_samples)) < 1.8
+
+    def test_invalid_correlation_raises(self):
+        """Test that a correlation outside (-1, 1) raises ValueError."""
+        with pytest.raises(ValueError, match="must be strictly between -1 and 1"):
+            MockMassRadiusLikelihood(
+                psr_name="PSR0",
+                mean_mass=1.4,
+                mean_radius=12.0,
+                std_mass=0.1,
+                std_radius=0.5,
+                correlation=1.0,
+            )
+
+    def test_evaluate_is_finite(self):
+        """Test that evaluate() returns a finite log likelihood for a realistic M-R curve."""
+        likelihood = MockMassRadiusLikelihood(
+            psr_name="PSR0",
+            mean_mass=1.4,
+            mean_radius=12.0,
+            std_mass=0.1,
+            std_radius=0.5,
+            correlation=0.1,
+            N_masses_evaluation=50,
+            seed=0,
+        )
+
+        masses_eos = jnp.linspace(1.0, 2.2, 100)
+        radii_eos = jnp.linspace(13.0, 11.0, 100)
+        params = {"masses_EOS": masses_eos, "radii_EOS": radii_eos}
+
+        result = likelihood.evaluate(params)
+
+        assert jnp.isfinite(result)
+
+    def test_evaluate_sensitivity(self):
+        """Test that a worse-fitting M-R curve gives a lower log likelihood."""
+        likelihood = MockMassRadiusLikelihood(
+            psr_name="PSR0",
+            mean_mass=1.4,
+            mean_radius=12.0,
+            std_mass=0.1,
+            std_radius=0.5,
+            correlation=0.0,
+            N_masses_evaluation=50,
+            seed=0,
+        )
+
+        masses_eos = jnp.linspace(1.0, 2.2, 100)
+        good_radii = jnp.linspace(13.0, 11.0, 100)  # passes through ~12 km at 1.4 Msun
+        bad_radii = good_radii + 5.0  # shifted far away from the mock observation
+
+        log_prob_good = likelihood.evaluate(
+            {"masses_EOS": masses_eos, "radii_EOS": good_radii}
+        )
+        log_prob_bad = likelihood.evaluate(
+            {"masses_EOS": masses_eos, "radii_EOS": bad_radii}
+        )
+
+        assert log_prob_bad < log_prob_good
+
+    def test_evaluate_applies_penalty_beyond_mtov(self):
+        """Test that pre-sampled masses above M_TOV incur the configured penalty."""
+        # Mean mass placed well above the EOS maximum mass so (almost) all
+        # pre-sampled masses exceed M_TOV.
+        masses_eos = jnp.linspace(1.0, 2.0, 100)
+        radii_eos = jnp.linspace(13.0, 11.0, 100)
+        params = {"masses_EOS": masses_eos, "radii_EOS": radii_eos}
+
+        likelihood_no_penalty = MockMassRadiusLikelihood(
+            psr_name="PSR0",
+            mean_mass=3.0,
+            mean_radius=11.0,
+            std_mass=0.05,
+            std_radius=0.5,
+            correlation=0.0,
+            penalty_value=0.0,
+            N_masses_evaluation=50,
+            seed=0,
+        )
+        likelihood_with_penalty = MockMassRadiusLikelihood(
+            psr_name="PSR0",
+            mean_mass=3.0,
+            mean_radius=11.0,
+            std_mass=0.05,
+            std_radius=0.5,
+            correlation=0.0,
+            penalty_value=-1e4,
+            N_masses_evaluation=50,
+            seed=0,
+        )
+
+        log_prob_no_penalty = likelihood_no_penalty.evaluate(params)
+        log_prob_with_penalty = likelihood_with_penalty.evaluate(params)
+
+        assert log_prob_with_penalty < log_prob_no_penalty
+
+
 class TestLikelihoodFactory:
     """Test likelihood factory functionality."""
 
@@ -695,6 +815,18 @@ class TestLikelihoodFactory:
         ):
             factory.create_likelihood(config)
 
+    def test_create_mock_mr_likelihood_via_factory_raises_error(self):
+        """Test that mock M-R likelihoods must be created via create_combined_likelihood."""
+        config = schema.MockMassRadiusLikelihoodConfig(
+            enabled=True,
+            json_file="/path/to/mock_observations.json",
+        )
+
+        with pytest.raises(
+            RuntimeError, match="should be created via create_combined_likelihood"
+        ):
+            factory.create_likelihood(config)
+
     def test_invalid_likelihood_type_raises_error(self):
         """Test that invalid likelihood type raises ValidationError.
 
@@ -781,6 +913,79 @@ class TestCombinedLikelihoodFactory:
 
         # Single radio likelihood should be returned directly
         assert isinstance(likelihood, RadioTimingLikelihood)
+
+    def test_create_combined_likelihood_with_single_mock_mr_observation(self, tmp_path):
+        """Test creating combined likelihood with a single mock M-R observation."""
+        json_file = tmp_path / "mock_observations.json"
+        json_file.write_text(
+            json.dumps(
+                [
+                    {
+                        "name": "PSR0",
+                        "mean_mass": 1.4,
+                        "mean_radius": 12.0,
+                        "std_mass": 0.1,
+                        "std_radius": 0.1,
+                        "correlation": 0.1,
+                    }
+                ]
+            )
+        )
+        configs = [
+            schema.MockMassRadiusLikelihoodConfig(
+                enabled=True,
+                json_file=str(json_file),
+            ),
+        ]
+
+        likelihood = factory.create_combined_likelihood(configs)
+
+        # Single mock M-R likelihood should be returned directly
+        assert isinstance(likelihood, MockMassRadiusLikelihood)
+        assert likelihood.psr_name == "PSR0"
+
+    def test_create_combined_likelihood_with_multiple_mock_mr_observations(
+        self, tmp_path
+    ):
+        """Test that one likelihood is created per entry in the mock observations JSON file."""
+        json_file = tmp_path / "mock_observations.json"
+        json_file.write_text(
+            json.dumps(
+                [
+                    {
+                        "name": "PSR0",
+                        "mean_mass": 1.4,
+                        "mean_radius": 12.0,
+                        "std_mass": 0.1,
+                        "std_radius": 0.1,
+                        "correlation": 0.1,
+                    },
+                    {
+                        "name": "PSR1",
+                        "mean_mass": 2.0,
+                        "mean_radius": 11.5,
+                        "std_mass": 0.1,
+                        "std_radius": 0.1,
+                        "correlation": -0.2,
+                    },
+                ]
+            )
+        )
+        configs = [
+            schema.MockMassRadiusLikelihoodConfig(
+                enabled=True,
+                json_file=str(json_file),
+            ),
+        ]
+
+        likelihood = factory.create_combined_likelihood(configs)
+
+        assert isinstance(likelihood, CombinedLikelihood)
+        assert len(likelihood.likelihoods_list) == 2
+        assert {lik.psr_name for lik in likelihood.likelihoods_list} == {
+            "PSR0",
+            "PSR1",
+        }
 
 
 class TestGWEventPresets:
