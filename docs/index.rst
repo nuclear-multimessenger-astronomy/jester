@@ -52,6 +52,7 @@ See the :doc:`overview/` guide for detailed explanations about what is implement
        - :doc:`Radio timing (mass measurements) <overview/likelihoods/radio>`
        - :doc:`NICER mass-radius <overview/likelihoods/nicer>`
        - :doc:`Gravitational waves <overview/likelihoods/gw>`
+       - :doc:`Mock mass-radius <overview/likelihoods/mock_mr>`
 
     .. grid-item:: 📊 :doc:`Samplers <overview/samplers>`
 

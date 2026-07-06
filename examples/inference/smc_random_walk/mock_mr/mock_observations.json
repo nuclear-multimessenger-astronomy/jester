@@ -1,0 +1,10 @@
+[
+  {
+    "name": "PSR0",
+    "mean_mass": 1.4,
+    "mean_radius": 12.0,
+    "std_mass": 0.1,
+    "std_radius": 0.1,
+    "correlation": 0.0
+  }
+]

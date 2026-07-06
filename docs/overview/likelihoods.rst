@@ -40,6 +40,13 @@ Binary neutron star merger observations (GW170817, etc.).
 
 :doc:`likelihoods/gw`
 
+Mock likelihoods
+----------------
+
+Synthetic bivariate Gaussian mass-radius observations for testing the inference pipeline and for mock-data studies.
+
+:doc:`likelihoods/mock_mr`
+
 .. toctree::
    :hidden:
 
@@ -48,3 +55,4 @@ Binary neutron star merger observations (GW170817, etc.).
    likelihoods/radio
    likelihoods/nicer
    likelihoods/gw
+   likelihoods/mock_mr

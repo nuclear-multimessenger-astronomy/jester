@@ -43,6 +43,14 @@ Theory Constraints
    constraints.ConstraintGammaLikelihood
    constraints.ConstraintTOVLikelihood
 
+Mock Likelihoods
+----------------
+
+.. autosummary::
+   :toctree: _autosummary
+
+   mock_mr.MockMassRadiusLikelihood
+
 Combined Likelihoods
 --------------------
 

@@ -23,6 +23,9 @@ Schema Classes
    schema.AnisotropyTOVConfig
    schema.PriorConfig
    schema.LikelihoodConfig
+   schemas.likelihoods.ChiEFTLikelihoodConfig
+   schemas.likelihoods.RadioLikelihoodConfig
+   schemas.likelihoods.MockMassRadiusLikelihoodConfig
    schema.BaseSamplerConfig
    schema.FlowMCSamplerConfig
    schema.BlackJAXNSAWConfig
