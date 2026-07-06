@@ -173,3 +173,47 @@ class TestSMCRandomWalkE2E:
             results[1].samples["K_sat"][:10],
             atol=1e-6,
         ), "SMC-RW not deterministic with same seed"
+
+    def test_smc_rw_adaptive_step_size_beats_mistuned_fixed_sigma(
+        self,
+        smc_rw_mistuned_fixed_sigma_config,
+        smc_rw_adaptive_step_size_config,
+        e2e_temp_dir,
+    ):
+        """Adaptive step size should recover from a deliberately too-large starting sigma.
+
+        Cross-checks against an expected outcome (not just a smoke test): with
+        random_walk_sigma set too large, the fixed-sigma sampler's acceptance rate should
+        collapse well below the 0.234 target, while the adaptive sampler -- started from the
+        exact same mis-tuned sigma -- should self-correct (via pretuning + per-step
+        Robbins-Monro adaptation) to a mean acceptance rate much closer to target.
+        """
+
+        def run(config_dict):
+            config = InferenceConfig(**config_dict)
+            prior, _fixed_params = setup_prior(config)
+            keep_names = determine_keep_names(config, prior)
+            transform = setup_transform(config, prior=prior, keep_names=keep_names)
+            likelihood = setup_likelihood(config, transform)
+            sampler = create_sampler(
+                config=config.sampler,
+                prior=prior,
+                likelihood=likelihood,
+                likelihood_transforms=[transform],
+                seed=config.seed,
+            )
+            sampler.sample(jax.random.PRNGKey(config.seed))
+            return sampler.metadata["mean_acceptance"]
+
+        fixed_acceptance = run(smc_rw_mistuned_fixed_sigma_config)
+        adaptive_acceptance = run(smc_rw_adaptive_step_size_config)
+
+        target = 0.234
+        fixed_error = abs(fixed_acceptance - target)
+        adaptive_error = abs(adaptive_acceptance - target)
+
+        assert adaptive_error < fixed_error, (
+            f"Adaptive step size did not improve on mis-tuned fixed sigma: "
+            f"fixed acceptance={fixed_acceptance:.4f} (|error|={fixed_error:.4f}), "
+            f"adaptive acceptance={adaptive_acceptance:.4f} (|error|={adaptive_error:.4f})"
+        )

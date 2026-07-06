@@ -168,6 +168,23 @@ class SMCRandomWalkSamplerConfig(BaseSamplerConfig):
         Fixed sigma scaling for Gaussian random walk kernel (default: 1.0).
         The proposal covariance is computed from particles and scaled by sigma^2.
         Default of 1.0 uses the empirical covariance directly.
+        When `adaptive_step_size` is enabled, this is only the *starting* value: it is
+        pretuned before annealing begins and then continuously adapted per particle.
+    adaptive_step_size : bool
+        Enable per-particle adaptive step size targeting `target_acceptance_rate` (default: False).
+        Recommended for high-SNR signals (e.g. ET), where the posterior narrows quickly during
+        annealing and a fixed sigma causes the acceptance rate to collapse. Uses BlackJAX's
+        Robbins-Monro update (`update_scale_from_acceptance_rate`), which is the standard
+        Roberts-Rosenthal optimal-scaling approach for random-walk Metropolis.
+    target_acceptance_rate : float
+        Target acceptance rate for adaptive step size (default: 0.234, the standard
+        Roberts-Rosenthal optimal value for random-walk Metropolis in high dimensions).
+        Only used when `adaptive_step_size` is True.
+    n_pretune_steps : int
+        Number of pilot Metropolis steps run on the initial (prior) particles, before annealing
+        starts, to calibrate a good initial step size regardless of how `random_walk_sigma` was
+        set (default: 20). Only used when `adaptive_step_size` is True. Set to 0 to disable
+        pretuning and start annealing directly from `random_walk_sigma`.
     """
 
     type: Literal["smc-rw"] = "smc-rw"
@@ -175,6 +192,9 @@ class SMCRandomWalkSamplerConfig(BaseSamplerConfig):
     n_mcmc_steps: int = 1
     target_ess: float = 0.9
     random_walk_sigma: float = 1.0
+    adaptive_step_size: bool = False
+    target_acceptance_rate: float = 0.234
+    n_pretune_steps: int = 20
 
     @field_validator("n_particles", "n_mcmc_steps")
     @classmethod
@@ -183,7 +203,14 @@ class SMCRandomWalkSamplerConfig(BaseSamplerConfig):
             raise ValueError(f"Value must be positive, got: {v}")
         return v
 
-    @field_validator("target_ess")
+    @field_validator("n_pretune_steps")
+    @classmethod
+    def _validate_nonnegative(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError(f"Value must be non-negative, got: {v}")
+        return v
+
+    @field_validator("target_ess", "target_acceptance_rate")
     @classmethod
     def _validate_fraction(cls, v: float) -> float:
         if v <= 0 or v > 1:

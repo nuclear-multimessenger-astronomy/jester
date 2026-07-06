@@ -58,6 +58,11 @@ Four sampler backends available for Bayesian inference:
    - Gaussian Random Walk kernel with sigma adaptation
    - Target ESS: 0.9, requires ~10-30 MCMC steps per tempering level
    - Can run locally on laptop without GPU
+   - Optional `adaptive_step_size: true` targets a literal acceptance rate (default 0.234,
+     Roberts-Rosenthal optimal) instead of a fixed `random_walk_sigma` throughout annealing.
+     Recommended for high-SNR signals (e.g. ET), where a fixed sigma causes acceptance to
+     collapse as the posterior narrows quickly during tempering. See
+     `jesterTOV/inference/CLAUDE.md` for the implementation details.
 
 3. **BlackJAX SMC-NUTS** (`type: "smc-nuts"`) - Sequential Monte Carlo with NUTS kernel
    - Production ready, well-tested

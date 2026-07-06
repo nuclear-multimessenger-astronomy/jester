@@ -42,6 +42,9 @@ L_sym = UniformPrior(10.0, 200.0, parameter_names=["L_sym"])
 - `type: "smc-rw"` - Sequential Monte Carlo with Random Walk kernel (production ready, **DEFAULT**)
   - Gaussian Random Walk with sigma adaptation
   - Target ESS: 0.9, ~10-30 MCMC steps per tempering level
+  - Optional `adaptive_step_size` targets a literal acceptance rate (`target_acceptance_rate`,
+    default 0.234) instead of the fixed `random_walk_sigma` throughout; see
+    "Adaptive step size (SMC-RW)" below
 - `type: "smc-nuts"` - Sequential Monte Carlo with NUTS kernel (production ready)
   - NUTS kernel with Hessian-based mass matrix adaptation
   - More efficient for complex posteriors
@@ -323,6 +326,49 @@ class SamplerOutput:
 - Jacobian correction for bijective transforms
 - JAX-compatible (JIT compilation, vmap, grad)
 - Deterministic sampling via `jax.random.PRNGKey`
+
+### Adaptive step size (SMC-RW)
+
+`SMCRandomWalkSamplerConfig.adaptive_step_size` (default `False`) makes the random-walk proposal
+scale adapt toward `target_acceptance_rate` (default 0.234, the Roberts-Rosenthal optimal-scaling
+value for random-walk Metropolis) instead of using a fixed `random_walk_sigma` for the whole run.
+Use it for high-SNR signals (e.g. ET), where the posterior narrows quickly during annealing and a
+fixed sigma otherwise causes the acceptance rate to collapse.
+
+**Why this needed a small custom wrapper, not just a BlackJAX config flag:** BlackJAX already
+ships the exact update rule (`blackjax.smc.tuning.from_kernel_info.update_scale_from_acceptance_rate`,
+the standard Robbins-Monro/Roberts-Rosenthal scheme), but the generic orchestrator jester uses,
+`blackjax.smc.inner_kernel_tuning`, calls `mcmc_parameter_update_fn(key, state, info)` **without**
+the previous step's parameter values — so a running scale can't persist across annealing steps
+through that API alone. `samplers/blackjax/smc/persistent_inner_kernel_tuning.py` is a ~100-line,
+jester-owned drop-in replacement that forwards the previous `parameter_override` into
+`mcmc_parameter_update_fn` (new signature: `(key, previous_parameter_override, new_state, info)`),
+enabling genuine recursive adaptation. `BlackjaxSMCSampler.sample()` (`smc/base.py`) uses this
+wrapper for **all** SMC kernels (RW and NUTS), not just RW.
+
+**Bonus fix as a result:** `smc/nuts.py`'s Hessian/step-size adaptation previously tried to persist
+a running step size via a mutated Python closure (`current_step_size = {"value": ...}`) — a no-op
+under `jax.lax.while_loop` tracing, so NUTS's dual-averaging step-size adaptation was silently
+broken. It now reads `previous_params["step_size"]` instead, which actually persists.
+
+**Implementation notes** (`smc/random_walk.py`):
+- `mcmc_step_fn` builds the proposal covariance as `(scale**2) * cov`, where `cov` is the usual
+  sigma-scaled empirical covariance (unchanged, recomputed from particles every step) and `scale`
+  is a per-particle multiplicative correction (`1.0` = no-op) that only exists when
+  `adaptive_step_size=True`.
+- `scale` has shape `(n_particles,)` (no leading singleton dim), so BlackJAX's shared-vs-unshared
+  parameter dispatch (`blackjax.smc.from_mcmc.unshared_parameters_and_step_fn`: leading dim `1` ⇒
+  shared/bound once, anything else ⇒ vmapped per particle) treats it as unshared and vmaps it
+  automatically — no manual vmap needed in jester's own code. Because of this, `BlackjaxSMCSampler`
+  no longer blanket-wraps `init_params` in `extend_params` itself; each `_setup_mcmc_kernel` is
+  responsible for shaping its own returned `init_params` (random_walk.py extends `cov` only; nuts.py
+  extends its whole dict, since none of its params vary per particle).
+- Before annealing starts, `n_pretune_steps` (default 20) pilot Metropolis steps run on the initial
+  prior particles targeting `logprior_fn` (valid since the tempered posterior at λ=0 is the prior),
+  self-correcting a poorly-chosen `random_walk_sigma` before real sampling begins. Set to `0` to
+  skip pretuning.
+- A prototype demonstrating the mechanism (and that the plain BlackJAX API genuinely can't persist
+  state this way) lives outside the package at `../../dev_scripts/adaptive_smc_prototype.py`.
 
 ## Configuration System
 

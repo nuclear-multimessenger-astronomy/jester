@@ -135,18 +135,19 @@ class BlackJAXSMCNUTSSampler(BlackjaxSMCSampler):
         # Build initial mass matrix
         init_inverse_mass_matrix = self._build_mass_matrix()
 
-        # Initial parameters for NUTS
-        init_params = {
-            "step_size": config.init_step_size,
-            "inverse_mass_matrix": init_inverse_mass_matrix,
-        }
-
-        # TODO: remove this tracking in case we don't want this for NUTS
-        # Track current step size for adaptation
-        current_step_size = {"value": config.init_step_size}
+        # Initial parameters for NUTS. Base.py no longer wraps init_params in extend_params
+        # itself (needed so per-particle/unshared params, e.g. an adaptive RW scale, aren't
+        # collapsed into a shared row) -- since none of NUTS's params vary per particle, we
+        # apply extend_params here ourselves, as base.py used to do generically.
+        init_params = extend_params(
+            {  # type: ignore[arg-type]
+                "step_size": config.init_step_size,
+                "inverse_mass_matrix": init_inverse_mass_matrix,
+            }
+        )
 
         # Define parameter update function for Hessian-based adaptation
-        def mcmc_parameter_update_fn(key, state, info):
+        def mcmc_parameter_update_fn(key, previous_params, state, info):
             """Adapt mass matrix and step size using Hessian at best particle."""
             # Extract log posteriors from NUTS trajectory endpoints
             last_step_info = jax.tree.map(lambda x: x[-1], info.update_info)
@@ -178,17 +179,19 @@ class BlackJAXSMCNUTSSampler(BlackjaxSMCSampler):
             G = V @ jnp.diag(soft_lambdas) @ V.T
             adapted_inverse_mass_matrix = jnp.linalg.inv(G)
 
-            # Adapt step size using dual averaging
+            # Adapt step size using dual averaging. previous_params["step_size"] is the value
+            # actually used to produce `state`/`info` above (passed in by
+            # persistent_inner_kernel_tuning), so this recursion is genuinely persistent across
+            # annealing steps -- unlike the previous mutable-closure attempt, which was silently
+            # a no-op under jax.lax.while_loop tracing.
             mean_acceptance = last_step_info.acceptance_rate.mean()
-            log_step_size = jnp.log(current_step_size["value"])
+            previous_step_size = jnp.asarray(previous_params["step_size"]).reshape(())
+            log_step_size = jnp.log(previous_step_size)
             log_step_size += config.adaptation_rate * (
                 mean_acceptance - config.target_acceptance
             )
             adapted_step_size = jnp.exp(log_step_size)
             adapted_step_size = jnp.clip(adapted_step_size, 1e-10, 1e0)
-
-            # Update tracked step size
-            current_step_size["value"] = adapted_step_size  # type: ignore[assignment]
 
             return extend_params(
                 {  # type: ignore[arg-type]
@@ -201,4 +204,4 @@ class BlackJAXSMCNUTSSampler(BlackjaxSMCSampler):
         mcmc_step_fn = nuts.build_kernel()
         mcmc_init_fn = nuts.init
 
-        return mcmc_step_fn, mcmc_init_fn, init_params, mcmc_parameter_update_fn
+        return mcmc_step_fn, mcmc_init_fn, init_params, mcmc_parameter_update_fn  # type: ignore[return-value]
