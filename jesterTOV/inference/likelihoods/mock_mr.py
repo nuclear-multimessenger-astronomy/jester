@@ -67,7 +67,7 @@ class MockMassRadiusLikelihood(LikelihoodBase):
         :math:`\rho \in (-1, 1)`.
     penalty_value : float, optional
         Log-likelihood penalty applied when the pre-sampled mass exceeds
-        :math:`M_\mathrm{TOV}` (default: ``-99999.0``).
+        :math:`M_\mathrm{TOV}` (default: ``0.0``, i.e. no penalty).
     N_masses_evaluation : int, optional
         Number of (mass, radius) samples drawn at initialisation for
         Monte-Carlo integration (default: ``100``).

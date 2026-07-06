@@ -15,14 +15,15 @@ Each mock observation is specified by a mean mass :math:`\mu_M`, a mean radius :
         \rho\,\sigma_M\sigma_R & \sigma_R^2
     \end{pmatrix} \, ,
 
-so that the "observation" is drawn from :math:`\mathcal{N}\!\left((\mu_M, \mu_R), \Sigma\right)`.
+so that the "observation" is represented by :math:`\mathcal{N}\!\left((\mu_M, \mu_R), \Sigma\right)`.
+This mimics the joint mass-radius observation from actual X-ray pulse profile modelling sources (e.g., those observed by NICER), while being analytical and therefore cheap to evaluate for testing end-to-end EOS inference pipelines.
 
 Numerical implementation
 --------------------------
 
-Because the EOS only predicts a radius as a function of mass (not a joint density over both), the log-likelihood is estimated by Monte Carlo integration over the mass direction. At initialisation, a fixed set of masses :math:`\{m_i\}_{i=1}^{N}` is drawn once from the marginal mass distribution implied by :math:`\mathcal{N}\!\left((\mu_M, \mu_R), \Sigma\right)`, using a fixed random seed so that the likelihood is deterministic across evaluations.
+Because the EOS predicts radius as a function of mass, the log-likelihood is estimated by Monte Carlo integration over the mass direction. At initialisation, a fixed set of masses :math:`\{m_i\}_{i=1}^{N}` is drawn once from the marginal mass distribution implied by :math:`\mathcal{N}\!\left((\mu_M, \mu_R), \Sigma\right)`, using a fixed random seed so that the likelihood is deterministic across evaluations.
 
-At every likelihood call, the EOS mass-radius curve is used to interpolate the predicted radius :math:`R(m_i)` at each pre-sampled mass, and the bivariate Gaussian log-pdf is evaluated at each pair :math:`(m_i, R(m_i))`. The Monte Carlo estimate of the log-likelihood is then the log-mean of these values, computed via the log-sum-exp trick for numerical stability:
+At every likelihood call, the EOS mass-radius curve is used to interpolate the predicted radius :math:`R(m_i)` at each pre-sampled mass, and the bivariate Gaussian log-pdf is evaluated at each pair :math:`(m_i, R(m_i))`. The Monte Carlo estimate of the log-likelihood is then the log-mean of these values (mimicing, e.g., the NICER mass-radius likelihood), which is computed via log-sum-exp for numerical stability:
 
 .. math::
     :label: mock_mr_likelihood
