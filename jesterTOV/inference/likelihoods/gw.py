@@ -1,4 +1,5 @@
 r"""Gravitational wave event likelihood implementations"""
+from typing import Callable
 
 import jax
 import jax.numpy as jnp
@@ -347,5 +348,166 @@ class GWLikelihood(LikelihoodBase):
 
         # Take logsumexp over all pre-sampled mass pairs
         log_likelihood = logsumexp(all_logprobs) - jnp.log(self.N_masses_evaluation)
+
+        return log_likelihood
+
+
+
+class PopulationGWLikelihood(LikelihoodBase):
+    """
+    Gravitational wave likelihood that takes into account hierarchical population parameters for evaluating the posterior density.
+
+    The likelihood works by:
+
+    1. Passing population parameters to a population model and generating (m1, m2) pairs.
+    2. Interpolate Λ1, Λ2 from the candidate EOS at
+       the generated mass points, evaluate flow log_prob on (m1, m2, Λ1_EOS, Λ2_EOS),
+       apply penalties for masses exceeding Mtov, and average over all (m1, m2) pairs.
+
+    Parameters
+    ----------
+    event_name : str
+        Name of the GW event (e.g., "GW170817")
+    model_dir : str
+        Path to directory containing the trained normalizing flow model
+    logprior_m1m2: Callable, optional
+        log-prior function that was used in the GW inference for the source frame masses m1, m2.
+        Should be jax-compatible and take m1, m2 as two separate arguments.
+        If None, will simply default to 0 (flat prior).
+    penalty_value : float, optional
+        Penalty value for samples where masses exceed Mtov (default: 0.0, i.e. no penalty)
+    N_masses_batch_size : int, optional
+        Batch size for jax.lax.map processing (default: 1000)
+    seed : int, optional
+        Random seed for mass pre-sampling (default: 42)
+        Fixed seed ensures reproducibility across runs
+
+    Attributes
+    ----------
+    event_name : str
+        Name of the GW event
+    model_dir : str
+        Path to directory containing the trained normalizing flow model
+    population: callable
+        A population function that provides m1, m2 samples from the population model.
+    penalty_value : float
+        Penalty value for samples where masses exceed Mtov
+    N_masses_batch_size : int
+        Batch size for processing
+    flow : Flow
+        Normalizing flow model for this GW event
+
+    Notes
+    -----
+    Make sure the right population parameters are specified in the prior.
+
+    """
+
+    event_name: str
+    model_dir: str
+    penalty_value: float
+    N_masses_batch_size: int
+    seed: int
+    flow: Flow
+
+    def __init__(
+        self,
+        event_name: str,
+        model_dir: str,
+        logprior_m1m2: Callable | None = None,
+        penalty_value: float = 0.0,
+        N_masses_batch_size: int = 1000,
+        seed: int = 42,
+    ) -> None:
+        super().__init__()
+        self.event_name = event_name
+        self.model_dir = model_dir
+        self.penalty_value = penalty_value
+        self.N_masses_batch_size = N_masses_batch_size
+        self.seed = seed
+
+        # setup m1 m2 prior
+        if logprior_m1m2 is None:
+            logprior_m1m2 = lambda m1, m2: 0
+        self.logprior_m1m2 = jax.jit(logprior_m1m2)
+
+        # Load Flow model for this event
+        logger.info(f"Loading NF model for {event_name} from {model_dir}")
+        self.flow = Flow.from_directory(model_dir)
+        logger.info(f"Loaded NF model for {event_name}")
+
+    def evaluate(self, params: dict[str, Float | Array]) -> Float:
+        """
+        Evaluate log likelihood for given EOS parameters
+
+        Parameters
+        ----------
+        params : dict[str, Float | Array]
+            Must contain:
+            - 'masses_EOS': Array of neutron star masses from EOS
+            - 'Lambdas_EOS': Array of tidal deformabilities from EOS
+            - 'masses_1_pop': Array of heavier NS masses sampled from the population
+            - 'masses_2_pop': Array of ligher NS sampled from the population
+
+        Returns
+        -------
+        Float
+            Log likelihood value for this GW event
+        """
+        # Extract EOS parameters (no _random_key needed!)
+        masses_EOS: Float[Array, " n_points"] = params["masses_EOS"]
+        Lambdas_EOS: Float[Array, " n_points"] = params["Lambdas_EOS"]
+        mtov: Float = jnp.max(masses_EOS)
+        
+        mass_samples = jnp.array([params["masses_1_pop"],
+                                  params["masses_2_pop"]]).T
+
+        def process_sample(sample: Float[Array, " 2"]) -> Float:
+            """
+            Process a single pre-sampled mass pair
+
+            Note: jax.lax.map with batch_size applies function to individual
+            elements. The batch_size parameter is for compilation optimization.
+
+            Parameters
+            ----------
+            sample : Float[Array, " 2"]
+                Pre-sampled mass pair [m1, m2]
+
+            Returns
+            -------
+            Float
+                Log probability including penalties for this sample
+            """
+            m1 = sample[0]
+            m2 = sample[1]
+
+            # Interpolate lambdas from candidate EOS
+            lambda_1 = jnp.interp(m1, masses_EOS, Lambdas_EOS, right=1.0)
+            lambda_2 = jnp.interp(m2, masses_EOS, Lambdas_EOS, right=1.0)
+
+            # Evaluate log_prob on single sample
+            ml_sample = jnp.array([m1, m2, lambda_1, lambda_2])
+            logpdf = self.flow.log_prob(ml_sample)
+
+            # subtract the prior
+            logprior = self.logprior_m1m2(m1, m2)
+            logpdf -= logprior
+
+            # Penalties for masses exceeding Mtov
+            penalty_m1 = jnp.where(m1 > mtov, self.penalty_value, 0.0)
+            penalty_m2 = jnp.where(m2 > mtov, self.penalty_value, 0.0)
+
+            # Return log prob + penalties for this sample
+            return logpdf + penalty_m1 + penalty_m2
+
+        # Use jax.lax.map with batching for memory-efficient processing
+        # Process all population mass pairs
+        all_logprobs = jax.lax.map(
+            process_sample, mass_samples, batch_size=self.N_masses_batch_size
+        )
+
+        # Take logsumexp over all pre-sampled mass pairs
+        log_likelihood = logsumexp(all_logprobs) - jnp.log(mass_samples.shape[0])
 
         return log_likelihood

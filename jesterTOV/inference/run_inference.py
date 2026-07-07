@@ -27,7 +27,13 @@ from .config.schema import (
 from .priors.parser import parse_prior_file
 from .base.prior import CombinePrior
 from .base.likelihood import LikelihoodBase
-from .transforms import JesterTransform
+from .transforms import (
+    JesterTransform, 
+    PopulationJesterTransform, 
+    MultimessengerJesterTransform, 
+    CosmoJesterTransform,
+    CombinedTransform
+)
 from .likelihoods.factory import create_combined_likelihood
 from .samplers import create_sampler, JesterSampler
 from .result import InferenceResult
@@ -220,13 +226,38 @@ def setup_transform(
                 f"Using max_nbreak_nsat from eos config: {config_value:.4f} n_sat"
             )
 
-    transform = JesterTransform.from_config(
-        eos_config=config.eos,
-        tov_config=config.tov,
-        keep_names=keep_names,
-        max_nbreak_nsat=max_nbreak_nsat,
-        fixed_params=_fixed_params if _fixed_params else None,
-    )
+    if config.multimessenger:
+        transform = MultimessengerJesterTransform.from_config(
+            eos_config=config.eos,
+            tov_config=config.tov,
+            population_config=config.population,
+            keep_names=keep_names,
+            max_nbreak_nsat=max_nbreak_nsat,
+            fixed_params=fixed_params if _fixed_params else None,
+        )
+        
+    elif config.population is not None:
+        transform = PopulationJesterTransform.from_config(
+            eos_config=config.eos,
+            tov_config=config.tov,
+            population_config=config.population,
+            keep_names=keep_names,
+            max_nbreak_nsat=max_nbreak_nsat,
+            fixed_params=_fixed_params if _fixed_params else None,
+        )
+    
+    else:
+        transform = JesterTransform.from_config(
+            eos_config=config.eos,
+            tov_config=config.tov,
+            keep_names=keep_names,
+            max_nbreak_nsat=max_nbreak_nsat,
+            fixed_params=_fixed_params if _fixed_params else None,
+        )
+
+    if config.cosmology:
+        cosmo_transform = CosmoJesterTransform(fixed_params if fixed_params else None)
+        transform = CombinedTransform([transform, cosmo_transform])
 
     # Validate that all required parameters are present.
     # get_parameter_names() already excludes fixed params, so we only need to
@@ -234,7 +265,8 @@ def setup_transform(
     if prior is not None:
         required_params = set(transform.get_parameter_names())
         prior_params = set(prior.parameter_names)
-        missing_params = required_params - prior_params
+        fixed_params = set(transform.fixed_params.keys())
+        missing_params = required_params - prior_params - fixed_params
 
         if missing_params:
             eos_name = transform.get_eos_type()
@@ -249,8 +281,8 @@ def setup_transform(
         unused_params = prior_params - required_params
         if unused_params:
             logger.warning(
-                f"Prior contains unused parameters: {sorted(unused_params)}. "
-                f"These will be preserved but not used by the transform."
+                f"Prior contains non-EOS parameters: {sorted(unused_params)}. "
+                f"These will be preserved but only used if the transform has a population function."
             )
 
     return transform
