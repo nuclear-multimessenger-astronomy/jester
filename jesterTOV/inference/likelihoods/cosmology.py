@@ -190,6 +190,7 @@ class CosmoMultiMessengerLikelihood(LikelihoodBase):
         # set up mass function
         self.mass_distribution_logpdf = jax.jit(mass_model_logpdf)
 
+        # set up EM posterior if wanted
         self.use_em = use_em
         if self.use_em:
             self.setup_em_likelihood(
@@ -308,7 +309,7 @@ class CosmoMultiMessengerLikelihood(LikelihoodBase):
 
     def evaluate(self, params: dict[str, Float | Array]) -> Float:
         """
-        Evaluate log likelihood for given EOS parameters
+        Evaluate log likelihood for given EOS, mass distribution, and cosmology parameters
 
         Parameters
         ----------
@@ -357,6 +358,7 @@ class CosmoMultiMessengerLikelihood(LikelihoodBase):
 
         log_probs = mass_distribution_logprobs + logprobs_gw
 
+        # evaluate EM log probs if wanted
         if self.use_em:
             m_coll = params["k_coll"] * mtov
             radii_1 = jnp.interp(self.mass_1_source, params["masses_EOS"], params["radii_EOS"])
@@ -373,7 +375,7 @@ class CosmoMultiMessengerLikelihood(LikelihoodBase):
             logprobs_em = self.process_em_likelihood(samples)
             log_probs += logprobs_em
     
-        # Take logsumexp over all pre-sampled mass pairs
+        # Take logsumexp over all samples
         log_likelihood = logsumexp(log_probs) - jnp.log(log_probs.shape[0])
 
         return log_likelihood
