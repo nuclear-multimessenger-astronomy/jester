@@ -77,7 +77,7 @@ def convert_to_log10_mej_dyn(
     )
     log10_mej_dyn = jnp.log10(mej_dyn)
 
-    return lambda_1, lambda_2, log10_mej_dyn
+    return log10_mej_dyn
 
 class CosmoMultiMessengerLikelihood(LikelihoodBase):
     """
@@ -252,6 +252,9 @@ class CosmoMultiMessengerLikelihood(LikelihoodBase):
             logprior_em = lambda x: 0
         self.logprior_em = jax.jit(logprior_em)
 
+        logger.info(f"Loaded EM likelihood for {self.event_name} from {flow_em}.")
+
+
     def process_gw_likelihood(
             self,
             samples: dict[str, Array]
@@ -283,13 +286,14 @@ class CosmoMultiMessengerLikelihood(LikelihoodBase):
             samples: dict[str, Array]
         ) -> Array:
 
+
         def process_single(sample):
             # Evaluate log
-            em_sample = jnp.array([sample["log10_mej_dyn"], sample["luminosity_distance"], sample["cos_theta_jn"]])
-            logpdf_em = self.flow_em.log_prob(em_sample)
+            array_sample = jnp.array([sample["log10_mej_dyn"], sample["luminosity_distance"], sample["cos_theta_jn"]])
+            logpdf_em = self.flow_em.log_prob(array_sample)
 
             #subtract the prior
-            logprior_emvalue = self.logprior_em(em_sample)
+            logprior_emvalue = self.logprior_em(sample)
             logpdf_em -= logprior_emvalue
 
             return logpdf_em
@@ -361,8 +365,8 @@ class CosmoMultiMessengerLikelihood(LikelihoodBase):
             compactness_2 = self.mass_2_source / radii_2 * solar_mass_in_meter * 1e-3
             log10_mej_dyn = convert_to_log10_mej_dyn(
                 m_coll,
-                self.mass_1, compactness_1, lambda_1,
-                self.mass_2, compactness_2, lambda_2
+                self.mass_1_source, compactness_1, lambda_1,
+                self.mass_2_source, compactness_2, lambda_2
                 )
             samples["log10_mej_dyn"] = log10_mej_dyn
 
