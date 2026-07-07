@@ -317,16 +317,21 @@ def load_eos_reweighting_data(outdir: str) -> Dict[str, Any]:
     Returns
     -------
     dict
-        Dictionary with keys ``masses``, ``radii``, ``lambdas`` (resampled
-        posterior curves) and ``log_prob`` (per-draw log-likelihood, used
-        for the posterior-probability colour coding in the plots).
+        Dictionary with key ``masses`` (resampled posterior curve),
+        ``log_prob`` (per-draw log-likelihood, used for the
+        posterior-probability colour coding in the plots), and ``radii``
+        and/or ``lambdas`` (resampled posterior curves), present only if
+        that curve was part of the EOS set (see
+        :meth:`~jesterTOV.inference.samplers.eos_reweighting.EOSReweightingSampler.load_and_grid`).
+        Callers/plot functions that need ``radii``/``lambdas`` should check
+        for their presence and skip gracefully if absent.
 
     Raises
     ------
     FileNotFoundError
         If ``result.h5`` is not found in the directory.
     KeyError
-        If the result does not contain resampled posterior curves (e.g. it
+        If the result does not contain a resampled posterior curve (e.g. it
         was produced by an older version of jester without resampling).
     """
     from jesterTOV.inference.result import InferenceResult
@@ -338,12 +343,10 @@ def load_eos_reweighting_data(outdir: str) -> Dict[str, Any]:
     result = InferenceResult.load(filename)
     posterior = result.posterior
 
-    required = ["masses_EOS", "radii_EOS", "Lambdas_EOS"]
-    missing = [k for k in required if k not in posterior]
-    if missing:
+    if "masses_EOS" not in posterior:
         raise KeyError(
-            f"EOS reweighting result at {filename} is missing resampled posterior "
-            f"curve(s) {missing}. Was it produced by "
+            f"EOS reweighting result at {filename} is missing the resampled "
+            "posterior curve 'masses_EOS'. Was it produced by "
             "EOSReweightingSampler.sample()?"
         )
 
@@ -355,12 +358,23 @@ def load_eos_reweighting_data(outdir: str) -> Dict[str, Any]:
         )
         log_prob = np.zeros(len(posterior["masses_EOS"]))
 
-    return {
+    data: Dict[str, Any] = {
         "masses": posterior["masses_EOS"],
-        "radii": posterior["radii_EOS"],
-        "lambdas": posterior["Lambdas_EOS"],
         "log_prob": np.asarray(log_prob),
     }
+    if "radii_EOS" in posterior:
+        data["radii"] = posterior["radii_EOS"]
+    if "Lambdas_EOS" in posterior:
+        data["lambdas"] = posterior["Lambdas_EOS"]
+
+    missing_curves = [k for k in ("radii", "lambdas") if k not in data]
+    if missing_curves:
+        logger.warning(
+            f"EOS reweighting result at {filename} does not include "
+            f"{missing_curves}; plots requiring them will be skipped."
+        )
+
+    return data
 
 
 # ─── Data analysis helpers ────────────────────────────────────────────────────
@@ -1826,6 +1840,12 @@ def generate_eos_reweighting_plots(
     ``injection_eos_path`` is given, a mass-Lambda ratio plot comparing the
     posterior to the injected EOS is also produced.
 
+    The EOS set may only have ``radii`` or only ``lambdas`` (e.g. a
+    NICER-only or GW-only reweighting run, see
+    :class:`~jesterTOV.inference.samplers.eos_reweighting.EOSReweightingSampler`),
+    in which case any plot needing the missing curve is skipped (logged,
+    not raised) rather than aborting the rest of postprocessing.
+
     Parameters
     ----------
     outdir : str
@@ -1854,49 +1874,64 @@ def generate_eos_reweighting_plots(
         if injection_data is not None:
             logger.info("Injection EOS data loaded successfully!")
 
-    try:
-        make_mass_radius_plot(
-            data,
-            None,
-            figures_dir,
-            injection_data=injection_data,
-            plot_format=plot_format,
-        )
-    except Exception as e:
-        logger.error(f"Failed to create mass-radius plot: {e}")
-        logger.warning("Continuing with other plots...")
+    # All four plot functions below route through the shared
+    # `_get_valid_indices`/`_plot_ns_family_curves` helpers, which use both
+    # the radii and lambdas curves (e.g. for per-sample validity masking and
+    # unstable-branch detection) regardless of which quantities actually end
+    # up on the plot's axes. So a GW-only (lambdas, no radii) or NICER-only
+    # (radii, no lambdas) EOS set cannot produce any of these plots; they are
+    # skipped (logged, not raised) rather than aborting postprocessing.
+    has_both = "radii" in data and "lambdas" in data
 
-    try:
-        make_mass_lambda_plot(
-            data,
-            None,
-            figures_dir,
-            injection_data=injection_data,
-            plot_format=plot_format,
-        )
-    except Exception as e:
-        logger.error(f"Failed to create mass-Lambda plot: {e}")
-        logger.warning("Continuing with other plots...")
-
-    if injection_data is not None:
+    if has_both:
         try:
-            make_mass_lambda_ratio_plot(
-                data, figures_dir, injection_data, plot_format=plot_format
+            make_mass_radius_plot(
+                data,
+                None,
+                figures_dir,
+                injection_data=injection_data,
+                plot_format=plot_format,
             )
         except Exception as e:
-            logger.error(f"Failed to create mass-Lambda ratio plot: {e}")
+            logger.error(f"Failed to create mass-radius plot: {e}")
             logger.warning("Continuing with other plots...")
 
-    try:
-        make_parameter_histograms(
-            data,
-            figures_dir,
-            injection_data=injection_data,
-            plot_format=plot_format,
+        try:
+            make_mass_lambda_plot(
+                data,
+                None,
+                figures_dir,
+                injection_data=injection_data,
+                plot_format=plot_format,
+            )
+        except Exception as e:
+            logger.error(f"Failed to create mass-Lambda plot: {e}")
+            logger.warning("Continuing with other plots...")
+
+        if injection_data is not None:
+            try:
+                make_mass_lambda_ratio_plot(
+                    data, figures_dir, injection_data, plot_format=plot_format
+                )
+            except Exception as e:
+                logger.error(f"Failed to create mass-Lambda ratio plot: {e}")
+                logger.warning("Continuing with other plots...")
+
+        try:
+            make_parameter_histograms(
+                data,
+                figures_dir,
+                injection_data=injection_data,
+                plot_format=plot_format,
+            )
+        except Exception as e:
+            logger.error(f"Failed to create parameter histograms: {e}")
+            logger.warning("Continuing with other plots...")
+    else:
+        logger.info(
+            "Skipping mass-radius/mass-Lambda plots and parameter histograms: "
+            "they require both 'radii' and 'lambdas' curves."
         )
-    except Exception as e:
-        logger.error(f"Failed to create parameter histograms: {e}")
-        logger.warning("Continuing with other plots...")
 
     logger.info(
         f"All plotting scripts executed and generated plots saved to {figures_dir}"

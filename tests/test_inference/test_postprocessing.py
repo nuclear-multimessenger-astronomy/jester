@@ -185,6 +185,38 @@ class TestLoadEOSReweightingData:
         data = load_eos_reweighting_data(str(temp_dir))
         assert np.all(data["log_prob"] == 0.0)
 
+    @staticmethod
+    def _save_masses_only_result(outdir, with_lambdas: bool, with_radii: bool):
+        posterior = {
+            "masses_EOS": np.tile(np.linspace(1.0, 2.0, 20), (8, 1)),
+            "resampled_log_likelihood": np.zeros(8),
+        }
+        if with_lambdas:
+            posterior["Lambdas_EOS"] = np.random.rand(8, 20) * 100
+        if with_radii:
+            posterior["radii_EOS"] = np.random.rand(8, 20) + 10.0
+        metadata = {"sampler": "eos_reweighting", "n_eos": 5, "n_resampled": 8}
+        result = InferenceResult(
+            sampler_type="eos_reweighting", posterior=posterior, metadata=metadata
+        )
+        result.save(outdir / "result.h5")
+
+    def test_load_gw_only_result_omits_radii(self, temp_dir):
+        """A GW-only reweighting result (no radii) must load without error."""
+        self._save_masses_only_result(temp_dir, with_lambdas=True, with_radii=False)
+        data = load_eos_reweighting_data(str(temp_dir))
+        assert data["masses"].shape == (8, 20)
+        assert data["lambdas"].shape == (8, 20)
+        assert "radii" not in data
+
+    def test_load_nicer_only_result_omits_lambdas(self, temp_dir):
+        """A NICER-only reweighting result (no lambdas) must load without error."""
+        self._save_masses_only_result(temp_dir, with_lambdas=False, with_radii=True)
+        data = load_eos_reweighting_data(str(temp_dir))
+        assert data["masses"].shape == (8, 20)
+        assert data["radii"].shape == (8, 20)
+        assert "lambdas" not in data
+
 
 class TestGenerateEOSReweightingPlots:
     """Test the mass-radius/mass-Lambda/histogram postprocessing entry point."""
@@ -213,6 +245,34 @@ class TestGenerateEOSReweightingPlots:
     def test_missing_result_file_does_not_raise(self, temp_dir):
         # Should log an error and return, not raise.
         generate_eos_reweighting_plots(str(temp_dir / "nonexistent"))
+
+    def test_gw_only_result_skips_all_plots_without_crashing(self, temp_dir):
+        """A GW-only result (no radii) must not crash postprocessing. The
+        mass-radius/mass-Lambda plots and histograms share helpers that need
+        both curves, so none of them can be produced without 'radii' —
+        postprocessing should just skip them, not raise."""
+        TestLoadEOSReweightingData._save_masses_only_result(
+            temp_dir, with_lambdas=True, with_radii=False
+        )
+
+        generate_eos_reweighting_plots(str(temp_dir), plot_format="png")
+
+        figures_dir = temp_dir / "figures"
+        assert not figures_dir.exists() or list(figures_dir.iterdir()) == []
+
+    def test_nicer_only_result_skips_all_plots_without_crashing(self, temp_dir):
+        """A NICER-only result (no lambdas) must not crash postprocessing;
+        see test_gw_only_result_skips_all_plots_without_crashing."""
+        TestLoadEOSReweightingData._save_masses_only_result(
+            temp_dir, with_lambdas=False, with_radii=True
+        )
+
+        generate_eos_reweighting_plots(str(temp_dir), plot_format="png")
+
+        figures_dir = temp_dir / "figures"
+        assert not figures_dir.exists() or list(figures_dir.iterdir()) == []
+        assert not (figures_dir / "mass_radius_plot.png").exists()
+        assert not (figures_dir / "MTOV_histogram.png").exists()
 
 
 class TestLoadPriorData:

@@ -238,14 +238,36 @@ class TestEOSReweightingConfig:
         out = sampler.sample(jax.random.key(0))
         assert out.log_prob.shape == (N_EOS,)
 
-    def test_missing_radii_raises(self, tmp_path, zero_likelihood):
-        """NPZ file without 'radii' key must raise a clear ValueError."""
+    def test_missing_radii_is_allowed_without_nicer(self, tmp_path, zero_likelihood):
+        """NPZ file without 'radii' works fine when no likelihood needs it."""
         p = str(tmp_path / "no_radii.npz")
         masses = np.tile(np.linspace(0.5, 2.0, 30), (3, 1))
         np.savez(p, masses=masses, lambdas=np.ones_like(masses) * 500)
         cfg = EOSReweightingConfig(eos_file=p, n_grid=20, m_min=0.5)
         sampler = EOSReweightingSampler(likelihood=zero_likelihood, config=cfg)
-        with pytest.raises(ValueError, match="radii"):
+        out = sampler.sample(jax.random.key(0))
+        assert "radii_EOS" not in out.samples
+        assert out.samples["Lambdas_EOS"].shape[0] > 0
+
+    def test_missing_lambdas_is_allowed_without_gw(self, tmp_path, zero_likelihood):
+        """NPZ file without 'lambdas' works fine when no likelihood needs it."""
+        p = str(tmp_path / "no_lambdas.npz")
+        masses = np.tile(np.linspace(0.5, 2.0, 30), (3, 1))
+        np.savez(p, masses=masses, radii=np.ones_like(masses) * 12.0)
+        cfg = EOSReweightingConfig(eos_file=p, n_grid=20, m_min=0.5)
+        sampler = EOSReweightingSampler(likelihood=zero_likelihood, config=cfg)
+        out = sampler.sample(jax.random.key(0))
+        assert "Lambdas_EOS" not in out.samples
+        assert out.samples["radii_EOS"].shape[0] > 0
+
+    def test_missing_both_radii_and_lambdas_raises(self, tmp_path, zero_likelihood):
+        """NPZ file with neither 'radii' nor 'lambdas' must raise a clear ValueError."""
+        p = str(tmp_path / "neither.npz")
+        masses = np.tile(np.linspace(0.5, 2.0, 30), (3, 1))
+        np.savez(p, masses=masses)
+        cfg = EOSReweightingConfig(eos_file=p, n_grid=20, m_min=0.5)
+        sampler = EOSReweightingSampler(likelihood=zero_likelihood, config=cfg)
+        with pytest.raises(ValueError, match="lambdas.*radii"):
             sampler.sample(jax.random.key(0))
 
     def test_mismatched_shapes_raises(self, tmp_path, zero_likelihood):
@@ -402,6 +424,94 @@ class TestEOSReweightingLikelihoodValidation:
                 ],
                 sampler=self._sampler_config(),
             )
+
+
+class TestEOSFileRequiredCurvesValidation:
+    """The EOS file's available curves ('lambdas'/'radii') must satisfy
+    whatever the enabled likelihoods need (GW -> lambdas, NICER -> radii).
+    This is only checked when the eos_file actually exists on disk."""
+
+    @staticmethod
+    def _npz_with(tmp_path: Path, name: str, **arrays) -> str:
+        p = str(tmp_path / name)
+        masses = np.tile(np.linspace(0.5, 2.0, 30), (3, 1))
+        np.savez(p, masses=masses, **arrays)
+        return p
+
+    def test_gw_requires_lambdas(self, tmp_path):
+        p = self._npz_with(tmp_path, "radii_only.npz", radii=12.0 * np.ones((3, 30)))
+        with pytest.raises(ValueError, match="lambdas"):
+            EOSReweightingInferenceConfig(
+                likelihoods=[
+                    GWLikelihoodConfig(events=[GWEventConfig(name="GW170817")])
+                ],
+                sampler=EOSReweightingConfig(eos_file=p, n_grid=20, m_min=0.5),
+            )
+
+    def test_nicer_requires_radii(self, tmp_path):
+        p = self._npz_with(
+            tmp_path, "lambdas_only.npz", lambdas=500.0 * np.ones((3, 30))
+        )
+        with pytest.raises(ValueError, match="radii"):
+            EOSReweightingInferenceConfig(
+                likelihoods=[NICERLikelihoodConfig(pulsars=[{"name": "J0030"}])],
+                sampler=EOSReweightingConfig(eos_file=p, n_grid=20, m_min=0.5),
+            )
+
+    def test_gw_only_eos_file_accepted(self, tmp_path):
+        p = self._npz_with(
+            tmp_path, "lambdas_only.npz", lambdas=500.0 * np.ones((3, 30))
+        )
+        cfg = EOSReweightingInferenceConfig(
+            likelihoods=[GWLikelihoodConfig(events=[GWEventConfig(name="GW170817")])],
+            sampler=EOSReweightingConfig(eos_file=p, n_grid=20, m_min=0.5),
+        )
+        assert cfg.sampler.eos_file == p
+
+    def test_nicer_only_eos_file_accepted(self, tmp_path):
+        p = self._npz_with(tmp_path, "radii_only.npz", radii=12.0 * np.ones((3, 30)))
+        cfg = EOSReweightingInferenceConfig(
+            likelihoods=[NICERLikelihoodConfig(pulsars=[{"name": "J0030"}])],
+            sampler=EOSReweightingConfig(eos_file=p, n_grid=20, m_min=0.5),
+        )
+        assert cfg.sampler.eos_file == p
+
+    def test_both_gw_and_nicer_require_both_curves(self, tmp_path):
+        p = self._npz_with(
+            tmp_path, "lambdas_only.npz", lambdas=500.0 * np.ones((3, 30))
+        )
+        with pytest.raises(ValueError, match="radii"):
+            EOSReweightingInferenceConfig(
+                likelihoods=[
+                    GWLikelihoodConfig(events=[GWEventConfig(name="GW170817")]),
+                    NICERLikelihoodConfig(pulsars=[{"name": "J0030"}]),
+                ],
+                sampler=EOSReweightingConfig(eos_file=p, n_grid=20, m_min=0.5),
+            )
+
+    def test_disabled_gw_does_not_require_lambdas(self, tmp_path):
+        p = self._npz_with(tmp_path, "radii_only.npz", radii=12.0 * np.ones((3, 30)))
+        cfg = EOSReweightingInferenceConfig(
+            likelihoods=[
+                GWLikelihoodConfig(
+                    events=[GWEventConfig(name="GW170817")], enabled=False
+                ),
+                NICERLikelihoodConfig(pulsars=[{"name": "J0030"}]),
+            ],
+            sampler=EOSReweightingConfig(eos_file=p, n_grid=20, m_min=0.5),
+        )
+        assert cfg.sampler.eos_file == p
+
+    def test_nonexistent_eos_file_skips_curve_check(self):
+        """A not-yet-created eos_file defers to the (clearer) FileNotFoundError
+        raised when the sampler actually tries to load it."""
+        cfg = EOSReweightingInferenceConfig(
+            likelihoods=[GWLikelihoodConfig(events=[GWEventConfig(name="GW170817")])],
+            sampler=EOSReweightingConfig(
+                eos_file="does_not_exist.npz", n_grid=20, m_min=0.5
+            ),
+        )
+        assert cfg.sampler.eos_file == "does_not_exist.npz"
 
 
 class TestEOSReweightingHDF5:

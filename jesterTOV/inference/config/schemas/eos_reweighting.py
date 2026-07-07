@@ -7,13 +7,22 @@ has **no** ``eos``, ``tov``, or ``prior`` sections, because the EOS is provided
 as tabulated curves rather than generated from a parametric model.
 """
 
+import os
 from typing import Literal
 
-from pydantic import Field, field_validator, ConfigDict
+import numpy as np
+from pydantic import Field, field_validator, model_validator, ConfigDict
 
 from ._base import JesterBaseModel
 from .likelihoods import LikelihoodConfig
 from .samplers import EOSReweightingConfig
+
+#: Likelihood types (among :data:`_EOS_REWEIGHTING_ALLOWED_LIKELIHOOD_TYPES`)
+#: that require the tabulated ``lambdas``/``radii`` curve respectively. Used
+#: by :meth:`EOSReweightingInferenceConfig._validate_eos_file_has_required_curves`
+#: to cross-check the EOS file's available keys against enabled likelihoods.
+_LIKELIHOOD_TYPES_REQUIRING_LAMBDAS = {"gw"}
+_LIKELIHOOD_TYPES_REQUIRING_RADII = {"nicer"}
 
 #: Likelihood types that only require the tabulated M-Λ-R family curves
 #: (via "masses_EOS", "Lambdas_EOS", "radii_EOS") produced by the
@@ -141,3 +150,45 @@ class EOSReweightingInferenceConfig(JesterBaseModel):
         if v < 0:
             raise ValueError(f"Seed must be non-negative, got: {v}")
         return v
+
+    @model_validator(mode="after")
+    def _validate_eos_file_has_required_curves(self) -> "EOSReweightingInferenceConfig":
+        """Check that the EOS file provides the curves the enabled likelihoods need.
+
+        GW-type likelihoods read ``Lambdas_EOS`` and NICER-type likelihoods
+        read ``radii_EOS`` (see
+        :meth:`~jesterTOV.inference.samplers.eos_reweighting.EOSReweightingSampler.load_and_grid`);
+        both are optional in the EOS NPZ file otherwise. If the file does
+        not exist yet, this check is skipped and the (clearer)
+        ``FileNotFoundError`` is left to surface when the file is actually
+        loaded.
+        """
+        eos_file = self.sampler.eos_file
+        if not os.path.exists(eos_file):
+            return self
+
+        needs_lambdas = any(
+            lk.enabled and lk.type in _LIKELIHOOD_TYPES_REQUIRING_LAMBDAS
+            for lk in self.likelihoods
+        )
+        needs_radii = any(
+            lk.enabled and lk.type in _LIKELIHOOD_TYPES_REQUIRING_RADII
+            for lk in self.likelihoods
+        )
+        if not needs_lambdas and not needs_radii:
+            return self
+
+        with np.load(eos_file) as data:
+            available = set(data.files)
+
+        missing = []
+        if needs_lambdas and "lambdas" not in available:
+            missing.append("'lambdas' (required by the enabled 'gw' likelihood)")
+        if needs_radii and "radii" not in available:
+            missing.append("'radii' (required by the enabled 'nicer' likelihood)")
+        if missing:
+            raise ValueError(
+                f"EOS file '{eos_file}' is missing required curve(s): "
+                f"{', '.join(missing)}."
+            )
+        return self

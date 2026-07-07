@@ -267,9 +267,15 @@ class EOSReweightingConfig(BaseSamplerConfig):
 
     EOS tables must be NPZ files with keys:
 
-    - ``masses``: 1D float64 array in :math:`M_\odot`, monotone increasing
-    - ``lambdas``: 1D float64 array, dimensionless tidal deformability
-    - ``radii``: 1D float64 array in km (required)
+    - ``masses``: 1D float64 array in :math:`M_\odot`, monotone increasing (required)
+    - ``lambdas``: 1D float64 array, dimensionless tidal deformability (optional)
+    - ``radii``: 1D float64 array in km (optional)
+
+    At least one of ``lambdas``/``radii`` must be present — which one is
+    actually required depends on the enabled likelihoods (GW needs
+    ``lambdas``, NICER needs ``radii``); this is cross-checked against
+    ``likelihoods`` in
+    :class:`~jesterTOV.inference.config.schemas.eos_reweighting.EOSReweightingInferenceConfig`.
 
     For a file containing N EOS curves: arrays shaped ``[N, n_points]``.
 

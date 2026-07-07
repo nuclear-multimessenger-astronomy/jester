@@ -819,8 +819,11 @@ This sampler does **not** require an `eos`, `tov`, or `prior` section in the YAM
 sampler:
   type: "eos-reweighting"
 
-  # EOS input — NPZ file with keys: masses, lambdas, radii (all 1-D float64)
-  # For a file containing N curves: arrays shaped [N, n_points]
+  # EOS input — NPZ file with a required "masses" key (1-D float64) plus at
+  # least one of "lambdas" or "radii". Only having "lambdas" supports
+  # GW-only reweighting; only having "radii" supports NICER-only reweighting.
+  # Which one is actually required is cross-checked against the enabled
+  # likelihoods below. For a file containing N curves: arrays shaped [N, n_points]
   eos_file: "path/to/eos.npz"
 
   # Mass interpolation grid
@@ -850,9 +853,11 @@ postprocessing:
 
 | Key | Shape | Description |
 |---|---|---|
-| `masses` | `[n_points]` or `[N, n_points]` | Mass in $M_\odot$, monotone increasing |
-| `lambdas` | same as `masses` | Dimensionless tidal deformability $\Lambda$ |
-| `radii` | same as `masses` | Radius in km |
+| `masses` | `[n_points]` or `[N, n_points]` | Mass in $M_\odot$, monotone increasing (required) |
+| `lambdas` | same as `masses` | Dimensionless tidal deformability $\Lambda$ (optional) |
+| `radii` | same as `masses` | Radius in km (optional) |
+
+At least one of `lambdas`/`radii` must be present. `gw` likelihoods need `lambdas`; `nicer` likelihoods need `radii`; `radio` and `zero` need neither. If an enabled likelihood needs a curve the EOS file doesn't provide, config parsing raises a clear error. A set with only `lambdas` (no `radii`) supports GW-only reweighting; a set with only `radii` supports NICER-only reweighting — but note that the mass-radius/mass-Lambda plots and the $M_{\rm TOV}$/$R_{1.4}$/$\Lambda_{1.4}$ histograms in postprocessing all need both curves and are skipped (not raised) when only one is available.
 
 **Resampling to posterior samples.** After the marginal log-likelihood is computed for every input EOS curve, `sample()` draws `n_resample` equal-weight posterior samples (with replacement, weighted by the normalised posterior weights) via {func}`~jesterTOV.inference.samplers.eos_reweighting.resample_eos_posterior`. This turns the discrete, unequally weighted evaluation into a standard equal-weight posterior — the same shape of output you'd get from any of the parametric samplers — so it can be plotted or further analysed without carrying weights around. The function is public and reusable outside `EOSReweightingSampler.sample()`: load your own tabulated EOS set with {meth}`~jesterTOV.inference.samplers.eos_reweighting.EOSReweightingSampler.load_and_grid`, compute weights however you like, and call `resample_eos_posterior(masses, lambdas, radii, posterior_weights)` directly. See {doc}`the reweighting example notebook </examples/inference/reweighting/reweighting>` for a worked example.
 
