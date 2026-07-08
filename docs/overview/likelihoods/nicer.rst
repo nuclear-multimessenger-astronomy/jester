@@ -133,9 +133,7 @@ Headline result using CST+PDT hotspot model with 3C50 background:
 **Maryland group — Miller, Dittmann, Holt et al. 2026** (`Zenodo 17833896 <https://zenodo.org/records/17833896>`_,
 `arXiv:2512.08790 <https://arxiv.org/abs/2512.08790>`_, ApJL 1000, L48)
 
-Headline result using a three-circular-spot-plus-Gaussian-power-law hotspot model. The
-raw file (``J0437_NICER_RM.txt``) stores importance weights alongside mass and radius
-rather than equal-weight samples, so the extraction script importance-resamples it to
+Headline result. The raw file (``J0437_NICER_RM.txt``) stores importance weights alongside mass and radius rather than equal-weight samples, so the extraction script importance-resamples it to
 an equal-weight posterior before saving:
 
 * ``J04374715_maryland_3spotGPL_NICER_only_RM.npz``
