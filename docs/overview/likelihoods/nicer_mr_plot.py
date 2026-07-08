@@ -5,9 +5,11 @@ Samples are drawn from the pre-trained normalizing flows (one per PSR/group),
 not from the raw posterior npz files.  This mirrors how NICERLikelihood uses
 the flows at inference time.
 
-One representative analysis is chosen per pulsar:
+One representative analysis is chosen per pulsar, except for PSR J0437-4715 where
+both available analyses are shown for comparison:
   - PSR J0030+0451  — Amsterdam ST+PST, Riley et al. 2019
   - PSR J0437-4715  — Amsterdam CST+PDT, Choudhury et al. 2024
+  - PSR J0437-4715  — Maryland 3spot+GPL, Miller, Dittmann, Holt et al. 2026
   - PSR J0614-3329  — Amsterdam ST+PDT, Dittmann et al. 2025
   - PSR J0740+6620  — Amsterdam gamma NICER+XMM, Salmi et al. 2024
 
@@ -50,21 +52,31 @@ PSR_CONFIGS = [
         "label": "PSR J0030+0451",
         "flow_dir": FLOWS_DIR / "J00300451" / "amsterdam_st_pst",
         "color": "#17becf",
+        "linestyle": "-",
     },
     {
-        "label": "PSR J0437-4715",
+        "label": "PSR J0437-4715 (Amsterdam)",
         "flow_dir": FLOWS_DIR / "J04374715" / "amsterdam_cst_pdt",
         "color": "#d62728",
+        "linestyle": "-",
+    },
+    {
+        "label": "PSR J0437-4715 (Maryland)",
+        "flow_dir": FLOWS_DIR / "J04374715" / "maryland",
+        "color": "#d62728",
+        "linestyle": "--",
     },
     {
         "label": "PSR J0614-3329",
         "flow_dir": FLOWS_DIR / "J06143329" / "amsterdam_st_pdt",
         "color": "#1f77b4",
+        "linestyle": "-",
     },
     {
         "label": "PSR J0740+6620",
         "flow_dir": FLOWS_DIR / "J07406620" / "amsterdam_gamma_nicerxmm",
         "color": "#9467bd",
+        "linestyle": "-",
     },
 ]
 
@@ -138,26 +150,40 @@ for i, cfg in enumerate(PSR_CONFIGS):
     mass: np.ndarray = samples[:, 0]
     radius: np.ndarray = samples[:, 1]
     color: str = cfg["color"]
+    linestyle: str = cfg.get("linestyle", "-")
 
     R_grid, M_grid, Z, levels = kde_credible_levels(mass, radius)
 
-    # Fill 90% CI (outer, lighter)
-    ax.contourf(
-        R_grid, M_grid, Z, levels=[levels[0], Z.max()], colors=[color], alpha=0.25
-    )
-    # Fill 68% CI (inner, darker)
-    ax.contourf(
-        R_grid, M_grid, Z, levels=[levels[1], Z.max()], colors=[color], alpha=0.50
-    )
-    # Draw both contour lines
-    ax.contour(R_grid, M_grid, Z, levels=levels, colors=[color], linewidths=1.5)
+    if linestyle == "-":
+        # Fill 90% CI (outer, lighter)
+        ax.contourf(
+            R_grid, M_grid, Z, levels=[levels[0], Z.max()], colors=[color], alpha=0.25
+        )
+        # Fill 68% CI (inner, darker)
+        ax.contourf(
+            R_grid, M_grid, Z, levels=[levels[1], Z.max()], colors=[color], alpha=0.50
+        )
+        # Invisible proxy artist for the pulsar legend
+        ax.fill_between([], [], color=color, alpha=0.6, label=cfg["label"])
+    else:
+        # Overlaid comparison analysis: draw contour lines only, no fill,
+        # so it doesn't obscure the filled analysis for the same pulsar.
+        ax.plot([], [], color=color, linestyle=linestyle, label=cfg["label"])
 
-    # Invisible proxy artist for the pulsar legend
-    ax.fill_between([], [], color=color, alpha=0.6, label=cfg["label"])
+    # Draw both contour lines
+    ax.contour(
+        R_grid,
+        M_grid,
+        Z,
+        levels=levels,
+        colors=[color],
+        linewidths=1.5,
+        linestyles=linestyle,
+    )
 
 ax.set_xlabel(r"Radius [km]", fontsize=12)
 ax.set_ylabel(r"Mass [$M_\odot$]", fontsize=12)
-ax.set_xlim(8.0, 16.0)
+ax.set_xlim(8.0, 17.5)
 ax.set_ylim(1.0, 2.5)
 ax.tick_params(labelsize=11)
 

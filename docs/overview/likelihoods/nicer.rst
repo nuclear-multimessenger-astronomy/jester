@@ -121,13 +121,24 @@ Two hotspot geometries × two prior choices:
 PSR J0437−4715
 ^^^^^^^^^^^^^^
 
-The nearest and brightest millisecond pulsar, observed with NICER only.
+The nearest and brightest millisecond pulsar, observed with NICER only. Two
+independent analyses are available and both are shown in the overview figure above.
 
 **Amsterdam group — Choudhury et al. 2024** (`Zenodo 13766753 <https://zenodo.org/records/13766753>`_)
 
 Headline result using CST+PDT hotspot model with 3C50 background:
 
 * ``J04374715_amsterdam_CST_PDT_NICER_only_Choudhury2024.npz``
+
+**Maryland group — Miller, Dittmann, Holt et al. 2026** (`Zenodo 17833896 <https://zenodo.org/records/17833896>`_,
+`arXiv:2512.08790 <https://arxiv.org/abs/2512.08790>`_, ApJL 1000, L48)
+
+Headline result using a three-circular-spot-plus-Gaussian-power-law hotspot model. The
+raw file (``J0437_NICER_RM.txt``) stores importance weights alongside mass and radius
+rather than equal-weight samples, so the extraction script importance-resamples it to
+an equal-weight posterior before saving:
+
+* ``J04374715_maryland_3spotGPL_NICER_only_RM.npz``
 
 PSR J0614−3329
 ^^^^^^^^^^^^^^
