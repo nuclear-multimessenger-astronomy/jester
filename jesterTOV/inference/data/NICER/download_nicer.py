@@ -7,6 +7,8 @@ Pipeline (all controlled by constants below):
   Step 1  Download Zenodo archives for Maryland and Amsterdam groups.
           (requires ``zenodo_get``: ``uv pip install zenodo-get``)
   Step 2  Extract Maryland text files → .npz with mass/radius/metadata.
+          J0437 (Miller, Dittmann, Holt et al. 2026) is importance-resampled
+          using its weight column to obtain an equal-weight posterior.
   Step 3  Extract Amsterdam tar.gz archives → .npz.
   Step 4  Downsample all .npz files to MAX_SAMPLES.
 
@@ -84,6 +86,11 @@ def download_zenodo_data() -> None:
             "J0614/amsterdam/original",
             "Headline_Contours_and_Samples.tar.gz",
             "https://zenodo.org/records/17380576/files/Headline_Contours_and_Samples.tar.gz",
+        ),
+        (
+            "J0437/maryland/original",
+            "J0437_NICER_RM.txt",
+            "https://zenodo.org/records/17833896/files/J0437_NICER_RM.txt",
         ),
     ]
     for rel_dir, filename, url in _direct_downloads:
@@ -216,6 +223,74 @@ def process_maryland_data() -> list[Path]:
         results.append(out_path)
 
     return results
+
+
+def parse_miller2026_j0437_txt(filepath: Path) -> Tuple[np.ndarray, np.ndarray, Dict]:
+    """Parse Miller, Dittmann, Holt et al. 2026 J0437 NICER RM file.
+
+    Format: columns are radius [km], mass [Msun], weight — raw weighted
+    posterior samples (not equal-weight). We importance-resample using the
+    weight column to obtain an equal-weight posterior, following the same
+    treatment as the Riley et al. 2019 MultiNest chains in
+    ``parse_riley2019_mr_file``.
+    """
+    print(f"\n  Parsing: {filepath.name}")
+    data = np.loadtxt(filepath, comments="#")
+    radius_all = data[:, 0]
+    mass_all = data[:, 1]
+    weights = data[:, 2]
+
+    rng = np.random.default_rng(seed=42)
+    w_norm = weights / weights.sum()
+    n_resample = min(
+        MAX_SAMPLES if MAX_SAMPLES is not None else len(weights), len(weights)
+    )
+    idx = rng.choice(len(weights), size=n_resample, replace=True, p=w_norm)
+    radius = radius_all[idx]
+    mass = mass_all[idx]
+
+    metadata: Dict = {
+        "psr": "J0437-4715",
+        "group": "maryland",
+        "analysis": "Miller, Dittmann, Holt, et al. 2026",
+        "hotspot_model": "3spot+GPL",
+        "data_used": "NICER-only",
+        "model_variant": "RM",
+        "n_samples": len(radius),
+        "weighted": False,
+        "resampled_from_weights": True,
+        "source_file": filepath.name,
+        "zenodo_record": "https://zenodo.org/records/17833896",
+        "paper": "Miller, Dittmann, Holt, et al. 2026 (ApJL 1000, L48, arXiv:2512.08790)",
+        "format": (
+            "equal-weight resampled from raw weighted posterior "
+            "(original format: radius, mass, weight)"
+        ),
+    }
+    print(f"    PSR J0437-4715, hotspot=3spot+GPL, data=NICER-only, n={len(radius):,}")
+    return radius, mass, metadata
+
+
+def process_j0437_maryland_data() -> list[Path]:
+    """Extract the Miller et al. 2026 J0437 Maryland RM file to .npz."""
+    src = ZENODO_DIR / "J0437/maryland/original/J0437_NICER_RM.txt"
+    if not src.exists():
+        print(f"\n  Not found (download Zenodo first): {src.name}")
+        return []
+
+    out_name = "J04374715_maryland_3spotGPL_NICER_only_RM.npz"
+    out_path = OUTPUT_DIR / out_name
+
+    if out_path.exists() and not IGNORE_CACHE:
+        print(f"    Cached: {out_name}")
+        return [out_path]
+
+    radius, mass, meta = parse_miller2026_j0437_txt(src)
+    np.savez(out_path, radius=radius, mass=mass, metadata=meta)  # type: ignore[arg-type]
+    print(
+        f"    Saved: {out_name} ({out_path.stat().st_size / 1024:.1f} KB, {len(radius):,} samples)"
+    )
+    return [out_path]
 
 
 # ============================================================
@@ -636,6 +711,7 @@ def main() -> None:
     print("STEP 2: EXTRACT MARYLAND DATA")
     print("=" * 70)
     process_maryland_data()
+    process_j0437_maryland_data()
 
     if EXTRACT_AMSTERDAM:
         print("\n" + "=" * 70)
