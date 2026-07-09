@@ -165,7 +165,7 @@ def parse_maryland_txt(filepath: Path) -> Tuple[np.ndarray, np.ndarray, Dict]:
         "source_file": filepath.name,
         "header": "\n".join(header_lines),
         "zenodo_record": (
-            "https://zenodo.org/records/3473464"
+            "https://zenodo.org/records/3473466"
             if psr == "J0030+0451"
             else "https://zenodo.org/records/4670689"
         ),
@@ -341,7 +341,7 @@ def parse_riley2019_mr_file(filepath: Path) -> Tuple[np.ndarray, np.ndarray, Dic
         "weighted": False,
         "resampled_from_weights": True,
         "source_file": filepath.name,
-        "zenodo_record": "https://zenodo.org/records/3524457",
+        "zenodo_record": "https://zenodo.org/records/7096789",
         "paper": "Riley et al. 2019 (ApJL 887 L21)",
         "format": (
             "equal-weight resampled from MultiNest chain "
@@ -370,7 +370,7 @@ def parse_salmi_recent_mr_file(filepath: Path) -> Tuple[np.ndarray, np.ndarray, 
         "weighted": False,
         "source_file": filepath.name,
         "zenodo_record": "https://zenodo.org/records/10519473",
-        "paper": "Salmi et al. 2024",
+        "paper": "Salmi et al. 2024 (The Radius of the High-mass Pulsar PSR J0740+6620 with 3.6 yr of NICER Data, ApJ 974, 294)",
         "settings": "lp40k_se001",
     }
     return radius, mass, metadata
@@ -527,7 +527,7 @@ def extract_amsterdam_data() -> list[Path]:
                     "weighted": False,
                     "source_file": member.name,
                     "zenodo_record": "https://zenodo.org/records/13766753",
-                    "paper": "Choudhury et al. 2024 (A NICER View of the Nearest and Brightest Millisecond Pulsar: PSR J0437-4715)",
+                    "paper": "Choudhury et al. 2024 (A NICER View of the Nearest and Brightest Millisecond Pulsar: PSR J0437-4715, ApJL 971, L20)",
                 }
                 np.savez(j0437_out_path, radius=radius, mass=mass, metadata=meta)  # type: ignore[arg-type]
                 print(
@@ -539,15 +539,15 @@ def extract_amsterdam_data() -> list[Path]:
     else:
         print(f"\nArchive not found (download Zenodo first): {j0437_archive.name}")
 
-    # 4. Dittmann et al. 2025 (J0614-3329)
+    # 4. Mauviard et al. 2025 (J0614-3329)
     j0614_archive = (
         ZENODO_DIR / "J0614/amsterdam/original/Headline_Contours_and_Samples.tar.gz"
     )
-    j0614_out_name = "J06143329_amsterdam_ST_PDT_NICER_only_Dittmann2025.npz"
+    j0614_out_name = "J06143329_amsterdam_ST_PDT_NICER_only_Mauviard2025.npz"
     j0614_out_path = OUTPUT_DIR / j0614_out_name
 
     if j0614_archive.exists():
-        print(f"\nDittmann et al. 2025 — {j0614_archive.name}")
+        print(f"\nMauviard et al. 2025 — {j0614_archive.name}")
         if j0614_out_path.exists() and not IGNORE_CACHE:
             print(f"  Cached: {j0614_out_name}")
             results.append(j0614_out_path)
@@ -585,14 +585,14 @@ def extract_amsterdam_data() -> list[Path]:
                 meta: Dict = {
                     "psr": "J0614-3329",
                     "group": "amsterdam",
-                    "analysis": "Dittmann et al. 2025",
+                    "analysis": "Mauviard et al. 2025",
                     "hotspot_model": "ST+PDT",
                     "data_used": "NICER-only",
                     "n_samples": len(mass),
                     "weighted": False,
                     "source_file": member.name,
                     "zenodo_record": "https://zenodo.org/records/17380576",
-                    "paper": "Dittmann et al. 2025 (A NICER view of the 1.4 solar-mass edge-on pulsar PSR J0614-3329)",
+                    "paper": "Mauviard et al. 2025 (A NICER View of the 1.4 Msun Edge-on Pulsar PSR J0614-3329, ApJ 995, 60, arXiv:2506.14883)",
                 }
                 np.savez(j0614_out_path, radius=radius, mass=mass, metadata=meta)  # type: ignore[arg-type]
                 print(

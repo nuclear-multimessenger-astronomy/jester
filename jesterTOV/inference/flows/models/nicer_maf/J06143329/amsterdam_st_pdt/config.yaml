@@ -1,5 +1,5 @@
 # Configuration for training normalizing flow on NICER J0614-3329 (Amsterdam ST_PDT)
-posterior_file: ../../../../../data/NICER/J06143329_amsterdam_ST_PDT_NICER_only_Dittmann2025.npz
+posterior_file: ../../../../../data/NICER/J06143329_amsterdam_ST_PDT_NICER_only_Mauviard2025.npz
 output_dir: .
 
 # Parameter selection
