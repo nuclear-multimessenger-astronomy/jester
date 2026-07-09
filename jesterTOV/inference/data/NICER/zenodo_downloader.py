@@ -26,7 +26,7 @@ ZENODO_DATASETS: dict = {
     "J0614": {
         "amsterdam": {
             "original": {
-                "name": "Dittmann et al. 2025",
+                "name": "Mauviard et al. 2025",
                 "zenodo_id": "17380576",
                 "url": "https://zenodo.org/records/17380576",
                 "description": "Amsterdam analysis of PSR J0614-3329 (1.4 Msun edge-on pulsar)",
@@ -43,16 +43,16 @@ ZENODO_DATASETS: dict = {
             },
             "original": {
                 "name": "Riley et al. 2019",
-                "zenodo_id": "3473466",
-                "url": "https://zenodo.org/records/3473466",
+                "zenodo_id": "7096789",
+                "url": "https://zenodo.org/records/7096789",
                 "description": "Original Amsterdam analysis of PSR J0030+0451",
             },
         },
         "maryland": {
             "original": {
                 "name": "Miller et al. 2019",
-                "zenodo_id": "3473464",
-                "url": "https://zenodo.org/records/3473464",
+                "zenodo_id": "3473466",
+                "url": "https://zenodo.org/records/3473466",
                 "description": "Original Maryland analysis of PSR J0030+0451",
             },
         },
@@ -72,7 +72,7 @@ ZENODO_DATASETS: dict = {
                 "description": "Intermediate Amsterdam analysis of PSR J0740+6620",
             },
             "original": {
-                "name": "Riley et al. 2022",
+                "name": "Riley et al. 2021",
                 "zenodo_id": "7096886",
                 "url": "https://zenodo.org/records/7096886",
                 "description": "Original Amsterdam analysis of PSR J0740+6620",
