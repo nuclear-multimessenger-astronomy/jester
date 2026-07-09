@@ -21,6 +21,7 @@ from .config.schema import (
     InferenceConfig,
     MetamodelCSEEOSConfig,
     MetamodelPeakCSEEOSConfig,
+    LECMetamodelCSEEOSConfig,
     BaseMetamodelEOSConfig,
     GWLikelihoodConfig,
     GWEventConfig,
@@ -79,7 +80,9 @@ def determine_keep_names(
     chieft_enabled = any(
         lk.enabled and lk.type == "chieft" for lk in config.likelihoods
     )
-    if chieft_enabled and isinstance(config.eos, MetamodelCSEEOSConfig):
+    if chieft_enabled and isinstance(
+        config.eos, (MetamodelCSEEOSConfig, LECMetamodelCSEEOSConfig)
+    ):
         if "nbreak" not in prior.parameter_names and "nbreak" not in _fixed:
             raise ValueError(
                 "ChiEFT likelihood is enabled with metamodel_cse but 'nbreak' parameter is not in the prior. "
@@ -121,7 +124,11 @@ def setup_prior(config: InferenceConfig) -> tuple[CombinePrior, dict[str, float]
     from .base.prior import UniformPrior, CombinePrior
 
     # Determine conditional parameters
-    nb_CSE = config.eos.nb_CSE if isinstance(config.eos, MetamodelCSEEOSConfig) else 0
+    nb_CSE = (
+        config.eos.nb_CSE
+        if isinstance(config.eos, (MetamodelCSEEOSConfig, LECMetamodelCSEEOSConfig))
+        else 0
+    )
     # peakCSE uses nbreak as a core parameter (not gated by nb_CSE)
     include_nbreak = isinstance(config.eos, MetamodelPeakCSEEOSConfig)
 
@@ -188,7 +195,7 @@ def setup_transform(
     # Determine max_nbreak_nsat for MetamodelCSE: compare config field vs prior bound
     # TODO: in a future version, need to improve this...
     max_nbreak_nsat = None
-    if isinstance(config.eos, MetamodelCSEEOSConfig):
+    if isinstance(config.eos, (MetamodelCSEEOSConfig, LECMetamodelCSEEOSConfig)):
         config_value = config.eos.max_nbreak_nsat
         prior_value = None
 
@@ -824,7 +831,7 @@ def main(config_path: str) -> None:
 
     # Log transform details
     logger.info(f"EOS type: {config.eos.type}")
-    if isinstance(config.eos, MetamodelCSEEOSConfig):
+    if isinstance(config.eos, (MetamodelCSEEOSConfig, LECMetamodelCSEEOSConfig)):
         logger.info(f"  nb_CSE: {config.eos.nb_CSE}")
         if config.eos.max_nbreak_nsat is not None:
             logger.info(f"  max_nbreak_nsat: {config.eos.max_nbreak_nsat:.4f} n_sat")

@@ -10,6 +10,7 @@ from jesterTOV.eos.metamodel import (
     MetaModel_EOS_model,
     MetaModel_with_CSE_EOS_model,
     MetaModel_with_peakCSE_EOS_model,
+    LEC_MetaModel_with_CSE_EOS_model,
 )
 from jesterTOV.eos.spectral import SpectralDecomposition_EOS_model
 from jesterTOV.tov.base import TOVSolverBase
@@ -20,6 +21,7 @@ from jesterTOV.inference.config.schema import (
     MetamodelEOSConfig,
     MetamodelCSEEOSConfig,
     MetamodelPeakCSEEOSConfig,
+    LECMetamodelCSEEOSConfig,
     SpectralEOSConfig,
     BaseTOVConfig,
     GRTOVConfig,
@@ -260,6 +262,22 @@ class JesterTransform(NtoMTransform):
                 ndat_metamodel=config.ndat_metamodel,
                 ndat_CSE=config.ndat_CSE,
                 crust_name=config.crust_name,
+            )
+
+        elif isinstance(config, LECMetamodelCSEEOSConfig):
+            return LEC_MetaModel_with_CSE_EOS_model(
+                nsat=0.16,
+                nmin_MM_nsat=config.nmin_MM_nsat,
+                nmax_nsat=config.nmax_nsat,
+                max_nbreak_nsat=max_nbreak_nsat,
+                ndat_metamodel=config.ndat_metamodel,
+                ndat_CSE=config.ndat_CSE,
+                nb_CSE=config.nb_CSE,
+                crust_name=config.crust_name,
+                E_sat=config.E_sat,
+                K_sat=config.K_sat,
+                Q_sat=config.Q_sat,
+                Z_sat=config.Z_sat,
             )
 
         elif isinstance(config, SpectralEOSConfig):
