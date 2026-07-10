@@ -40,6 +40,9 @@ from jesterTOV.inference.variational.targets import (
     make_flow_prior_target,
     make_prior_likelihood_target,
 )
+from jesterTOV.logging_config import get_logger
+
+logger = get_logger("jester")
 
 
 @dataclass
@@ -181,7 +184,7 @@ def train_vi(
     # indistinguishable from a hang for the first (compiling) chunk.
     chunk_size = progress_every if progress_every > 0 else steps
     n_chunks = -(-steps // chunk_size)  # ceil division
-    print(
+    logger.info(
         f"[train_vi] starting training: {steps} steps, batch_size={batch_size}, "
         f"{n_chunks} chunk(s) of up to {chunk_size} steps (first chunk includes "
         "JIT compilation and may take a while)"
@@ -195,7 +198,7 @@ def train_vi(
         )
         loss_chunks.append(chunk_losses)
         steps_done += this_chunk
-        print(
+        logger.info(
             f"[train_vi] steps {steps_done}/{steps}: mean loss over last "
             f"{this_chunk} steps = {float(jnp.mean(chunk_losses)):.4f}"
         )
