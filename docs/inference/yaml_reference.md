@@ -570,6 +570,30 @@ Apply bounds on spectral decomposition Gamma parameters, enforcing causality and
 
 ::::
 
+#### EOS pressure at fixed density (Gaussian)
+
+::::{dropdown} **EOS Pressure Gaussian**
+
+```yaml
+- type: "eos_pressure_gaussian"
+  enabled: true
+  density_nsat: 3.0     # Density at which to evaluate the pressure, in units of n_sat
+  mean_pressure: 115.7  # Mean of the Gaussian target, in MeV fm^-3
+  std_pressure: 15.0    # Standard deviation of the Gaussian target, in MeV fm^-3
+```
+
+**Field Details:**
+
+- **`density_nsat`** (`float`, required) - Density at which to evaluate the EOS pressure, in units of nuclear saturation density $n_\mathrm{sat} = 0.16\,\mathrm{fm}^{-3}$
+- **`mean_pressure`** (`float`, required) - Mean of the Gaussian target, in $\mathrm{MeV\,fm}^{-3}$
+- **`std_pressure`** (`float`, required) - Standard deviation of the Gaussian target, in $\mathrm{MeV\,fm}^{-3}$
+
+**Description:**
+
+A synthetic Gaussian "measurement" of the pressure at a fixed density, defined purely in EOS space: the predicted pressure is obtained by linearly interpolating the EOS's own $(n, p)$ grid at `density_nsat`, with no TOV family construction needed to evaluate it. This makes it a cheap, smooth, and analytically interpretable target — useful for validating and comparing samplers against each other (e.g. SMC vs. neural variational inference) independent of any mass-radius or astrophysical data. See {class}`~jesterTOV.inference.likelihoods.eos_point.EOSPressureAtDensityLikelihood` for the full API.
+
+::::
+
 ### Prior-only sampling
 
 Sample from the prior without applying observational constraints.
@@ -865,7 +889,7 @@ postprocessing:
 - `metadata/log_Z`, `metadata/log_Z_std`, `metadata/N_eff`, `metadata/N_eff_fraction` — evidence scalars
 - `metadata/n_eos`, `metadata/n_resampled` — number of input curves and resampled posterior draws
 
-**Supported likelihoods.** Because the EOS is only known through its tabulated $(M, \Lambda, R)$ curve, `likelihoods` may only contain types that depend purely on these neutron-star observables: `gw`, `nicer`, `radio`, and `zero`. Likelihoods that need EOS-level structure (density, pressure, sound speed, ...) — `gw_resampled`, `nicer_kde`, `chieft`, `constraints_eos`, `constraints_tov`, `constraints_esym`, `constraints_gamma`, `rex` — are rejected at config-validation time with a clear error, since they need information not available from tabulated curves or require additional sampling.
+**Supported likelihoods.** Because the EOS is only known through its tabulated $(M, \Lambda, R)$ curve, `likelihoods` may only contain types that depend purely on these neutron-star observables: `gw`, `nicer`, `radio`, and `zero`. Likelihoods that need EOS-level structure (density, pressure, sound speed, ...) — `gw_resampled`, `nicer_kde`, `chieft`, `constraints_eos`, `constraints_tov`, `constraints_esym`, `constraints_gamma`, `eos_pressure_gaussian`, `rex` — are rejected at config-validation time with a clear error, since they need information not available from tabulated curves or require additional sampling.
 
 **Postprocessing.** Because the resampled posterior only contains $(M, \Lambda, R)$ curves, postprocessing for this sampler produces only the mass-radius and mass-Lambda plots — there is no NEP/CSE parameter posterior, density/pressure/cs2 profile, or TOV central-density diagnostic available to build a cornerplot, pressure-density plot, cs2 plot, histograms, or contours from. The top-level `postprocessing` block uses the lighter {class}`~jesterTOV.inference.config.schemas.eos_reweighting.EOSReweightingPostprocessingConfig` schema (`enabled`, `injection_eos_path`, `plot_format` only) rather than the full {class}`~jesterTOV.inference.config.schema.PostprocessingConfig` used by the parametric samplers. `injection_eos_path` follows the same NPZ format as for the other samplers (see the "Postprocessing" section above) and is typically one of the tabulated EOS files under `jesterTOV/tabulated_eos/lalsuite/` when validating against a known injected EOS. Postprocessing runs automatically after `run_jester_inference config.yaml` (unless `postprocessing.enabled: false`), and can also be triggered standalone with `run_jester_postprocessing config.yaml`.
 

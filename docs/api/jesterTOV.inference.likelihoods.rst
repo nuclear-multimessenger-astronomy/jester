@@ -42,6 +42,7 @@ Theory Constraints
    constraints.ConstraintEOSLikelihood
    constraints.ConstraintGammaLikelihood
    constraints.ConstraintTOVLikelihood
+   eos_point.EOSPressureAtDensityLikelihood
 
 Mock Likelihoods
 ----------------

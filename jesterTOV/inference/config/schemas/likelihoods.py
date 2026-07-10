@@ -697,6 +697,39 @@ class GammaConstraintsLikelihoodConfig(BaseLikelihoodConfig):
     )
 
 
+class EOSPressureGaussianLikelihoodConfig(BaseLikelihoodConfig):
+    """Gaussian likelihood on the EOS pressure at a fixed density, defined purely
+    in EOS space (no TOV family construction needed to evaluate).
+
+    A cheap, smooth, analytically interpretable target for validating samplers
+    against each other.
+
+    Examples
+    --------
+    .. code-block:: yaml
+
+        - type: "eos_pressure_gaussian"
+          enabled: true
+          density_nsat: 3.0
+          mean_pressure: 115.7
+          std_pressure: 15.0
+    """
+
+    type: Literal["eos_pressure_gaussian"] = Field(
+        default="eos_pressure_gaussian", description="Likelihood type identifier"
+    )
+
+    density_nsat: float = Field(
+        description="Density at which to evaluate the pressure, in units of n_sat."
+    )
+    mean_pressure: float = Field(
+        description="Mean of the Gaussian target, in MeV fm^-3."
+    )
+    std_pressure: float = Field(
+        description="Standard deviation of the Gaussian target, in MeV fm^-3."
+    )
+
+
 class DeprecatedConstraintsLikelihoodConfig(BaseLikelihoodConfig):
     """Deprecated combined constraint likelihood configuration.
 
@@ -884,6 +917,7 @@ LikelihoodConfig = Annotated[
         TOVConstraintsLikelihoodConfig,
         EsymConstraintsLikelihoodConfig,
         GammaConstraintsLikelihoodConfig,
+        EOSPressureGaussianLikelihoodConfig,
         DeprecatedConstraintsLikelihoodConfig,
         REXLikelihoodConfig,
         ZeroLikelihoodConfig,

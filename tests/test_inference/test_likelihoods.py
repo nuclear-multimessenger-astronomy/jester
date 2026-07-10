@@ -25,7 +25,9 @@ from jesterTOV.inference.likelihoods.constraints import (
 from jesterTOV.inference.likelihoods.chieft import ChiEFTLikelihood
 from jesterTOV.inference.likelihoods.radio import RadioTimingLikelihood
 from jesterTOV.inference.likelihoods.mock_mr import MockMassRadiusLikelihood
+from jesterTOV.inference.likelihoods.eos_point import EOSPressureAtDensityLikelihood
 from jesterTOV.inference.base import LikelihoodBase
+from jesterTOV import utils
 
 
 class TestZeroLikelihood:
@@ -323,6 +325,52 @@ class TestConstraintGammaLikelihood:
 
         result = likelihood.evaluate(params)
         assert result == 0.0
+
+
+class TestEOSPressureAtDensityLikelihood:
+    """Test EOSPressureAtDensityLikelihood (Gaussian on pressure at a fixed density)."""
+
+    def _make_eos_grid(self):
+        # A simple linear p(n) EOS grid, in jester's internal geometric units, spanning
+        # 0.5 to 6.0 n_sat so density_nsat=3.0 falls well inside the interpolation range.
+        n_nsat = jnp.linspace(0.5, 6.0, 50)
+        p_MeV_fm3 = 50.0 * n_nsat  # arbitrary linear relation for a controlled test
+        n_geometric = n_nsat * 0.16 * utils.fm_inv3_to_geometric
+        p_geometric = p_MeV_fm3 * utils.MeV_fm_inv3_to_geometric
+        return {"n": n_geometric, "p": p_geometric}
+
+    def test_eos_pressure_likelihood_peak_at_mean(self):
+        """Log-likelihood is maximal (0 residual term) when the predicted pressure
+        exactly matches the Gaussian's mean."""
+        params = self._make_eos_grid()
+        # p(3 n_sat) = 50 * 3.0 = 150.0 MeV/fm^3 for this grid
+        likelihood = EOSPressureAtDensityLikelihood(
+            density_nsat=3.0, mean_pressure=150.0, std_pressure=10.0
+        )
+        result = likelihood.evaluate(params)
+        expected = -jnp.log(10.0 * jnp.sqrt(2 * jnp.pi))
+        assert jnp.isclose(result, expected, atol=1e-6)
+
+    def test_eos_pressure_likelihood_decreases_away_from_mean(self):
+        """Log-likelihood should be lower the further the target mean is from the
+        EOS-predicted pressure."""
+        params = self._make_eos_grid()
+        close = EOSPressureAtDensityLikelihood(
+            density_nsat=3.0, mean_pressure=150.0, std_pressure=10.0
+        )
+        far = EOSPressureAtDensityLikelihood(
+            density_nsat=3.0, mean_pressure=200.0, std_pressure=10.0
+        )
+        assert close.evaluate(params) > far.evaluate(params)
+
+    def test_eos_pressure_likelihood_no_nan(self):
+        """A physically reasonable EOS grid should never produce NaN."""
+        params = self._make_eos_grid()
+        likelihood = EOSPressureAtDensityLikelihood(
+            density_nsat=3.0, mean_pressure=115.7, std_pressure=15.0
+        )
+        result = likelihood.evaluate(params)
+        assert jnp.isfinite(result)
 
 
 class TestConstraintEsymLikelihood:

@@ -16,6 +16,7 @@ from ..config.schema import (
     TOVConstraintsLikelihoodConfig,
     EsymConstraintsLikelihoodConfig,
     GammaConstraintsLikelihoodConfig,
+    EOSPressureGaussianLikelihoodConfig,
     DeprecatedConstraintsLikelihoodConfig,
     REXLikelihoodConfig,
     ZeroLikelihoodConfig,
@@ -32,6 +33,7 @@ from .constraints import (
     ConstraintEsymLikelihood,
     ConstraintGammaLikelihood,
 )
+from .eos_point import EOSPressureAtDensityLikelihood
 from jesterTOV.logging_config import get_logger
 
 logger = get_logger("jester")
@@ -183,6 +185,13 @@ def create_likelihood(
         case GammaConstraintsLikelihoodConfig():
             return ConstraintGammaLikelihood(
                 penalty_gamma=config.penalty_gamma,
+            )
+
+        case EOSPressureGaussianLikelihoodConfig():
+            return EOSPressureAtDensityLikelihood(
+                density_nsat=config.density_nsat,
+                mean_pressure=config.mean_pressure,
+                std_pressure=config.std_pressure,
             )
 
         case DeprecatedConstraintsLikelihoodConfig():
