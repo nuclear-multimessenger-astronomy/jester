@@ -140,7 +140,9 @@ class TestSMCPartialPosteriorsE2E:
 
         pp_prior, _ = setup_prior(pp_config)
         pp_keep_names = determine_keep_names(pp_config, pp_prior)
-        pp_transform = setup_transform(pp_config, prior=pp_prior, keep_names=pp_keep_names)
+        pp_transform = setup_transform(
+            pp_config, prior=pp_prior, keep_names=pp_keep_names
+        )
         pp_likelihood = setup_likelihood(pp_config, pp_transform)
         pp_sampler = create_sampler(
             config=pp_config.sampler,
@@ -154,7 +156,9 @@ class TestSMCPartialPosteriorsE2E:
 
         rw_prior, _ = setup_prior(rw_config)
         rw_keep_names = determine_keep_names(rw_config, rw_prior)
-        rw_transform = setup_transform(rw_config, prior=rw_prior, keep_names=rw_keep_names)
+        rw_transform = setup_transform(
+            rw_config, prior=rw_prior, keep_names=rw_keep_names
+        )
         rw_likelihood = setup_likelihood(rw_config, rw_transform)
         rw_sampler = create_sampler(
             config=rw_config.sampler,

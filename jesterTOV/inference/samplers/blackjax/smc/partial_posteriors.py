@@ -54,7 +54,9 @@ import jax.random
 from jaxtyping import Array, PRNGKeyArray
 
 from jesterTOV.inference.base import LikelihoodBase
-from jesterTOV.inference.config.schema import SMCPartialPosteriorsRandomWalkSamplerConfig
+from jesterTOV.inference.config.schema import (
+    SMCPartialPosteriorsRandomWalkSamplerConfig,
+)
 from jesterTOV.inference.likelihoods.combined import CombinedLikelihood, ZeroLikelihood
 from jesterTOV.inference.likelihoods.gw import GWLikelihood, GWLikelihoodResampled
 from jesterTOV.inference.samplers.blackjax.smc.random_walk import (
@@ -281,9 +283,7 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
 
         prev_posterior = prev_result.posterior
         missing = [
-            name
-            for name in self.prior.parameter_names
-            if name not in prev_posterior
+            name for name in self.prior.parameter_names if name not in prev_posterior
         ]
         if missing:
             raise ValueError(
@@ -367,7 +367,9 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         warm_start_log_evidence = 0.0
         if config.warm_start_from is not None:
             initial_position_dict, n_prev_events, warm_start_log_evidence = (
-                self._load_warm_start(config.warm_start_from, config.n_particles, subkey)
+                self._load_warm_start(
+                    config.warm_start_from, config.n_particles, subkey
+                )
             )
         else:
             initial_position_dict = self.prior.sample(subkey, config.n_particles)
@@ -427,7 +429,9 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
 
         mcmc_step_fn, mcmc_init_fn, init_params, mcmc_parameter_update_fn = (
             self._setup_mcmc_kernel(
-                logprior_fn, always_on_loglik_fn, full_logposterior_fn,
+                logprior_fn,
+                always_on_loglik_fn,
+                full_logposterior_fn,
                 initial_position_flat,
             )
         )
@@ -461,7 +465,9 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
                 f"event(s), prev logZ={warm_start_log_evidence:.3f}"
             )
         logger.info(f"Sub-step schedule: {config.substep_schedule}")
-        logger.info(f"Sub-steps per event (fixed count / adaptive cap): {config.n_substeps_per_event}")
+        logger.info(
+            f"Sub-steps per event (fixed count / adaptive cap): {config.n_substeps_per_event}"
+        )
         logger.info(f"MCMC steps per sub-step: {config.n_mcmc_steps}")
         logger.info("=" * 70)
 
@@ -492,8 +498,11 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
                         new_frac = 1.0
                     else:
                         raw_delta = ess_solver(
-                            batched_event_loglik_fn, state.particles,
-                            config.target_ess, max_delta, dichotomy,
+                            batched_event_loglik_fn,
+                            state.particles,
+                            config.target_ess,
+                            max_delta,
+                            dichotomy,
                         )
                         if not jnp.isfinite(raw_delta):
                             # Particles are already below target_ess even at
@@ -517,22 +526,42 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
                 # updated MCMC parameters per call) -- must be rebuilt every
                 # sub-step for the RW covariance adaptation to take effect.
                 step_fn = pp_build_kernel(
-                    mcmc_step_fn, mcmc_init_fn, systematic,
-                    config.n_mcmc_steps, mcmc_params,
+                    mcmc_step_fn,
+                    mcmc_init_fn,
+                    systematic,
+                    config.n_mcmc_steps,
+                    mcmc_params,
                     partial_logposterior_factory,
                 )
                 key, subkey, update_key = jax.random.split(key, 3)
                 state, info = step_fn(subkey, state, new_mask)
                 mcmc_params = mcmc_parameter_update_fn(update_key, state, info)
                 mask = new_mask
-                event_log_evidence += float(info.log_likelihood_increment)
+                substep_log_evidence_increment = float(info.log_likelihood_increment)
+                event_log_evidence += substep_log_evidence_increment
                 n_substeps_taken += 1
+
+                substep_ess = float(
+                    jnp.sum(state.weights) ** 2
+                    / jnp.sum(state.weights**2)
+                    / n_particles
+                )
+                substep_acceptance = float(info.update_info.acceptance_rate.mean())  # type: ignore[attr-defined]
+                substep_total = (
+                    f"/{config.n_substeps_per_event}"
+                    if config.substep_schedule == "fixed"
+                    else ""
+                )
+                logger.info(
+                    f"    -> [{event_name}] sub-step {n_substeps_taken:2d}{substep_total} | "
+                    f"mask={new_frac:.5f} | ESS={substep_ess * 100:5.1f}% | "
+                    f"Accept={substep_acceptance * 100:5.1f}% | "
+                    f"dlogZ={substep_log_evidence_increment:8.3f}"
+                )
 
             assert info is not None
             weights = state.weights
-            ess_value = float(
-                jnp.sum(weights) ** 2 / jnp.sum(weights**2) / n_particles
-            )
+            ess_value = float(jnp.sum(weights) ** 2 / jnp.sum(weights**2) / n_particles)
             acceptance_rate = float(info.update_info.acceptance_rate.mean())  # type: ignore[attr-defined]
             log_evidence += event_log_evidence
 
@@ -642,7 +671,9 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         axes[0].set_ylim(0, 105)
 
         acceptance_percent = [acc * 100 for acc in acceptance_history]
-        axes[1].plot(x, acceptance_percent, "orange", linestyle="-", marker="o", linewidth=2)
+        axes[1].plot(
+            x, acceptance_percent, "orange", linestyle="-", marker="o", linewidth=2
+        )
         axes[1].set_ylabel("Acceptance Rate (%)", fontsize=12)
         axes[1].grid(True, alpha=0.3)
         axes[1].set_ylim(0, 105)
