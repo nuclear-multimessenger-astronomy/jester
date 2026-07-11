@@ -35,7 +35,7 @@ K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
 L_sym = UniformPrior(10.0, 200.0, parameter_names=["L_sym"])
 ```
 
-**Samplers**: Four backends available
+**Samplers**: Five backends available
 - `type: "flowmc"` - Flow-enhanced MCMC (production ready)
   - Normalizing flow guidance for efficient sampling
   - Training + production phases
@@ -45,6 +45,9 @@ L_sym = UniformPrior(10.0, 200.0, parameter_names=["L_sym"])
 - `type: "smc-nuts"` - Sequential Monte Carlo with NUTS kernel (production ready)
   - NUTS kernel with Hessian-based mass matrix adaptation
   - More efficient for complex posteriors
+- `type: "smc-partial-posteriors-rw"` - SMC on the "path of partial posteriors" (IBIS; data tempering, not lambda tempering)
+  - Tempers by number of GW events included, not by inverse-temperature λ; requires at least one `gw` likelihood event
+  - Each event's mask is ramped in over `n_substeps_per_event` fractional steps -- a single-step jump is measurably biased, see `samplers/blackjax/smc/partial_posteriors.py` module docstring
 - `type: "blackjax-ns-aw"` - Nested Sampling with Acceptance Walk (experimental)
   - For model comparison and evidence estimation
   - Needs additional testing/fixes
@@ -118,9 +121,10 @@ jesterTOV/inference/
 │   └── blackjax/        # BlackJAX backends
 │       ├── base.py      # BlackjaxSampler base class
 │       ├── smc/         # Sequential Monte Carlo framework
-│       │   ├── base.py  # BlackjaxSMCSampler
+│       │   ├── base.py  # BlackjaxSMCSampler (lambda-tempering)
 │       │   ├── random_walk.py  # SMC-RW (production ready)
-│       │   └── nuts.py  # SMC-NUTS (production ready)
+│       │   ├── nuts.py  # SMC-NUTS (production ready)
+│       │   └── partial_posteriors.py  # SMC-Partial-Posteriors-RW (data tempering / IBIS)
 │       └── nested_sampling/
 │           └── ns_aw.py # NS with Acceptance Walk (experimental)
 ├── base/                # Base classes (copied from Jim v0.2.0)
@@ -284,13 +288,15 @@ if unused_params:
 - Manages posterior evaluation with Jacobian corrections
 - Provides standardized `SamplerOutput` interface
 
-**Sampler Registry:**
+**Sampler Registry** (`samplers/__init__.py`):
 ```python
 SAMPLER_REGISTRY = {
     "flowmc": FlowMCSampler,
+    "blackjax-ns-aw": BlackJAXNSAWSampler,
     "smc-rw": BlackJAXSMCRandomWalkSampler,
     "smc-nuts": BlackJAXSMCNUTSSampler,
-    "blackjax-ns-aw": BlackJAXNSAWSampler,
+    "smc-partial-posteriors-rw": BlackJAXPartialPosteriorsRandomWalkSampler,
+    "eos-reweighting": EOSReweightingSampler,
 }
 ```
 
@@ -299,8 +305,9 @@ SAMPLER_REGISTRY = {
 JesterSampler (base)
     ├─ FlowMCSampler (flowmc.py)
     └─ BlackjaxSampler (blackjax/base.py) - Shared transform logic
-        ├─ BlackjaxSMCSampler (blackjax/smc/base.py) - SMC framework
+        ├─ BlackjaxSMCSampler (blackjax/smc/base.py) - SMC framework (lambda-tempering)
         │   ├─ BlackJAXSMCRandomWalkSampler (blackjax/smc/random_walk.py)
+        │   │   └─ BlackJAXPartialPosteriorsRandomWalkSampler (blackjax/smc/partial_posteriors.py) - data tempering, subclasses RW for kernel reuse
         │   └─ BlackJAXSMCNUTSSampler (blackjax/smc/nuts.py)
         └─ BlackJAXNSAWSampler (blackjax/nested_sampling/ns_aw.py)
 ```
@@ -578,7 +585,7 @@ Transforms convert between parameter spaces. Two types:
 
 1. **Create sampler class** in `samplers/` inheriting from `JesterSampler`
 2. Implement `sample(prng_key, n_samples, ...) -> SamplerOutput`
-3. Add to `SAMPLER_REGISTRY` in `samplers/jester_sampler.py`
+3. Add to `SAMPLER_REGISTRY` in `samplers/__init__.py`
 4. Add Pydantic config to `config/schema.py`
 5. Update `SamplerConfig` discriminated union
 6. Update `docs/inference/yaml_reference.md` and add tests

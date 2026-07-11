@@ -23,6 +23,7 @@ SamplerType = Literal[
     "flowmc",
     "blackjax_smc_rw",
     "blackjax_smc_nuts",
+    "blackjax_smc_partial_posteriors_rw",
     "blackjax_ns_aw",
     "eos_reweighting",
 ]
@@ -128,6 +129,11 @@ class InferenceResult:
         sampler_class_name = sampler.__class__.__name__
         if "FlowMC" in sampler_class_name:
             sampler_type = "flowmc"
+        elif "PartialPosteriors" in sampler_class_name:
+            # Must be checked before "SMCRandomWalk"/"SMCNUTS": this sampler
+            # subclasses BlackJAXSMCRandomWalkSampler for code reuse, so its
+            # class name also contains "RandomWalk".
+            sampler_type = "blackjax_smc_partial_posteriors_rw"
         elif "SMCRandomWalk" in sampler_class_name:
             sampler_type = "blackjax_smc_rw"
         elif "SMCNUTS" in sampler_class_name:
@@ -243,6 +249,39 @@ class InferenceResult:
                 "tempering_param_history": np.array(
                     smc_metadata["tempering_param_history"]
                 ),
+                "ess_history": np.array(smc_metadata["ess_history"]),
+                "acceptance_history": np.array(smc_metadata["acceptance_history"]),
+                "log_evidence_history": np.array(smc_metadata["log_evidence_history"]),
+            }
+
+        elif sampler_type == "blackjax_smc_partial_posteriors_rw":
+            # Partial-posteriors SMC: tempers by GW event count, not by
+            # lambda -- different metadata shape than blackjax_smc_rw/nuts
+            # (no target_ess/annealing_steps/tempering_param_history; has
+            # event_order/n_substeps_per_event and per-event histories).
+            smc_metadata = sampler.metadata  # type: ignore[attr-defined]
+
+            metadata.update(
+                {
+                    "kernel_type": str(smc_metadata["kernel_type"]),
+                    "n_particles": int(smc_metadata["n_particles"]),
+                    "n_mcmc_steps": int(smc_metadata["n_mcmc_steps"]),
+                    "n_substeps_per_event": int(smc_metadata["n_substeps_per_event"]),
+                    "event_order": list(smc_metadata["event_order"]),
+                    "n_events": int(smc_metadata["n_events"]),
+                    "warm_start_from": str(smc_metadata.get("warm_start_from", "")),
+                    "n_events_replayed": int(smc_metadata.get("n_events_replayed", 0)),
+                    "final_ess": float(smc_metadata["final_ess"]),
+                    "final_ess_percent": float(smc_metadata["final_ess_percent"]),
+                    "mean_ess": float(smc_metadata["mean_ess"]),
+                    "min_ess": float(smc_metadata["min_ess"]),
+                    "mean_acceptance": float(smc_metadata["mean_acceptance"]),
+                    "logZ": float(smc_metadata["logZ"]),
+                    "logZ_err": float(smc_metadata["logZ_err"]),
+                }
+            )
+
+            histories = {
                 "ess_history": np.array(smc_metadata["ess_history"]),
                 "acceptance_history": np.array(smc_metadata["acceptance_history"]),
                 "log_evidence_history": np.array(smc_metadata["log_evidence_history"]),
@@ -628,6 +667,13 @@ class InferenceResult:
                     fixed_params_json = json.dumps(value)
                     metadata_grp.attrs[key] = fixed_params_json
                     continue
+                elif key == "event_order":
+                    # Store event order as JSON string (list of strings) --
+                    # blackjax_smc_partial_posteriors_rw only. Needed to
+                    # validate warm-started runs (Phase 2) and to label
+                    # per-event diagnostics.
+                    metadata_grp.attrs[key] = json.dumps(value)
+                    continue
                 # HDF5 attributes must be scalars or small arrays
                 if isinstance(value, (int, float, str, bool)):
                     metadata_grp.attrs[key] = value
@@ -728,6 +774,11 @@ class InferenceResult:
                         if isinstance(value, bytes):
                             value = value.decode("utf-8")
                         metadata[key] = json.loads(value)
+                    elif key == "event_order":
+                        # Deserialize from JSON string (list of strings)
+                        if isinstance(value, bytes):
+                            value = value.decode("utf-8")
+                        metadata[key] = json.loads(value)
                     else:
                         metadata[key] = value
 
@@ -807,6 +858,25 @@ class InferenceResult:
             lines.append(f"  Particles: {self.metadata.get('n_particles', '?')}")
             lines.append(
                 f"  Annealing steps: {self.metadata.get('annealing_steps', '?')}"
+            )
+            lines.append(
+                f"  Final ESS: {self.metadata.get('final_ess_percent', '?'):.1f}%"
+            )
+            lines.append(
+                f"  Mean acceptance: {self.metadata.get('mean_acceptance', '?'):.3f}"
+            )
+            if "logZ" in self.metadata:
+                lines.append(f"  Evidence: log(Z) = {self.metadata.get('logZ', 0):.2f}")
+
+        elif self.sampler_type == "blackjax_smc_partial_posteriors_rw":
+            lines.append("\nBlackJAX Partial-Posteriors SMC Configuration:")
+            lines.append(f"  Kernel type: {self.metadata.get('kernel_type', '?')}")
+            lines.append(f"  Particles: {self.metadata.get('n_particles', '?')}")
+            lines.append(
+                f"  Events assimilated: {self.metadata.get('event_order', '?')}"
+            )
+            lines.append(
+                f"  Sub-steps per event: {self.metadata.get('n_substeps_per_event', '?')}"
             )
             lines.append(
                 f"  Final ESS: {self.metadata.get('final_ess_percent', '?'):.1f}%"

@@ -807,6 +807,48 @@ sampler:
 
 ::::
 
+### Sequential Monte Carlo on the path of partial posteriors
+
+BlackJAX SMC that tempers by *number of GW events included* rather than by the usual inverse-temperature $\lambda$: each configured GW event's likelihood term is turned on one at a time (ramped in over several small fractional steps), exposing more of the combined likelihood as sampling progresses. This is Chopin's Iterated Batch Importance Sampling (IBIS), presented as the "path of partial posteriors" in Dai, Heng, Jacob & Whiteley, "An invitation to sequential Monte Carlo samplers" (arXiv:2007.11936). Requires at least one `gw` likelihood event in the configuration. The Python class is {class}`~jesterTOV.inference.samplers.blackjax.smc.partial_posteriors.BlackJAXPartialPosteriorsRandomWalkSampler`. The Pydantic config schema is {class}`~jesterTOV.inference.config.schema.SMCPartialPosteriorsRandomWalkSamplerConfig`.
+
+::::{dropdown} **Partial-Posteriors SMC Configuration**
+
+```yaml
+sampler:
+  type: "smc-partial-posteriors-rw"  # Sampler type identifier
+  output_dir: "./outdir/"            # Output directory for results
+  n_eos_samples: 10000                # Number of final posterior samples
+  log_prob_batch_size: 1000           # Batch size for log-probability evaluation
+
+  n_particles: 10000                  # Number of SMC particles
+  n_mcmc_steps: 1                     # Random walk steps per fractional sub-step
+  random_walk_sigma: 1.0              # Fixed sigma scaling for the RW proposal
+
+  event_order: null                   # Order to assimilate GW events; null = config order
+  n_substeps_per_event: 8             # Fractional mask steps (0 -> 1) used to ramp in each event
+  warm_start_from: null               # Path to a previous run's HDF5 result; null = start from the prior
+```
+
+**Field Details:**
+
+- **`event_order`** (`list[str] | None`, default: `None`) - Order in which configured GW events are assimilated. `None` uses the order the events appear under the `gw` likelihood block. Recorded in the result metadata; a later warm-started run (adding more events) must use this same order as a strict prefix.
+- **`n_substeps_per_event`** (`int`, default: `8`) - Number of fractional mask increments (0 to 1) used to ramp in each newly-added event's likelihood term. Turning an event on in a single step is measurably biased for informative events (the underlying `blackjax.smc.base.step` reweights *after* the MCMC rejuvenation move, which is only a good approximation for small target-to-target jumps); ramping mitigates this, matching the source paper's own suggestion of "a geometric path between successive partial posteriors".
+- **`warm_start_from`** (`str | None`, default: `None`) - Path to a previous run's `InferenceResult` HDF5 file. When set, the initial particles are resampled (with replacement, uniform weights) from that run's posterior instead of the prior, and its `event_order` metadata must be a strict prefix of this run's `event_order` — the already-covered events are not replayed (their mask entries start, and stay, at 1); only the newly added event(s) are assimilated. This is the sequential N → N+1 use case: warm-start a run adding one more GW event from a previous run's converged posterior.
+
+**Output:**
+- Posterior samples with equal weights
+- Per-event effective sample size (ESS), acceptance rate, and cumulative log evidence (instead of per-tempering-step) — when warm-starting, these histories cover only the newly assimilated event(s), not the replayed prefix
+
+**When to Use:**
+- Population studies with multiple BNS/GW events, where visualizing how the posterior evolves as events are added is of interest
+- Sequential N → N+1 updating when a new event becomes available: set `warm_start_from` to the previous run's result file and append the new event(s) to the `gw` likelihood block
+
+```{note}
+`target_ess` is inherited from the base random-walk config schema but is currently unused by this sampler (it doesn't bisect on ESS the way `adaptive_tempered_smc` does).
+```
+
+::::
+
 ### EOS reweighting
 
 Evaluates jester's GPU-accelerated likelihoods on a discrete set of tabulated EOS curves (M, $\Lambda$, R tables) rather than sampling a parametric EOS model. Returns the marginal log-likelihood per EOS and the Bayesian evidence $\log Z$. The Python class is {class}`~jesterTOV.inference.samplers.eos_reweighting.EOSReweightingSampler`. The Pydantic config schema is {class}`~jesterTOV.inference.config.schema.EOSReweightingConfig`.

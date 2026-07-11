@@ -61,9 +61,36 @@ Diagnostics
 
 After sampling, ``plot_diagnostics()`` produces a three-panel figure showing the temperature schedule, ESS evolution, and acceptance rate over annealing steps. These are saved automatically to the output directory as ``smc_diagnostics.png``.
 
+.. _sampler-smc-partial-posteriors:
+
+Path of partial posteriors (``smc-partial-posteriors-rw``)
+============================================================
+
+A second, orthogonal SMC mode tempers by *number of GW events included* rather than by :math:`\lambda`. Instead of annealing the whole combined likelihood from prior to posterior, each configured GW event's likelihood term is turned on one at a time, so the particle population tracks the sequence of partial posteriors :math:`\pi_t(\theta) \propto p(\theta)\, \prod_{i=1}^{t} \mathcal{L}_i(\theta)` as events :math:`1, \ldots, t` are assimilated. This is Chopin's Iterated Batch Importance Sampling (IBIS), presented as the "path of partial posteriors" in Dai, Heng, Jacob & Whiteley, "An invitation to sequential Monte Carlo samplers" (`arXiv:2007.11936 <https://arxiv.org/abs/2007.11936>`_). It is useful for visualizing how a population-level EOS posterior evolves as more BNS events are assimilated, and supports sequential N → N+1 updating via ``warm_start_from`` (below).
+
+**Turning an event on in a single SMC step is measurably biased** for informative events: the underlying ``blackjax.smc.base.step`` reweights particles *after* the MCMC rejuvenation move, which is only a good approximation for small target-to-target jumps — true of the small, ESS-adaptive :math:`\lambda` increments used by ``smc-rw``/``smc-nuts`` above, but not of a whole-event jump. Each event is therefore ramped in over ``n_substeps_per_event`` small fractional mask increments, matching the source paper's own suggestion of "a geometric path between successive partial posteriors".
+
+Requires at least one ``gw`` likelihood event in the configuration; reuses the same Gaussian Random Walk kernel and covariance adaptation as ``smc-rw``.
+
+.. code-block:: yaml
+
+   sampler:
+     type: smc-partial-posteriors-rw
+     n_particles: 5000
+     n_mcmc_steps: 2              # RW rejuvenation steps per fractional sub-step
+     random_walk_sigma: 0.5
+     event_order: null            # null = use the order events appear in the gw likelihood block
+     n_substeps_per_event: 8      # fractional mask steps (0 -> 1) ramping in each event
+     warm_start_from: null        # path to a previous run's HDF5 result; null = start from the prior
+
+``plot_diagnostics()`` for this sampler shows ESS, acceptance rate, and cumulative log evidence per event instead of per annealing step.
+
+**Sequential N → N+1 updating (** ``warm_start_from`` **).** When a new GW event becomes available, a follow-up run can resume from a previous run's converged posterior instead of the prior: set ``warm_start_from`` to the previous run's saved ``InferenceResult`` HDF5 path, and list the previously-covered events followed by the new one(s) in the ``gw`` likelihood block, in the same order. The sampler resamples its initial particles from that file's posterior and validates that its recorded ``event_order`` is a strict prefix of the new run's — the already-covered events are *not* replayed (their mask entries start, and stay, at 1); only the newly appended event(s) go through the fractional ramp-in described above. This is the same incremental-Bayes usage IBIS is designed for: MCMC rejuvenation after the new weight update corrects for reusing an old converged population as the starting point, so no additional correction is needed.
+
 API reference
 -------------
 
 * :class:`jesterTOV.inference.samplers.blackjax.smc.random_walk.BlackJAXSMCRandomWalkSampler`
 * :class:`jesterTOV.inference.samplers.blackjax.smc.nuts.BlackJAXSMCNUTSSampler`
+* :class:`jesterTOV.inference.samplers.blackjax.smc.partial_posteriors.BlackJAXPartialPosteriorsRandomWalkSampler`
 * :class:`jesterTOV.inference.samplers.blackjax.smc.base.BlackjaxSMCSampler` (base class)

@@ -45,7 +45,7 @@ These guides ensure all integration points are covered (configuration schema, tr
 
 ### Multi-Sampler Architecture
 
-Four sampler backends available for Bayesian inference:
+Five sampler backends available for Bayesian inference:
 
 **Production Ready:**
 1. **FlowMC** (`type: "flowmc"`) - Normalizing flow-enhanced MCMC
@@ -64,8 +64,14 @@ Four sampler backends available for Bayesian inference:
    - NUTS kernel with Hessian-based mass matrix adaptation
    - More efficient than RW for complex posteriors
 
+4. **BlackJAX SMC Partial-Posteriors-RW** (`type: "smc-partial-posteriors-rw"`) - SMC on the "path of partial posteriors" (IBIS)
+   - Tempers by *number of GW events included*, not by inverse-temperature λ
+   - Requires at least one `gw` likelihood event
+   - Each event's mask is ramped in over `n_substeps_per_event` fractional steps (not a single jump) — see `jesterTOV/inference/samplers/blackjax/smc/partial_posteriors.py` module docstring for why a single-step jump is measurably biased
+   - See {ref}`sampler-smc-partial-posteriors` in the docs for the full write-up
+
 **Experimental:**
-4. **BlackJAX NS-AW** (`type: "blackjax-ns-aw"`) - Nested Sampling with Acceptance Walk
+5. **BlackJAX NS-AW** (`type: "blackjax-ns-aw"`) - Nested Sampling with Acceptance Walk
    - For model comparison and evidence estimation
    - Mimics bilby nested sampling setup
    - Needs additional type checking/fixes
@@ -82,13 +88,15 @@ examples/inference/ns/               # Nested sampling examples
 examples/inference/spectral/         # Spectral decomposition examples
 ```
 
-**Sampler Registry** (`jesterTOV/inference/samplers/jester_sampler.py`):
+**Sampler Registry** (`jesterTOV/inference/samplers/__init__.py`):
 ```python
 SAMPLER_REGISTRY = {
     "flowmc": FlowMCSampler,
+    "blackjax-ns-aw": BlackJAXNSAWSampler,
     "smc-rw": BlackJAXSMCRandomWalkSampler,
     "smc-nuts": BlackJAXSMCNUTSSampler,
-    "blackjax-ns-aw": BlackJAXNSAWSampler,
+    "smc-partial-posteriors-rw": BlackJAXPartialPosteriorsRandomWalkSampler,
+    "eos-reweighting": EOSReweightingSampler,
 }
 ```
 
@@ -401,9 +409,10 @@ jesterTOV/inference/
 │   └── blackjax/                # BlackJAX backends
 │       ├── base.py              # BlackjaxSampler base class
 │       ├── smc/                 # Sequential Monte Carlo framework
-│       │   ├── base.py          # BlackjaxSMCSampler
+│       │   ├── base.py          # BlackjaxSMCSampler (lambda-tempering)
 │       │   ├── random_walk.py   # SMC-RW (production ready)
-│       │   └── nuts.py          # SMC-NUTS (production ready)
+│       │   ├── nuts.py          # SMC-NUTS (production ready)
+│       │   └── partial_posteriors.py  # SMC-Partial-Posteriors-RW (data tempering / IBIS)
 │       └── nested_sampling/     # Nested sampling
 │           └── ns_aw.py         # NS with Acceptance Walk (experimental)
 ├── base/                        # Base classes (from Jim v0.2.0)

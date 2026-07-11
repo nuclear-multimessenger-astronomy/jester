@@ -895,6 +895,11 @@ def main(config_path: str) -> None:
         logger.info(f"  Particles: {config.sampler.n_particles}")  # type: ignore[union-attr]
         logger.info(f"  MCMC steps: {config.sampler.n_mcmc_steps}")  # type: ignore[union-attr]
         logger.info(f"  Target ESS: {config.sampler.target_ess}")  # type: ignore[union-attr]
+    elif config.sampler.type == "smc-partial-posteriors-rw":
+        logger.info(f"  Particles: {config.sampler.n_particles}")
+        logger.info(f"  MCMC steps per sub-step: {config.sampler.n_mcmc_steps}")
+        logger.info(f"  Sub-steps per event: {config.sampler.n_substeps_per_event}")
+        logger.info(f"  Event order: {config.sampler.event_order or '(config order)'}")
 
     # Log shared sampler config fields
     logger.info(f"  EOS samples to generate: {config.sampler.n_eos_samples}")

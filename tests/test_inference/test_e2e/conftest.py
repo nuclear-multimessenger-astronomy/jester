@@ -55,6 +55,15 @@ SMC_RW_LIGHTWEIGHT = {
     "random_walk_sigma": 0.1,
 }
 
+# SMC partial-posteriors (data-tempering) lightweight params
+SMC_PARTIAL_POSTERIORS_LIGHTWEIGHT = {
+    "n_particles": 100,
+    "n_mcmc_steps": 2,
+    "n_substeps_per_event": 3,
+    "target_ess": 0.9,
+    "random_walk_sigma": 0.1,
+}
+
 # BlackJAX NS-AW lightweight params
 BLACKJAX_NS_AW_LIGHTWEIGHT = {
     "n_live": 100,  # 1400 -> 100
@@ -214,6 +223,49 @@ def build_chieft_config(
     }
 
 
+def build_gw_config(
+    sampler_config: dict[str, Any], prior_file: Path, output_dir: Path
+) -> dict[str, Any]:
+    """Build a config with two real GW event likelihoods (preset flows).
+
+    Uses the bundled GW170817/GW190425 preset normalizing flows (no
+    training needed), so this stays fast enough for regular CI while
+    exercising a real multi-event combined likelihood -- needed to test
+    samplers (like partial-posteriors SMC) that temper over GW events.
+    """
+    return {
+        "seed": 42,
+        "dry_run": False,
+        "validate_only": False,
+        "eos": {
+            "type": "metamodel",
+            "nb_CSE": 0,
+            **LIGHTWEIGHT_EOS,
+        },
+        "tov": {
+            "type": "gr",
+            **LIGHTWEIGHT_TOV,
+        },
+        "prior": {"specification_file": str(prior_file)},
+        "likelihoods": [
+            {"type": "constraints_eos", "enabled": True},
+            {
+                "type": "gw",
+                "enabled": True,
+                "events": [{"name": "GW170817"}, {"name": "GW190425"}],
+                "N_masses_evaluation": 20,
+                "N_masses_batch_size": 10,
+            },
+        ],
+        "sampler": {
+            **sampler_config,
+            "output_dir": str(output_dir),
+            "n_eos_samples": 50,
+        },
+        "postprocessing": {"enabled": False},
+    }
+
+
 def build_spectral_prior_only_config(
     sampler_config: dict[str, Any], prior_file: Path, output_dir: Path
 ) -> dict[str, Any]:
@@ -305,6 +357,28 @@ def flowmc_spectral_config(
     return build_spectral_prior_only_config(
         sampler_config, spectral_prior_file, e2e_temp_dir
     )
+
+
+@pytest.fixture
+def smc_partial_posteriors_gw_config(
+    minimal_prior_file: Path, e2e_temp_dir: Path
+) -> dict[str, Any]:
+    """Partial-posteriors SMC config with two real GW event likelihoods."""
+    sampler_config = {
+        "type": "smc-partial-posteriors-rw",
+        **SMC_PARTIAL_POSTERIORS_LIGHTWEIGHT,
+    }
+    return build_gw_config(sampler_config, minimal_prior_file, e2e_temp_dir)
+
+
+@pytest.fixture
+def smc_rw_gw_config(minimal_prior_file: Path, e2e_temp_dir: Path) -> dict[str, Any]:
+    """SMC-RW config with the same two real GW event likelihoods, for
+    cross-checking the partial-posteriors sampler's posterior against the
+    existing lambda-tempering sampler on an identical combined likelihood.
+    """
+    sampler_config = {"type": "smc-rw", **SMC_RW_LIGHTWEIGHT}
+    return build_gw_config(sampler_config, minimal_prior_file, e2e_temp_dir)
 
 
 @pytest.fixture

@@ -257,6 +257,67 @@ class SMCNUTSSamplerConfig(BaseSamplerConfig):
         return v
 
 
+class SMCPartialPosteriorsRandomWalkSamplerConfig(SMCRandomWalkSamplerConfig):
+    r"""Configuration for SMC on the "path of partial posteriors" (data
+    tempering / IBIS, Chopin 2002; see Dai, Heng, Jacob & Whiteley,
+    "An invitation to sequential Monte Carlo samplers", arXiv:2007.11936,
+    "Path of partial posteriors" section) with a Random Walk kernel.
+
+    Unlike :class:`SMCRandomWalkSamplerConfig`, which tempers a single
+    inverse-temperature :math:`\lambda` from 0 to 1 over the full combined
+    likelihood, this sampler tempers by *number of GW events included*:
+    each configured GW event's likelihood term is turned on one at a time,
+    exposing more of the combined likelihood as sampling progresses. This
+    enables both (a) a single run that gradually assimilates events, and
+    (b) warm-starting a new run from a previous run's converged posterior
+    when a new event becomes available (see the sampler class docstring).
+
+    Turning an event's mask on in a single SMC step is measurably biased
+    for informative events (verified against a closed-form conjugate
+    Gaussian model): the underlying ``blackjax.smc.base.step`` reweights
+    *after* the MCMC rejuvenation move, which is only a good approximation
+    for small target-to-target jumps. Each event is therefore ramped in
+    over ``n_substeps_per_event`` small fractional mask increments rather
+    than a single jump, matching the source paper's own recommendation of
+    "a geometric path between successive partial posteriors".
+
+    Attributes
+    ----------
+    type : Literal["smc-partial-posteriors-rw"]
+        Sampler type identifier
+    event_order : list[str] | None
+        Order in which GW events are assimilated. ``None`` (default) uses
+        the order the events appear in the likelihood configuration. This
+        order is recorded in the result metadata and must match (as a
+        strict prefix) between an initial run and any later warm-started
+        run that adds more events.
+    n_substeps_per_event : int
+        Number of fractional mask increments (0 to 1) used to ramp in each
+        newly-added event's likelihood term (default: 8).
+    warm_start_from : str | None
+        Path to a previous run's ``InferenceResult`` HDF5 file. When set,
+        the initial particles are resampled from that run's posterior
+        (instead of the prior) and its ``metadata["event_order"]`` is
+        required to be a strict prefix of this run's ``event_order``: the
+        already-covered events are skipped entirely (their mask entries
+        start at 1, not ramped again) and only the newly added event(s) are
+        assimilated. ``None`` (default) starts from the prior, assimilating
+        every configured event as in a single from-scratch run.
+    """
+
+    type: Literal["smc-partial-posteriors-rw"] = "smc-partial-posteriors-rw"  # type: ignore[override]
+    event_order: list[str] | None = None
+    n_substeps_per_event: int = 8
+    warm_start_from: str | None = None
+
+    @field_validator("n_substeps_per_event")
+    @classmethod
+    def _validate_n_substeps(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError(f"n_substeps_per_event must be positive, got: {v}")
+        return v
+
+
 class EOSReweightingConfig(BaseSamplerConfig):
     r"""Configuration for EOS reweighting sampler.
 
@@ -335,6 +396,7 @@ SamplerConfig = Annotated[
         BlackJAXNSAWConfig,
         SMCRandomWalkSamplerConfig,
         SMCNUTSSamplerConfig,
+        SMCPartialPosteriorsRandomWalkSamplerConfig,
         EOSReweightingConfig,
     ],
     Discriminator("type"),

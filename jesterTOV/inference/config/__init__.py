@@ -35,6 +35,7 @@ from .schema import (
     BlackJAXNSAWConfig,
     SMCRandomWalkSamplerConfig,
     SMCNUTSSamplerConfig,
+    SMCPartialPosteriorsRandomWalkSamplerConfig,
     SamplerConfig,
     # Other
     PriorConfig,
@@ -77,6 +78,7 @@ __all__ = [
     "BlackJAXNSAWConfig",
     "SMCRandomWalkSamplerConfig",
     "SMCNUTSSamplerConfig",
+    "SMCPartialPosteriorsRandomWalkSamplerConfig",
     "SamplerConfig",
     # Other
     "PriorConfig",
