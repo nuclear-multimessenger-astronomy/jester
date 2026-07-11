@@ -68,7 +68,10 @@ Path of partial posteriors (``smc-partial-posteriors-rw``)
 
 A second, orthogonal SMC mode tempers by *number of GW events included* rather than by :math:`\lambda`. Instead of annealing the whole combined likelihood from prior to posterior, each configured GW event's likelihood term is turned on one at a time, so the particle population tracks the sequence of partial posteriors :math:`\pi_t(\theta) \propto p(\theta)\, \prod_{i=1}^{t} \mathcal{L}_i(\theta)` as events :math:`1, \ldots, t` are assimilated. This is Chopin's Iterated Batch Importance Sampling (IBIS), presented as the "path of partial posteriors" in Dai, Heng, Jacob & Whiteley, "An invitation to sequential Monte Carlo samplers" (`arXiv:2007.11936 <https://arxiv.org/abs/2007.11936>`_). It is useful for visualizing how a population-level EOS posterior evolves as more BNS events are assimilated, and supports sequential N → N+1 updating via ``warm_start_from`` (below).
 
-**Turning an event on in a single SMC step is measurably biased** for informative events: the underlying ``blackjax.smc.base.step`` reweights particles *after* the MCMC rejuvenation move, which is only a good approximation for small target-to-target jumps — true of the small, ESS-adaptive :math:`\lambda` increments used by ``smc-rw``/``smc-nuts`` above, but not of a whole-event jump. Each event is therefore ramped in over ``n_substeps_per_event`` small fractional mask increments, matching the source paper's own suggestion of "a geometric path between successive partial posteriors".
+**Turning an event on in a single SMC step is measurably biased** for informative events: the underlying ``blackjax.smc.base.step`` reweights particles *after* the MCMC rejuvenation move, which is only a good approximation for small target-to-target jumps — true of the small, ESS-adaptive :math:`\lambda` increments used by ``smc-rw``/``smc-nuts`` above, but not of a whole-event jump. Each event is therefore ramped in over several small fractional mask increments, matching the source paper's own suggestion of "a geometric path between successive partial posteriors". Two schedules are available via ``substep_schedule``:
+
+* ``"fixed"`` (default): ``n_substeps_per_event`` log-spaced fractions from 0 to 1, denser near 0 — the bias risk is highest for the very first increment out of an event's "off" state, not the last increment into "fully on".
+* ``"adaptive"``: reuses the exact same ESS-targeting bisection search (``blackjax.smc.ess.ess_solver`` + ``blackjax.smc.solver.dichotomy``) that drives ``smc-rw``'s adaptive :math:`\lambda` schedule above, applied to the mask fraction instead of :math:`\lambda`. This is possible because the mask-weighted logposterior is linear in the fraction of the single event being ramped in (every other likelihood term cancels in the successive-target log-weight difference) — exactly the structure ``ess_solver`` assumes. ``n_substeps_per_event`` then acts as a safety cap: the sampler forces the remaining fraction through in one final step (with a warning) if the cap is hit before the mask reaches 1.
 
 Requires at least one ``gw`` likelihood event in the configuration; reuses the same Gaussian Random Walk kernel and covariance adaptation as ``smc-rw``.
 
@@ -79,8 +82,10 @@ Requires at least one ``gw`` likelihood event in the configuration; reuses the s
      n_particles: 5000
      n_mcmc_steps: 2              # RW rejuvenation steps per fractional sub-step
      random_walk_sigma: 0.5
+     target_ess: 0.9              # used by substep_schedule: adaptive
      event_order: null            # null = use the order events appear in the gw likelihood block
-     n_substeps_per_event: 8      # fractional mask steps (0 -> 1) ramping in each event
+     substep_schedule: fixed      # "fixed" (log-spaced count) or "adaptive" (ESS-targeting)
+     n_substeps_per_event: 8      # fixed: step count. adaptive: max sub-steps per event
      warm_start_from: null        # path to a previous run's HDF5 result; null = start from the prior
 
 ``plot_diagnostics()`` for this sampler shows ESS, acceptance rate, and cumulative log evidence per event instead of per annealing step.

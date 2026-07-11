@@ -47,7 +47,8 @@ L_sym = UniformPrior(10.0, 200.0, parameter_names=["L_sym"])
   - More efficient for complex posteriors
 - `type: "smc-partial-posteriors-rw"` - SMC on the "path of partial posteriors" (IBIS; data tempering, not lambda tempering)
   - Tempers by number of GW events included, not by inverse-temperature λ; requires at least one `gw` likelihood event
-  - Each event's mask is ramped in over `n_substeps_per_event` fractional steps -- a single-step jump is measurably biased, see `samplers/blackjax/smc/partial_posteriors.py` module docstring
+  - Each event's mask is ramped in over several fractional steps -- a single-step jump is measurably biased, see `samplers/blackjax/smc/partial_posteriors.py` module docstring
+  - `substep_schedule`: `"fixed"` (default, log-spaced `n_substeps_per_event` steps, denser near mask=0) or `"adaptive"` (ESS-targeting bisection reusing `smc-rw`'s `target_ess`/`ess_solver`/`dichotomy` machinery, `n_substeps_per_event` as a safety cap)
 - `type: "blackjax-ns-aw"` - Nested Sampling with Acceptance Walk (experimental)
   - For model comparison and evidence estimation
   - Needs additional testing/fixes

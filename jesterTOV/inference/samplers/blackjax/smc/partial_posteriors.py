@@ -25,10 +25,22 @@ step is measurably biased for informative events. The underlying
 ``blackjax.smc.base.step`` reweights *after* the MCMC rejuvenation move,
 which is only a good approximation for small target-to-target jumps (true
 for the existing sampler's adaptive :math:`\lambda` bisection, false for a
-whole-event jump). Each event is therefore ramped in over
-``n_substeps_per_event`` small fractional mask increments, matching the
-source paper's own suggestion of "a geometric path between successive
-partial posteriors" (``papers/2007.11936/smcsamplers.tex:409-411``).
+whole-event jump). Each event is therefore ramped in over several small
+fractional mask increments, matching the source paper's own suggestion of
+"a geometric path between successive partial posteriors"
+(``papers/2007.11936/smcsamplers.tex:409-411``). Two schedules are
+supported (``config.substep_schedule``):
+
+- ``"fixed"``: a fixed count of log-spaced fractions (see
+  ``_fixed_event_fractions``), denser near mask=0.
+- ``"adaptive"``: an ESS-targeting bisection search reusing
+  ``blackjax.smc.ess.ess_solver`` / ``blackjax.smc.solver.dichotomy`` --
+  the same machinery the base sampler's adaptive :math:`\lambda` schedule
+  uses -- applied to the mask fraction instead of :math:`\lambda`. This
+  works unmodified because the mask-weighted logposterior is linear in the
+  fraction of the single event currently being ramped in (all other terms
+  cancel in the successive-target log-weight difference), exactly the
+  structure ``ess_solver`` assumes.
 """
 
 from typing import Any, Callable, cast
@@ -51,7 +63,9 @@ from jesterTOV.inference.samplers.blackjax.smc.random_walk import (
 from jesterTOV.logging_config import get_logger
 
 from blackjax.smc import extend_params
+from blackjax.smc.ess import ess_solver
 from blackjax.smc.resampling import systematic
+from blackjax.smc.solver import dichotomy
 from blackjax.smc.partial_posteriors_path import (
     init as pp_init,
     build_kernel as pp_build_kernel,
@@ -61,6 +75,26 @@ from blackjax.smc.partial_posteriors_path import (
 logger = get_logger("jester")
 
 _GW_EVENT_LIKELIHOOD_TYPES = (GWLikelihood, GWLikelihoodResampled)
+
+# Minimum fraction of an event's fixed log-spaced schedule (see
+# `_fixed_event_fractions`). Not 0 -- geomspace requires a positive start,
+# and this also sets how fine the very first sub-step is.
+_FIXED_SCHEDULE_MIN_FRACTION = 1e-3
+
+
+def _fixed_event_fractions(n_substeps: int) -> Array:
+    """Log-spaced fractional mask schedule for ramping in one event.
+
+    Denser near mask=0 than mask=1: the empirically-validated bias fix
+    (see module docstring) is most sensitive to the *first* increment out
+    of an event's "off" state (mask 0 -> epsilon is a much bigger relative
+    jump in the target distribution than mask ~0.9 -> 1), so a geometric
+    (log-spaced) schedule -- as the source paper recommends -- resolves
+    that regime much more finely than a uniform linear grid for the same
+    number of sub-steps.
+    """
+    fractions = jnp.geomspace(_FIXED_SCHEDULE_MIN_FRACTION, 1.0, n_substeps)
+    return fractions.at[-1].set(1.0)
 
 
 class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
@@ -406,12 +440,13 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             # not replayed, per the warm-start design (see _load_warm_start).
             mask = mask.at[:n_prev_events].set(1.0)
             state = state._replace(data_mask=mask)
-        fractions = jnp.linspace(0.0, 1.0, config.n_substeps_per_event + 1)[1:]
+        fixed_fractions = _fixed_event_fractions(config.n_substeps_per_event)
 
         n_particles = config.n_particles
         ess_history = []
         acceptance_history = []
         log_evidence_history = []
+        n_substeps_history = []
         log_evidence = warm_start_log_evidence
 
         logger.info("=" * 70)
@@ -425,7 +460,8 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
                 f"Warm start: skipping {n_prev_events} already-covered "
                 f"event(s), prev logZ={warm_start_log_evidence:.3f}"
             )
-        logger.info(f"Sub-steps per event: {config.n_substeps_per_event}")
+        logger.info(f"Sub-step schedule: {config.substep_schedule}")
+        logger.info(f"Sub-steps per event (fixed count / adaptive cap): {config.n_substeps_per_event}")
         logger.info(f"MCMC steps per sub-step: {config.n_mcmc_steps}")
         logger.info("=" * 70)
 
@@ -433,8 +469,49 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             event_name = self._event_order[event_idx]
             event_log_evidence = 0.0
             info = None
-            for frac in fractions:
-                new_mask = mask.at[event_idx].set(float(frac))
+            n_substeps_taken = 0
+            batched_event_loglik_fn = None
+            if config.substep_schedule == "adaptive":
+                batched_event_loglik_fn = jax.vmap(ordered_event_loglik_fns[event_idx])
+
+            while float(mask[event_idx]) < 1.0:
+                current_frac = float(mask[event_idx])
+                if config.substep_schedule == "fixed":
+                    new_frac = float(fixed_fractions[n_substeps_taken])
+                else:
+                    assert batched_event_loglik_fn is not None
+                    max_delta = 1.0 - current_frac
+                    if n_substeps_taken >= config.n_substeps_per_event:
+                        logger.warning(
+                            f"Event {event_name}: adaptive sub-step cap "
+                            f"({config.n_substeps_per_event}) reached before "
+                            "the mask converged to 1.0 -- forcing the final "
+                            "step. Consider raising n_substeps_per_event or "
+                            "lowering target_ess."
+                        )
+                        new_frac = 1.0
+                    else:
+                        raw_delta = ess_solver(
+                            batched_event_loglik_fn, state.particles,
+                            config.target_ess, max_delta, dichotomy,
+                        )
+                        if not jnp.isfinite(raw_delta):
+                            # Particles are already below target_ess even at
+                            # delta=0 (dichotomy has no admissible root) --
+                            # fall back to the fixed schedule's minimum step
+                            # rather than jumping straight to the cap, to
+                            # stay on the safe (small-jump) side.
+                            logger.warning(
+                                f"Event {event_name}: ESS already below "
+                                "target_ess before this sub-step -- falling "
+                                "back to a minimal fractional increment."
+                            )
+                            delta = min(max_delta, _FIXED_SCHEDULE_MIN_FRACTION)
+                        else:
+                            delta = float(jnp.clip(raw_delta, 0.0, max_delta))
+                        new_frac = current_frac + delta
+
+                new_mask = mask.at[event_idx].set(new_frac)
                 # `pp_build_kernel` closes over `mcmc_params` at construction
                 # time (unlike `inner_kernel_tuning`, it does not accept
                 # updated MCMC parameters per call) -- must be rebuilt every
@@ -449,6 +526,7 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
                 mcmc_params = mcmc_parameter_update_fn(update_key, state, info)
                 mask = new_mask
                 event_log_evidence += float(info.log_likelihood_increment)
+                n_substeps_taken += 1
 
             assert info is not None
             weights = state.weights
@@ -461,6 +539,7 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             ess_history.append(ess_value)
             acceptance_history.append(acceptance_rate)
             log_evidence_history.append(log_evidence)
+            n_substeps_history.append(n_substeps_taken)
 
             elapsed = time.time() - start_time
             hours, remainder = divmod(int(elapsed), 3600)
@@ -472,7 +551,8 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             logger.info(
                 f"Event {event_idx + 1:3d}/{n_events} [{event_name}] | "
                 f"ESS={ess_value * 100:5.1f}% | Accept={acceptance_rate * 100:5.1f}% | "
-                f"logZ={log_evidence:8.3f} | t={elapsed_str} | {bar}"
+                f"logZ={log_evidence:8.3f} | substeps={n_substeps_taken:3d} | "
+                f"t={elapsed_str} | {bar}"
             )
 
         end_time = time.time()
@@ -499,6 +579,7 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             "kernel_type": self._get_kernel_name(),
             "n_particles": n_particles,
             "n_mcmc_steps": config.n_mcmc_steps,
+            "substep_schedule": config.substep_schedule,
             "n_substeps_per_event": config.n_substeps_per_event,
             "event_order": self._event_order,
             "n_events": n_events,
@@ -515,6 +596,7 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             "ess_history": ess_history,
             "acceptance_history": acceptance_history,
             "log_evidence_history": log_evidence_history,
+            "n_substeps_history": n_substeps_history,
         }
 
     def plot_diagnostics(

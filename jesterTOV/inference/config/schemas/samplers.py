@@ -277,9 +277,22 @@ class SMCPartialPosteriorsRandomWalkSamplerConfig(SMCRandomWalkSamplerConfig):
     Gaussian model): the underlying ``blackjax.smc.base.step`` reweights
     *after* the MCMC rejuvenation move, which is only a good approximation
     for small target-to-target jumps. Each event is therefore ramped in
-    over ``n_substeps_per_event`` small fractional mask increments rather
-    than a single jump, matching the source paper's own recommendation of
-    "a geometric path between successive partial posteriors".
+    over several small fractional mask increments rather than a single
+    jump, matching the source paper's own recommendation of "a geometric
+    path between successive partial posteriors". Two schedules are
+    available via ``substep_schedule``:
+
+    - ``"fixed"`` (default): a fixed number of log-spaced fractions
+      (``n_substeps_per_event``), denser near mask=0 than mask=1, since the
+      empirically-measured bias risk is highest for the very first
+      increment out of an event's "off" state.
+    - ``"adaptive"``: the same ESS-targeting bisection search
+      (``blackjax.smc.ess.ess_solver`` + ``blackjax.smc.solver.dichotomy``)
+      used by ``smc-rw``'s adaptive :math:`\lambda` schedule, applied to
+      the mask fraction instead. Because the mask-weighted logposterior is
+      linear in the fraction of a single event being ramped in, the same
+      solver machinery applies unmodified. ``n_substeps_per_event`` acts as
+      a safety cap on the number of adaptive sub-steps per event.
 
     Attributes
     ----------
@@ -291,9 +304,16 @@ class SMCPartialPosteriorsRandomWalkSamplerConfig(SMCRandomWalkSamplerConfig):
         order is recorded in the result metadata and must match (as a
         strict prefix) between an initial run and any later warm-started
         run that adds more events.
+    substep_schedule : Literal["fixed", "adaptive"]
+        How each event's mask fraction is ramped from 0 to 1 (default:
+        "fixed"). See class docstring for the two options.
     n_substeps_per_event : int
-        Number of fractional mask increments (0 to 1) used to ramp in each
-        newly-added event's likelihood term (default: 8).
+        For ``substep_schedule="fixed"``: number of log-spaced fractional
+        mask increments (0 to 1) used to ramp in each newly-added event's
+        likelihood term. For ``substep_schedule="adaptive"``: the maximum
+        number of ESS-targeting sub-steps allowed per event before the
+        remaining fraction is forced through in one final step (default: 8
+        for both).
     warm_start_from : str | None
         Path to a previous run's ``InferenceResult`` HDF5 file. When set,
         the initial particles are resampled from that run's posterior
@@ -307,6 +327,7 @@ class SMCPartialPosteriorsRandomWalkSamplerConfig(SMCRandomWalkSamplerConfig):
 
     type: Literal["smc-partial-posteriors-rw"] = "smc-partial-posteriors-rw"  # type: ignore[override]
     event_order: list[str] | None = None
+    substep_schedule: Literal["fixed", "adaptive"] = "fixed"
     n_substeps_per_event: int = 8
     warm_start_from: str | None = None
 
