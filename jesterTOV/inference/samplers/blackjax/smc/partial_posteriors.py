@@ -68,9 +68,9 @@ from blackjax.smc import extend_params
 from blackjax.smc.ess import ess_solver
 from blackjax.smc.resampling import systematic
 from blackjax.smc.solver import dichotomy
+from blackjax.smc.from_mcmc import build_kernel as smc_from_mcmc_build_kernel
 from blackjax.smc.partial_posteriors_path import (
     init as pp_init,
-    build_kernel as pp_build_kernel,
     PartialPosteriorsSMCState,
 )
 
@@ -97,6 +97,70 @@ def _fixed_event_fractions(n_substeps: int) -> Array:
     """
     fractions = jnp.geomspace(_FIXED_SCHEDULE_MIN_FRACTION, 1.0, n_substeps)
     return fractions.at[-1].set(1.0)
+
+
+def _build_jitted_substep_fn(
+    mcmc_step_fn: Callable,
+    mcmc_init_fn: Callable,
+    num_mcmc_steps: int,
+    partial_logposterior_factory: Callable[[Array], Callable[[Array], Array]],
+) -> Callable[
+    [PRNGKeyArray, PartialPosteriorsSMCState, Array, Any],
+    tuple[PartialPosteriorsSMCState, Any],
+]:
+    """Build a single ``jax.jit``-compiled sub-step function, compiled once
+    and reused for every sub-step of every event.
+
+    Reimplements ``blackjax.smc.partial_posteriors_path.build_kernel``'s
+    ``step()`` (rather than calling it directly), because that function
+    bakes ``mcmc_parameters`` into a Python closure at construction time --
+    fine for blackjax's own top-level API (which doesn't update MCMC
+    parameters between steps), but wrong here: jester's random-walk kernel
+    re-adapts its proposal covariance from the current particles after
+    *every* sub-step (see ``_setup_mcmc_kernel``'s
+    ``mcmc_parameter_update_fn`` in ``smc/random_walk.py``). Closing over a
+    changing ``mcmc_parameters`` forced ``partial_posteriors.py`` to rebuild
+    this kernel -- a brand new Python closure -- on every sub-step, which
+    defeats JAX's compilation cache and forces a full retrace + XLA
+    recompile of the whole EOS/TOV/GW forward model each time (measured:
+    ~7-12s per sub-step on a *lightweight* test config, dominated by
+    compile time -- see ``eos_bayesian_updates/dev_notes/slow_jit/``).
+
+    The fix is to use ``blackjax.smc.from_mcmc.build_kernel`` (the
+    ``delegate`` that ``partial_posteriors_path.build_kernel`` wraps)
+    directly: its returned ``step()`` already takes ``mcmc_parameters`` as
+    a *runtime* argument, not a closure constant. Building this once and
+    wrapping it in a single ``jax.jit`` -- with ``state``, ``data_mask``
+    and ``mcmc_parameters`` all traced arguments -- means the whole
+    sampling run (every sub-step of every event) reuses one compiled
+    executable, since none of the array shapes/dtypes involved change
+    across sub-steps.
+    """
+    delegate = smc_from_mcmc_build_kernel(mcmc_step_fn, mcmc_init_fn, systematic)
+
+    def substep(
+        key: PRNGKeyArray,
+        state: PartialPosteriorsSMCState,
+        data_mask: Array,
+        mcmc_parameters: Any,
+    ) -> tuple[PartialPosteriorsSMCState, Any]:
+        logposterior_fn = partial_logposterior_factory(data_mask)
+        previous_logposterior_fn = partial_logposterior_factory(state.data_mask)
+
+        def log_weights_fn(x: Array) -> Array:
+            return logposterior_fn(x) - previous_logposterior_fn(x)
+
+        new_state, info = delegate(
+            key, state, num_mcmc_steps, mcmc_parameters, logposterior_fn, log_weights_fn
+        )
+        return (
+            PartialPosteriorsSMCState(
+                new_state.particles, new_state.weights, data_mask
+            ),
+            info,
+        )
+
+    return jax.jit(substep)
 
 
 class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
@@ -446,6 +510,19 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             state = state._replace(data_mask=mask)
         fixed_fractions = _fixed_event_fractions(config.n_substeps_per_event)
 
+        # Built ONCE, jax.jit-compiled ONCE, and reused for every sub-step
+        # of every event -- see _build_jitted_substep_fn's docstring for
+        # why this replaces rebuilding blackjax's kernel (with the RW
+        # covariance baked into a closure) on every sub-step, which forced
+        # a full XLA recompile of the whole EOS/TOV/GW forward model each
+        # time.
+        jitted_substep_fn = _build_jitted_substep_fn(
+            mcmc_step_fn,
+            mcmc_init_fn,
+            config.n_mcmc_steps,
+            partial_logposterior_factory,
+        )
+
         n_particles = config.n_particles
         ess_history = []
         acceptance_history = []
@@ -521,20 +598,8 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
                         new_frac = current_frac + delta
 
                 new_mask = mask.at[event_idx].set(new_frac)
-                # `pp_build_kernel` closes over `mcmc_params` at construction
-                # time (unlike `inner_kernel_tuning`, it does not accept
-                # updated MCMC parameters per call) -- must be rebuilt every
-                # sub-step for the RW covariance adaptation to take effect.
-                step_fn = pp_build_kernel(
-                    mcmc_step_fn,
-                    mcmc_init_fn,
-                    systematic,
-                    config.n_mcmc_steps,
-                    mcmc_params,
-                    partial_logposterior_factory,
-                )
                 key, subkey, update_key = jax.random.split(key, 3)
-                state, info = step_fn(subkey, state, new_mask)
+                state, info = jitted_substep_fn(subkey, state, new_mask, mcmc_params)
                 mcmc_params = mcmc_parameter_update_fn(update_key, state, info)
                 mask = new_mask
                 substep_log_evidence_increment = float(info.log_likelihood_increment)
