@@ -291,8 +291,9 @@ class SMCPartialPosteriorsRandomWalkSamplerConfig(SMCRandomWalkSamplerConfig):
       used by ``smc-rw``'s adaptive :math:`\lambda` schedule, applied to
       the mask fraction instead. Because the mask-weighted logposterior is
       linear in the fraction of a single event being ramped in, the same
-      solver machinery applies unmodified. ``n_substeps_per_event`` acts as
-      a safety cap on the number of adaptive sub-steps per event.
+      solver machinery applies unmodified. The number of sub-steps is
+      uncapped: the search runs until the mask fraction reaches 1.0,
+      however many sub-steps that takes.
 
     Attributes
     ----------
@@ -310,10 +311,9 @@ class SMCPartialPosteriorsRandomWalkSamplerConfig(SMCRandomWalkSamplerConfig):
     n_substeps_per_event : int
         For ``substep_schedule="fixed"``: number of log-spaced fractional
         mask increments (0 to 1) used to ramp in each newly-added event's
-        likelihood term. For ``substep_schedule="adaptive"``: the maximum
-        number of ESS-targeting sub-steps allowed per event before the
-        remaining fraction is forced through in one final step (default: 8
-        for both).
+        likelihood term (default: 8). Unused for
+        ``substep_schedule="adaptive"``, which runs an uncapped number of
+        ESS-targeting sub-steps until the mask reaches 1.0.
     warm_start_from : str | None
         Path to a previous run's ``InferenceResult`` HDF5 file. When set,
         the initial particles are resampled from that run's posterior

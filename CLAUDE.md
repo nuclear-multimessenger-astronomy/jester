@@ -68,7 +68,7 @@ Five sampler backends available for Bayesian inference:
    - Tempers by *number of GW events included*, not by inverse-temperature λ
    - Requires at least one `gw` likelihood event
    - Each event's mask is ramped in over several fractional steps (not a single jump) — see `jesterTOV/inference/samplers/blackjax/smc/partial_posteriors.py` module docstring for why a single-step jump is measurably biased
-   - Two ramp-in schedules via `substep_schedule`: `"fixed"` (default, log-spaced `n_substeps_per_event` steps) or `"adaptive"` (ESS-targeting bisection reusing `smc-rw`'s `target_ess` machinery, `n_substeps_per_event` as a safety cap)
+   - Two ramp-in schedules via `substep_schedule`: `"fixed"` (default, log-spaced `n_substeps_per_event` steps) or `"adaptive"` (ESS-targeting bisection reusing `smc-rw`'s `target_ess` machinery, uncapped number of sub-steps)
    - See {ref}`sampler-smc-partial-posteriors` in the docs for the full write-up
 
 **Experimental:**

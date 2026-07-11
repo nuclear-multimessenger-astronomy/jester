@@ -826,7 +826,7 @@ sampler:
 
   event_order: null                   # Order to assimilate GW events; null = config order
   substep_schedule: "fixed"           # "fixed" (log-spaced count) or "adaptive" (ESS-targeting)
-  n_substeps_per_event: 8             # Fixed: log-spaced step count. Adaptive: max sub-steps per event
+  n_substeps_per_event: 8             # Fixed schedule only: log-spaced step count (unused for adaptive)
   warm_start_from: null               # Path to a previous run's HDF5 result; null = start from the prior
 ```
 
@@ -835,8 +835,8 @@ sampler:
 - **`event_order`** (`list[str] | None`, default: `None`) - Order in which configured GW events are assimilated. `None` uses the order the events appear under the `gw` likelihood block. Recorded in the result metadata; a later warm-started run (adding more events) must use this same order as a strict prefix.
 - **`substep_schedule`** (`"fixed" | "adaptive"`, default: `"fixed"`) - How each event's mask fraction is ramped from 0 to 1. Turning an event on in a single step is measurably biased for informative events (the underlying `blackjax.smc.base.step` reweights *after* the MCMC rejuvenation move, which is only a good approximation for small target-to-target jumps); both schedules avoid this by taking several small steps instead of one jump.
   - `"fixed"`: `n_substeps_per_event` log-spaced fractions from 0 to 1 (denser near 0, since the bias risk is highest for the first increment out of an event's "off" state), matching the source paper's suggestion of "a geometric path between successive partial posteriors".
-  - `"adaptive"`: reuses the same ESS-targeting bisection search (`target_ess`) that `smc-rw`'s adaptive $\lambda$ schedule uses, applied to the mask fraction instead of $\lambda$ — this works because the mask-weighted logposterior is linear in the fraction of the event currently being ramped in. `n_substeps_per_event` becomes a safety cap: if it's reached before the mask converges to 1, the remaining fraction is forced through in one final step (with a warning).
-- **`n_substeps_per_event`** (`int`, default: `8`) - For `substep_schedule="fixed"`: the number of log-spaced fractional mask increments. For `substep_schedule="adaptive"`: the maximum number of ESS-targeting sub-steps allowed per event.
+  - `"adaptive"`: reuses the same ESS-targeting bisection search (`target_ess`) that `smc-rw`'s adaptive $\lambda$ schedule uses, applied to the mask fraction instead of $\lambda$ — this works because the mask-weighted logposterior is linear in the fraction of the event currently being ramped in. The number of sub-steps is uncapped: the search keeps taking ESS-targeting increments until the mask reaches 1.0.
+- **`n_substeps_per_event`** (`int`, default: `8`) - For `substep_schedule="fixed"`: the number of log-spaced fractional mask increments. Unused for `substep_schedule="adaptive"`.
 - **`warm_start_from`** (`str | None`, default: `None`) - Path to a previous run's `InferenceResult` HDF5 file. When set, the initial particles are resampled (with replacement, uniform weights) from that run's posterior instead of the prior, and its `event_order` metadata must be a strict prefix of this run's `event_order` — the already-covered events are not replayed (their mask entries start, and stay, at 1); only the newly added event(s) are assimilated. This is the sequential N → N+1 use case: warm-start a run adding one more GW event from a previous run's converged posterior.
 
 **Output:**

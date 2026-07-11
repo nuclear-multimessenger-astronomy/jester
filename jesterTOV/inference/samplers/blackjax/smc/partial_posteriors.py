@@ -412,11 +412,13 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         from a previous run's converged posterior instead (see
         :meth:`_load_warm_start`). Each event in ``self._event_order`` that
         hasn't already been assimilated by the warm-started run is
-        assimilated by ramping its mask entry from 0 to 1 over
-        ``config.n_substeps_per_event`` fractional sub-steps (see module
-        docstring for why this is necessary), with ``config.n_mcmc_steps``
-        rejuvenation moves per sub-step. Already-covered events are not
-        replayed: their mask entries start (and stay) at 1.
+        assimilated by ramping its mask entry from 0 to 1 over several
+        fractional sub-steps (see module docstring for why this is
+        necessary) -- a fixed count of ``config.n_substeps_per_event`` for
+        ``"fixed"``, or an uncapped ESS-targeting sequence for
+        ``"adaptive"`` -- with ``config.n_mcmc_steps`` rejuvenation moves
+        per sub-step. Already-covered events are not replayed: their mask
+        entries start (and stay) at 1.
         """
         config = cast(SMCPartialPosteriorsRandomWalkSamplerConfig, self.config)
 
@@ -542,9 +544,10 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
                 f"event(s), prev logZ={warm_start_log_evidence:.3f}"
             )
         logger.info(f"Sub-step schedule: {config.substep_schedule}")
-        logger.info(
-            f"Sub-steps per event (fixed count / adaptive cap): {config.n_substeps_per_event}"
-        )
+        if config.substep_schedule == "fixed":
+            logger.info(
+                f"Sub-steps per event (fixed count): {config.n_substeps_per_event}"
+            )
         logger.info(f"MCMC steps per sub-step: {config.n_mcmc_steps}")
         logger.info("=" * 70)
 
@@ -564,43 +567,35 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
                 else:
                     assert batched_event_loglik_fn is not None
                     max_delta = 1.0 - current_frac
-                    if n_substeps_taken >= config.n_substeps_per_event:
+                    raw_delta = ess_solver(
+                        batched_event_loglik_fn,
+                        state.particles,
+                        config.target_ess,
+                        max_delta,
+                        dichotomy,
+                    )
+                    if not jnp.isfinite(raw_delta):
+                        # Particles are already below target_ess even at
+                        # delta=0 (dichotomy has no admissible root) --
+                        # fall back to the fixed schedule's minimum step
+                        # rather than stalling, to stay on the safe
+                        # (small-jump) side.
                         logger.warning(
-                            f"Event {event_name}: adaptive sub-step cap "
-                            f"({config.n_substeps_per_event}) reached before "
-                            "the mask converged to 1.0 -- forcing the final "
-                            "step. Consider raising n_substeps_per_event or "
-                            "lowering target_ess."
+                            f"Event {event_name}: ESS already below "
+                            "target_ess before this sub-step -- falling "
+                            "back to a minimal fractional increment."
                         )
-                        new_frac = 1.0
+                        delta = min(max_delta, _FIXED_SCHEDULE_MIN_FRACTION)
                     else:
-                        raw_delta = ess_solver(
-                            batched_event_loglik_fn,
-                            state.particles,
-                            config.target_ess,
-                            max_delta,
-                            dichotomy,
-                        )
-                        if not jnp.isfinite(raw_delta):
-                            # Particles are already below target_ess even at
-                            # delta=0 (dichotomy has no admissible root) --
-                            # fall back to the fixed schedule's minimum step
-                            # rather than jumping straight to the cap, to
-                            # stay on the safe (small-jump) side.
-                            logger.warning(
-                                f"Event {event_name}: ESS already below "
-                                "target_ess before this sub-step -- falling "
-                                "back to a minimal fractional increment."
-                            )
-                            delta = min(max_delta, _FIXED_SCHEDULE_MIN_FRACTION)
-                        else:
-                            delta = float(jnp.clip(raw_delta, 0.0, max_delta))
-                        new_frac = current_frac + delta
+                        delta = float(jnp.clip(raw_delta, 0.0, max_delta))
+                    new_frac = current_frac + delta
 
                 new_mask = mask.at[event_idx].set(new_frac)
                 key, subkey, update_key = jax.random.split(key, 3)
+                substep_start_time = time.time()
                 state, info = jitted_substep_fn(subkey, state, new_mask, mcmc_params)
                 mcmc_params = mcmc_parameter_update_fn(update_key, state, info)
+                substep_elapsed = time.time() - substep_start_time
                 mask = new_mask
                 substep_log_evidence_increment = float(info.log_likelihood_increment)
                 event_log_evidence += substep_log_evidence_increment
@@ -621,7 +616,8 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
                     f"    -> [{event_name}] sub-step {n_substeps_taken:2d}{substep_total} | "
                     f"mask={new_frac:.5f} | ESS={substep_ess * 100:5.1f}% | "
                     f"Accept={substep_acceptance * 100:5.1f}% | "
-                    f"dlogZ={substep_log_evidence_increment:8.3f}"
+                    f"dlogZ={substep_log_evidence_increment:8.3f} | "
+                    f"t={substep_elapsed:6.2f}s"
                 )
 
             assert info is not None
