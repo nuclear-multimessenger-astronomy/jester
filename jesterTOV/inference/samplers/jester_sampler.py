@@ -105,6 +105,14 @@ class JesterSampler:
         Names of parameters (propagated through sample transforms)
     sampler : Any | None
         Backend sampler instance (created by subclasses)
+    likelihood_configs : list[Any] | None
+        The full ``InferenceConfig.likelihoods`` list for this run, stashed
+        by ``create_sampler`` (see ``samplers/__init__.py``). ``None``
+        unless explicitly provided. Only consumed by
+        ``smc-partial-posteriors-rw``'s warm-start path, to verify its
+        always-on likelihoods match a previous run's saved config; typed
+        loosely here (rather than importing ``LikelihoodConfig``) to avoid
+        a config-schema dependency in this lightweight base module.
 
     Notes
     -----
@@ -118,6 +126,7 @@ class JesterSampler:
     likelihood_transforms: list[NtoMTransform]
     parameter_names: list[str]
     sampler: Any | None
+    likelihood_configs: list[Any] | None = None
 
     def __init__(
         self,

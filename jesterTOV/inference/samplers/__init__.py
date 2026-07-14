@@ -13,7 +13,7 @@ from .blackjax.smc.partial_posteriors import BlackJAXPartialPosteriorsRandomWalk
 from .eos_reweighting import EOSReweightingSampler, resample_eos_posterior
 
 from ..base import LikelihoodBase, Prior, NtoMTransform
-from ..config.schema import SamplerConfig
+from ..config.schema import SamplerConfig, LikelihoodConfig
 
 __all__ = [
     "JesterSampler",
@@ -45,6 +45,7 @@ def create_sampler(
     likelihood: LikelihoodBase,
     likelihood_transforms: list[NtoMTransform] | None = None,
     seed: int = 0,
+    likelihood_configs: list[LikelihoodConfig] | None = None,
 ) -> JesterSampler:
     """Create sampler instance based on config.type.
 
@@ -64,6 +65,12 @@ def create_sampler(
         If None, defaults to empty list.
     seed : int, optional
         Random seed (default: 0)
+    likelihood_configs : list[LikelihoodConfig], optional
+        The full ``InferenceConfig.likelihoods`` list for this run. Stashed
+        on the created sampler (as ``.likelihood_configs``) so that
+        ``smc-partial-posteriors-rw``'s warm-start path can verify its
+        always-on (non-GW) likelihoods match a previous run's saved config.
+        Unused by all other sampler types.
 
     Returns
     -------
@@ -101,7 +108,7 @@ def create_sampler(
     # Each sampler creates its own sample_transforms in __init__:
     # - NS-AW: creates unit cube [0,1] transforms if not provided
     # - FlowMC/SMC: use empty list (no transforms needed)
-    return sampler_class(
+    sampler = sampler_class(
         likelihood=likelihood,
         prior=prior,
         sample_transforms=[],  # Samplers handle their own transforms
@@ -109,3 +116,5 @@ def create_sampler(
         config=config,
         seed=seed,
     )
+    sampler.likelihood_configs = likelihood_configs
+    return sampler

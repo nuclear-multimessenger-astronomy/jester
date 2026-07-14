@@ -32,6 +32,7 @@
 
    .. autosummary::
    
+      ~BlackjaxSampler.likelihood_configs
       ~BlackjaxSampler.likelihood
       ~BlackjaxSampler.prior
       ~BlackjaxSampler.sample_transforms

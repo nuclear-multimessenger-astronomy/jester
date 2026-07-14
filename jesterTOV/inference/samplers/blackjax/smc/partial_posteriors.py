@@ -52,6 +52,7 @@ and ``_plot_substep_diagnostics`` below.
 """
 
 from typing import Any, Callable, cast
+import json
 import time
 from pathlib import Path
 import matplotlib.pyplot as plt
@@ -91,6 +92,69 @@ _GW_EVENT_LIKELIHOOD_TYPES = (GWLikelihood, GWLikelihoodResampled)
 # at delta=0) -- keeps the run progressing on the safe (small-jump) side
 # instead of stalling.
 _MIN_FALLBACK_FRACTION = 1e-3
+
+_GW_LIKELIHOOD_TYPES_IN_CONFIG = ("gw", "gw_resampled")
+
+
+def _extract_gw_event_order(likelihoods: list[dict[str, Any]]) -> list[str]:
+    """GW event names configured in a saved run's likelihoods list, in order.
+
+    Parameters
+    ----------
+    likelihoods : list[dict[str, Any]]
+        A run's ``InferenceConfig.likelihoods`` section, as a plain dict
+        (e.g. from ``InferenceResult.config_dict["likelihoods"]``).
+
+    Returns
+    -------
+    list[str]
+        Names of every event under any enabled ``gw``/``gw_resampled``
+        likelihood block, concatenated in the order the blocks and their
+        ``events`` lists appear.
+    """
+    event_order: list[str] = []
+    for lik in likelihoods:
+        if (
+            lik.get("enabled", True)
+            and lik.get("type") in _GW_LIKELIHOOD_TYPES_IN_CONFIG
+        ):
+            event_order.extend(ev["name"] for ev in lik.get("events", []))
+    return event_order
+
+
+def _canonical_always_on_signature(
+    likelihoods: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Canonical, order-independent form of the "always-on" likelihoods.
+
+    "Always-on" means every enabled likelihood that isn't a GW event term
+    (GW events are the ones this sampler tempers over; everything else --
+    ChiEFT, NICER, radio, EOS/TOV constraints, ... -- is applied at full
+    weight throughout the whole run). Two configs with the same canonical
+    signature are guaranteed to specify identical always-on likelihoods
+    (same types, same kwargs -- e.g. the same ChiEFT data path), which is
+    the invariant the cumulative logZ bookkeeping across a warm-started run
+    depends on.
+
+    Parameters
+    ----------
+    likelihoods : list[dict[str, Any]]
+        A run's ``InferenceConfig.likelihoods`` section, as a plain dict.
+
+    Returns
+    -------
+    list[dict[str, Any]]
+        Enabled, non-GW-event likelihood configs, sorted into a
+        deterministic order so two configs can be compared with plain
+        equality regardless of how the likelihoods happened to be listed.
+    """
+    always_on = [
+        lik
+        for lik in likelihoods
+        if lik.get("enabled", True)
+        and lik.get("type") not in _GW_LIKELIHOOD_TYPES_IN_CONFIG
+    ]
+    return sorted(always_on, key=lambda lik: json.dumps(lik, sort_keys=True))
 
 
 def _build_jitted_substep_fn(
@@ -291,16 +355,74 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
     def _get_kernel_name(self) -> str:
         return "partial_posteriors_random_walk"
 
+    def _check_always_on_likelihoods_match(
+        self, path: str, prev_likelihoods: list[dict[str, Any]]
+    ) -> None:
+        """Verify the warm-start source's always-on likelihoods match this run's.
+
+        The cumulative logZ bookkeeping across a warm-started run only
+        makes sense if the previous run's always-on (non-GW) likelihoods
+        -- ChiEFT, NICER, radio, EOS/TOV constraints, ... -- are the exact
+        same types with the exact same kwargs as this run's (e.g. the same
+        ChiEFT data path). A mismatch would silently corrupt the evidence
+        without this check.
+
+        Parameters
+        ----------
+        path : str
+            The ``warm_start_from`` path, used only for the error message.
+        prev_likelihoods : list[dict[str, Any]]
+            The previous run's saved ``likelihoods`` config section (see
+            ``InferenceResult.config_dict``).
+
+        Raises
+        ------
+        ValueError
+            If the previous run's always-on likelihoods don't exactly
+            match this run's.
+        """
+        if self.likelihood_configs is None:
+            logger.warning(
+                "Cannot verify that warm_start_from's always-on (non-GW) "
+                "likelihoods match this run's -- this sampler wasn't given "
+                "the full likelihood config (create_sampler's "
+                "likelihood_configs argument). Proceeding without this "
+                "check; a mismatch (e.g. a different ChiEFT data path) "
+                "would silently corrupt the cumulative logZ bookkeeping."
+            )
+            return
+
+        current_likelihoods = [lik.model_dump() for lik in self.likelihood_configs]
+        prev_signature = _canonical_always_on_signature(prev_likelihoods)
+        current_signature = _canonical_always_on_signature(current_likelihoods)
+        if prev_signature != current_signature:
+            raise ValueError(
+                f"warm_start_from={path!r}'s always-on (non-GW) likelihoods "
+                "do not match this run's -- the cumulative logZ bookkeeping "
+                "assumes they are identical (same types, same kwargs, e.g. "
+                f"the same ChiEFT data path).\nPrevious: {prev_signature}\n"
+                f"Current: {current_signature}"
+            )
+
     def _load_warm_start(
         self, path: str, n_particles: int, key: PRNGKeyArray
     ) -> tuple[dict[str, Array], int, float]:
         """Load initial particles from a previous run's converged posterior.
 
+        The previous run does not have to have used this sampler: any saved
+        ``InferenceResult`` (``smc-rw``, ``smc-nuts``, ``flowmc``, or this
+        sampler itself) works, as long as its posterior is converged on a
+        combined likelihood whose GW events are a strict prefix of this
+        run's ``self._event_order`` and whose always-on (non-GW)
+        likelihoods exactly match this run's. Both are derived from the
+        previous run's *saved config* (``InferenceResult.config_dict``),
+        not from sampler-specific metadata -- see :func:`_extract_gw_event_order`
+        and :func:`_canonical_always_on_signature`.
+
         Parameters
         ----------
         path : str
-            Path to a previous ``InferenceResult`` HDF5 file, produced by
-            this same sampler (``config.warm_start_from``).
+            Path to a previous ``InferenceResult`` HDF5 file.
         n_particles : int
             Number of particles this run wants to start with. Resampled
             (with replacement, uniform weights) from the previous run's
@@ -321,31 +443,35 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         Raises
         ------
         ValueError
-            If the previous run's ``event_order`` is not a strict prefix of
-            this run's ``self._event_order``, or its posterior is missing a
-            parameter required by the current prior.
+            If the previous run's configured GW events are not a strict
+            prefix of this run's ``self._event_order``, if its always-on
+            (non-GW) likelihoods don't match this run's, or if its
+            posterior is missing a parameter required by the current prior.
         """
         from jesterTOV.inference.result import InferenceResult
 
         logger.info(f"Warm-starting partial-posteriors SMC from: {path}")
         prev_result = InferenceResult.load(path)
+        prev_likelihoods = prev_result.config_dict.get("likelihoods", [])
 
-        prev_event_order = list(prev_result.metadata.get("event_order", []))
+        prev_event_order = _extract_gw_event_order(prev_likelihoods)
         if len(prev_event_order) == 0:
             raise ValueError(
-                f"warm_start_from={path!r} has no 'event_order' in its "
-                "metadata -- it does not look like a partial-posteriors "
-                "SMC result."
+                f"warm_start_from={path!r}'s saved config has no enabled GW "
+                "likelihood events -- nothing to warm-start from."
             )
         if (
             len(prev_event_order) >= len(self._event_order)
             or self._event_order[: len(prev_event_order)] != prev_event_order
         ):
             raise ValueError(
-                "warm_start_from's event_order must be a strict prefix of "
-                f"this run's event_order to keep mask indices aligned. "
-                f"Previous: {prev_event_order}, current: {self._event_order}."
+                "warm_start_from's configured GW events must be a strict "
+                "prefix of this run's event_order to keep mask indices "
+                f"aligned. Previous: {prev_event_order}, current: "
+                f"{self._event_order}."
             )
+
+        self._check_always_on_likelihoods_match(path, prev_likelihoods)
 
         prev_posterior = prev_result.posterior
         missing = [

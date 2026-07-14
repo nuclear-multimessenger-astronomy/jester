@@ -32,6 +32,7 @@
 
    .. autosummary::
    
+      ~JesterSampler.likelihood_configs
       ~JesterSampler.likelihood
       ~JesterSampler.prior
       ~JesterSampler.sample_transforms

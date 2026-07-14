@@ -34,6 +34,7 @@
 
    .. autosummary::
    
+      ~FlowMCSampler.likelihood_configs
       ~FlowMCSampler.sampler
       ~FlowMCSampler.likelihood
       ~FlowMCSampler.prior

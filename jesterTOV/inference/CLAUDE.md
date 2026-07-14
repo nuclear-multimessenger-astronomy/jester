@@ -50,6 +50,7 @@ L_sym = UniformPrior(10.0, 200.0, parameter_names=["L_sym"])
   - Each event's mask is ramped in over an adaptive, uncapped ESS-targeting bisection (reusing `smc-rw`'s `target_ess`/`ess_solver`/`dichotomy` machinery) -- a single-step jump is measurably biased, see `samplers/blackjax/smc/partial_posteriors.py` module docstring
   - Config is split into two levels: the top level (`event_order`, `warm_start_from`) only orchestrates event assimilation; the nested `inner` block (`InnerSMCRandomWalkConfig`: `n_particles`, `n_mcmc_steps`, `target_ess`, `random_walk_sigma`) fully specifies the adaptive SMC-RW loop used to ramp in each event
   - `plot_diagnostics()` produces the overall across-events plot plus one per-event sub-step diagnostics plot (mask fraction/ESS/acceptance vs. sub-step) under `outdir/substep_diagnostics/`
+  - `warm_start_from` works from *any* sampler's saved result (not just a previous partial-posteriors run): "already covered" GW events are derived from the source run's saved config (`InferenceResult.config_dict["likelihoods"]`) via `_extract_gw_event_order`, and its always-on (non-GW) likelihoods must exactly match this run's (`_canonical_always_on_signature`, checked in `_check_always_on_likelihoods_match`) — `create_sampler` must be given `likelihood_configs=config.likelihoods` for that check to run (otherwise it only warns)
 - `type: "blackjax-ns-aw"` - Nested Sampling with Acceptance Walk (experimental)
   - For model comparison and evidence estimation
   - Needs additional testing/fixes

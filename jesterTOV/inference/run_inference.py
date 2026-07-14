@@ -863,6 +863,7 @@ def main(config_path: str) -> None:
         likelihood=likelihood,
         likelihood_transforms=[transform],
         seed=config.seed,
+        likelihood_configs=config.likelihoods,
     )
 
     # Log detailed sampler configuration

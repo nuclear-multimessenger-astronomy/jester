@@ -33,6 +33,7 @@
 
    .. autosummary::
    
+      ~BlackJAXSMCRandomWalkSampler.likelihood_configs
       ~BlackJAXSMCRandomWalkSampler.config
       ~BlackJAXSMCRandomWalkSampler.final_state
       ~BlackJAXSMCRandomWalkSampler.metadata

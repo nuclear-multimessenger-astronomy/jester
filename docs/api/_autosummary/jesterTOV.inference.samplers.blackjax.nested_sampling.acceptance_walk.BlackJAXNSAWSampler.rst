@@ -32,6 +32,7 @@
 
    .. autosummary::
    
+      ~BlackJAXNSAWSampler.likelihood_configs
       ~BlackJAXNSAWSampler.config
       ~BlackJAXNSAWSampler.final_state
       ~BlackJAXNSAWSampler.metadata

@@ -29,6 +29,11 @@ def _run_partial_posteriors(config_dict: dict) -> tuple:
     """Build prior/transform/likelihood/sampler and run sample(). Returns
     (config, sampler) so callers can inspect both the parsed config and the
     post-sample() sampler state/metadata.
+
+    Passes ``likelihood_configs=config.likelihoods`` so the always-on
+    likelihood consistency check (exercised by the warm-start tests below)
+    actually has something to compare against, matching how
+    ``run_inference.py`` calls ``create_sampler``.
     """
     config = InferenceConfig(**config_dict)
     prior, _fixed_params = setup_prior(config)
@@ -41,6 +46,7 @@ def _run_partial_posteriors(config_dict: dict) -> tuple:
         likelihood=likelihood,
         likelihood_transforms=[transform],
         seed=config.seed,
+        likelihood_configs=config.likelihoods,
     )
     sampler.sample(jax.random.PRNGKey(config.seed))
     return config, sampler
@@ -263,3 +269,89 @@ class TestSMCPartialPosteriorsWarmStart:
 
         with pytest.raises(ValueError, match="strict prefix"):
             _run_partial_posteriors(stage2_dict)
+
+    def test_warm_start_rejects_mismatched_always_on_likelihoods(
+        self, smc_partial_posteriors_gw_config, e2e_temp_dir
+    ):
+        """If the always-on (non-GW) likelihoods differ between the
+        warm-start source and this run, the cumulative logZ bookkeeping
+        would be silently wrong -- must fail fast instead.
+        """
+        stage1_dict = copy.deepcopy(smc_partial_posteriors_gw_config)
+        stage1_dict["likelihoods"][1]["events"] = [{"name": "GW170817"}]
+        stage1_config, stage1_sampler = _run_partial_posteriors(stage1_dict)
+
+        stage1_result = InferenceResult.from_sampler(
+            stage1_sampler, stage1_config, runtime=0.0
+        )
+        stage1_path = e2e_temp_dir / "stage1_mismatched_always_on.h5"
+        stage1_result.save(stage1_path)
+
+        stage2_dict = copy.deepcopy(smc_partial_posteriors_gw_config)
+        stage2_dict["likelihoods"][1]["events"] = [
+            {"name": "GW170817"},
+            {"name": "GW190425"},
+        ]
+        # Stage 1 had the always-on constraints_eos likelihood enabled;
+        # disabling it here means the always-on likelihood sets no longer
+        # match between the two runs.
+        stage2_dict["likelihoods"][0]["enabled"] = False
+        stage2_dict["sampler"]["warm_start_from"] = str(stage1_path)
+
+        with pytest.raises(ValueError, match="always-on"):
+            _run_partial_posteriors(stage2_dict)
+
+    def test_warm_start_from_smc_rw_result(
+        self, smc_rw_gw_config, smc_partial_posteriors_gw_config, e2e_temp_dir
+    ):
+        """warm_start_from doesn't require the source run to be a
+        partial-posteriors run. A converged ``smc-rw`` posterior (tempering
+        the full combined likelihood by lambda, not by event) works too,
+        since the "already covered" events are now derived from the saved
+        config's ``likelihoods`` section rather than sampler-specific
+        ``event_order`` metadata that only the partial-posteriors sampler
+        used to write.
+        """
+        # Stage 1: plain smc-rw run over GW170817 alone (lambda-tempered).
+        stage1_dict = copy.deepcopy(smc_rw_gw_config)
+        stage1_dict["likelihoods"][1]["events"] = [{"name": "GW170817"}]
+        stage1_config = InferenceConfig(**stage1_dict)
+        prior, _fixed_params = setup_prior(stage1_config)
+        keep_names = determine_keep_names(stage1_config, prior)
+        transform = setup_transform(stage1_config, prior=prior, keep_names=keep_names)
+        likelihood = setup_likelihood(stage1_config, transform)
+        stage1_sampler = create_sampler(
+            config=stage1_config.sampler,
+            prior=prior,
+            likelihood=likelihood,
+            likelihood_transforms=[transform],
+            seed=stage1_config.seed,
+            likelihood_configs=stage1_config.likelihoods,
+        )
+        stage1_sampler.sample(jax.random.PRNGKey(stage1_config.seed))
+        assert stage1_sampler.metadata["kernel_type"] == "random_walk"  # type: ignore[attr-defined]
+
+        stage1_result = InferenceResult.from_sampler(
+            stage1_sampler, stage1_config, runtime=0.0
+        )
+        stage1_path = e2e_temp_dir / "stage1_smc_rw_result.h5"
+        stage1_result.save(stage1_path)
+
+        # Stage 2: partial-posteriors run warm-starting from the smc-rw
+        # posterior, adding GW190425 via the adaptive ramp-in.
+        stage2_dict = copy.deepcopy(smc_partial_posteriors_gw_config)
+        stage2_dict["likelihoods"][1]["events"] = [
+            {"name": "GW170817"},
+            {"name": "GW190425"},
+        ]
+        stage2_dict["sampler"]["warm_start_from"] = str(stage1_path)
+        _stage2_config, stage2_sampler = _run_partial_posteriors(stage2_dict)
+
+        stage2_metadata = stage2_sampler.metadata  # type: ignore[attr-defined]
+        assert stage2_metadata["event_order"] == ["GW170817", "GW190425"]
+        assert stage2_metadata["n_events_replayed"] == 1
+        # Only the new event (GW190425) is stepped through, not GW170817.
+        assert len(stage2_metadata["ess_history"]) == 1
+
+        output = stage2_sampler.get_sampler_output()
+        validate_sampler_output(output, expected_params=NEP_PARAMS, min_samples=50)

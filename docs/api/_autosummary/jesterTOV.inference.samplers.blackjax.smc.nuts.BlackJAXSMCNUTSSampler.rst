@@ -33,6 +33,7 @@
 
    .. autosummary::
    
+      ~BlackJAXSMCNUTSSampler.likelihood_configs
       ~BlackJAXSMCNUTSSampler.config
       ~BlackJAXSMCNUTSSampler.final_state
       ~BlackJAXSMCNUTSSampler.metadata
