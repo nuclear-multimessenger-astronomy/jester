@@ -28,19 +28,27 @@ for the existing sampler's adaptive :math:`\lambda` bisection, false for a
 whole-event jump). Each event is therefore ramped in over several small
 fractional mask increments, matching the source paper's own suggestion of
 "a geometric path between successive partial posteriors"
-(``papers/2007.11936/smcsamplers.tex:409-411``). Two schedules are
-supported (``config.substep_schedule``):
+(``papers/2007.11936/smcsamplers.tex:409-411``), using an ESS-targeting
+bisection search (``blackjax.smc.ess.ess_solver`` /
+``blackjax.smc.solver.dichotomy``) -- the same machinery the base
+sampler's adaptive :math:`\lambda` schedule uses -- applied to the mask
+fraction instead of :math:`\lambda`. This works unmodified because the
+mask-weighted logposterior is linear in the fraction of the single event
+currently being ramped in (all other terms cancel in the successive-target
+log-weight difference), exactly the structure ``ess_solver`` assumes. The
+number of sub-steps per event is uncapped: the search runs until the mask
+fraction reaches 1.0, however many sub-steps that takes.
 
-- ``"fixed"``: a fixed count of log-spaced fractions (see
-  ``_fixed_event_fractions``), denser near mask=0.
-- ``"adaptive"``: an ESS-targeting bisection search reusing
-  ``blackjax.smc.ess.ess_solver`` / ``blackjax.smc.solver.dichotomy`` --
-  the same machinery the base sampler's adaptive :math:`\lambda` schedule
-  uses -- applied to the mask fraction instead of :math:`\lambda`. This
-  works unmodified because the mask-weighted logposterior is linear in the
-  fraction of the single event currently being ramped in (all other terms
-  cancel in the successive-target log-weight difference), exactly the
-  structure ``ess_solver`` assumes.
+Configuration is split into two levels (see
+``SMCPartialPosteriorsRandomWalkSamplerConfig``): the top level only
+orchestrates which events are assimilated, in what order, and warm-start
+bookkeeping; ``config.inner`` (an ``InnerSMCRandomWalkConfig``) fully
+specifies the adaptive SMC-RW loop used to ramp in each event. Each
+event's ramp-in also gets its own SMC-diagnostics-style plot (mask
+fraction / ESS / acceptance vs. sub-step, mirroring
+``BlackjaxSMCSampler.plot_diagnostics``), in addition to the overall
+partial-posteriors-path plot across events -- see ``plot_diagnostics``
+and ``_plot_substep_diagnostics`` below.
 """
 
 from typing import Any, Callable, cast
@@ -78,25 +86,11 @@ logger = get_logger("jester")
 
 _GW_EVENT_LIKELIHOOD_TYPES = (GWLikelihood, GWLikelihoodResampled)
 
-# Minimum fraction of an event's fixed log-spaced schedule (see
-# `_fixed_event_fractions`). Not 0 -- geomspace requires a positive start,
-# and this also sets how fine the very first sub-step is.
-_FIXED_SCHEDULE_MIN_FRACTION = 1e-3
-
-
-def _fixed_event_fractions(n_substeps: int) -> Array:
-    """Log-spaced fractional mask schedule for ramping in one event.
-
-    Denser near mask=0 than mask=1: the empirically-validated bias fix
-    (see module docstring) is most sensitive to the *first* increment out
-    of an event's "off" state (mask 0 -> epsilon is a much bigger relative
-    jump in the target distribution than mask ~0.9 -> 1), so a geometric
-    (log-spaced) schedule -- as the source paper recommends -- resolves
-    that regime much more finely than a uniform linear grid for the same
-    number of sub-steps.
-    """
-    fractions = jnp.geomspace(_FIXED_SCHEDULE_MIN_FRACTION, 1.0, n_substeps)
-    return fractions.at[-1].set(1.0)
+# Fallback minimal fractional mask increment used only if the ESS-targeting
+# bisection has no admissible root (particles already below target_ess even
+# at delta=0) -- keeps the run progressing on the safe (small-jump) side
+# instead of stalling.
+_MIN_FALLBACK_FRACTION = 1e-3
 
 
 def _build_jitted_substep_fn(
@@ -168,10 +162,11 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
 
     Tempers by number of GW events included rather than by :math:`\\lambda`:
     each configured GW event's likelihood term is turned on one at a time
-    (ramped in over several fractional mask sub-steps -- see module
-    docstring), with MCMC rejuvenation after each sub-step. Non-GW
-    likelihoods (ChiEFT, NICER, radio, EOS/TOV constraints, ...) are always
-    on, exactly as in the base combined likelihood.
+    (ramped in over an adaptive, ESS-targeting sequence of fractional mask
+    sub-steps -- see module docstring), with MCMC rejuvenation after each
+    sub-step. Non-GW likelihoods (ChiEFT, NICER, radio, EOS/TOV
+    constraints, ...) are always on, exactly as in the base combined
+    likelihood.
 
     Reuses ``_setup_mcmc_kernel`` (Random Walk proposal + covariance
     adaptation), the flatten/unflatten utilities, and the sample-retrieval
@@ -240,6 +235,13 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             f"Partial-posteriors SMC: {len(self._event_order)} GW event(s) will be "
             f"assimilated in order: {self._event_order}"
         )
+
+        # Populated by sample(): per-event sub-step diagnostics (mask
+        # fraction / ESS / acceptance / cumulative logZ), keyed by event
+        # name. Used by plot_diagnostics() to produce one SMC-diagnostics
+        # style plot per event, in addition to the overall
+        # partial-posteriors-path plot.
+        self._substep_diagnostics: dict[str, dict[str, list[float]]] = {}
 
     @staticmethod
     def _partition_likelihood(
@@ -412,13 +414,11 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         from a previous run's converged posterior instead (see
         :meth:`_load_warm_start`). Each event in ``self._event_order`` that
         hasn't already been assimilated by the warm-started run is
-        assimilated by ramping its mask entry from 0 to 1 over several
-        fractional sub-steps (see module docstring for why this is
-        necessary) -- a fixed count of ``config.n_substeps_per_event`` for
-        ``"fixed"``, or an uncapped ESS-targeting sequence for
-        ``"adaptive"`` -- with ``config.n_mcmc_steps`` rejuvenation moves
-        per sub-step. Already-covered events are not replayed: their mask
-        entries start (and stay) at 1.
+        assimilated by ramping its mask entry from 0 to 1 over an uncapped
+        ESS-targeting sequence of sub-steps (see module docstring), with
+        ``config.inner.n_mcmc_steps`` rejuvenation moves per sub-step.
+        Already-covered events are not replayed: their mask entries start
+        (and stay) at 1.
         """
         config = cast(SMCPartialPosteriorsRandomWalkSamplerConfig, self.config)
 
@@ -510,14 +510,7 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             # not replayed, per the warm-start design (see _load_warm_start).
             mask = mask.at[:n_prev_events].set(1.0)
             state = state._replace(data_mask=mask)
-        fixed_fractions = _fixed_event_fractions(config.n_substeps_per_event)
 
-        # Built ONCE, jax.jit-compiled ONCE, and reused for every sub-step
-        # of every event -- see _build_jitted_substep_fn's docstring for
-        # why this replaces rebuilding blackjax's kernel (with the RW
-        # covariance baked into a closure) on every sub-step, which forced
-        # a full XLA recompile of the whole EOS/TOV/GW forward model each
-        # time.
         jitted_substep_fn = _build_jitted_substep_fn(
             mcmc_step_fn,
             mcmc_init_fn,
@@ -532,6 +525,12 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         n_substeps_history = []
         log_evidence = warm_start_log_evidence
 
+        # Per-event sub-step diagnostics (mask fraction / ESS / acceptance /
+        # cumulative logZ at each sub-step), for the per-event SMC-diagnostics
+        # style plot produced in plot_diagnostics() -- see
+        # _plot_substep_diagnostics.
+        substep_diagnostics: dict[str, dict[str, list[float]]] = {}
+
         logger.info("=" * 70)
         logger.info("STARTING DATA TEMPERING (PATH OF PARTIAL POSTERIORS)")
         logger.info("=" * 70)
@@ -543,11 +542,7 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
                 f"Warm start: skipping {n_prev_events} already-covered "
                 f"event(s), prev logZ={warm_start_log_evidence:.3f}"
             )
-        logger.info(f"Sub-step schedule: {config.substep_schedule}")
-        if config.substep_schedule == "fixed":
-            logger.info(
-                f"Sub-steps per event (fixed count): {config.n_substeps_per_event}"
-            )
+        logger.info(f"Target ESS per sub-step: {config.target_ess}")
         logger.info(f"MCMC steps per sub-step: {config.n_mcmc_steps}")
         logger.info("=" * 70)
 
@@ -556,39 +551,36 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             event_log_evidence = 0.0
             info = None
             n_substeps_taken = 0
-            batched_event_loglik_fn = None
-            if config.substep_schedule == "adaptive":
-                batched_event_loglik_fn = jax.vmap(ordered_event_loglik_fns[event_idx])
+            batched_event_loglik_fn = jax.vmap(ordered_event_loglik_fns[event_idx])
+            mask_fraction_history: list[float] = []
+            substep_ess_history: list[float] = []
+            substep_acceptance_history: list[float] = []
+            substep_log_evidence_history: list[float] = []
 
             while float(mask[event_idx]) < 1.0:
                 current_frac = float(mask[event_idx])
-                if config.substep_schedule == "fixed":
-                    new_frac = float(fixed_fractions[n_substeps_taken])
-                else:
-                    assert batched_event_loglik_fn is not None
-                    max_delta = 1.0 - current_frac
-                    raw_delta = ess_solver(
-                        batched_event_loglik_fn,
-                        state.particles,
-                        config.target_ess,
-                        max_delta,
-                        dichotomy,
+                max_delta = 1.0 - current_frac
+                raw_delta = ess_solver(
+                    batched_event_loglik_fn,
+                    state.particles,
+                    config.target_ess,
+                    max_delta,
+                    dichotomy,
+                )
+                if not jnp.isfinite(raw_delta):
+                    # Particles are already below target_ess even at
+                    # delta=0 (dichotomy has no admissible root) --
+                    # fall back to a minimal fractional increment rather
+                    # than stalling, to stay on the safe (small-jump) side.
+                    logger.warning(
+                        f"Event {event_name}: ESS already below "
+                        "target_ess before this sub-step -- falling "
+                        "back to a minimal fractional increment."
                     )
-                    if not jnp.isfinite(raw_delta):
-                        # Particles are already below target_ess even at
-                        # delta=0 (dichotomy has no admissible root) --
-                        # fall back to the fixed schedule's minimum step
-                        # rather than stalling, to stay on the safe
-                        # (small-jump) side.
-                        logger.warning(
-                            f"Event {event_name}: ESS already below "
-                            "target_ess before this sub-step -- falling "
-                            "back to a minimal fractional increment."
-                        )
-                        delta = min(max_delta, _FIXED_SCHEDULE_MIN_FRACTION)
-                    else:
-                        delta = float(jnp.clip(raw_delta, 0.0, max_delta))
-                    new_frac = current_frac + delta
+                    delta = min(max_delta, _MIN_FALLBACK_FRACTION)
+                else:
+                    delta = float(jnp.clip(raw_delta, 0.0, max_delta))
+                new_frac = current_frac + delta
 
                 new_mask = mask.at[event_idx].set(new_frac)
                 key, subkey, update_key = jax.random.split(key, 3)
@@ -607,18 +599,25 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
                     / n_particles
                 )
                 substep_acceptance = float(info.update_info.acceptance_rate.mean())  # type: ignore[attr-defined]
-                substep_total = (
-                    f"/{config.n_substeps_per_event}"
-                    if config.substep_schedule == "fixed"
-                    else ""
-                )
                 logger.info(
-                    f"    -> [{event_name}] sub-step {n_substeps_taken:2d}{substep_total} | "
+                    f"    -> [{event_name}] sub-step {n_substeps_taken:2d} | "
                     f"mask={new_frac:.5f} | ESS={substep_ess * 100:5.1f}% | "
                     f"Accept={substep_acceptance * 100:5.1f}% | "
                     f"dlogZ={substep_log_evidence_increment:8.3f} | "
                     f"t={substep_elapsed:6.2f}s"
                 )
+
+                mask_fraction_history.append(new_frac)
+                substep_ess_history.append(substep_ess)
+                substep_acceptance_history.append(substep_acceptance)
+                substep_log_evidence_history.append(log_evidence + event_log_evidence)
+
+            substep_diagnostics[event_name] = {
+                "mask_fraction_history": mask_fraction_history,
+                "ess_history": substep_ess_history,
+                "acceptance_history": substep_acceptance_history,
+                "log_evidence_history": substep_log_evidence_history,
+            }
 
             assert info is not None
             weights = state.weights
@@ -669,8 +668,7 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             "kernel_type": self._get_kernel_name(),
             "n_particles": n_particles,
             "n_mcmc_steps": config.n_mcmc_steps,
-            "substep_schedule": config.substep_schedule,
-            "n_substeps_per_event": config.n_substeps_per_event,
+            "target_ess": config.target_ess,
             "event_order": self._event_order,
             "n_events": n_events,
             "warm_start_from": config.warm_start_from or "",
@@ -688,22 +686,33 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             "log_evidence_history": log_evidence_history,
             "n_substeps_history": n_substeps_history,
         }
+        self._substep_diagnostics = substep_diagnostics
 
     def plot_diagnostics(
         self, outdir: str | Path = ".", filename: str = "smc_diagnostics.png"
     ) -> None:
         """Generate diagnostic plots for partial-posteriors SMC.
 
-        Creates a 3-panel figure showing, per event instead of per
-        tempering step: effective sample size, acceptance rate, and
-        cumulative log evidence.
+        Produces two kinds of plots:
+
+        1. The overall partial-posteriors-path plot (``filename``): a
+           3-panel figure showing, per event instead of per tempering step,
+           effective sample size, acceptance rate, and cumulative log
+           evidence -- the "full picture" of how the run progressed across
+           events.
+        2. One per-event sub-step diagnostics plot (see
+           :meth:`_plot_substep_diagnostics`), mirroring
+           ``BlackjaxSMCSampler.plot_diagnostics``'s 3-panel style
+           (tempering/mask-fraction schedule, ESS, acceptance) but for the
+           adaptive ramp-in of that single event, saved under
+           ``outdir/substep_diagnostics/``.
 
         Parameters
         ----------
         outdir : str or Path, optional
             Output directory for saving the plot (default: current directory)
         filename : str, optional
-            Filename for the diagnostic plot (default: "smc_diagnostics.png")
+            Filename for the overall diagnostic plot (default: "smc_diagnostics.png")
         """
         if self.final_state is None:
             logger.warning("No samples yet - run sample() first")
@@ -755,3 +764,97 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         plt.savefig(output_path, dpi=150, bbox_inches="tight")
         logger.info(f"Saved diagnostic plot to {output_path}")
         plt.close(fig)
+
+        self._plot_substep_diagnostics(outdir_path)
+
+    def _plot_substep_diagnostics(self, outdir_path: Path) -> None:
+        """Plot one SMC-diagnostics-style figure per assimilated event.
+
+        Mirrors ``BlackjaxSMCSampler.plot_diagnostics`` (3 panels: tempering
+        schedule, ESS, acceptance rate), but replaces the inverse
+        temperature :math:`\\lambda` with the event's mask fraction (0 to
+        1) and the x-axis annealing-step index with the sub-step index
+        within that event's ramp-in. This gives the full per-event picture
+        to complement the across-events overview plot.
+
+        Parameters
+        ----------
+        outdir_path : Path
+            Directory under which a ``substep_diagnostics/`` subdirectory
+            is created to hold one PNG per event.
+        """
+        if not self._substep_diagnostics:
+            return
+
+        substep_outdir = outdir_path / "substep_diagnostics"
+        substep_outdir.mkdir(parents=True, exist_ok=True)
+
+        target_ess = cast(
+            SMCPartialPosteriorsRandomWalkSamplerConfig, self.config
+        ).target_ess
+        kernel_name = self._get_kernel_name().upper()
+
+        for event_idx, event_name in enumerate(self.metadata["event_order"]):
+            diagnostics = self._substep_diagnostics.get(event_name)
+            if diagnostics is None:
+                # Already-covered event from a warm start -- not replayed,
+                # so it has no sub-step history to plot.
+                continue
+
+            mask_fraction_history = diagnostics["mask_fraction_history"]
+            ess_history = diagnostics["ess_history"]
+            acceptance_history = diagnostics["acceptance_history"]
+            n_substeps = len(mask_fraction_history)
+
+            fig, axes = plt.subplots(3, 1, figsize=(10, 9), sharex=True)
+            fig.suptitle(
+                f"Event {event_idx + 1} [{event_name}] Sub-step Diagnostics "
+                f"({kernel_name} kernel)",
+                fontsize=14,
+                fontweight="bold",
+            )
+
+            x = range(1, n_substeps + 1)
+
+            axes[0].plot(x, mask_fraction_history, "b-o", linewidth=2)
+            axes[0].set_ylabel("Mask fraction", fontsize=12)
+            axes[0].grid(True, alpha=0.3)
+            axes[0].set_ylim(-0.05, 1.05)
+            axes[0].axhline(y=0, color="black", linestyle="--", alpha=0.3, linewidth=1)
+            axes[0].axhline(y=1, color="black", linestyle="--", alpha=0.3, linewidth=1)
+
+            ess_percent = [ess * 100 for ess in ess_history]
+            axes[1].plot(x, ess_percent, "g-o", linewidth=2)
+            axes[1].axhline(
+                y=target_ess * 100,
+                color="black",
+                linestyle="--",
+                alpha=0.5,
+                linewidth=1.5,
+                label=f"Target ({target_ess * 100:.0f}%)",
+            )
+            axes[1].set_ylabel("ESS (%)", fontsize=12)
+            axes[1].grid(True, alpha=0.3)
+            axes[1].legend(loc="best", fontsize=10)
+            axes[1].set_ylim(0, 105)
+
+            acceptance_percent = [acc * 100 for acc in acceptance_history]
+            axes[2].plot(
+                x,
+                acceptance_percent,
+                "orange",
+                linestyle="-",
+                marker="o",
+                linewidth=2,
+            )
+            axes[2].set_ylabel("Acceptance Rate (%)", fontsize=12)
+            axes[2].set_xlabel("Sub-step", fontsize=12)
+            axes[2].grid(True, alpha=0.3)
+            axes[2].set_ylim(0, 105)
+
+            plt.tight_layout()
+
+            output_path = substep_outdir / f"{event_idx:02d}_{event_name}.png"
+            plt.savefig(output_path, dpi=150, bbox_inches="tight")
+            logger.info(f"Saved sub-step diagnostic plot to {output_path}")
+            plt.close(fig)

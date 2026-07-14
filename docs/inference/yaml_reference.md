@@ -809,7 +809,9 @@ sampler:
 
 ### Sequential Monte Carlo on the path of partial posteriors
 
-BlackJAX SMC that tempers by *number of GW events included* rather than by the usual inverse-temperature $\lambda$: each configured GW event's likelihood term is turned on one at a time (ramped in over several small fractional steps), exposing more of the combined likelihood as sampling progresses. This is Chopin's Iterated Batch Importance Sampling (IBIS), presented as the "path of partial posteriors" in Dai, Heng, Jacob & Whiteley, "An invitation to sequential Monte Carlo samplers" (arXiv:2007.11936). Requires at least one `gw` likelihood event in the configuration. The Python class is {class}`~jesterTOV.inference.samplers.blackjax.smc.partial_posteriors.BlackJAXPartialPosteriorsRandomWalkSampler`. The Pydantic config schema is {class}`~jesterTOV.inference.config.schema.SMCPartialPosteriorsRandomWalkSamplerConfig`.
+BlackJAX SMC that tempers by *number of GW events included* rather than by the usual inverse-temperature $\lambda$: each configured GW event's likelihood term is turned on one at a time (ramped in over an adaptive, ESS-targeting sequence of small fractional steps), exposing more of the combined likelihood as sampling progresses. This is Chopin's Iterated Batch Importance Sampling (IBIS), presented as the "path of partial posteriors" in Dai, Heng, Jacob & Whiteley, "An invitation to sequential Monte Carlo samplers" (arXiv:2007.11936). Requires at least one `gw` likelihood event in the configuration. The Python class is {class}`~jesterTOV.inference.samplers.blackjax.smc.partial_posteriors.BlackJAXPartialPosteriorsRandomWalkSampler`. The Pydantic config schema is {class}`~jesterTOV.inference.config.schema.SMCPartialPosteriorsRandomWalkSamplerConfig`.
+
+The config is split into two levels: the top level only orchestrates which events are assimilated, in what order, and warm-start bookkeeping; the nested `inner` block (schema {class}`~jesterTOV.inference.config.schema.InnerSMCRandomWalkConfig`) fully specifies the adaptive SMC-RW loop used to ramp in each event.
 
 ::::{dropdown} **Partial-Posteriors SMC Configuration**
 
@@ -820,28 +822,30 @@ sampler:
   n_eos_samples: 10000                # Number of final posterior samples
   log_prob_batch_size: 1000           # Batch size for log-probability evaluation
 
-  n_particles: 10000                  # Number of SMC particles
-  n_mcmc_steps: 1                     # Random walk steps per fractional sub-step
-  random_walk_sigma: 1.0              # Fixed sigma scaling for the RW proposal
-
   event_order: null                   # Order to assimilate GW events; null = config order
-  substep_schedule: "fixed"           # "fixed" (log-spaced count) or "adaptive" (ESS-targeting)
-  n_substeps_per_event: 8             # Fixed schedule only: log-spaced step count (unused for adaptive)
   warm_start_from: null               # Path to a previous run's HDF5 result; null = start from the prior
+
+  inner:                              # The adaptive SMC-RW loop used to ramp in each event
+    n_particles: 10000                #   Number of SMC particles
+    n_mcmc_steps: 1                   #   Random walk steps per fractional sub-step
+    target_ess: 0.9                   #   Target ESS for the sub-step bisection search
+    random_walk_sigma: 1.0             #   Fixed sigma scaling for the RW proposal
 ```
 
 **Field Details:**
 
 - **`event_order`** (`list[str] | None`, default: `None`) - Order in which configured GW events are assimilated. `None` uses the order the events appear under the `gw` likelihood block. Recorded in the result metadata; a later warm-started run (adding more events) must use this same order as a strict prefix.
-- **`substep_schedule`** (`"fixed" | "adaptive"`, default: `"fixed"`) - How each event's mask fraction is ramped from 0 to 1. Turning an event on in a single step is measurably biased for informative events (the underlying `blackjax.smc.base.step` reweights *after* the MCMC rejuvenation move, which is only a good approximation for small target-to-target jumps); both schedules avoid this by taking several small steps instead of one jump.
-  - `"fixed"`: `n_substeps_per_event` log-spaced fractions from 0 to 1 (denser near 0, since the bias risk is highest for the first increment out of an event's "off" state), matching the source paper's suggestion of "a geometric path between successive partial posteriors".
-  - `"adaptive"`: reuses the same ESS-targeting bisection search (`target_ess`) that `smc-rw`'s adaptive $\lambda$ schedule uses, applied to the mask fraction instead of $\lambda$ — this works because the mask-weighted logposterior is linear in the fraction of the event currently being ramped in. The number of sub-steps is uncapped: the search keeps taking ESS-targeting increments until the mask reaches 1.0.
-- **`n_substeps_per_event`** (`int`, default: `8`) - For `substep_schedule="fixed"`: the number of log-spaced fractional mask increments. Unused for `substep_schedule="adaptive"`.
 - **`warm_start_from`** (`str | None`, default: `None`) - Path to a previous run's `InferenceResult` HDF5 file. When set, the initial particles are resampled (with replacement, uniform weights) from that run's posterior instead of the prior, and its `event_order` metadata must be a strict prefix of this run's `event_order` — the already-covered events are not replayed (their mask entries start, and stay, at 1); only the newly added event(s) are assimilated. This is the sequential N → N+1 use case: warm-start a run adding one more GW event from a previous run's converged posterior.
+- **`inner`** (`InnerSMCRandomWalkConfig`) - Configuration of the adaptive SMC-RW loop used to ramp in each event's mask fraction from 0 to 1. Turning an event on in a single step is measurably biased for informative events (the underlying `blackjax.smc.base.step` reweights *after* the MCMC rejuvenation move, which is only a good approximation for small target-to-target jumps); an ESS-targeting bisection search (`inner.target_ess`) — the same machinery `smc-rw`'s adaptive $\lambda$ schedule uses, applied to the mask fraction instead of $\lambda$ — avoids this by taking several small steps instead of one jump. This works because the mask-weighted logposterior is linear in the fraction of the event currently being ramped in. The number of sub-steps is uncapped: the search keeps taking ESS-targeting increments until the mask reaches 1.0.
+  - **`n_particles`** (`int`, default: `10000`) - Number of SMC particles, shared across the whole run.
+  - **`n_mcmc_steps`** (`int`, default: `1`) - Random-walk rejuvenation steps per fractional sub-step.
+  - **`target_ess`** (`float`, default: `0.9`) - Target effective sample size for the sub-step bisection search.
+  - **`random_walk_sigma`** (`float`, default: `1.0`) - Fixed sigma scaling for the RW proposal.
 
 **Output:**
 - Posterior samples with equal weights
 - Per-event effective sample size (ESS), acceptance rate, number of sub-steps taken, and cumulative log evidence (instead of per-tempering-step) — when warm-starting, these histories cover only the newly assimilated event(s), not the replayed prefix
+- One SMC-diagnostics-style plot per event (mask fraction / ESS / acceptance vs. sub-step) under `outdir/substep_diagnostics/`, plus the overall across-events plot (`smc_diagnostics.png`)
 
 **When to Use:**
 - Population studies with multiple BNS/GW events, where visualizing how the posterior evolves as events are added is of interest

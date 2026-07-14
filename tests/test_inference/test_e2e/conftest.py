@@ -55,13 +55,16 @@ SMC_RW_LIGHTWEIGHT = {
     "random_walk_sigma": 0.1,
 }
 
-# SMC partial-posteriors (data-tempering) lightweight params
+# SMC partial-posteriors (data-tempering) lightweight params. n_particles,
+# n_mcmc_steps, target_ess, random_walk_sigma live under the nested "inner"
+# config -- see SMCPartialPosteriorsRandomWalkSamplerConfig.inner.
 SMC_PARTIAL_POSTERIORS_LIGHTWEIGHT = {
-    "n_particles": 100,
-    "n_mcmc_steps": 2,
-    "n_substeps_per_event": 3,
-    "target_ess": 0.9,
-    "random_walk_sigma": 0.1,
+    "inner": {
+        "n_particles": 100,
+        "n_mcmc_steps": 2,
+        "target_ess": 0.9,
+        "random_walk_sigma": 0.1,
+    },
 }
 
 # BlackJAX NS-AW lightweight params

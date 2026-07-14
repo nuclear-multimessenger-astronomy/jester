@@ -103,11 +103,15 @@ class TestSMCPartialPosteriorsE2E:
     ):
         """Sampler must fail fast if there's no GW event to temper over."""
         config_dict = dict(smc_rw_prior_config)
+        # smc_rw_prior_config's sampler dict is flat (smc-rw shape:
+        # n_particles/n_mcmc_steps/target_ess/random_walk_sigma at top
+        # level); the partial-posteriors config nests those under "inner"
+        # instead, so only output_dir/n_eos_samples carry over.
         config_dict["sampler"] = {
-            **config_dict["sampler"],
             "type": "smc-partial-posteriors-rw",
-            "n_mcmc_steps": 2,
-            "n_substeps_per_event": 3,
+            "output_dir": config_dict["sampler"]["output_dir"],
+            "n_eos_samples": config_dict["sampler"]["n_eos_samples"],
+            "inner": {"n_mcmc_steps": 2},
         }
         config = InferenceConfig(**config_dict)
 

@@ -257,8 +257,8 @@ class InferenceResult:
         elif sampler_type == "blackjax_smc_partial_posteriors_rw":
             # Partial-posteriors SMC: tempers by GW event count, not by
             # lambda -- different metadata shape than blackjax_smc_rw/nuts
-            # (no target_ess/annealing_steps/tempering_param_history; has
-            # event_order/n_substeps_per_event and per-event histories).
+            # (no annealing_steps/tempering_param_history; has
+            # event_order/target_ess and per-event histories).
             smc_metadata = sampler.metadata  # type: ignore[attr-defined]
 
             metadata.update(
@@ -266,7 +266,7 @@ class InferenceResult:
                     "kernel_type": str(smc_metadata["kernel_type"]),
                     "n_particles": int(smc_metadata["n_particles"]),
                     "n_mcmc_steps": int(smc_metadata["n_mcmc_steps"]),
-                    "n_substeps_per_event": int(smc_metadata["n_substeps_per_event"]),
+                    "target_ess": float(smc_metadata["target_ess"]),
                     "event_order": list(smc_metadata["event_order"]),
                     "n_events": int(smc_metadata["n_events"]),
                     "warm_start_from": str(smc_metadata.get("warm_start_from", "")),
@@ -876,7 +876,7 @@ class InferenceResult:
                 f"  Events assimilated: {self.metadata.get('event_order', '?')}"
             )
             lines.append(
-                f"  Sub-steps per event: {self.metadata.get('n_substeps_per_event', '?')}"
+                f"  Target ESS per sub-step: {self.metadata.get('target_ess', '?')}"
             )
             lines.append(
                 f"  Final ESS: {self.metadata.get('final_ess_percent', '?'):.1f}%"

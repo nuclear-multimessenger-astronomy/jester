@@ -257,7 +257,58 @@ class SMCNUTSSamplerConfig(BaseSamplerConfig):
         return v
 
 
-class SMCPartialPosteriorsRandomWalkSamplerConfig(SMCRandomWalkSamplerConfig):
+class InnerSMCRandomWalkConfig(JesterBaseModel):
+    """Configuration for the inner adaptive-tempering SMC-RW loop that ramps
+    in a single event within :class:`SMCPartialPosteriorsRandomWalkSamplerConfig`.
+
+    This is structurally the same knob set as :class:`SMCRandomWalkSamplerConfig`
+    (particles, MCMC steps, target ESS, random-walk sigma), but scoped to the
+    per-event ramp-in loop rather than the outer event-assimilation
+    orchestration -- see ``inner`` on the partial-posteriors config.
+
+    Attributes
+    ----------
+    n_particles : int
+        Number of particles (default: 10000)
+    n_mcmc_steps : int
+        Number of MCMC rejuvenation steps per sub-step (default: 1)
+    target_ess : float
+        Target effective sample size for the adaptive mask-fraction
+        bisection (default: 0.9)
+    random_walk_sigma : float
+        Fixed sigma scaling for the Gaussian random walk kernel (default: 1.0).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    n_particles: int = 10000
+    n_mcmc_steps: int = 1
+    target_ess: float = 0.9
+    random_walk_sigma: float = 1.0
+
+    @field_validator("n_particles", "n_mcmc_steps")
+    @classmethod
+    def _validate_positive(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError(f"Value must be positive, got: {v}")
+        return v
+
+    @field_validator("target_ess")
+    @classmethod
+    def _validate_fraction(cls, v: float) -> float:
+        if v <= 0 or v > 1:
+            raise ValueError(f"Value must be in (0, 1], got: {v}")
+        return v
+
+    @field_validator("random_walk_sigma")
+    @classmethod
+    def _validate_positive_float(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError(f"Value must be positive, got: {v}")
+        return v
+
+
+class SMCPartialPosteriorsRandomWalkSamplerConfig(BaseSamplerConfig):
     r"""Configuration for SMC on the "path of partial posteriors" (data
     tempering / IBIS, Chopin 2002; see Dai, Heng, Jacob & Whiteley,
     "An invitation to sequential Monte Carlo samplers", arXiv:2007.11936,
@@ -279,21 +330,19 @@ class SMCPartialPosteriorsRandomWalkSamplerConfig(SMCRandomWalkSamplerConfig):
     for small target-to-target jumps. Each event is therefore ramped in
     over several small fractional mask increments rather than a single
     jump, matching the source paper's own recommendation of "a geometric
-    path between successive partial posteriors". Two schedules are
-    available via ``substep_schedule``:
+    path between successive partial posteriors": an ESS-targeting bisection
+    search (``blackjax.smc.ess.ess_solver`` + ``blackjax.smc.solver.dichotomy``),
+    the same machinery used by ``smc-rw``'s adaptive :math:`\lambda` schedule,
+    applied to the mask fraction instead. Because the mask-weighted
+    logposterior is linear in the fraction of a single event being ramped
+    in, the same solver machinery applies unmodified. The number of
+    sub-steps is uncapped: the search runs until the mask fraction reaches
+    1.0, however many sub-steps that takes.
 
-    - ``"fixed"`` (default): a fixed number of log-spaced fractions
-      (``n_substeps_per_event``), denser near mask=0 than mask=1, since the
-      empirically-measured bias risk is highest for the very first
-      increment out of an event's "off" state.
-    - ``"adaptive"``: the same ESS-targeting bisection search
-      (``blackjax.smc.ess.ess_solver`` + ``blackjax.smc.solver.dichotomy``)
-      used by ``smc-rw``'s adaptive :math:`\lambda` schedule, applied to
-      the mask fraction instead. Because the mask-weighted logposterior is
-      linear in the fraction of a single event being ramped in, the same
-      solver machinery applies unmodified. The number of sub-steps is
-      uncapped: the search runs until the mask fraction reaches 1.0,
-      however many sub-steps that takes.
+    This config is deliberately split into two levels: the top level only
+    orchestrates the event-assimilation procedure (which events, in what
+    order, warm-starting), while ``inner`` fully specifies the adaptive
+    SMC-RW loop used to ramp in each individual event.
 
     Attributes
     ----------
@@ -305,15 +354,6 @@ class SMCPartialPosteriorsRandomWalkSamplerConfig(SMCRandomWalkSamplerConfig):
         order is recorded in the result metadata and must match (as a
         strict prefix) between an initial run and any later warm-started
         run that adds more events.
-    substep_schedule : Literal["fixed", "adaptive"]
-        How each event's mask fraction is ramped from 0 to 1 (default:
-        "fixed"). See class docstring for the two options.
-    n_substeps_per_event : int
-        For ``substep_schedule="fixed"``: number of log-spaced fractional
-        mask increments (0 to 1) used to ramp in each newly-added event's
-        likelihood term (default: 8). Unused for
-        ``substep_schedule="adaptive"``, which runs an uncapped number of
-        ESS-targeting sub-steps until the mask reaches 1.0.
     warm_start_from : str | None
         Path to a previous run's ``InferenceResult`` HDF5 file. When set,
         the initial particles are resampled from that run's posterior
@@ -323,20 +363,36 @@ class SMCPartialPosteriorsRandomWalkSamplerConfig(SMCRandomWalkSamplerConfig):
         start at 1, not ramped again) and only the newly added event(s) are
         assimilated. ``None`` (default) starts from the prior, assimilating
         every configured event as in a single from-scratch run.
+    inner : InnerSMCRandomWalkConfig
+        Configuration of the adaptive SMC-RW loop used to ramp in each
+        event's mask fraction from 0 to 1 (particles, MCMC steps per
+        sub-step, target ESS, random-walk sigma).
     """
 
-    type: Literal["smc-partial-posteriors-rw"] = "smc-partial-posteriors-rw"  # type: ignore[override]
+    type: Literal["smc-partial-posteriors-rw"] = "smc-partial-posteriors-rw"
     event_order: list[str] | None = None
-    substep_schedule: Literal["fixed", "adaptive"] = "fixed"
-    n_substeps_per_event: int = 8
     warm_start_from: str | None = None
+    inner: InnerSMCRandomWalkConfig = Field(default_factory=InnerSMCRandomWalkConfig)
 
-    @field_validator("n_substeps_per_event")
-    @classmethod
-    def _validate_n_substeps(cls, v: int) -> int:
-        if v <= 0:
-            raise ValueError(f"n_substeps_per_event must be positive, got: {v}")
-        return v
+    @property
+    def n_particles(self) -> int:
+        """Particle count, delegated to ``inner`` (same particles throughout the run)."""
+        return self.inner.n_particles
+
+    @property
+    def n_mcmc_steps(self) -> int:
+        """MCMC steps per sub-step, delegated to ``inner``."""
+        return self.inner.n_mcmc_steps
+
+    @property
+    def target_ess(self) -> float:
+        """Target ESS for the adaptive mask-fraction bisection, delegated to ``inner``."""
+        return self.inner.target_ess
+
+    @property
+    def random_walk_sigma(self) -> float:
+        """Random-walk kernel sigma, delegated to ``inner``."""
+        return self.inner.random_walk_sigma
 
 
 class EOSReweightingConfig(BaseSamplerConfig):

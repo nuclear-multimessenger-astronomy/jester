@@ -47,8 +47,9 @@ L_sym = UniformPrior(10.0, 200.0, parameter_names=["L_sym"])
   - More efficient for complex posteriors
 - `type: "smc-partial-posteriors-rw"` - SMC on the "path of partial posteriors" (IBIS; data tempering, not lambda tempering)
   - Tempers by number of GW events included, not by inverse-temperature λ; requires at least one `gw` likelihood event
-  - Each event's mask is ramped in over several fractional steps -- a single-step jump is measurably biased, see `samplers/blackjax/smc/partial_posteriors.py` module docstring
-  - `substep_schedule`: `"fixed"` (default, log-spaced `n_substeps_per_event` steps, denser near mask=0) or `"adaptive"` (ESS-targeting bisection reusing `smc-rw`'s `target_ess`/`ess_solver`/`dichotomy` machinery, uncapped number of sub-steps)
+  - Each event's mask is ramped in over an adaptive, uncapped ESS-targeting bisection (reusing `smc-rw`'s `target_ess`/`ess_solver`/`dichotomy` machinery) -- a single-step jump is measurably biased, see `samplers/blackjax/smc/partial_posteriors.py` module docstring
+  - Config is split into two levels: the top level (`event_order`, `warm_start_from`) only orchestrates event assimilation; the nested `inner` block (`InnerSMCRandomWalkConfig`: `n_particles`, `n_mcmc_steps`, `target_ess`, `random_walk_sigma`) fully specifies the adaptive SMC-RW loop used to ramp in each event
+  - `plot_diagnostics()` produces the overall across-events plot plus one per-event sub-step diagnostics plot (mask fraction/ESS/acceptance vs. sub-step) under `outdir/substep_diagnostics/`
 - `type: "blackjax-ns-aw"` - Nested Sampling with Acceptance Walk (experimental)
   - For model comparison and evidence estimation
   - Needs additional testing/fixes

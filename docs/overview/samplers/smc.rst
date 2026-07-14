@@ -68,27 +68,23 @@ Path of partial posteriors (``smc-partial-posteriors-rw``)
 
 A second, orthogonal SMC mode tempers by *number of GW events included* rather than by :math:`\lambda`. Instead of annealing the whole combined likelihood from prior to posterior, each configured GW event's likelihood term is turned on one at a time, so the particle population tracks the sequence of partial posteriors :math:`\pi_t(\theta) \propto p(\theta)\, \prod_{i=1}^{t} \mathcal{L}_i(\theta)` as events :math:`1, \ldots, t` are assimilated. This is Chopin's Iterated Batch Importance Sampling (IBIS), presented as the "path of partial posteriors" in Dai, Heng, Jacob & Whiteley, "An invitation to sequential Monte Carlo samplers" (`arXiv:2007.11936 <https://arxiv.org/abs/2007.11936>`_). It is useful for visualizing how a population-level EOS posterior evolves as more BNS events are assimilated, and supports sequential N → N+1 updating via ``warm_start_from`` (below).
 
-**Turning an event on in a single SMC step is measurably biased** for informative events: the underlying ``blackjax.smc.base.step`` reweights particles *after* the MCMC rejuvenation move, which is only a good approximation for small target-to-target jumps — true of the small, ESS-adaptive :math:`\lambda` increments used by ``smc-rw``/``smc-nuts`` above, but not of a whole-event jump. Each event is therefore ramped in over several small fractional mask increments, matching the source paper's own suggestion of "a geometric path between successive partial posteriors". Two schedules are available via ``substep_schedule``:
+**Turning an event on in a single SMC step is measurably biased** for informative events: the underlying ``blackjax.smc.base.step`` reweights particles *after* the MCMC rejuvenation move, which is only a good approximation for small target-to-target jumps — true of the small, ESS-adaptive :math:`\lambda` increments used by ``smc-rw``/``smc-nuts`` above, but not of a whole-event jump. Each event is therefore ramped in over an adaptive sequence of small fractional mask increments, matching the source paper's own suggestion of "a geometric path between successive partial posteriors": the sampler reuses the exact same ESS-targeting bisection search (``blackjax.smc.ess.ess_solver`` + ``blackjax.smc.solver.dichotomy``) that drives ``smc-rw``'s adaptive :math:`\lambda` schedule above, applied to the mask fraction instead of :math:`\lambda`. This is possible because the mask-weighted logposterior is linear in the fraction of the single event being ramped in (every other likelihood term cancels in the successive-target log-weight difference) — exactly the structure ``ess_solver`` assumes. The number of sub-steps per event is uncapped: the search keeps taking ESS-targeting increments until the mask reaches 1.0.
 
-* ``"fixed"`` (default): ``n_substeps_per_event`` log-spaced fractions from 0 to 1, denser near 0 — the bias risk is highest for the very first increment out of an event's "off" state, not the last increment into "fully on".
-* ``"adaptive"``: reuses the exact same ESS-targeting bisection search (``blackjax.smc.ess.ess_solver`` + ``blackjax.smc.solver.dichotomy``) that drives ``smc-rw``'s adaptive :math:`\lambda` schedule above, applied to the mask fraction instead of :math:`\lambda`. This is possible because the mask-weighted logposterior is linear in the fraction of the single event being ramped in (every other likelihood term cancels in the successive-target log-weight difference) — exactly the structure ``ess_solver`` assumes. ``n_substeps_per_event`` then acts as a safety cap: the sampler forces the remaining fraction through in one final step (with a warning) if the cap is hit before the mask reaches 1.
-
-Requires at least one ``gw`` likelihood event in the configuration; reuses the same Gaussian Random Walk kernel and covariance adaptation as ``smc-rw``.
+Requires at least one ``gw`` likelihood event in the configuration; reuses the same Gaussian Random Walk kernel and covariance adaptation as ``smc-rw``. The config is split into two levels: the top level only orchestrates which events are assimilated, in what order, and warm-start bookkeeping; the nested ``inner`` block fully specifies the adaptive SMC-RW loop used to ramp in each event.
 
 .. code-block:: yaml
 
    sampler:
      type: smc-partial-posteriors-rw
-     n_particles: 5000
-     n_mcmc_steps: 2              # RW rejuvenation steps per fractional sub-step
-     random_walk_sigma: 0.5
-     target_ess: 0.9              # used by substep_schedule: adaptive
      event_order: null            # null = use the order events appear in the gw likelihood block
-     substep_schedule: fixed      # "fixed" (log-spaced count) or "adaptive" (ESS-targeting)
-     n_substeps_per_event: 8      # fixed: step count. adaptive: max sub-steps per event
      warm_start_from: null        # path to a previous run's HDF5 result; null = start from the prior
+     inner:
+       n_particles: 5000
+       n_mcmc_steps: 2              # RW rejuvenation steps per fractional sub-step
+       random_walk_sigma: 0.5
+       target_ess: 0.9              # target ESS for the sub-step bisection search
 
-``plot_diagnostics()`` for this sampler shows ESS, acceptance rate, and cumulative log evidence per event instead of per annealing step.
+``plot_diagnostics()`` for this sampler produces two kinds of plot: the overall across-events plot showing ESS, acceptance rate, and cumulative log evidence per event instead of per annealing step, plus one per-event sub-step diagnostics plot (mask fraction / ESS / acceptance vs. sub-step, mirroring the ``smc-rw``/``smc-nuts`` three-panel style above) saved under ``outdir/substep_diagnostics/``.
 
 **Sequential N → N+1 updating (** ``warm_start_from`` **).** When a new GW event becomes available, a follow-up run can resume from a previous run's converged posterior instead of the prior: set ``warm_start_from`` to the previous run's saved ``InferenceResult`` HDF5 path, and list the previously-covered events followed by the new one(s) in the ``gw`` likelihood block, in the same order. The sampler resamples its initial particles from that file's posterior and validates that its recorded ``event_order`` is a strict prefix of the new run's — the already-covered events are *not* replayed (their mask entries start, and stay, at 1); only the newly appended event(s) go through the fractional ramp-in described above. This is the same incremental-Bayes usage IBIS is designed for: MCMC rejuvenation after the new weight update corrects for reusing an old converged population as the starting point, so no additional correction is needed.
 
