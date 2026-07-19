@@ -238,9 +238,15 @@ class GWLikelihoodConfig(BaseLikelihoodConfig):
     )
 
     N_masses_batch_size: int = Field(
-        default=1000,
+        default=1,
         gt=0,
-        description="Batch size for jax.lax.map processing of mass grid",
+        description=(
+            "Batch size for jax.lax.map processing of mass grid. Default of 1 "
+            "(a plain jax.lax.scan) keeps memory flat under the outer particle "
+            "vmap used by SMC/FlowMC as N_masses_evaluation and the number of "
+            "combined GW events grow; increase only for faster standalone "
+            "(non-vmapped) evaluations. See GWLikelihood docstring for details."
+        ),
     )
 
     seed: int = Field(
@@ -278,7 +284,7 @@ class GWResampledLikelihoodConfig(BaseLikelihoodConfig):
 
     penalty_value: float = Field(default=0.0)
     N_masses_evaluation: int = Field(default=20, gt=0)
-    N_masses_batch_size: int = Field(default=10, gt=0)
+    N_masses_batch_size: int = Field(default=1, gt=0)
 
     @field_validator("events")
     @classmethod

@@ -32,7 +32,10 @@ class GWLikelihoodResampled(LikelihoodBase):
     N_masses_evaluation : int, optional
         Number of mass samples per likelihood evaluation (default: 20)
     N_masses_batch_size : int, optional
-        Batch size for processing mass samples (default: 10)
+        Batch size passed to ``jax.lax.map`` for processing mass samples
+        (default: 1, i.e. a plain ``jax.lax.scan`` with no inner batching).
+        See the ``GWLikelihood.N_masses_batch_size`` docstring below for the
+        speed/memory tradeoff this controls - the same reasoning applies here.
 
     Attributes
     ----------
@@ -63,7 +66,7 @@ class GWLikelihoodResampled(LikelihoodBase):
         model_dir: str,
         penalty_value: float = 0.0,
         N_masses_evaluation: int = 20,
-        N_masses_batch_size: int = 10,
+        N_masses_batch_size: int = 1,
     ) -> None:
         super().__init__()
         self.event_name = event_name
@@ -186,9 +189,38 @@ class GWLikelihood(LikelihoodBase):
         Penalty value for samples where masses exceed Mtov (default: 0.0, i.e. no penalty)
     N_masses_evaluation : int, optional
         Number of mass samples to pre-sample (default: 2000)
-        Large values recommended - GPU parallelization makes this cheap!
     N_masses_batch_size : int, optional
-        Batch size for jax.lax.map processing (default: 1000)
+        Batch size passed to ``jax.lax.map`` for processing the pre-sampled
+        mass grid (default: 1). This controls a speed/memory tradeoff that
+        matters a lot once this likelihood is evaluated inside an outer
+        ``jax.vmap`` over sampler particles/walkers (as SMC and FlowMC do):
+
+        - ``batch_size=1`` lowers to a plain ``jax.lax.scan`` (one mass
+          sample at a time). For a *standalone* call (no outer vmap) this is
+          the slowest option, but under an outer ``jax.vmap`` over
+          N_particles, JAX pushes the vmap batch dimension through the scan
+          body, so only one mass sample's worth of N_particles-batched
+          activations is ever live at once. Peak memory then scales with
+          N_particles only, independent of N_masses_evaluation and of how
+          many GW events are combined - this is what keeps memory flat when
+          combining tens of events with thousands of SMC particles.
+        - ``batch_size=N_masses_evaluation`` (i.e. no scan, a single fully
+          vectorized batch) is fastest for one standalone evaluation, but
+          under an outer particle vmap both the particle and mass-sample
+          batch dimensions are materialized simultaneously through the
+          flow's network activations, so peak memory scales with
+          N_particles * N_masses_evaluation - this is what causes the
+          out-of-memory blowups when scaling up N_masses_evaluation and/or
+          the number of combined events.
+        - Intermediate values (e.g. 50-100) trade off between the two and
+          were, in benchmarking, competitive in speed with batch_size=1 while
+          still using substantially less memory than large batch sizes.
+
+        The default of 1 is the safe choice for production SMC runs
+        with many particles and/or many events. If you only need fast
+        standalone evaluations (e.g. interactive debugging, postprocessing)
+        and are not vmapping over particles, a larger batch size (or even
+        N_masses_evaluation itself) is faster with no downside.
     seed : int, optional
         Random seed for mass pre-sampling (default: 42)
         Fixed seed ensures reproducibility across runs
@@ -204,7 +236,7 @@ class GWLikelihood(LikelihoodBase):
     N_masses_evaluation : int
         Number of pre-sampled mass pairs
     N_masses_batch_size : int
-        Batch size for processing
+        Batch size passed to jax.lax.map for processing the mass grid
     seed : int
         Random seed used for pre-sampling
     flow : Flow
@@ -217,8 +249,12 @@ class GWLikelihood(LikelihoodBase):
     This class does NOT require _random_key in the parameter dictionary,
     unlike GWLikelihoodResampled. The seed is only used once at initialization.
 
-    GPU parallelization via jax.lax.map means N=10,000 samples costs nearly
-    the same as N=20, so use large N for near-integration accuracy.
+    N_masses_batch_size controls how the mass grid is pushed through
+    jax.lax.map - see the parameter docstring above for the speed/memory
+    tradeoff. The default (1) keeps memory flat as N_masses_evaluation and
+    the number of combined GW events grow, at the cost of standalone
+    (non-vmapped) evaluations being a few ms slower than the largest-batch
+    alternative - a good trade for production SMC/FlowMC runs.
 
     Examples
     --------
@@ -231,7 +267,7 @@ class GWLikelihood(LikelihoodBase):
               events:
                 - name: "GW170817"
               N_masses_evaluation: 2000  # Default value
-              N_masses_batch_size: 1000
+              N_masses_batch_size: 1     # Default value
               seed: 42
     """
 
@@ -250,7 +286,7 @@ class GWLikelihood(LikelihoodBase):
         model_dir: str,
         penalty_value: float = 0.0,
         N_masses_evaluation: int = 2000,
-        N_masses_batch_size: int = 1000,
+        N_masses_batch_size: int = 1,
         seed: int = 42,
     ) -> None:
         super().__init__()
