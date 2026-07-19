@@ -176,7 +176,11 @@ class GWLikelihoodConfig(BaseLikelihoodConfig):
     r"""Gravitational wave likelihood configuration (presampled version).
 
     This is the default GW likelihood that pre-samples masses from the
-    GW posterior for efficient evaluation during MCMC sampling.
+    GW posterior for efficient evaluation during MCMC sampling. All events are
+    evaluated as a single batched/stacked computation (``StackedGWLikelihood``)
+    rather than one likelihood per event, which requires every event's flow to
+    share the same architecture - see ``StackedGWLikelihood`` docstring for
+    what that means and what happens if it isn't satisfied.
 
     Each entry in ``events`` is a :class:`GWEventConfig` that supports three
     modes: using a pre-trained normalizing flow (default), automatically
@@ -192,7 +196,7 @@ class GWLikelihoodConfig(BaseLikelihoodConfig):
           events:
             - name: "GW170817"
               nf_model_dir: "./NFs/GW170817"
-          N_masses_evaluation: 2000
+          N_masses_evaluation: 500
     """
 
     type: Literal["gw"] = Field(default="gw", description="Likelihood type identifier")
@@ -232,9 +236,17 @@ class GWLikelihoodConfig(BaseLikelihoodConfig):
     )
 
     N_masses_evaluation: int = Field(
-        default=2000,
+        default=500,
         gt=0,
-        description="Number of mass samples to pre-sample from GW posterior",
+        description=(
+            "Number of mass samples to pre-sample from the GW posterior, i.e. "
+            "the size of the Monte Carlo sum this likelihood evaluates. Measured "
+            "seed-to-seed noise at the default (500) is already only ~0.3-0.4% "
+            "of a typical likelihood value; raising this to 2000 (the previous "
+            "default) roughly halves that noise for ~4x more flow.log_prob "
+            "calls (this likelihood's dominant cost) - a real but marginal "
+            "accuracy gain for most purposes. See GWLikelihood docstring."
+        ),
     )
 
     N_masses_batch_size: int = Field(
@@ -246,6 +258,23 @@ class GWLikelihoodConfig(BaseLikelihoodConfig):
             "vmap used by SMC/FlowMC as N_masses_evaluation and the number of "
             "combined GW events grow; increase only for faster standalone "
             "(non-vmapped) evaluations. See GWLikelihood docstring for details."
+        ),
+    )
+
+    event_batch_size: int = Field(
+        default=1,
+        gt=0,
+        description=(
+            "Batch size for jax.lax.map processing of GW events. All events are "
+            "evaluated as one stacked/batched computation (StackedGWLikelihood) "
+            "rather than one likelihood per event (see likelihoods/gw.py). Default "
+            "of 1 (a plain jax.lax.scan over events) keeps memory flat under the "
+            "outer particle vmap used by SMC/FlowMC as the number of combined "
+            "events grows, for the same reason N_masses_batch_size defaults to 1. "
+            "Values >= the number of events disable chunking (fastest for a "
+            "standalone, non-vmapped evaluation, but reintroduces the same "
+            "n_particles * n_events memory blowup N_masses_batch_size=1 avoids). "
+            "See StackedGWLikelihood docstring for details."
         ),
     )
 

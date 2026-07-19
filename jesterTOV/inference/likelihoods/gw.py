@@ -1,5 +1,6 @@
 r"""Gravitational wave event likelihood implementations"""
 
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
@@ -188,7 +189,17 @@ class GWLikelihood(LikelihoodBase):
     penalty_value : float, optional
         Penalty value for samples where masses exceed Mtov (default: 0.0, i.e. no penalty)
     N_masses_evaluation : int, optional
-        Number of mass samples to pre-sample (default: 2000)
+        Number of mass samples to pre-sample (default: 500). This sets the
+        size of a Monte Carlo sum over the flow's own mass posterior, so
+        larger values reduce estimator noise at the cost of proportionally
+        more ``flow.log_prob`` evaluations (which dominate this likelihood's
+        cost - see ``StackedGWLikelihood``/the repo's performance
+        investigation notes). Measured seed-to-seed noise at N=500 is
+        already only ~0.3-0.4% of the likelihood's typical magnitude;
+        increasing to 2000 (the old default) roughly halves that to
+        ~0.15-0.2% for ~4x more cost - a real but marginal accuracy gain for
+        most purposes. Only raise this if a specific run shows sensitivity
+        to this noise floor.
     N_masses_batch_size : int, optional
         Batch size passed to ``jax.lax.map`` for processing the pre-sampled
         mass grid (default: 1). This controls a speed/memory tradeoff that
@@ -256,6 +267,12 @@ class GWLikelihood(LikelihoodBase):
     (non-vmapped) evaluations being a few ms slower than the largest-batch
     alternative - a good trade for production SMC/FlowMC runs.
 
+    Note: the ``type: "gw"`` YAML config (``GWLikelihoodConfig``) does not
+    construct this class directly for multi-event runs - it builds one
+    ``StackedGWLikelihood`` covering all configured events instead (see that
+    class's docstring). ``GWLikelihood`` remains directly importable/usable
+    on its own, e.g. for a single event or outside the config system.
+
     Examples
     --------
     Configure in YAML::
@@ -266,7 +283,7 @@ class GWLikelihood(LikelihoodBase):
             parameters:
               events:
                 - name: "GW170817"
-              N_masses_evaluation: 2000  # Default value
+              N_masses_evaluation: 500   # Default value
               N_masses_batch_size: 1     # Default value
               seed: 42
     """
@@ -285,7 +302,7 @@ class GWLikelihood(LikelihoodBase):
         event_name: str,
         model_dir: str,
         penalty_value: float = 0.0,
-        N_masses_evaluation: int = 2000,
+        N_masses_evaluation: int = 500,
         N_masses_batch_size: int = 1,
         seed: int = 42,
     ) -> None:
@@ -385,3 +402,283 @@ class GWLikelihood(LikelihoodBase):
         log_likelihood = logsumexp(all_logprobs) - jnp.log(self.N_masses_evaluation)
 
         return log_likelihood
+
+
+_FLOW_ARCHITECTURE_KEYS = (
+    "flow_type",
+    "nn_depth",
+    "nn_block_dim",
+    "nn_width",
+    "flow_layers",
+    "invert",
+    "cond_dim",
+    "transformer_type",
+    "transformer_knots",
+    "transformer_interval",
+)
+
+
+def _flow_architecture_signature(flow: Flow) -> tuple:
+    """Hashable summary of a Flow's architecture, for cross-event compatibility checks.
+
+    Only includes the ``flow_kwargs`` entries that ``create_flow`` (flows/flow.py)
+    consumes to build the architecture, plus the data dimensionality and
+    standardization method -- everything that determines the pytree *structure* of
+    ``flow.flow`` and thus whether its weights can be stacked with another event's.
+    Excludes 'seed' and per-event data statistics ('standardize', 'data_mean',
+    'data_std', ...) that legitimately differ across events and are stored in the
+    same ``flow_kwargs.json`` file but do not affect stackability.
+    """
+    kwargs = {
+        k: flow.flow_kwargs.get(k)
+        for k in _FLOW_ARCHITECTURE_KEYS
+        if k in flow.flow_kwargs
+    }
+    return (
+        tuple(sorted(kwargs.items())),
+        flow.flow.shape[0],
+        flow.standardization_method,
+    )
+
+
+class StackedGWLikelihood(LikelihoodBase):
+    """
+    Gravitational wave likelihood for many events, evaluated as one batched
+    computation instead of one per event.
+
+    Motivation
+    ----------
+    ``CombinedLikelihood.evaluate`` (combined.py) sums one ``GWLikelihood.evaluate()``
+    call per event via a plain Python list comprehension. For many (e.g. O(100),
+    an ET-projection-style catalogue) events, that comprehension is fully unrolled at
+    JAX trace time: compile time grows superlinearly with the number of events, and
+    once this sits inside the outer ``jax.vmap`` over SMC/FlowMC particles that the
+    sampler already applies, a fully-vectorized event axis multiplies memory by
+    ``n_particles * n_events`` in exactly the way a fully-vectorized mass-sample axis
+    multiplies it by ``n_particles * N_masses_evaluation`` (see ``GWLikelihood``'s
+    ``N_masses_batch_size`` docstring, and the repo's performance investigation notes
+    for the full benchmarks behind both).
+
+    This class replaces the per-event Python loop with a single ``jax.lax.map`` over
+    a *stacked* pytree of per-event flow weights (all events must share the same flow
+    architecture -- see ``_flow_architecture_signature``, checked eagerly at
+    construction time with a clear error otherwise). ``event_batch_size`` then gives
+    the same "process a few at a time" memory/runtime trade-off for the event axis
+    that ``N_masses_batch_size`` already gives the mass-sample axis: a genuine
+    ``lax.scan`` over chunks (at the default ``event_batch_size=1``), materializing
+    only one event's activations at a time under the outer particle vmap, rather than
+    everything at once.
+
+    Numerically, this computes exactly ``sum(GWLikelihood(...).evaluate(params) for
+    each event)`` -- i.e. a drop-in replacement for combining N ``GWLikelihood``
+    instances via ``CombinedLikelihood``, not a different likelihood.
+
+    Parameters
+    ----------
+    event_names : list[str]
+        Names of the GW events (for error messages/logging only).
+    model_dirs : list[str]
+        Paths to each event's trained normalizing flow model directory, same
+        order as ``event_names``.
+    penalty_value : float, optional
+        Penalty value for samples where masses exceed Mtov (default: 0.0).
+    N_masses_evaluation : int, optional
+        Number of pre-sampled mass pairs per event (default: 500). See the
+        same parameter on ``GWLikelihood`` for the accuracy/cost tradeoff -
+        measured seed-to-seed Monte Carlo noise at N=500 is already only
+        ~0.3-0.4% of a typical likelihood value; going to 2000 (the old
+        default) roughly halves that for ~4x more `flow.log_prob` calls
+        (this likelihood's dominant cost) per event - a real but marginal
+        gain for most purposes.
+    N_masses_batch_size : int, optional
+        Batch size for ``jax.lax.map`` over mass samples, per event (default: 1,
+        matching ``GWLikelihood``'s default - see its docstring for the tradeoff).
+    event_batch_size : int | None, optional
+        Batch size for ``jax.lax.map`` over events (default: 1, i.e. a plain scan
+        over events - the safe default for production SMC/FlowMC runs with many
+        particles and/or many events, for the same reason ``N_masses_batch_size``
+        defaults to 1). ``None`` processes all events in one batch (no chunking -
+        fastest for a standalone, non-vmapped evaluation, but reintroduces the
+        ``n_particles * n_events`` memory blowup under an outer particle vmap).
+    seed : int, optional
+        Random seed for mass pre-sampling, same seed used for every event (matches
+        ``GWLikelihood``'s default behaviour; events still get distinct samples
+        because their flows differ).
+
+    Raises
+    ------
+    ValueError
+        If any two events' flows have a different architecture (flow type, layer
+        widths/depths, dimensionality, or standardization method), since their
+        weight pytrees then cannot be stacked into one array.
+
+    Examples
+    --------
+    Configure in YAML (built automatically for every ``type: "gw"`` config -
+    not constructed directly)::
+
+        likelihoods:
+          - type: "gw"
+            enabled: true
+            parameters:
+              events:
+                - name: "GW170817"
+                - name: "GW190425"
+              N_masses_evaluation: 500   # Default value
+              N_masses_batch_size: 1     # Default value
+              event_batch_size: 1        # Default value
+              seed: 42
+    """
+
+    event_names: list[str]
+    penalty_value: float
+    N_masses_evaluation: int
+    N_masses_batch_size: int
+    event_batch_size: int
+    seed: int
+    standardization_method: str
+
+    def __init__(
+        self,
+        event_names: list[str],
+        model_dirs: list[str],
+        penalty_value: float = 0.0,
+        N_masses_evaluation: int = 500,
+        N_masses_batch_size: int = 1,
+        event_batch_size: int | None = 1,
+        seed: int = 42,
+    ) -> None:
+        super().__init__()
+        if len(event_names) != len(model_dirs):
+            raise ValueError(
+                f"event_names ({len(event_names)}) and model_dirs "
+                f"({len(model_dirs)}) must have the same length"
+            )
+
+        self.event_names = event_names
+        self.penalty_value = penalty_value
+        self.N_masses_evaluation = N_masses_evaluation
+        self.N_masses_batch_size = N_masses_batch_size
+        self.event_batch_size = event_batch_size or len(event_names)
+        self.seed = seed
+
+        logger.info(
+            f"Loading NF models for {len(event_names)} GW events "
+            f"(stacked/batched evaluation, event_batch_size={self.event_batch_size})"
+        )
+        flows = [Flow.from_directory(d) for d in model_dirs]
+
+        # Fail fast with a clear message if architectures don't match, rather than
+        # a confusing jax.tree_util error from jnp.stack deep inside __init__.
+        ref_signature = _flow_architecture_signature(flows[0])
+        mismatched = [
+            name
+            for name, flow in zip(event_names[1:], flows[1:])
+            if _flow_architecture_signature(flow) != ref_signature
+        ]
+        if mismatched:
+            raise ValueError(
+                "StackedGWLikelihood requires all events to share the same flow "
+                "architecture (flow_type, nn_width/nn_depth/flow_layers/..., data "
+                f"dimensionality, and standardization method) as '{event_names[0]}' "
+                f"so their weights can be stacked into one pytree. Events with a "
+                f"different architecture: {mismatched}. If these events genuinely "
+                "use different architectures, evaluate them via separate "
+                "GWLikelihood instances combined through CombinedLikelihood instead."
+            )
+
+        # Split each event's flowjax model into (weights, architecture) and stack
+        # the weights along a new leading "event" axis. `static` (the architecture)
+        # is identical across events by the check above, so any one copy works for
+        # eqx.combine when reconstructing a per-event flow inside evaluate().
+        dynamic_list, static_list = zip(
+            *(eqx.partition(flow.flow, eqx.is_array) for flow in flows)
+        )
+        self._stacked_dynamic = jax.tree_util.tree_map(
+            lambda *leaves: jnp.stack(leaves), *dynamic_list
+        )
+        self._static = static_list[0]
+
+        # Stack the per-event (de)standardization arrays the same way -- these are
+        # plain jnp arrays already, not part of the flowjax pytree.
+        self.standardization_method = flows[0].standardization_method
+        if self.standardization_method == "zscore":
+            self._loc = jnp.stack([flow.data_mean for flow in flows])
+            self._scale = jnp.stack([flow.data_std for flow in flows])
+        else:
+            # "minmax" or "none" (identity: data_min=0, data_range=1)
+            self._loc = jnp.stack([flow.data_min for flow in flows])
+            self._scale = jnp.stack([flow.data_range for flow in flows])
+
+        # Pre-sample masses ONCE at initialization, per event, mirroring
+        # GWLikelihood's behaviour of using the same fixed seed for every event.
+        key = jax.random.key(seed)
+
+        def sample_one_event(dynamic_leaf, loc, scale):
+            flow = eqx.combine(dynamic_leaf, self._static)
+            std_samples = flow.sample(key, (N_masses_evaluation,))
+            samples = std_samples * scale + loc
+            return samples[:, :2]  # (m1, m2) only
+
+        self._fixed_mass_samples: Float[Array, "n_events n_samples 2"] = jax.vmap(
+            sample_one_event
+        )(self._stacked_dynamic, self._loc, self._scale)
+
+        logger.info(f"Pre-sampled and stacked flows for {len(event_names)} GW events")
+
+    def _log_prob_one_event(
+        self, dynamic_leaf, loc, scale, ml_sample: Float[Array, " 4"]
+    ) -> Float:
+        """Mirrors Flow.log_prob for one event's (already-combined) flow."""
+        flow = eqx.combine(dynamic_leaf, self._static)
+        x_std = (ml_sample - loc) / scale
+        log_p = flow.log_prob(x_std)
+        log_det_jacobian = -jnp.sum(jnp.log(scale))
+        return log_p + log_det_jacobian
+
+    def evaluate(self, params: dict[str, Float | Array]) -> Float:
+        """
+        Evaluate summed log likelihood over all events for given EOS parameters.
+
+        Parameters
+        ----------
+        params : dict[str, Float | Array]
+            Must contain:
+            - 'masses_EOS': Array of neutron star masses from EOS
+            - 'Lambdas_EOS': Array of tidal deformabilities from EOS
+
+        Returns
+        -------
+        Float
+            Sum of log likelihoods over all events (matches summing individual
+            GWLikelihood.evaluate() calls through CombinedLikelihood).
+        """
+        masses_EOS: Float[Array, " n_points"] = params["masses_EOS"]
+        Lambdas_EOS: Float[Array, " n_points"] = params["Lambdas_EOS"]
+        mtov: Float = jnp.max(masses_EOS)
+        n_masses_evaluation = self.N_masses_evaluation
+
+        def process_one_event(carry) -> Float:
+            dynamic_leaf, loc, scale, mass_samples = carry
+
+            def process_sample(sample: Float[Array, " 2"]) -> Float:
+                m1, m2 = sample[0], sample[1]
+                lambda_1 = jnp.interp(m1, masses_EOS, Lambdas_EOS, right=1.0)
+                lambda_2 = jnp.interp(m2, masses_EOS, Lambdas_EOS, right=1.0)
+                ml_sample = jnp.array([m1, m2, lambda_1, lambda_2])
+                logpdf = self._log_prob_one_event(dynamic_leaf, loc, scale, ml_sample)
+                penalty_m1 = jnp.where(m1 > mtov, self.penalty_value, 0.0)
+                penalty_m2 = jnp.where(m2 > mtov, self.penalty_value, 0.0)
+                return logpdf + penalty_m1 + penalty_m2
+
+            all_logprobs = jax.lax.map(
+                process_sample, mass_samples, batch_size=self.N_masses_batch_size
+            )
+            return logsumexp(all_logprobs) - jnp.log(n_masses_evaluation)
+
+        per_event_loglike = jax.lax.map(
+            process_one_event,
+            (self._stacked_dynamic, self._loc, self._scale, self._fixed_mass_samples),
+            batch_size=self.event_batch_size,
+        )
+        return jnp.sum(per_event_loglike)
