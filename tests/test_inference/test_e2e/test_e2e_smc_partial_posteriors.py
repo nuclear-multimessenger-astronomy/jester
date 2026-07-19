@@ -244,6 +244,17 @@ class TestSMCPartialPosteriorsWarmStart:
         output = stage2_sampler.get_sampler_output()
         validate_sampler_output(output, expected_params=NEP_PARAMS, min_samples=50)
 
+        # Regression test: plot_diagnostics() crashed on a warm-started run
+        # because its x-axis used the full event_order (length 2) while
+        # ess_history/acceptance_history/log_evidence_history only cover
+        # the newly-assimilated events (length 1) -- matplotlib raised
+        # "x and y must have same first dimension, but have shapes (2,)
+        # and (1,)". Must not raise, and must produce both plot files.
+        plot_outdir = e2e_temp_dir / "plots"
+        stage2_sampler.plot_diagnostics(outdir=plot_outdir)  # type: ignore[attr-defined]
+        assert (plot_outdir / "smc_diagnostics.png").exists()
+        assert (plot_outdir / "substep_diagnostics" / "01_GW190425.png").exists()
+
     def test_warm_start_rejects_non_prefix_event_order(
         self, smc_partial_posteriors_gw_config, e2e_temp_dir
     ):

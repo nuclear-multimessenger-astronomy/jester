@@ -845,10 +845,17 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             return
 
         event_order = self.metadata["event_order"]
+        # ess_history/acceptance_history/log_evidence_history only cover
+        # events actually stepped through by this run's sample() call --
+        # when warm-starting, the replayed prefix (n_events_replayed) is
+        # skipped entirely and has no corresponding history entries, so the
+        # x-axis/labels must be sliced to match, not the full event_order.
+        n_events_replayed = self.metadata.get("n_events_replayed", 0)
+        processed_event_order = event_order[n_events_replayed:]
         ess_history = self.metadata["ess_history"]
         acceptance_history = self.metadata["acceptance_history"]
         log_evidence_history = self.metadata["log_evidence_history"]
-        n_events = len(event_order)
+        n_events = len(processed_event_order)
 
         fig, axes = plt.subplots(3, 1, figsize=(10, 9), sharex=True)
         kernel_name = self._get_kernel_name().upper()
@@ -880,7 +887,9 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         axes[2].grid(True, alpha=0.3)
 
         axes[2].set_xticks(list(x))
-        axes[2].set_xticklabels(event_order, rotation=45, ha="right", fontsize=8)
+        axes[2].set_xticklabels(
+            processed_event_order, rotation=45, ha="right", fontsize=8
+        )
 
         plt.tight_layout()
 
