@@ -9,7 +9,9 @@ To constrain the EOS, we will use the {ref}`chiral effective field theory (chiEF
 ```{note}
 No GPU? No problem! This inference is fast enough to be executed locally on a laptop!
 
-Want to run a more realistic inference (e.g. GW170817) in the cloud without any local setup?
+Afterwards, you can run a lightweight GW170817 SMC run on a laptop easily within 30 mins/1 hour: check out `examples/inference/smc_random_walk/GW170817_laptop`. 
+
+Want to run a production run inference on GW170817 in the cloud without any local setup?
 Try the Google Colab notebook:
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/nuclear-multimessenger-astronomy/jester/blob/main/examples/google_colab/GW170817_Google_Colab.ipynb)
 ```

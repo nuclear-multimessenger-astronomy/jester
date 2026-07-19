@@ -61,6 +61,59 @@ When a user asks to change a default value (e.g. `penalty_value`), update **all*
 
 The factory (`likelihoods/factory.py`) passes `config.<field>` through, so no change needed there.
 
+### GW likelihood batching (`StackedGWLikelihood`)
+
+`create_combined_likelihood` (`likelihoods/factory.py`) builds **one**
+`StackedGWLikelihood` (`likelihoods/gw.py`) for a `GWLikelihoodConfig`'s entire
+`events` list, not one `GWLikelihood` per event. This replaces a plain Python
+`for`/list-comprehension over per-event `GWLikelihood` objects in
+`CombinedLikelihood.evaluate`, which JAX fully unrolls at trace time —
+compile time then grows superlinearly with the number of events, and once
+this sits inside the outer particle `vmap` blackjax already applies, a fully
+vectorized event axis multiplies memory by `n_particles * n_events` the same
+way a fully vectorized mass-sample axis multiplies it by
+`n_particles * N_masses_evaluation` (see `N_masses_batch_size`'s docstring on
+`GWLikelihood`, and `dev/FINDINGS.md` — Parts 1 and 4 — in the parent
+development workspace for the full benchmarks behind both).
+
+**How it works:** all events must share the same flow architecture
+(`flow_type`, `nn_width`, `nn_depth`, ..., dimensionality, standardization
+method — everything that determines the pytree *structure* of the trained
+weights, checked via `_flow_architecture_signature` and enforced eagerly at
+construction with a clear `ValueError` naming the offending event, not a
+`jax.tree_util` error buried inside `evaluate()`). Given that, each event's
+`flowjax` weights are split via `eqx.partition(flow.flow, eqx.is_array)` and
+stacked along a new leading "event" axis with
+`jax.tree_util.tree_map(jnp.stack, ...)`; `evaluate()` then runs a single
+`jax.lax.map` over that stacked axis (batch size: `event_batch_size`), with
+the existing per-event `jax.lax.map` over mass samples (batch size:
+`N_masses_batch_size`) nested inside. Numerically this is defined to equal
+`sum(GWLikelihood(event).evaluate(params) for event in events)` — a batching
+change, not a different likelihood (see
+`tests/test_inference/test_likelihoods.py::TestStackedGWLikelihood` and
+`TestCombinedLikelihoodFactory::test_create_gw_likelihood_builds_stacked_gw_likelihood`
+for the equivalence tests against per-event `GWLikelihood`, the latter using
+the real shipped GW170817/GW190425 presets).
+
+**Both `N_masses_batch_size` and `event_batch_size` default to `1`** (a plain
+scan over mass samples / events respectively) — this is the safe default for
+production SMC/FlowMC runs with many particles and/or many events. Setting
+either equal to its total (`N_masses_evaluation`, or the number of events)
+degenerates `jax.lax.map` to a plain `jax.vmap` with zero chunking benefit
+(see `jax/_src/lax/control_flow/loops.py::map`'s `batch_size` semantics) —
+only raise these for faster standalone (non-vmapped) evaluations. The true
+concurrent width of flow evaluations during sampling is roughly
+`n_particles * event_batch_size * N_masses_batch_size`.
+
+If events genuinely need different flow architectures, they cannot go
+through `StackedGWLikelihood` together — no automatic fallback to per-event
+`GWLikelihood` exists (this would need to be added, e.g. grouping by
+architecture signature, if that scenario becomes common; every flow shipped
+with jester currently uses the same architecture, since `train_flow.py`
+always trains with the same defaults). `GWLikelihood` itself is unchanged
+and still directly usable/importable for a single event or outside the
+config system.
+
 ### Inference Documentation
 - `docs/inference_index.md` - Navigation hub
 - `docs/inference_quickstart.md` - Quick start guide
