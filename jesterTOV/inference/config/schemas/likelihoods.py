@@ -240,12 +240,7 @@ class GWLikelihoodConfig(BaseLikelihoodConfig):
         gt=0,
         description=(
             "Number of mass samples to pre-sample from the GW posterior, i.e. "
-            "the size of the Monte Carlo sum this likelihood evaluates. Measured "
-            "seed-to-seed noise at the default (500) is already only ~0.3-0.4% "
-            "of a typical likelihood value; raising this to 2000 (the previous "
-            "default) roughly halves that noise for ~4x more flow.log_prob "
-            "calls (this likelihood's dominant cost) - a real but marginal "
-            "accuracy gain for most purposes. See GWLikelihood docstring."
+            "the size of the Monte Carlo sum this likelihood evaluates."
         ),
     )
 
@@ -255,9 +250,7 @@ class GWLikelihoodConfig(BaseLikelihoodConfig):
         description=(
             "Batch size for jax.lax.map processing of mass grid. Default of 1 "
             "(a plain jax.lax.scan) keeps memory flat under the outer particle "
-            "vmap used by SMC/FlowMC as N_masses_evaluation and the number of "
-            "combined GW events grow; increase only for faster standalone "
-            "(non-vmapped) evaluations. See GWLikelihood docstring for details."
+            "vmap used by e.g. the SMC sampler "
         ),
     )
 
@@ -269,11 +262,7 @@ class GWLikelihoodConfig(BaseLikelihoodConfig):
             "evaluated as one stacked/batched computation (StackedGWLikelihood) "
             "rather than one likelihood per event (see likelihoods/gw.py). Default "
             "of 1 (a plain jax.lax.scan over events) keeps memory flat under the "
-            "outer particle vmap used by SMC/FlowMC as the number of combined "
-            "events grows, for the same reason N_masses_batch_size defaults to 1. "
-            "Values >= the number of events disable chunking (fastest for a "
-            "standalone, non-vmapped evaluation, but reintroduces the same "
-            "n_particles * n_events memory blowup N_masses_batch_size=1 avoids). "
+            "outer particle vmap used by SMC sampler "
             "See StackedGWLikelihood docstring for details."
         ),
     )

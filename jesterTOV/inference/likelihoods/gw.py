@@ -192,46 +192,12 @@ class GWLikelihood(LikelihoodBase):
         Number of mass samples to pre-sample (default: 500). This sets the
         size of a Monte Carlo sum over the flow's own mass posterior, so
         larger values reduce estimator noise at the cost of proportionally
-        more ``flow.log_prob`` evaluations (which dominate this likelihood's
-        cost - see ``StackedGWLikelihood``/the repo's performance
-        investigation notes). Measured seed-to-seed noise at N=500 is
-        already only ~0.3-0.4% of the likelihood's typical magnitude;
-        increasing to 2000 (the old default) roughly halves that to
-        ~0.15-0.2% for ~4x more cost - a real but marginal accuracy gain for
-        most purposes. Only raise this if a specific run shows sensitivity
-        to this noise floor.
+        more ``flow.log_prob`` evaluations.
     N_masses_batch_size : int, optional
         Batch size passed to ``jax.lax.map`` for processing the pre-sampled
         mass grid (default: 1). This controls a speed/memory tradeoff that
         matters a lot once this likelihood is evaluated inside an outer
-        ``jax.vmap`` over sampler particles/walkers (as SMC and FlowMC do):
-
-        - ``batch_size=1`` lowers to a plain ``jax.lax.scan`` (one mass
-          sample at a time). For a *standalone* call (no outer vmap) this is
-          the slowest option, but under an outer ``jax.vmap`` over
-          N_particles, JAX pushes the vmap batch dimension through the scan
-          body, so only one mass sample's worth of N_particles-batched
-          activations is ever live at once. Peak memory then scales with
-          N_particles only, independent of N_masses_evaluation and of how
-          many GW events are combined - this is what keeps memory flat when
-          combining tens of events with thousands of SMC particles.
-        - ``batch_size=N_masses_evaluation`` (i.e. no scan, a single fully
-          vectorized batch) is fastest for one standalone evaluation, but
-          under an outer particle vmap both the particle and mass-sample
-          batch dimensions are materialized simultaneously through the
-          flow's network activations, so peak memory scales with
-          N_particles * N_masses_evaluation - this is what causes the
-          out-of-memory blowups when scaling up N_masses_evaluation and/or
-          the number of combined events.
-        - Intermediate values (e.g. 50-100) trade off between the two and
-          were, in benchmarking, competitive in speed with batch_size=1 while
-          still using substantially less memory than large batch sizes.
-
-        The default of 1 is the safe choice for production SMC runs
-        with many particles and/or many events. If you only need fast
-        standalone evaluations (e.g. interactive debugging, postprocessing)
-        and are not vmapping over particles, a larger batch size (or even
-        N_masses_evaluation itself) is faster with no downside.
+        ``jax.vmap`` over sampler particles/walkers (e.g. SMC).
     seed : int, optional
         Random seed for mass pre-sampling (default: 42)
         Fixed seed ensures reproducibility across runs
@@ -261,11 +227,10 @@ class GWLikelihood(LikelihoodBase):
     unlike GWLikelihoodResampled. The seed is only used once at initialization.
 
     N_masses_batch_size controls how the mass grid is pushed through
-    jax.lax.map - see the parameter docstring above for the speed/memory
-    tradeoff. The default (1) keeps memory flat as N_masses_evaluation and
+    jax.lax.map. The default (1) keeps memory flat as N_masses_evaluation and
     the number of combined GW events grow, at the cost of standalone
     (non-vmapped) evaluations being a few ms slower than the largest-batch
-    alternative - a good trade for production SMC/FlowMC runs.
+    alternative - a good trade for production runs.
 
     Note: the ``type: "gw"`` YAML config (``GWLikelihoodConfig``) does not
     construct this class directly for multi-event runs - it builds one
@@ -449,29 +414,15 @@ class StackedGWLikelihood(LikelihoodBase):
     Motivation
     ----------
     ``CombinedLikelihood.evaluate`` (combined.py) sums one ``GWLikelihood.evaluate()``
-    call per event via a plain Python list comprehension. For many (e.g. O(100),
-    an ET-projection-style catalogue) events, that comprehension is fully unrolled at
-    JAX trace time: compile time grows superlinearly with the number of events, and
-    once this sits inside the outer ``jax.vmap`` over SMC/FlowMC particles that the
-    sampler already applies, a fully-vectorized event axis multiplies memory by
-    ``n_particles * n_events`` in exactly the way a fully-vectorized mass-sample axis
-    multiplies it by ``n_particles * N_masses_evaluation`` (see ``GWLikelihood``'s
-    ``N_masses_batch_size`` docstring, and the repo's performance investigation notes
-    for the full benchmarks behind both).
-
+    call per event via a plain Python list comprehension.
     This class replaces the per-event Python loop with a single ``jax.lax.map`` over
     a *stacked* pytree of per-event flow weights (all events must share the same flow
     architecture -- see ``_flow_architecture_signature``, checked eagerly at
-    construction time with a clear error otherwise). ``event_batch_size`` then gives
-    the same "process a few at a time" memory/runtime trade-off for the event axis
-    that ``N_masses_batch_size`` already gives the mass-sample axis: a genuine
-    ``lax.scan`` over chunks (at the default ``event_batch_size=1``), materializing
-    only one event's activations at a time under the outer particle vmap, rather than
-    everything at once.
+    construction time with a clear error otherwise).
 
     Numerically, this computes exactly ``sum(GWLikelihood(...).evaluate(params) for
-    each event)`` -- i.e. a drop-in replacement for combining N ``GWLikelihood``
-    instances via ``CombinedLikelihood``, not a different likelihood.
+    each event)`` (i.e. a drop-in replacement for combining N ``GWLikelihood``
+    instances via ``CombinedLikelihood``).
 
     Parameters
     ----------
@@ -484,22 +435,14 @@ class StackedGWLikelihood(LikelihoodBase):
         Penalty value for samples where masses exceed Mtov (default: 0.0).
     N_masses_evaluation : int, optional
         Number of pre-sampled mass pairs per event (default: 500). See the
-        same parameter on ``GWLikelihood`` for the accuracy/cost tradeoff -
-        measured seed-to-seed Monte Carlo noise at N=500 is already only
-        ~0.3-0.4% of a typical likelihood value; going to 2000 (the old
-        default) roughly halves that for ~4x more `flow.log_prob` calls
-        (this likelihood's dominant cost) per event - a real but marginal
-        gain for most purposes.
+        same parameter on ``GWLikelihood`` for the accuracy/cost tradeoff.
     N_masses_batch_size : int, optional
         Batch size for ``jax.lax.map`` over mass samples, per event (default: 1,
         matching ``GWLikelihood``'s default - see its docstring for the tradeoff).
     event_batch_size : int | None, optional
         Batch size for ``jax.lax.map`` over events (default: 1, i.e. a plain scan
-        over events - the safe default for production SMC/FlowMC runs with many
-        particles and/or many events, for the same reason ``N_masses_batch_size``
-        defaults to 1). ``None`` processes all events in one batch (no chunking -
-        fastest for a standalone, non-vmapped evaluation, but reintroduces the
-        ``n_particles * n_events`` memory blowup under an outer particle vmap).
+        over events - the safe default for production SMC runs with many
+        particles and/or many events.
     seed : int, optional
         Random seed for mass pre-sampling, same seed used for every event (matches
         ``GWLikelihood``'s default behaviour; events still get distinct samples
