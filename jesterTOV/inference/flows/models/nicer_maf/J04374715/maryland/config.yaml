@@ -1,5 +1,5 @@
-# Configuration for training normalizing flow on NICER J0614-3329 (Amsterdam ST_PDT)
-posterior_file: ../../../../../data/NICER/J06143329_amsterdam_ST_PDT_NICER_only_Mauviard2025.npz
+# Configuration for training normalizing flow on NICER J0437+4715 (Maryland, Miller et al. 2026)
+posterior_file: ../../../../../data/NICER/J04374715_maryland_3spotGPL_NICER_only_RM.npz
 output_dir: .
 
 # Parameter selection
@@ -8,8 +8,8 @@ parameter_names: ["mass", "radius"]
 # Training parameters
 num_epochs: 3000
 learning_rate: 0.0001
-max_patience: 500
-batch_size: 128
+max_patience: 200
+batch_size: 512
 val_prop: 0.2
 seed: 0
 

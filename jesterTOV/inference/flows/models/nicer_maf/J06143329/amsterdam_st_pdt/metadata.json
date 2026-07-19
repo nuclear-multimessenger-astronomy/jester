@@ -5,7 +5,7 @@
     "mass",
     "radius"
   ],
-  "filepath": "../../../../../data/NICER/J06143329_amsterdam_ST_PDT_NICER_only_Dittmann2025.npz",
+  "filepath": "../../../../../data/NICER/J06143329_amsterdam_ST_PDT_NICER_only_Mauviard2025.npz",
   "flow_type": "masked_autoregressive_flow",
   "num_epochs": 736,
   "learning_rate": 0.0001,

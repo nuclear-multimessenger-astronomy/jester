@@ -262,8 +262,9 @@ Constrain the EOS using gravitational wave observations of binary neutron star m
     - name: "GW170817"
       nf_model_dir: "./NFs/GW170817"
   penalty_value: 0.0            # Log-likelihood penalty for M > M_TOV (default: 0.0)
-  N_masses_evaluation: 2000     # Number of mass samples to pre-sample (optional, default: 2000)
-  N_masses_batch_size: 1000     # Batch size for processing (optional, default: 1000)
+  N_masses_evaluation: 500      # Number of mass samples to pre-sample (optional, default: 500)
+  N_masses_batch_size: 1        # Batch size for processing (optional, default: 1)
+  event_batch_size: 1           # Batch size for processing events (optional, default: 1)
   seed: 42                      # Random seed for mass sampling (optional, default: 42)
 ```
 
@@ -274,13 +275,14 @@ Constrain the EOS using gravitational wave observations of binary neutron star m
   - **From bilby result**: set `from_bilby_result` to the path of a bilby HDF5 result file; jester will extract posterior samples and train a flow automatically before inference.
   - **From NPZ file**: set `from_npz_file` to an existing `.npz` file with posterior samples; jester will train a flow directly from it, skipping the bilby extraction step.
 - **`penalty_value`** (`float`, default: `0.0`) - Log-likelihood penalty for masses exceeding TOV maximum mass (default: 0.0, i.e. no penalty)
-- **`N_masses_evaluation`** (`int`, default: `2000`) - Number of mass samples to pre-sample from the GW posterior
-- **`N_masses_batch_size`** (`int`, default: `1000`) - Batch size for jax.lax.map processing of mass grid
+- **`N_masses_evaluation`** (`int`, default: `500`) - Number of mass samples to pre-sample from the GW posterior (the size of the Monte Carlo sum this likelihood evaluates). Measured seed-to-seed noise at the default is already only ~0.3-0.4% of a typical likelihood value; raising this to 2000 (the previous default) roughly halves that noise for ~4x more `flow.log_prob` calls (this likelihood's dominant cost) - a real but marginal accuracy gain for most purposes. See {class}`~jesterTOV.inference.likelihoods.gw.GWLikelihood` for the full analysis.
+- **`N_masses_batch_size`** (`int`, default: `1`) - Batch size for jax.lax.map processing of the mass grid. The default (a plain scan) keeps memory flat as `N_masses_evaluation` and the number of combined GW events grow, which matters most once the likelihood sits inside an outer `vmap` over SMC/FlowMC particles. Raise it only for faster standalone (non-vmapped) evaluations. See {class}`~jesterTOV.inference.likelihoods.gw.GWLikelihood` for the full tradeoff.
+- **`event_batch_size`** (`int`, default: `1`) - Batch size for `jax.lax.map` processing of GW events. All events in this likelihood's `events` list are evaluated as one stacked/batched computation ({class}`~jesterTOV.inference.likelihoods.gw.StackedGWLikelihood`), not one likelihood per event. The default (a plain scan over events) keeps memory flat as the number of combined events grows, for the same reason `N_masses_batch_size` defaults to `1`. Raise it only for faster standalone (non-vmapped) evaluations. Requires every event to use a flow with the same architecture; see {class}`~jesterTOV.inference.likelihoods.gw.StackedGWLikelihood` for what happens otherwise.
 - **`seed`** (`int`, default: `42`) - Random seed for mass pre-sampling from GW posterior
 
 **Description:**
 
-**Default GW likelihood** (presampled version): pre-samples masses from the GW posterior for efficient evaluation. Recommended for production use. See {class}`~jesterTOV.inference.likelihoods.gw.GWLikelihood` for the full API. For information on training flows from bilby results or NPZ files, see {doc}`training_flows`.
+**Default GW likelihood** (presampled version): pre-samples masses from the GW posterior for efficient evaluation. Recommended for production use. All events are evaluated as a single batched computation via {class}`~jesterTOV.inference.likelihoods.gw.StackedGWLikelihood`, which requires every event's flow to share the same architecture (true of all flows shipped with jester, since they are always trained with the same defaults). For information on training flows from bilby results or NPZ files, see {doc}`training_flows`.
 
 **GWEventConfig fields** (each entry in `events`):
 
@@ -330,7 +332,7 @@ events:
       nf_model_dir: "./NFs/GW170817"
   penalty_value: 0.0            # Log-likelihood penalty for M > M_TOV (default: 0.0)
   N_masses_evaluation: 20       # Number of masses per evaluation (optional, default: 20)
-  N_masses_batch_size: 10       # Batch size for sampling (optional, default: 10)
+  N_masses_batch_size: 1        # Batch size for sampling (optional, default: 1)
 ```
 
 **Field Details:**
@@ -338,7 +340,7 @@ events:
 - **`events`** (`list[dict]`) - List of GW events with `name` and optional `nf_model_dir` keys
 - **`penalty_value`** (`float`, default: `0.0`) - Log-likelihood penalty for masses exceeding TOV maximum mass (default: 0.0, i.e. no penalty)
 - **`N_masses_evaluation`** (`int`, default: `20`) - Number of mass samples to draw on-the-fly per likelihood evaluation
-- **`N_masses_batch_size`** (`int`, default: `10`) - Batch size for mass sampling and processing
+- **`N_masses_batch_size`** (`int`, default: `1`) - Batch size for mass sampling and processing (see the presampled `GWLikelihoodConfig` entry above for the memory/speed tradeoff this controls)
 
 **Description:**
 

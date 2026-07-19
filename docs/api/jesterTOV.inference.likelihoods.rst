@@ -13,6 +13,7 @@ Gravitational Wave Likelihoods
 
    gw.GWLikelihood
    gw.GWLikelihoodResampled
+   gw.StackedGWLikelihood
 
 X-ray Timing Likelihoods
 -------------------------
