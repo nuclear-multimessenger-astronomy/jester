@@ -569,6 +569,10 @@ class InferenceResult:
 
             # Validate array consistency (all non-_full arrays should have n_eos_samples length)
             for key, value in self.posterior.items():
+                if key == "_sampler_specific":
+                    # Nested dict of sampler-specific arrays, not itself an array
+                    # of samples; validated per-field below instead.
+                    continue
                 if not key.endswith("_full") and hasattr(value, "__len__"):
                     if len(value) != n_eos_samples:
                         logger.warning(
