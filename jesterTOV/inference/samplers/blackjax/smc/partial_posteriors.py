@@ -84,7 +84,6 @@ from jesterTOV.inference.samplers.blackjax.smc.random_walk import (
 )
 from jesterTOV.logging_config import get_logger
 
-from blackjax.smc import extend_params
 from blackjax.smc.ess import ess_solver
 from blackjax.smc.resampling import systematic
 from blackjax.smc.solver import dichotomy
@@ -1019,7 +1018,7 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         )
 
         state: PartialPosteriorsSMCState = pp_init(initial_position_flat, n_events)
-        mcmc_params = extend_params(init_params)  # type: ignore[arg-type]
+        mcmc_params = init_params
         mask = jnp.zeros(n_events)
         if n_prev_events > 0:
             # Already-covered events start (and stay) fully on -- they are
