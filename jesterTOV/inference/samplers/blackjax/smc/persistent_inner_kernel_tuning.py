@@ -63,7 +63,9 @@ def _build_kernel(
             **extra_parameters,
         ).step
         parameter_update_key, step_key = jax.random.split(rng_key, 2)
-        new_state, info = step_fn(step_key, state.sampler_state, **extra_step_parameters)
+        new_state, info = step_fn(
+            step_key, state.sampler_state, **extra_step_parameters
+        )
         new_parameter_override = mcmc_parameter_update_fn(
             parameter_update_key, state.parameter_override, new_state, info
         )
