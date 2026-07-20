@@ -262,8 +262,9 @@ Constrain the EOS using gravitational wave observations of binary neutron star m
     - name: "GW170817"
       nf_model_dir: "./NFs/GW170817"
   penalty_value: 0.0            # Log-likelihood penalty for M > M_TOV (default: 0.0)
-  N_masses_evaluation: 2000     # Number of mass samples to pre-sample (optional, default: 2000)
-  N_masses_batch_size: 1000     # Batch size for processing (optional, default: 1000)
+  N_masses_evaluation: 500      # Number of mass samples to pre-sample (optional, default: 500)
+  N_masses_batch_size: 1        # Batch size for processing (optional, default: 1)
+  event_batch_size: 1           # Batch size for processing events (optional, default: 1)
   seed: 42                      # Random seed for mass sampling (optional, default: 42)
 ```
 
@@ -274,13 +275,14 @@ Constrain the EOS using gravitational wave observations of binary neutron star m
   - **From bilby result**: set `from_bilby_result` to the path of a bilby HDF5 result file; jester will extract posterior samples and train a flow automatically before inference.
   - **From NPZ file**: set `from_npz_file` to an existing `.npz` file with posterior samples; jester will train a flow directly from it, skipping the bilby extraction step.
 - **`penalty_value`** (`float`, default: `0.0`) - Log-likelihood penalty for masses exceeding TOV maximum mass (default: 0.0, i.e. no penalty)
-- **`N_masses_evaluation`** (`int`, default: `2000`) - Number of mass samples to pre-sample from the GW posterior
-- **`N_masses_batch_size`** (`int`, default: `1000`) - Batch size for jax.lax.map processing of mass grid
+- **`N_masses_evaluation`** (`int`, default: `500`) - Number of mass samples to pre-sample from the GW posterior (the size of the Monte Carlo sum this likelihood evaluates). Measured seed-to-seed noise at the default is already only ~0.3-0.4% of a typical likelihood value; raising this to 2000 (the previous default) roughly halves that noise for ~4x more `flow.log_prob` calls (this likelihood's dominant cost) - a real but marginal accuracy gain for most purposes. See {class}`~jesterTOV.inference.likelihoods.gw.GWLikelihood` for the full analysis.
+- **`N_masses_batch_size`** (`int`, default: `1`) - Batch size for jax.lax.map processing of the mass grid. The default (a plain scan) keeps memory flat as `N_masses_evaluation` and the number of combined GW events grow, which matters most once the likelihood sits inside an outer `vmap` over SMC/FlowMC particles. Raise it only for faster standalone (non-vmapped) evaluations. See {class}`~jesterTOV.inference.likelihoods.gw.GWLikelihood` for the full tradeoff.
+- **`event_batch_size`** (`int`, default: `1`) - Batch size for `jax.lax.map` processing of GW events. All events in this likelihood's `events` list are evaluated as one stacked/batched computation ({class}`~jesterTOV.inference.likelihoods.gw.StackedGWLikelihood`), not one likelihood per event. The default (a plain scan over events) keeps memory flat as the number of combined events grows, for the same reason `N_masses_batch_size` defaults to `1`. Raise it only for faster standalone (non-vmapped) evaluations. Requires every event to use a flow with the same architecture; see {class}`~jesterTOV.inference.likelihoods.gw.StackedGWLikelihood` for what happens otherwise.
 - **`seed`** (`int`, default: `42`) - Random seed for mass pre-sampling from GW posterior
 
 **Description:**
 
-**Default GW likelihood** (presampled version): pre-samples masses from the GW posterior for efficient evaluation. Recommended for production use. See {class}`~jesterTOV.inference.likelihoods.gw.GWLikelihood` for the full API. For information on training flows from bilby results or NPZ files, see {doc}`training_flows`.
+**Default GW likelihood** (presampled version): pre-samples masses from the GW posterior for efficient evaluation. Recommended for production use. All events are evaluated as a single batched computation via {class}`~jesterTOV.inference.likelihoods.gw.StackedGWLikelihood`, which requires every event's flow to share the same architecture (true of all flows shipped with jester, since they are always trained with the same defaults). For information on training flows from bilby results or NPZ files, see {doc}`training_flows`.
 
 **GWEventConfig fields** (each entry in `events`):
 
@@ -330,7 +332,7 @@ events:
       nf_model_dir: "./NFs/GW170817"
   penalty_value: 0.0            # Log-likelihood penalty for M > M_TOV (default: 0.0)
   N_masses_evaluation: 20       # Number of masses per evaluation (optional, default: 20)
-  N_masses_batch_size: 10       # Batch size for sampling (optional, default: 10)
+  N_masses_batch_size: 1        # Batch size for sampling (optional, default: 1)
 ```
 
 **Field Details:**
@@ -338,7 +340,7 @@ events:
 - **`events`** (`list[dict]`) - List of GW events with `name` and optional `nf_model_dir` keys
 - **`penalty_value`** (`float`, default: `0.0`) - Log-likelihood penalty for masses exceeding TOV maximum mass (default: 0.0, i.e. no penalty)
 - **`N_masses_evaluation`** (`int`, default: `20`) - Number of mass samples to draw on-the-fly per likelihood evaluation
-- **`N_masses_batch_size`** (`int`, default: `10`) - Batch size for mass sampling and processing
+- **`N_masses_batch_size`** (`int`, default: `1`) - Batch size for mass sampling and processing (see the presampled `GWLikelihoodConfig` entry above for the memory/speed tradeoff this controls)
 
 **Description:**
 
@@ -655,7 +657,10 @@ sampler:
   n_particles: 10000         # Number of SMC particles
   n_mcmc_steps: 1            # MCMC steps per tempering stage
   target_ess: 0.9            # Target effective sample size (ESS) fraction
-  random_walk_sigma: 1.0     # Gaussian random walk step size
+  random_walk_sigma: 1.0     # Gaussian random walk step size (starting value if adaptive_step_size is on)
+  adaptive_step_size: false      # Adapt step size toward target_acceptance_rate (recommended for high-SNR signals)
+  target_acceptance_rate: 0.234  # Target acceptance rate (Roberts-Rosenthal optimal for random-walk Metropolis)
+  n_pretune_steps: 20            # Pilot steps to calibrate the initial step size before annealing starts
 ```
 
 **Field Details:**
@@ -663,16 +668,10 @@ sampler:
 - **`n_particles`** (`int`, default: `10000`) - Number of particles for SMC
 - **`n_mcmc_steps`** (`int`, default: `1`) - MCMC rejuvenation steps per tempering stage
 - **`target_ess`** (`float`, default: `0.9`) - Target ESS fraction for adaptive tempering (0.0–1.0)
-- **`random_walk_sigma`** (`float`, default: `1.0`) - Step size for Gaussian random walk kernel
-
-**Output:**
-- Posterior samples with equal weights
-- Effective sample size (ESS) statistics per tempering stage
-
-**When to Use:**
-- General-purpose Bayesian inference (**recommended default**)
-- Fast inference on CPU or GPU
-- When derivative information is unavailable or expensive
+- **`random_walk_sigma`** (`float`, default: `1.0`) - Step size for Gaussian random walk kernel. When `adaptive_step_size` is enabled, this is only the *starting* value.
+- **`adaptive_step_size`** (`bool`, default: `False`) - Adapt the step size per particle toward `target_acceptance_rate` instead of using a fixed `random_walk_sigma` throughout. Recommended for high-SNR signals (e.g. ET), where the posterior narrows quickly during annealing and a fixed sigma causes the acceptance rate to collapse. Uses BlackJAX's `update_scale_from_acceptance_rate`, the standard Roberts-Rosenthal optimal-scaling update for random-walk Metropolis.
+- **`target_acceptance_rate`** (`float`, default: `0.234`) - Target acceptance rate for adaptive step size. Only used when `adaptive_step_size` is `True`.
+- **`n_pretune_steps`** (`int`, default: `20`) - Number of pilot Metropolis steps run on the initial (prior) particles before annealing starts, to calibrate a good initial step size regardless of the chosen `random_walk_sigma`. Only used when `adaptive_step_size` is `True`; set to `0` to disable and start annealing directly from `random_walk_sigma`.
 
 ::::
 
@@ -705,15 +704,6 @@ sampler:
 - **`max_mcmc`** (`int`, default: `5000`) - Maximum MCMC steps per iteration
 - **`max_proposals`** (`int`, default: `1000`) - Maximum proposal attempts per live point update
 - **`termination_dlogz`** (`float`, default: `0.1`) - Terminate when log-evidence uncertainty < this value
-
-**Output:**
-- Log-evidence (logZ) with uncertainty estimate
-- Posterior samples with importance weights (see {class}`~jesterTOV.inference.result.InferenceResult`)
-
-**When to Use:**
-- Model comparison requiring Bayesian evidence
-- Exploring multi-modal posteriors
-- When evidence estimation is the primary goal
 
 ::::
 
@@ -750,11 +740,6 @@ sampler:
 2. **Production Phase** — `n_loop_production` loops of:
    - `n_local_steps` MCMC steps using local proposals
    - `n_global_steps` using normalizing flow proposals
-
-**When to Use:**
-- Multi-modal or high-dimensional posteriors
-- Long production runs requiring efficient exploration
-- When training overhead is acceptable
 
 ::::
 
@@ -793,15 +778,6 @@ sampler:
 - **`mass_matrix_param_scales`** (`dict`, default: `{}`) - Per-parameter scaling factors for mass matrix
 - **`target_acceptance`** (`float`, default: `0.7`) - Target acceptance probability for step size tuning
 - **`adaptation_rate`** (`float`, default: `0.3`) - Adaptation rate for step size controller
-
-**Output:**
-- Posterior samples with equal weights
-- Effective sample size (ESS) statistics per tempering stage
-
-**When to Use:**
-- **EXPERIMENTAL** — not recommended for production use
-- High-dimensional posteriors where gradient information helps
-- When NUTS kernel stability can be verified
 
 **Warning:** This sampler is experimental. Use SMC Random Walk for production analyses.
 

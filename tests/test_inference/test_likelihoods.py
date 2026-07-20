@@ -25,6 +25,7 @@ from jesterTOV.inference.likelihoods.constraints import (
 from jesterTOV.inference.likelihoods.chieft import ChiEFTLikelihood
 from jesterTOV.inference.likelihoods.radio import RadioTimingLikelihood
 from jesterTOV.inference.likelihoods.mock_mr import MockMassRadiusLikelihood
+from jesterTOV.inference.likelihoods.gw import GWLikelihood, StackedGWLikelihood
 from jesterTOV.inference.base import LikelihoodBase
 
 
@@ -705,6 +706,189 @@ class TestMockMassRadiusLikelihood:
         assert log_prob_with_penalty < log_prob_no_penalty
 
 
+def _save_toy_flow(
+    output_dir,
+    seed: int,
+    nn_width: int = 8,
+    nn_depth: int = 2,
+    standardize: bool = False,
+):
+    """Build and save a tiny masked_autoregressive_flow (dim=4) to `output_dir`,
+    loadable via ``Flow.from_directory`` -- a stand-in for a trained GW-event flow.
+    """
+    from jesterTOV.inference.flows.flow import create_flow
+    from jesterTOV.inference.flows.train_flow import save_model
+
+    flow_kwargs = {
+        "seed": seed,
+        "flow_type": "masked_autoregressive_flow",
+        "nn_depth": nn_depth,
+        "nn_block_dim": 4,
+        "nn_width": nn_width,
+        "flow_layers": 1,
+        "invert": True,
+        "cond_dim": None,
+        "transformer_type": "affine",
+        "transformer_knots": 4,
+        "transformer_interval": 4.0,
+    }
+    flow = create_flow(
+        key=jax.random.key(seed),
+        dim=4,
+        **{k: v for k, v in flow_kwargs.items() if k != "seed"},
+    )
+    metadata: dict = {"standardize": standardize}
+    if standardize:
+        # Arbitrary but distinct-per-event stats, so stacking bugs (e.g. mixing up
+        # which row belongs to which event) would show up as numerical mismatches.
+        metadata["data_mean"] = [1.4 + 0.1 * seed, 1.3, 300.0, 300.0]
+        metadata["data_std"] = [0.2, 0.2, 100.0, 100.0]
+    output_dir.mkdir(parents=True, exist_ok=True)
+    save_model(flow, str(output_dir), flow_kwargs, metadata)
+    return output_dir
+
+
+class TestStackedGWLikelihood:
+    """Test StackedGWLikelihood: batched/stacked evaluation of many GW events,
+    replacing one GWLikelihood per event with a single lax.map-based computation.
+    See likelihoods/gw.py::StackedGWLikelihood docstring and dev/FINDINGS.md
+    (Part 4) for the motivating memory/compile-time issue.
+    """
+
+    @pytest.mark.parametrize("standardize", [False, True])
+    def test_matches_sum_of_individual_gw_likelihoods(self, tmp_path, standardize):
+        """StackedGWLikelihood(events) must equal sum(GWLikelihood(event) for event
+        in events) -- it's a batching change, not a different likelihood."""
+        n_events = 3
+        model_dirs = [
+            _save_toy_flow(tmp_path / f"event_{i}", seed=i, standardize=standardize)
+            for i in range(n_events)
+        ]
+        event_names = [f"event_{i}" for i in range(n_events)]
+
+        stacked = StackedGWLikelihood(
+            event_names=event_names,
+            model_dirs=[str(d) for d in model_dirs],
+            N_masses_evaluation=20,
+            N_masses_batch_size=5,
+            event_batch_size=2,
+            seed=42,
+        )
+
+        individual = [
+            GWLikelihood(
+                event_name=name,
+                model_dir=str(d),
+                N_masses_evaluation=20,
+                N_masses_batch_size=5,
+                seed=42,
+            )
+            for name, d in zip(event_names, model_dirs)
+        ]
+
+        masses_eos = jnp.linspace(1.0, 2.2, 100)
+        lambdas_eos = jnp.linspace(2000.0, 10.0, 100)
+        params = {"masses_EOS": masses_eos, "Lambdas_EOS": lambdas_eos}
+
+        stacked_result = stacked.evaluate(params)
+        expected = sum(lik.evaluate(params) for lik in individual)
+
+        assert jnp.isfinite(stacked_result)
+        assert jnp.allclose(stacked_result, expected, rtol=1e-6, atol=1e-8)
+
+    def test_event_batch_size_does_not_change_result(self, tmp_path):
+        """Chunking the event axis differently must not change the answer, only
+        how much is materialized concurrently (see dev/FINDINGS.md Part 4)."""
+        n_events = 4
+        model_dirs = [
+            _save_toy_flow(tmp_path / f"event_{i}", seed=i) for i in range(n_events)
+        ]
+        event_names = [f"event_{i}" for i in range(n_events)]
+        masses_eos = jnp.linspace(1.0, 2.2, 100)
+        lambdas_eos = jnp.linspace(2000.0, 10.0, 100)
+        params = {"masses_EOS": masses_eos, "Lambdas_EOS": lambdas_eos}
+
+        results = {}
+        for event_batch_size in [1, 2, 4]:
+            likelihood = StackedGWLikelihood(
+                event_names=event_names,
+                model_dirs=[str(d) for d in model_dirs],
+                N_masses_evaluation=20,
+                N_masses_batch_size=5,
+                event_batch_size=event_batch_size,
+                seed=42,
+            )
+            results[event_batch_size] = likelihood.evaluate(params)
+
+        assert jnp.allclose(results[1], results[2], rtol=1e-6)
+        assert jnp.allclose(results[1], results[4], rtol=1e-6)
+
+    def test_default_event_batch_size_is_one(self, tmp_path):
+        """The default must be the safe (scan-over-events) choice, matching
+        GWLikelihood.N_masses_batch_size's default - see dev/FINDINGS.md Part 4."""
+        model_dirs = [_save_toy_flow(tmp_path / "event_0", seed=0)]
+        likelihood = StackedGWLikelihood(
+            event_names=["event_0"],
+            model_dirs=[str(model_dirs[0])],
+            N_masses_evaluation=10,
+        )
+        assert likelihood.event_batch_size == 1
+
+    def test_mismatched_architecture_raises_clear_error(self, tmp_path):
+        """Events with different flow architectures cannot be stacked -- must fail
+        fast at construction time with a message naming the offending event."""
+        model_dir_a = _save_toy_flow(tmp_path / "event_a", seed=0, nn_width=8)
+        model_dir_b = _save_toy_flow(tmp_path / "event_b", seed=1, nn_width=16)
+
+        with pytest.raises(ValueError, match="event_b"):
+            StackedGWLikelihood(
+                event_names=["event_a", "event_b"],
+                model_dirs=[str(model_dir_a), str(model_dir_b)],
+                N_masses_evaluation=10,
+                N_masses_batch_size=5,
+            )
+
+    def test_penalty_applied_beyond_mtov(self, tmp_path):
+        """Masses above M_TOV should incur the configured penalty, matching
+        GWLikelihood's behaviour."""
+        # standardize=True centres pre-sampled masses near 1.4 +/- 0.2 (see
+        # _save_toy_flow) -- an untrained/unstandardized flow instead samples
+        # near its base distribution N(0, I), which is nowhere near a
+        # physically realistic M_TOV cutoff and would never trigger the penalty.
+        model_dirs = [_save_toy_flow(tmp_path / "event_0", seed=0, standardize=True)]
+        masses_eos = jnp.linspace(
+            1.0, 1.4, 50
+        )  # M_TOV in the middle of the flow's mass range
+        lambdas_eos = jnp.linspace(2000.0, 10.0, 50)
+        params = {"masses_EOS": masses_eos, "Lambdas_EOS": lambdas_eos}
+
+        no_penalty = StackedGWLikelihood(
+            event_names=["event_0"],
+            model_dirs=[str(model_dirs[0])],
+            penalty_value=0.0,
+            N_masses_evaluation=50,
+            N_masses_batch_size=10,
+            seed=0,
+        )
+        with_penalty = StackedGWLikelihood(
+            event_names=["event_0"],
+            model_dirs=[str(model_dirs[0])],
+            penalty_value=-1e4,
+            N_masses_evaluation=50,
+            N_masses_batch_size=10,
+            seed=0,
+        )
+
+        assert with_penalty.evaluate(params) < no_penalty.evaluate(params)
+
+    def test_mismatched_event_names_and_model_dirs_length_raises(self):
+        with pytest.raises(ValueError, match="must have the same length"):
+            StackedGWLikelihood(
+                event_names=["event_0", "event_1"],
+                model_dirs=["/some/dir"],
+            )
+
+
 class TestLikelihoodFactory:
     """Test likelihood factory functionality."""
 
@@ -849,6 +1033,43 @@ class TestLikelihoodFactory:
 
 class TestCombinedLikelihoodFactory:
     """Test create_combined_likelihood factory function."""
+
+    def test_create_gw_likelihood_builds_stacked_gw_likelihood(self):
+        """GWLikelihoodConfig must go through StackedGWLikelihood (not one
+        GWLikelihood per event) - see likelihoods/gw.py::StackedGWLikelihood and
+        dev/FINDINGS.md Part 4. Uses the real shipped GW170817/GW190425 presets,
+        which share architecture (verified in dev/FINDINGS.md Part 4), so they
+        must stack without error and match summing individual GWLikelihoods.
+        """
+        config = schema.GWLikelihoodConfig(
+            events=[
+                schema.GWEventConfig(name="GW170817"),
+                schema.GWEventConfig(name="GW190425"),
+            ],
+            N_masses_evaluation=50,
+        )
+
+        likelihood = factory.create_combined_likelihood([config])
+        assert isinstance(likelihood, StackedGWLikelihood)
+        assert likelihood.event_batch_size == 1  # shipped default
+
+        masses_eos = jnp.linspace(0.5, 2.3, 100)
+        lambdas_eos = 3000.0 * (masses_eos / 0.5) ** (-6.0) + 1.0
+        params = {"masses_EOS": masses_eos, "Lambdas_EOS": lambdas_eos}
+
+        from jesterTOV.inference.likelihoods.factory import get_gw_model_dir
+
+        individual = [
+            GWLikelihood(
+                event_name=event.name,
+                model_dir=get_gw_model_dir(event),
+                N_masses_evaluation=50,
+            )
+            for event in config.events
+        ]
+        expected = sum(lik.evaluate(params) for lik in individual)
+
+        assert jnp.allclose(likelihood.evaluate(params), expected, rtol=1e-6)
 
     def test_create_combined_likelihood_single(self):
         """Test that single enabled likelihood is returned directly (not wrapped)."""

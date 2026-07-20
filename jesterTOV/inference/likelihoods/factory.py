@@ -22,7 +22,7 @@ from ..config.schema import (
     MockMassRadiusLikelihoodConfig,
 )
 from .combined import CombinedLikelihood, ZeroLikelihood
-from .gw import GWLikelihood, GWLikelihoodResampled
+from .gw import GWLikelihoodResampled, StackedGWLikelihood
 from .nicer import NICERLikelihood, NICERKDELikelihood
 from .radio import RadioTimingLikelihood
 from .chieft import ChiEFTLikelihood
@@ -238,22 +238,25 @@ def create_combined_likelihood(
 
         # Use match statement for type narrowing
         match config:
-            # Special handling for GW likelihoods (presampled): create one likelihood per event
+            # Special handling for GW likelihoods (presampled): all events are
+            # evaluated as a single batched/stacked likelihood, not one per event
+            # (see StackedGWLikelihood docstring for why -- this avoids both the
+            # compile-time and particle-vmap memory costs of a Python for-loop
+            # over many events).
             case GWLikelihoodConfig():
-                # Create one GWLikelihood (presampled) per event
-                for event in config.events:
-                    # Get model directory (use preset if not provided)
-                    model_dir = get_gw_model_dir(event)
+                event_names = [event.name for event in config.events]
+                model_dirs = [get_gw_model_dir(event) for event in config.events]
 
-                    gw_likelihood = GWLikelihood(
-                        event_name=event.name,
-                        model_dir=model_dir,
-                        penalty_value=config.penalty_value,
-                        N_masses_evaluation=config.N_masses_evaluation,
-                        N_masses_batch_size=config.N_masses_batch_size,
-                        seed=config.seed,
-                    )
-                    likelihoods.append(gw_likelihood)
+                gw_likelihood = StackedGWLikelihood(
+                    event_names=event_names,
+                    model_dirs=model_dirs,
+                    penalty_value=config.penalty_value,
+                    N_masses_evaluation=config.N_masses_evaluation,
+                    N_masses_batch_size=config.N_masses_batch_size,
+                    event_batch_size=config.event_batch_size,
+                    seed=config.seed,
+                )
+                likelihoods.append(gw_likelihood)
 
             # Special handling for GW likelihoods with resampling: create one likelihood per event
             case GWResampledLikelihoodConfig():

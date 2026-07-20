@@ -42,6 +42,9 @@ L_sym = UniformPrior(10.0, 200.0, parameter_names=["L_sym"])
 - `type: "smc-rw"` - Sequential Monte Carlo with Random Walk kernel (production ready, **DEFAULT**)
   - Gaussian Random Walk with sigma adaptation
   - Target ESS: 0.9, ~10-30 MCMC steps per tempering level
+  - Optional `adaptive_step_size` targets a literal acceptance rate (`target_acceptance_rate`,
+    default 0.234) instead of the fixed `random_walk_sigma` throughout; see
+    "Adaptive step size (SMC-RW)" below
 - `type: "smc-nuts"` - Sequential Monte Carlo with NUTS kernel (production ready)
   - NUTS kernel with Hessian-based mass matrix adaptation
   - More efficient for complex posteriors
@@ -68,6 +71,59 @@ When a user asks to change a default value (e.g. `penalty_value`), update **all*
 5. **`tests/test_inference/test_config.py`** — update any assertion on the old default
 
 The factory (`likelihoods/factory.py`) passes `config.<field>` through, so no change needed there.
+
+### GW likelihood batching (`StackedGWLikelihood`)
+
+`create_combined_likelihood` (`likelihoods/factory.py`) builds **one**
+`StackedGWLikelihood` (`likelihoods/gw.py`) for a `GWLikelihoodConfig`'s entire
+`events` list, not one `GWLikelihood` per event. This replaces a plain Python
+`for`/list-comprehension over per-event `GWLikelihood` objects in
+`CombinedLikelihood.evaluate`, which JAX fully unrolls at trace time —
+compile time then grows superlinearly with the number of events, and once
+this sits inside the outer particle `vmap` blackjax already applies, a fully
+vectorized event axis multiplies memory by `n_particles * n_events` the same
+way a fully vectorized mass-sample axis multiplies it by
+`n_particles * N_masses_evaluation` (see `N_masses_batch_size`'s docstring on
+`GWLikelihood`, and `dev/FINDINGS.md` — Parts 1 and 4 — in the parent
+development workspace for the full benchmarks behind both).
+
+**How it works:** all events must share the same flow architecture
+(`flow_type`, `nn_width`, `nn_depth`, ..., dimensionality, standardization
+method — everything that determines the pytree *structure* of the trained
+weights, checked via `_flow_architecture_signature` and enforced eagerly at
+construction with a clear `ValueError` naming the offending event, not a
+`jax.tree_util` error buried inside `evaluate()`). Given that, each event's
+`flowjax` weights are split via `eqx.partition(flow.flow, eqx.is_array)` and
+stacked along a new leading "event" axis with
+`jax.tree_util.tree_map(jnp.stack, ...)`; `evaluate()` then runs a single
+`jax.lax.map` over that stacked axis (batch size: `event_batch_size`), with
+the existing per-event `jax.lax.map` over mass samples (batch size:
+`N_masses_batch_size`) nested inside. Numerically this is defined to equal
+`sum(GWLikelihood(event).evaluate(params) for event in events)` — a batching
+change, not a different likelihood (see
+`tests/test_inference/test_likelihoods.py::TestStackedGWLikelihood` and
+`TestCombinedLikelihoodFactory::test_create_gw_likelihood_builds_stacked_gw_likelihood`
+for the equivalence tests against per-event `GWLikelihood`, the latter using
+the real shipped GW170817/GW190425 presets).
+
+**Both `N_masses_batch_size` and `event_batch_size` default to `1`** (a plain
+scan over mass samples / events respectively) — this is the safe default for
+production SMC/FlowMC runs with many particles and/or many events. Setting
+either equal to its total (`N_masses_evaluation`, or the number of events)
+degenerates `jax.lax.map` to a plain `jax.vmap` with zero chunking benefit
+(see `jax/_src/lax/control_flow/loops.py::map`'s `batch_size` semantics) —
+only raise these for faster standalone (non-vmapped) evaluations. The true
+concurrent width of flow evaluations during sampling is roughly
+`n_particles * event_batch_size * N_masses_batch_size`.
+
+If events genuinely need different flow architectures, they cannot go
+through `StackedGWLikelihood` together — no automatic fallback to per-event
+`GWLikelihood` exists (this would need to be added, e.g. grouping by
+architecture signature, if that scenario becomes common; every flow shipped
+with jester currently uses the same architecture, since `train_flow.py`
+always trains with the same defaults). `GWLikelihood` itself is unchanged
+and still directly usable/importable for a single event or outside the
+config system.
 
 ### Inference Documentation
 - `docs/inference_index.md` - Navigation hub
@@ -335,6 +391,49 @@ class SamplerOutput:
 - Jacobian correction for bijective transforms
 - JAX-compatible (JIT compilation, vmap, grad)
 - Deterministic sampling via `jax.random.PRNGKey`
+
+### Adaptive step size (SMC-RW)
+
+`SMCRandomWalkSamplerConfig.adaptive_step_size` (default `False`) makes the random-walk proposal
+scale adapt toward `target_acceptance_rate` (default 0.234, the Roberts-Rosenthal optimal-scaling
+value for random-walk Metropolis) instead of using a fixed `random_walk_sigma` for the whole run.
+Use it for high-SNR signals (e.g. ET), where the posterior narrows quickly during annealing and a
+fixed sigma otherwise causes the acceptance rate to collapse.
+
+**Why this needed a small custom wrapper, not just a BlackJAX config flag:** BlackJAX already
+ships the exact update rule (`blackjax.smc.tuning.from_kernel_info.update_scale_from_acceptance_rate`,
+the standard Robbins-Monro/Roberts-Rosenthal scheme), but the generic orchestrator jester uses,
+`blackjax.smc.inner_kernel_tuning`, calls `mcmc_parameter_update_fn(key, state, info)` **without**
+the previous step's parameter values — so a running scale can't persist across annealing steps
+through that API alone. `samplers/blackjax/smc/persistent_inner_kernel_tuning.py` is a ~100-line,
+jester-owned drop-in replacement that forwards the previous `parameter_override` into
+`mcmc_parameter_update_fn` (new signature: `(key, previous_parameter_override, new_state, info)`),
+enabling genuine recursive adaptation. `BlackjaxSMCSampler.sample()` (`smc/base.py`) uses this
+wrapper for **all** SMC kernels (RW and NUTS), not just RW.
+
+**Bonus fix as a result:** `smc/nuts.py`'s Hessian/step-size adaptation previously tried to persist
+a running step size via a mutated Python closure (`current_step_size = {"value": ...}`) — a no-op
+under `jax.lax.while_loop` tracing, so NUTS's dual-averaging step-size adaptation was silently
+broken. It now reads `previous_params["step_size"]` instead, which actually persists.
+
+**Implementation notes** (`smc/random_walk.py`):
+- `mcmc_step_fn` builds the proposal covariance as `(scale**2) * cov`, where `cov` is the usual
+  sigma-scaled empirical covariance (unchanged, recomputed from particles every step) and `scale`
+  is a per-particle multiplicative correction (`1.0` = no-op) that only exists when
+  `adaptive_step_size=True`.
+- `scale` has shape `(n_particles,)` (no leading singleton dim), so BlackJAX's shared-vs-unshared
+  parameter dispatch (`blackjax.smc.from_mcmc.unshared_parameters_and_step_fn`: leading dim `1` ⇒
+  shared/bound once, anything else ⇒ vmapped per particle) treats it as unshared and vmaps it
+  automatically — no manual vmap needed in jester's own code. Because of this, `BlackjaxSMCSampler`
+  no longer blanket-wraps `init_params` in `extend_params` itself; each `_setup_mcmc_kernel` is
+  responsible for shaping its own returned `init_params` (random_walk.py extends `cov` only; nuts.py
+  extends its whole dict, since none of its params vary per particle).
+- Before annealing starts, `n_pretune_steps` (default 20) pilot Metropolis steps run on the initial
+  prior particles targeting `logprior_fn` (valid since the tempered posterior at λ=0 is the prior),
+  self-correcting a poorly-chosen `random_walk_sigma` before real sampling begins. Set to `0` to
+  skip pretuning.
+- A prototype demonstrating the mechanism (and that the plain BlackJAX API genuinely can't persist
+  state this way) lives outside the package at `../../dev_scripts/adaptive_smc_prototype.py`.
 
 ## Configuration System
 

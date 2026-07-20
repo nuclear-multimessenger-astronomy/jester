@@ -341,6 +341,36 @@ def smc_rw_chieft_config(chieft_prior_file: Path, e2e_temp_dir: Path) -> dict[st
 
 
 @pytest.fixture
+def smc_rw_mistuned_fixed_sigma_config(
+    minimal_prior_file: Path, e2e_temp_dir: Path
+) -> dict[str, Any]:
+    """SMC-RW config with a deliberately too-large fixed sigma (adaptive_step_size off)."""
+    sampler_config = {
+        "type": "smc-rw",
+        **{**SMC_RW_LIGHTWEIGHT, "random_walk_sigma": 3.0},
+    }
+    return build_prior_only_config(sampler_config, minimal_prior_file, e2e_temp_dir)
+
+
+@pytest.fixture
+def smc_rw_adaptive_step_size_config(
+    minimal_prior_file: Path, e2e_temp_dir: Path
+) -> dict[str, Any]:
+    """SMC-RW config with adaptive step size on, same too-large starting sigma."""
+    sampler_config = {
+        "type": "smc-rw",
+        **{
+            **SMC_RW_LIGHTWEIGHT,
+            "random_walk_sigma": 3.0,
+            "adaptive_step_size": True,
+            "target_acceptance_rate": 0.234,
+            "n_pretune_steps": 10,
+        },
+    }
+    return build_prior_only_config(sampler_config, minimal_prior_file, e2e_temp_dir)
+
+
+@pytest.fixture
 def smc_rw_spectral_config(
     spectral_prior_file: Path, e2e_temp_dir: Path
 ) -> dict[str, Any]:
