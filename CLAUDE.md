@@ -89,17 +89,7 @@ examples/inference/ns/               # Nested sampling examples
 examples/inference/spectral/         # Spectral decomposition examples
 ```
 
-**Sampler Registry** (`jesterTOV/inference/samplers/__init__.py`):
-```python
-SAMPLER_REGISTRY = {
-    "flowmc": FlowMCSampler,
-    "blackjax-ns-aw": BlackJAXNSAWSampler,
-    "smc-rw": BlackJAXSMCRandomWalkSampler,
-    "smc-nuts": BlackJAXSMCNUTSSampler,
-    "smc-partial-posteriors-rw": BlackJAXPartialPosteriorsRandomWalkSampler,
-    "eos-reweighting": EOSReweightingSampler,
-}
-```
+See `jesterTOV/inference/samplers/__init__.py` for the `SAMPLER_REGISTRY` mapping.
 
 ---
 
@@ -375,91 +365,7 @@ ParameterDict: TypeAlias = dict[str, float]
 
 ## Architecture Notes
 
-### Inference Module Structure
-```
-jesterTOV/inference/
-├── config/                      # YAML parsing, Pydantic validation
-│   ├── schema.py                # Thin aggregator: InferenceConfig + re-exports
-│   ├── schemas/                 # Domain-specific config sub-modules (eos, tov, likelihoods, samplers)
-│   └── parser.py                # YAML loading functions
-├── priors/                      # Prior specification system
-│   └── parser.py                # Parse .prior files (bilby-style Python)
-├── flows/                       # Normalizing flow utilities for GW likelihoods
-│   ├── bilby_extract.py         # Extract GW posteriors from bilby HDF5 (+ CLI entry point)
-│   ├── config.py                # FlowTrainingConfig Pydantic model
-│   ├── train_flow.py            # Flow training entry point
-│   └── flow.py                  # Flow model definition
-├── transforms/                  # EOS → M-R-Λ transformation
-│   ├── transform.py             # JesterTransform (unified for all EOS×TOV)
-│   └── __init__.py              # Exports
-├── likelihoods/                 # Observational constraints
-│   ├── gw.py                    # Gravitational wave (GW170817, GW190425)
-│   ├── nicer.py                 # X-ray timing (J0030, J0740, B0437)
-│   ├── radio.py                 # Radio pulsar timing
-│   ├── chieft.py                # Chiral EFT low-density constraints
-│   ├── rex.py                   # PREX/CREX neutron skin experiments
-│   ├── combined.py              # CombinedLikelihood wrapper
-│   ├── factory.py               # Likelihood creation from config
-│   └── constraints.py           # Physical constraints (EOS/TOV/Gamma)
-├── data/                        # Data loading and preprocessing
-│   ├── __init__.py              # Data loading functions
-│   └── paths.py                 # Path management
-├── samplers/                    # Sampler implementations
-│   ├── jester_sampler.py        # Base JesterSampler + SAMPLER_REGISTRY
-│   ├── flowmc.py                # FlowMC backend
-│   └── blackjax/                # BlackJAX backends
-│       ├── base.py              # BlackjaxSampler base class
-│       ├── smc/                 # Sequential Monte Carlo framework
-│       │   ├── base.py          # BlackjaxSMCSampler (lambda-tempering)
-│       │   ├── random_walk.py   # SMC-RW (production ready)
-│       │   ├── nuts.py          # SMC-NUTS (production ready)
-│       │   └── partial_posteriors.py  # SMC-Partial-Posteriors-RW (data tempering / IBIS)
-│       └── nested_sampling/     # Nested sampling
-│           └── ns_aw.py         # NS with Acceptance Walk (experimental)
-├── base/                        # Base classes (from Jim v0.2.0)
-│   ├── likelihood.py            # LikelihoodBase ABC
-│   ├── prior.py                 # Prior, CombinePrior, UniformPrior
-│   └── transform.py             # NtoMTransform, BijectiveTransform
-├── run_inference.py             # Main orchestration script
-├── result.py                    # InferenceResult (HDF5 storage)
-└── cli.py                       # Command-line interface
-```
-
-### Execution Flow
-```
-config.yaml + prior.prior
-    ↓
-parse_config() → InferenceConfig (Pydantic validated)
-    ↓
-parse_prior_file() → CombinePrior object
-    ↓
-JesterTransform.from_config(config.eos, config.tov)
-  ├─ Instantiate EOS (MetaModel/MetaModelCSE/Spectral)
-  └─ Instantiate TOV solver (GR/Post/ScalarTensor)
-    ↓
-Validate parameters
-  ├─ Check all required EOS params in prior → raise error if missing
-  └─ Check all required TOV params in prior → warn if unused
-    ↓
-prepare_gw_flows(config, outdir)
-  └─ For any GW event with from_bilby_result: extract NPZ + train/cache flow
-    ↓
-Load data (NICER, GW posteriors, ChiEFT, etc.)
-    ↓
-create_likelihood() → CombinedLikelihood
-    ↓
-create_sampler() → Sampler from SAMPLER_REGISTRY
-    ↓
-sampler.sample(prng_key) → SamplerOutput
-  ├─ samples: dict[str, Array]
-  ├─ log_prob: Array
-  └─ metadata: dict[str, Any]
-    ↓
-InferenceResult.from_sampler() → HDF5 format
-  ├─ posterior (parameters + derived EOS quantities)
-  ├─ metadata (config + run statistics)
-  └─ histories (diagnostics)
-```
+For the `jesterTOV/inference/` directory structure and the config → sampler → result execution flow, see `jesterTOV/inference/CLAUDE.md` (loads automatically when working in that directory).
 
 ---
 
@@ -489,22 +395,4 @@ InferenceResult.from_sampler() → HDF5 format
 
 ## Release Workflow
 
-When we are ready to make a new release, here are some steps:
-
-```bash
-# 1. Feature branch for version bump
-git checkout -b release/v0.x.x
-
-# 2. Update version in pyproject.toml and docs/conf.py
-# 3. Build and verify
-uv build
-
-# 4. Create PR to main
-# 5. After merge, tag the commit
-git tag v0.x.x
-git push origin v0.x.x
-
-# 6. PyPI publishing is NOT possible - jester depends on a specific fork of blackjax
-# (https://github.com/handley-lab/blackjax) which cannot be published to PyPI.
-# Users install directly from the GitHub repository via git clone.
-```
+See the `release-workflow` skill for the version-bump, build, and tag checklist.
