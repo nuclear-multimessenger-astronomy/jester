@@ -151,13 +151,17 @@ class BlackJAXNSAWConfig(BaseSamplerConfig):
         return v
 
 
-class SMCRandomWalkSamplerConfig(BaseSamplerConfig):
-    """Configuration for Sequential Monte Carlo with Random Walk kernel.
+class SMCRandomWalkParamsMixin(JesterBaseModel):
+    """Shared knob set for the SMC-RW kernel: particles, MCMC steps, target ESS,
+    random-walk sigma, and the optional adaptive step-size machinery.
+
+    Mixed into both :class:`SMCRandomWalkSamplerConfig` (the standalone sampler) and
+    :class:`InnerSMCRandomWalkConfig` (the per-event ramp-in loop inside
+    :class:`SMCPartialPosteriorsRandomWalkSamplerConfig`), so that any new SMC-RW knob
+    only needs to be added here to be available in both places.
 
     Attributes
     ----------
-    type : Literal["smc-rw"]
-        Sampler type identifier
     n_particles : int
         Number of particles (default: 10000)
     n_mcmc_steps : int
@@ -168,13 +172,34 @@ class SMCRandomWalkSamplerConfig(BaseSamplerConfig):
         Fixed sigma scaling for Gaussian random walk kernel (default: 1.0).
         The proposal covariance is computed from particles and scaled by sigma^2.
         Default of 1.0 uses the empirical covariance directly.
+        When `adaptive_step_size` is enabled, this is only the *starting* value: it is
+        pretuned before annealing begins and then continuously adapted per particle.
+    adaptive_step_size : bool
+        Enable per-particle adaptive step size targeting `target_acceptance_rate` (default: False).
+        Recommended for high-SNR signals (e.g. ET), where the posterior narrows quickly during
+        annealing and a fixed sigma causes the acceptance rate to collapse. Uses BlackJAX's
+        Robbins-Monro update (`update_scale_from_acceptance_rate`), which is the standard
+        Roberts-Rosenthal optimal-scaling approach for random-walk Metropolis.
+    target_acceptance_rate : float
+        Target acceptance rate for adaptive step size (default: 0.234, the standard
+        Roberts-Rosenthal optimal value for random-walk Metropolis in high dimensions).
+        Only used when `adaptive_step_size` is True.
+    n_pretune_steps : int
+        Number of pilot Metropolis steps run on the initial (prior) particles, before annealing
+        starts, to calibrate a good initial step size regardless of how `random_walk_sigma` was
+        set (default: 20). Only used when `adaptive_step_size` is True. Set to 0 to disable
+        pretuning and start annealing directly from `random_walk_sigma`.
     """
 
-    type: Literal["smc-rw"] = "smc-rw"
+    model_config = ConfigDict(extra="forbid")
+
     n_particles: int = 10000
     n_mcmc_steps: int = 1
     target_ess: float = 0.9
     random_walk_sigma: float = 1.0
+    adaptive_step_size: bool = False
+    target_acceptance_rate: float = 0.234
+    n_pretune_steps: int = 20
 
     @field_validator("n_particles", "n_mcmc_steps")
     @classmethod
@@ -183,7 +208,14 @@ class SMCRandomWalkSamplerConfig(BaseSamplerConfig):
             raise ValueError(f"Value must be positive, got: {v}")
         return v
 
-    @field_validator("target_ess")
+    @field_validator("n_pretune_steps")
+    @classmethod
+    def _validate_nonnegative(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError(f"Value must be non-negative, got: {v}")
+        return v
+
+    @field_validator("target_ess", "target_acceptance_rate")
     @classmethod
     def _validate_fraction(cls, v: float) -> float:
         if v <= 0 or v > 1:
@@ -196,6 +228,21 @@ class SMCRandomWalkSamplerConfig(BaseSamplerConfig):
         if v <= 0:
             raise ValueError(f"Value must be positive, got: {v}")
         return v
+
+
+class SMCRandomWalkSamplerConfig(BaseSamplerConfig, SMCRandomWalkParamsMixin):
+    """Configuration for Sequential Monte Carlo with Random Walk kernel.
+
+    See :class:`SMCRandomWalkParamsMixin` for the full knob set (particles, MCMC
+    steps, target ESS, random-walk sigma, adaptive step size).
+
+    Attributes
+    ----------
+    type : Literal["smc-rw"]
+        Sampler type identifier
+    """
+
+    type: Literal["smc-rw"] = "smc-rw"
 
 
 class SMCNUTSSamplerConfig(BaseSamplerConfig):
@@ -257,55 +304,17 @@ class SMCNUTSSamplerConfig(BaseSamplerConfig):
         return v
 
 
-class InnerSMCRandomWalkConfig(JesterBaseModel):
+class InnerSMCRandomWalkConfig(SMCRandomWalkParamsMixin):
     """Configuration for the inner adaptive-tempering SMC-RW loop that ramps
     in a single event within :class:`SMCPartialPosteriorsRandomWalkSamplerConfig`.
 
-    This is structurally the same knob set as :class:`SMCRandomWalkSamplerConfig`
-    (particles, MCMC steps, target ESS, random-walk sigma), but scoped to the
-    per-event ramp-in loop rather than the outer event-assimilation
-    orchestration -- see ``inner`` on the partial-posteriors config.
-
-    Attributes
-    ----------
-    n_particles : int
-        Number of particles (default: 10000)
-    n_mcmc_steps : int
-        Number of MCMC rejuvenation steps per sub-step (default: 1)
-    target_ess : float
-        Target effective sample size for the adaptive mask-fraction
-        bisection (default: 0.9)
-    random_walk_sigma : float
-        Fixed sigma scaling for the Gaussian random walk kernel (default: 1.0).
+    Identical knob set to :class:`SMCRandomWalkSamplerConfig` (both inherit from
+    :class:`SMCRandomWalkParamsMixin`: particles, MCMC steps, target ESS, random-walk
+    sigma, adaptive step size), but scoped to the per-event ramp-in loop rather than
+    the outer event-assimilation orchestration -- see ``inner`` on the
+    partial-posteriors config. Any new field added to the mixin is automatically
+    available here too.
     """
-
-    model_config = ConfigDict(extra="forbid")
-
-    n_particles: int = 10000
-    n_mcmc_steps: int = 1
-    target_ess: float = 0.9
-    random_walk_sigma: float = 1.0
-
-    @field_validator("n_particles", "n_mcmc_steps")
-    @classmethod
-    def _validate_positive(cls, v: int) -> int:
-        if v <= 0:
-            raise ValueError(f"Value must be positive, got: {v}")
-        return v
-
-    @field_validator("target_ess")
-    @classmethod
-    def _validate_fraction(cls, v: float) -> float:
-        if v <= 0 or v > 1:
-            raise ValueError(f"Value must be in (0, 1], got: {v}")
-        return v
-
-    @field_validator("random_walk_sigma")
-    @classmethod
-    def _validate_positive_float(cls, v: float) -> float:
-        if v <= 0:
-            raise ValueError(f"Value must be positive, got: {v}")
-        return v
 
 
 class SMCPartialPosteriorsRandomWalkSamplerConfig(BaseSamplerConfig):
@@ -422,25 +431,23 @@ class SMCPartialPosteriorsRandomWalkSamplerConfig(BaseSamplerConfig):
             raise ValueError(f"cadence must be positive, got: {v}")
         return v
 
-    @property
-    def n_particles(self) -> int:
-        """Particle count, delegated to ``inner`` (same particles throughout the run)."""
-        return self.inner.n_particles
+    def __getattr__(self, name: str):
+        """Delegate any :class:`SMCRandomWalkParamsMixin` field (``n_particles``,
+        ``random_walk_sigma``, ``adaptive_step_size``, ...) to ``inner``.
 
-    @property
-    def n_mcmc_steps(self) -> int:
-        """MCMC steps per sub-step, delegated to ``inner``."""
-        return self.inner.n_mcmc_steps
-
-    @property
-    def target_ess(self) -> float:
-        """Target ESS for the adaptive mask-fraction bisection, delegated to ``inner``."""
-        return self.inner.target_ess
-
-    @property
-    def random_walk_sigma(self) -> float:
-        """Random-walk kernel sigma, delegated to ``inner``."""
-        return self.inner.random_walk_sigma
+        ``BlackJAXSMCRandomWalkSampler._setup_mcmc_kernel`` (reused by the
+        partial-posteriors sampler for kernel construction) reads these directly off
+        ``self.config``, which here is ``self`` rather than ``inner``. Delegating via
+        ``__getattr__`` over the mixin's field names (rather than one hand-written
+        ``@property`` per field) means a new field added to
+        :class:`SMCRandomWalkParamsMixin` is automatically readable here too, with no
+        separate edit required.
+        """
+        if name in SMCRandomWalkParamsMixin.model_fields:
+            return getattr(self.inner, name)
+        raise AttributeError(
+            f"{type(self).__name__!r} object has no attribute {name!r}"
+        )
 
 
 class EOSReweightingConfig(BaseSamplerConfig):

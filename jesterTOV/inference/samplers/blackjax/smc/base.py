@@ -33,12 +33,15 @@ from jesterTOV.inference.samplers.jester_sampler import SamplerOutput
 from jesterTOV.inference.samplers.blackjax.base import BlackjaxSampler
 from jesterTOV.logging_config import get_logger
 
-from blackjax import inner_kernel_tuning, adaptive_tempered_smc
-from blackjax.smc import extend_params
+from blackjax import adaptive_tempered_smc
 from blackjax.smc.base import SMCInfo
 from blackjax.smc.inner_kernel_tuning import StateWithParameterOverride
 from blackjax.smc.resampling import systematic
 from blackjax.smc.tempered import TemperedSMCState
+
+from jesterTOV.inference.samplers.blackjax.smc.persistent_inner_kernel_tuning import (
+    persistent_inner_kernel_tuning,
+)
 
 logger = get_logger("jester")
 
@@ -238,8 +241,23 @@ class BlackjaxSMCSampler(BlackjaxSampler):
         tuple[Callable, Callable, dict, Callable]
             - mcmc_step_fn: MCMC step function
             - mcmc_init_fn: MCMC initialization function
-            - init_params: Initial parameter dict for the kernel
-            - mcmc_parameter_update_fn: Function to adapt parameters
+            - init_params: Initial parameter dict for the kernel. Each value must already be
+              shaped correctly for BlackJAX's shared-vs-unshared parameter dispatch
+              (``blackjax.smc.from_mcmc.unshared_parameters_and_step_fn``): a leading dimension
+              of 1 (e.g. via ``blackjax.smc.extend_params``) marks a parameter shared across all
+              particles, any other leading dimension (e.g. ``(n_particles,)``) marks a parameter
+              that varies per particle. This class no longer wraps init_params in
+              ``extend_params`` itself, so subclasses that only have shared parameters must
+              call ``extend_params`` themselves (as before).
+            - mcmc_parameter_update_fn: Callable with signature
+              ``(key, previous_parameter_override, new_state, info) -> new_parameter_override``.
+              ``previous_parameter_override`` is the parameter dict that was actually used to
+              produce ``new_state``/``info`` (as returned by this same function on the prior
+              call, or ``init_params`` on the first call), enabling genuine recursive adaptation
+              (Robbins-Monro, dual averaging, etc.) across annealing steps. See
+              ``persistent_inner_kernel_tuning.py`` for why this is needed: plain
+              ``blackjax.inner_kernel_tuning`` does not expose the previous parameters to this
+              callback.
         """
         pass
 
@@ -316,8 +334,12 @@ class BlackjaxSMCSampler(BlackjaxSampler):
             )
         )
 
-        # Initialize SMC algorithm with kernel
-        smc_alg = inner_kernel_tuning(
+        # Initialize SMC algorithm with kernel. init_params must already be shaped correctly
+        # by _setup_mcmc_kernel (see its docstring) -- unlike plain blackjax.inner_kernel_tuning,
+        # we do not blanket-wrap it in extend_params here, since kernels with per-particle
+        # (unshared) parameters, such as an adaptive random-walk scale, must not have that
+        # per-particle array collapsed into a single shared row.
+        smc_alg = persistent_inner_kernel_tuning(
             smc_algorithm=adaptive_tempered_smc,
             logprior_fn=logprior_fn,
             loglikelihood_fn=loglikelihood_fn,
@@ -325,7 +347,7 @@ class BlackjaxSMCSampler(BlackjaxSampler):
             mcmc_init_fn=mcmc_init_fn,
             resampling_fn=systematic,
             mcmc_parameter_update_fn=mcmc_parameter_update_fn,
-            initial_parameter_value=extend_params(init_params),  # type: ignore[arg-type]
+            initial_parameter_value=init_params,
             target_ess=self.config.target_ess,
             num_mcmc_steps=self.config.n_mcmc_steps,
         )
