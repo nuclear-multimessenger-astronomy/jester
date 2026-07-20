@@ -361,18 +361,53 @@ class SMCPartialPosteriorsRandomWalkSamplerConfig(BaseSamplerConfig):
         required to be a strict prefix of this run's ``event_order``: the
         already-covered events are skipped entirely (their mask entries
         start at 1, not ramped again) and only the newly added event(s) are
-        assimilated. ``None`` (default) starts from the prior, assimilating
-        every configured event as in a single from-scratch run.
+        assimilated. The source run may have zero GW events (e.g. a radio-
+        or ChiEFT-only run): the empty list is trivially a strict prefix,
+        so its posterior only seeds the initial particles and every
+        configured GW event is assimilated from scratch. ``None`` (default)
+        starts from the prior, assimilating every configured event as in a
+        single from-scratch run.
+    cadence : int | list[int]
+        Controls how many *new* events (i.e. events not already covered by
+        ``warm_start_from``) are turned on together per data-tempering
+        step, instead of the default one-event-at-a-time. All events
+        within a group are ramped in jointly, sharing a single mask
+        fraction that is bisected up from 0 to 1 exactly like the
+        single-event case (the group's combined log-likelihood is still
+        linear in that shared fraction, so the same ESS-targeting
+        machinery applies unmodified).
+
+        - An ``int`` (default: ``1``) chunks the new events into
+          fixed-size groups of that many events, in order; the final group
+          takes the remainder if the new-event count doesn't divide evenly.
+        - A ``list[int]`` gives explicit group sizes, e.g. ``[10, 20, 30,
+          50]`` to process 100 new events as four steps of that size. The
+          list must sum to exactly the number of new events for this run;
+          this is checked at sample time (once ``warm_start_from`` has been
+          resolved), not at config-parse time.
     inner : InnerSMCRandomWalkConfig
         Configuration of the adaptive SMC-RW loop used to ramp in each
-        event's mask fraction from 0 to 1 (particles, MCMC steps per
+        event group's mask fraction from 0 to 1 (particles, MCMC steps per
         sub-step, target ESS, random-walk sigma).
     """
 
     type: Literal["smc-partial-posteriors-rw"] = "smc-partial-posteriors-rw"
     event_order: list[str] | None = None
     warm_start_from: str | None = None
+    cadence: int | list[int] = 1
     inner: InnerSMCRandomWalkConfig = Field(default_factory=InnerSMCRandomWalkConfig)
+
+    @field_validator("cadence")
+    @classmethod
+    def _validate_cadence(cls, v: int | list[int]) -> int | list[int]:
+        if isinstance(v, list):
+            if len(v) == 0:
+                raise ValueError("cadence list must not be empty")
+            if any(n <= 0 for n in v):
+                raise ValueError(f"All cadence list entries must be positive, got: {v}")
+        elif v <= 0:
+            raise ValueError(f"cadence must be positive, got: {v}")
+        return v
 
     @property
     def n_particles(self) -> int:

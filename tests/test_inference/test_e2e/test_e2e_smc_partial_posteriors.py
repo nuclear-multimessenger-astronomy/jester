@@ -104,6 +104,58 @@ class TestSMCPartialPosteriorsE2E:
         assert len(sampler_metadata["ess_history"]) == 2
         assert len(sampler_metadata["acceptance_history"]) == 2
 
+    def test_partial_posteriors_cadence_groups_events(
+        self, smc_partial_posteriors_gw_config, e2e_temp_dir
+    ):
+        """cadence=2 should ramp both configured events in jointly, as a
+        single data-tempering step, instead of one at a time.
+        """
+        config_dict = copy.deepcopy(smc_partial_posteriors_gw_config)
+        config_dict["sampler"]["cadence"] = 2
+        _config, sampler = _run_partial_posteriors(config_dict)
+
+        metadata = sampler.metadata  # type: ignore[attr-defined]
+        assert metadata["event_order"] == ["GW170817", "GW190425"]
+        assert metadata["cadence"] == 2
+        assert metadata["event_groups"] == [["GW170817", "GW190425"]]
+        # Both events ramped jointly -> a single tempering step, not two.
+        assert len(metadata["ess_history"]) == 1
+        assert len(metadata["acceptance_history"]) == 1
+
+        output = sampler.get_sampler_output()
+        validate_sampler_output(output, expected_params=NEP_PARAMS, min_samples=50)
+
+        plot_outdir = e2e_temp_dir / "cadence_plots"
+        sampler.plot_diagnostics(outdir=plot_outdir)  # type: ignore[attr-defined]
+        assert (plot_outdir / "smc_diagnostics.png").exists()
+        assert (
+            plot_outdir / "substep_diagnostics" / "00_GW170817+GW190425.png"
+        ).exists()
+
+    def test_partial_posteriors_cadence_list_must_sum_to_new_events(
+        self, smc_partial_posteriors_gw_config
+    ):
+        """A cadence list that doesn't sum to the number of new events must
+        raise a clear error at sample time (not silently truncate/pad)."""
+        config_dict = copy.deepcopy(smc_partial_posteriors_gw_config)
+        config_dict["sampler"]["cadence"] = [1]  # only 1, but 2 events configured
+        config = InferenceConfig(**config_dict)
+
+        prior, _fixed_params = setup_prior(config)
+        keep_names = determine_keep_names(config, prior)
+        transform = setup_transform(config, prior=prior, keep_names=keep_names)
+        likelihood = setup_likelihood(config, transform)
+        sampler = create_sampler(
+            config=config.sampler,
+            prior=prior,
+            likelihood=likelihood,
+            likelihood_transforms=[transform],
+            seed=config.seed,
+        )
+
+        with pytest.raises(ValueError, match="cadence"):
+            sampler.sample(jax.random.PRNGKey(config.seed))
+
     def test_partial_posteriors_rejects_no_gw_events(
         self, smc_rw_prior_config, e2e_temp_dir
     ):
@@ -311,6 +363,56 @@ class TestSMCPartialPosteriorsWarmStart:
 
         with pytest.raises(ValueError, match="always-on"):
             _run_partial_posteriors(stage2_dict)
+
+    def test_warm_start_from_gw_free_run(
+        self, smc_partial_posteriors_gw_config, e2e_temp_dir
+    ):
+        """warm_start_from also works when the source run had zero GW
+        events (e.g. a radio- or ChiEFT-only run in a sequential-updating
+        workflow): the empty event list is trivially a strict prefix, so
+        every configured GW event is still assimilated from scratch, only
+        the initial particles come from the source run's posterior instead
+        of the prior.
+        """
+        # Stage 1: no GW events at all, only the always-on constraints_eos
+        # likelihood (matching stage 2's always-on set below). Uses smc-rw
+        # since partial-posteriors itself requires at least one GW event.
+        stage1_dict = copy.deepcopy(smc_partial_posteriors_gw_config)
+        stage1_dict["likelihoods"][1]["enabled"] = False
+        stage1_dict["sampler"] = {
+            "type": "smc-rw",
+            "output_dir": stage1_dict["sampler"]["output_dir"],
+            "n_eos_samples": stage1_dict["sampler"]["n_eos_samples"],
+            "n_particles": 100,
+            "n_mcmc_steps": 3,
+            "target_ess": 0.9,
+            "random_walk_sigma": 0.1,
+        }
+        stage1_config, stage1_sampler = _run_partial_posteriors(stage1_dict)
+        assert stage1_sampler.metadata["kernel_type"] == "random_walk"  # type: ignore[attr-defined]
+
+        stage1_result = InferenceResult.from_sampler(
+            stage1_sampler, stage1_config, runtime=0.0
+        )
+        stage1_path = e2e_temp_dir / "stage1_gw_free_result.h5"
+        stage1_result.save(stage1_path)
+
+        # Stage 2: partial-posteriors run warm-starting from the GW-free
+        # posterior, assimilating both configured events from scratch.
+        stage2_dict = copy.deepcopy(smc_partial_posteriors_gw_config)
+        stage2_dict["sampler"]["warm_start_from"] = str(stage1_path)
+        _stage2_config, stage2_sampler = _run_partial_posteriors(stage2_dict)
+
+        stage2_metadata = stage2_sampler.metadata  # type: ignore[attr-defined]
+        assert stage2_metadata["event_order"] == ["GW170817", "GW190425"]
+        assert stage2_metadata["n_events_replayed"] == 0
+        assert stage2_metadata["warm_start_from"] == str(stage1_path)
+        # Both events are stepped through -- nothing was already covered.
+        assert len(stage2_metadata["ess_history"]) == 2
+        assert len(stage2_metadata["acceptance_history"]) == 2
+
+        output = stage2_sampler.get_sampler_output()
+        validate_sampler_output(output, expected_params=NEP_PARAMS, min_samples=50)
 
     def test_warm_start_from_smc_rw_result(
         self, smc_rw_gw_config, smc_partial_posteriors_gw_config, e2e_temp_dir
