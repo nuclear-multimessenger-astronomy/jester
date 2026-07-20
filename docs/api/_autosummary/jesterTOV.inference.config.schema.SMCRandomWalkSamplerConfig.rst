@@ -56,6 +56,9 @@
       ~SMCRandomWalkSamplerConfig.n_mcmc_steps
       ~SMCRandomWalkSamplerConfig.target_ess
       ~SMCRandomWalkSamplerConfig.random_walk_sigma
+      ~SMCRandomWalkSamplerConfig.adaptive_step_size
+      ~SMCRandomWalkSamplerConfig.target_acceptance_rate
+      ~SMCRandomWalkSamplerConfig.n_pretune_steps
       ~SMCRandomWalkSamplerConfig.output_dir
       ~SMCRandomWalkSamplerConfig.n_eos_samples
       ~SMCRandomWalkSamplerConfig.log_prob_batch_size

@@ -657,7 +657,10 @@ sampler:
   n_particles: 10000         # Number of SMC particles
   n_mcmc_steps: 1            # MCMC steps per tempering stage
   target_ess: 0.9            # Target effective sample size (ESS) fraction
-  random_walk_sigma: 1.0     # Gaussian random walk step size
+  random_walk_sigma: 1.0     # Gaussian random walk step size (starting value if adaptive_step_size is on)
+  adaptive_step_size: false      # Adapt step size toward target_acceptance_rate (recommended for high-SNR signals)
+  target_acceptance_rate: 0.234  # Target acceptance rate (Roberts-Rosenthal optimal for random-walk Metropolis)
+  n_pretune_steps: 20            # Pilot steps to calibrate the initial step size before annealing starts
 ```
 
 **Field Details:**
@@ -665,16 +668,10 @@ sampler:
 - **`n_particles`** (`int`, default: `10000`) - Number of particles for SMC
 - **`n_mcmc_steps`** (`int`, default: `1`) - MCMC rejuvenation steps per tempering stage
 - **`target_ess`** (`float`, default: `0.9`) - Target ESS fraction for adaptive tempering (0.0–1.0)
-- **`random_walk_sigma`** (`float`, default: `1.0`) - Step size for Gaussian random walk kernel
-
-**Output:**
-- Posterior samples with equal weights
-- Effective sample size (ESS) statistics per tempering stage
-
-**When to Use:**
-- General-purpose Bayesian inference (**recommended default**)
-- Fast inference on CPU or GPU
-- When derivative information is unavailable or expensive
+- **`random_walk_sigma`** (`float`, default: `1.0`) - Step size for Gaussian random walk kernel. When `adaptive_step_size` is enabled, this is only the *starting* value.
+- **`adaptive_step_size`** (`bool`, default: `False`) - Adapt the step size per particle toward `target_acceptance_rate` instead of using a fixed `random_walk_sigma` throughout. Recommended for high-SNR signals (e.g. ET), where the posterior narrows quickly during annealing and a fixed sigma causes the acceptance rate to collapse. Uses BlackJAX's `update_scale_from_acceptance_rate`, the standard Roberts-Rosenthal optimal-scaling update for random-walk Metropolis.
+- **`target_acceptance_rate`** (`float`, default: `0.234`) - Target acceptance rate for adaptive step size. Only used when `adaptive_step_size` is `True`.
+- **`n_pretune_steps`** (`int`, default: `20`) - Number of pilot Metropolis steps run on the initial (prior) particles before annealing starts, to calibrate a good initial step size regardless of the chosen `random_walk_sigma`. Only used when `adaptive_step_size` is `True`; set to `0` to disable and start annealing directly from `random_walk_sigma`.
 
 ::::
 
@@ -707,15 +704,6 @@ sampler:
 - **`max_mcmc`** (`int`, default: `5000`) - Maximum MCMC steps per iteration
 - **`max_proposals`** (`int`, default: `1000`) - Maximum proposal attempts per live point update
 - **`termination_dlogz`** (`float`, default: `0.1`) - Terminate when log-evidence uncertainty < this value
-
-**Output:**
-- Log-evidence (logZ) with uncertainty estimate
-- Posterior samples with importance weights (see {class}`~jesterTOV.inference.result.InferenceResult`)
-
-**When to Use:**
-- Model comparison requiring Bayesian evidence
-- Exploring multi-modal posteriors
-- When evidence estimation is the primary goal
 
 ::::
 
@@ -752,11 +740,6 @@ sampler:
 2. **Production Phase** — `n_loop_production` loops of:
    - `n_local_steps` MCMC steps using local proposals
    - `n_global_steps` using normalizing flow proposals
-
-**When to Use:**
-- Multi-modal or high-dimensional posteriors
-- Long production runs requiring efficient exploration
-- When training overhead is acceptable
 
 ::::
 
@@ -795,15 +778,6 @@ sampler:
 - **`mass_matrix_param_scales`** (`dict`, default: `{}`) - Per-parameter scaling factors for mass matrix
 - **`target_acceptance`** (`float`, default: `0.7`) - Target acceptance probability for step size tuning
 - **`adaptation_rate`** (`float`, default: `0.3`) - Adaptation rate for step size controller
-
-**Output:**
-- Posterior samples with equal weights
-- Effective sample size (ESS) statistics per tempering stage
-
-**When to Use:**
-- **EXPERIMENTAL** — not recommended for production use
-- High-dimensional posteriors where gradient information helps
-- When NUTS kernel stability can be verified
 
 **Warning:** This sampler is experimental. Use SMC Random Walk for production analyses.
 
