@@ -47,9 +47,8 @@ meta   = data['metadata'].item()
 
 ## PSR J0437−4715
 
-**Paper:** Choudhury et al. 2024, "A NICER View of the Nearest and Brightest Millisecond Pulsar: PSR J0437-4715"
+### Amsterdam group — Choudhury et al. 2024 ([ApJL 971, L20](https://inspirehep.net/literature/2806113))
 **Zenodo:** https://zenodo.org/records/13766753
-**Group:** Amsterdam (X-PSI)
 **Data:** NICER-only
 **Hotspot model:** CST+PDT (headline result, 3C50 background with AGN model)
 **Source file:** `headline_result_samples_and_contours.tar.gz` → equal-weight samples
@@ -57,11 +56,20 @@ meta   = data['metadata'].item()
 Files:
 - `J04374715_amsterdam_CST_PDT_NICER_only_Choudhury2024.npz`
 
+### Maryland group — Miller, Dittmann, Holt et al. 2026 ([ApJL 1000, L48](https://inspirehep.net/literature/3091115))
+**Zenodo:** https://zenodo.org/records/17833896
+**Data:** NICER-only
+**Hotspot model:** 3-spot+GPL (headline result)
+**Source file:** `J0437_NICER_RM.txt` — raw file stores importance weights alongside mass and radius, so the extraction script importance-resamples it to an equal-weight posterior before saving.
+
+Files:
+- `J04374715_maryland_3spotGPL_NICER_only_RM.npz`
+
 ---
 
 ## PSR J0614−3329
 
-**Paper:** Dittmann et al. 2025, "A NICER view of the 1.4 solar-mass edge-on pulsar PSR J0614-3329"
+**Paper:** Mauviard et al. 2025, "A NICER View of the 1.4 Msun Edge-on Pulsar PSR J0614-3329" ([ApJ 995, 60](https://inspirehep.net/literature/2936527))
 **Zenodo:** https://zenodo.org/records/17380576
 **Group:** Amsterdam (X-PSI)
 **Data:** NICER-only
@@ -69,7 +77,7 @@ Files:
 **Source file:** `Headline_Contours_and_Samples.tar.gz` → equal-weight samples
 
 Files:
-- `J06143329_amsterdam_ST_PDT_NICER_only_Dittmann2025.npz`
+- `J06143329_amsterdam_ST_PDT_NICER_only_Mauviard2025.npz`
 
 ---
 
@@ -77,8 +85,8 @@ Files:
 
 First millisecond pulsar observed by NICER with sufficient quality for mass-radius inference, analyzed independently by Maryland and Amsterdam groups.
 
-### Maryland group — Miller et al. 2019 (ApJL 887, L24)
-**Zenodo:** https://zenodo.org/records/3473464
+### Maryland group — Miller et al. 2019 ([ApJL 887, L24](https://inspirehep.net/literature/1770430))
+**Zenodo:** https://zenodo.org/records/3473466
 
 Two hotspot geometries × two prior variants:
 - `J00300451_maryland_2spot_NICER_only_RM.npz`
@@ -88,8 +96,8 @@ Two hotspot geometries × two prior variants:
 
 "RM" = restricted-model prior; "full" = broader prior allowing more geometric freedom.
 
-### Amsterdam group — Riley et al. 2019 (ApJL 887, L21)
-**Zenodo:** https://zenodo.org/records/3473466
+### Amsterdam group — Riley et al. 2019 ([ApJL 887, L21](https://inspirehep.net/literature/1770425))
+**Zenodo:** https://zenodo.org/records/7096789
 
 Five hotspot models, NICER-only:
 - `J00300451_amsterdam_ST_S_NICER_only_Riley2019.npz`
@@ -106,7 +114,7 @@ Recommended model: ST+PST. "ST" = symmetric spot; "U/S" = unrestricted/shared ge
 
 Massive millisecond pulsar providing high-density EOS constraints, analyzed by both groups.
 
-### Maryland group — Miller et al. 2021 (ApJL 918, L28)
+### Maryland group — Miller et al. 2021 ([ApJL 918, L28](https://inspirehep.net/literature/1863305))
 **Zenodo:** https://zenodo.org/records/4670689
 
 Three dataset combinations × two prior variants:
@@ -119,7 +127,7 @@ Three dataset combinations × two prior variants:
 
 "NICERXMM" = joint NICER+XMM-Newton; "relative" = relative calibration between instruments.
 
-### Amsterdam group — Salmi et al. 2024 (most recent)
+### Amsterdam group — Salmi et al. 2024 (most recent, [ApJ 974, 294](https://inspirehep.net/literature/2800506))
 **Zenodo:** https://zenodo.org/records/10519473
 
 Equal-weight samples from NICER+XMM analysis, gamma hotspot model:

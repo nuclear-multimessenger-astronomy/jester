@@ -23,8 +23,6 @@ likelihoods:
   enabled: true
   events:
   - name: GW170817
-  N_masses_evaluation: 2000
-  N_masses_batch_size: 1000
   seed: 42
 sampler:
   type: smc-rw
