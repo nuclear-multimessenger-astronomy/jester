@@ -70,7 +70,11 @@ from jesterTOV.inference.config.schema import (
     SMCPartialPosteriorsRandomWalkSamplerConfig,
 )
 from jesterTOV.inference.likelihoods.combined import CombinedLikelihood, ZeroLikelihood
-from jesterTOV.inference.likelihoods.gw import GWLikelihood, GWLikelihoodResampled
+from jesterTOV.inference.likelihoods.gw import (
+    GWLikelihood,
+    GWLikelihoodResampled,
+    StackedGWLikelihood,
+)
 from jesterTOV.inference.samplers.blackjax.smc.base import (
     format_elapsed,
     make_progress_bar,
@@ -92,7 +96,7 @@ from blackjax.smc.partial_posteriors_path import (
 
 logger = get_logger("jester")
 
-_GW_EVENT_LIKELIHOOD_TYPES = (GWLikelihood, GWLikelihoodResampled)
+_GW_EVENT_LIKELIHOOD_TYPES = (GWLikelihood, GWLikelihoodResampled, StackedGWLikelihood)
 
 # Fallback minimal fractional mask increment used only if the ESS-targeting
 # bisection has no admissible root (particles already below target_ess even
@@ -341,9 +345,13 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         Returns
         -------
         tuple[list[LikelihoodBase], list[str], LikelihoodBase]
-            (event_likelihoods, event_names, always_on_likelihood). The
-            always-on likelihood wraps everything that isn't a GW event
-            likelihood; ``ZeroLikelihood()`` if there is nothing else.
+            (event_likelihoods, event_names, always_on_likelihood).
+            ``event_likelihoods`` is a list of *sources*, not necessarily one
+            per event: a ``StackedGWLikelihood`` is a single source
+            contributing several event names at once (see
+            ``_event_names_for``). The always-on likelihood wraps everything
+            that isn't a GW event source; ``ZeroLikelihood()`` if there is
+            nothing else.
         """
         if isinstance(likelihood, CombinedLikelihood):
             all_likelihoods = likelihood.likelihoods_list
@@ -356,7 +364,9 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         for lik in all_likelihoods:
             if isinstance(lik, _GW_EVENT_LIKELIHOOD_TYPES):
                 event_likelihoods.append(lik)
-                event_names.append(lik.event_name)
+                event_names.extend(
+                    BlackJAXPartialPosteriorsRandomWalkSampler._event_names_for(lik)
+                )
             else:
                 always_on.append(lik)
 
@@ -368,6 +378,19 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             always_on_likelihood = CombinedLikelihood(always_on)
 
         return event_likelihoods, event_names, always_on_likelihood
+
+    @staticmethod
+    def _event_names_for(lik: LikelihoodBase) -> list[str]:
+        """Event name(s) contributed by one GW event source.
+
+        A ``StackedGWLikelihood`` batches several events behind one object
+        (see its module docstring), so it contributes its whole
+        ``event_names`` list; a plain ``GWLikelihood``/``GWLikelihoodResampled``
+        contributes its single ``event_name``.
+        """
+        if isinstance(lik, StackedGWLikelihood):
+            return list(lik.event_names)
+        return [lik.event_name]  # type: ignore[attr-defined]
 
     def _get_kernel_name(self) -> str:
         return "partial_posteriors_random_walk"
@@ -843,6 +866,33 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
 
         return jax.jit(loglikelihood_fn)
 
+    def _make_event_source_array_fn(
+        self, source: LikelihoodBase
+    ) -> Callable[[dict[str, Any]], Array]:
+        """Dict-based, per-event-array log-likelihood function for one GW
+        event source.
+
+        Like ``_make_loglikelihood_dict_fn``, but returns an array (one
+        entry per event contributed by ``source``, in
+        ``_event_names_for(source)`` order) instead of a summed scalar --
+        needed to mask individual events in and out. A plain
+        ``GWLikelihood``/``GWLikelihoodResampled`` source contributes a
+        length-1 array; a ``StackedGWLikelihood`` contributes one entry per
+        event it batches (via its ``evaluate_per_event``).
+        """
+
+        def loglikelihood_array_fn(params_dict: dict[str, Any]) -> Array:
+            named_params = params_dict.copy()
+            for transform in reversed(self.sample_transforms):
+                named_params, _ = transform.inverse(named_params)
+            for transform in self.likelihood_transforms:
+                named_params = transform.forward(named_params)
+            if isinstance(source, StackedGWLikelihood):
+                return source.evaluate_per_event(named_params)
+            return jnp.reshape(source.evaluate(named_params), (1,))
+
+        return jax.jit(loglikelihood_array_fn)
+
     def sample(self, key: PRNGKeyArray) -> None:
         """Run SMC on the path of partial posteriors, one event at a time.
 
@@ -913,19 +963,41 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         always_on_loglik_fn = self._wrap_dict_fn_for_flat_arrays(
             self._make_loglikelihood_dict_fn(self._always_on_likelihood)
         )
-        event_loglik_fns = [
-            self._wrap_dict_fn_for_flat_arrays(self._make_loglikelihood_dict_fn(lik))
+        # Each source contributes an array of per-event log-likelihoods (one
+        # entry per event for a plain GWLikelihood/GWLikelihoodResampled,
+        # several for a StackedGWLikelihood -- see _event_names_for). These
+        # arrays are concatenated in source order ("natural order"), then
+        # permuted once (a static, Python-level index list, not something
+        # traced) into self._event_order so the mask lines up regardless of
+        # how sources/events happen to be grouped or configured.
+        source_array_fns = [
+            self._wrap_dict_fn_for_flat_arrays(
+                cast(
+                    Callable[[dict[str, Any]], float],
+                    self._make_event_source_array_fn(lik),
+                )
+            )
             for lik in self._event_likelihoods
         ]
-        # Preserve event ordering: self._event_likelihoods may not already be
-        # sorted according to self._event_order (which can be overridden via
-        # config), so re-order the per-event flat-array functions accordingly.
-        name_to_fn = dict(zip(self._event_names, event_loglik_fns))
-        ordered_event_loglik_fns = [name_to_fn[name] for name in self._event_order]
+        natural_order_names = [
+            name
+            for lik in self._event_likelihoods
+            for name in self._event_names_for(lik)
+        ]
+        name_to_natural_index = {name: i for i, name in enumerate(natural_order_names)}
+        event_order_perm = jnp.array(
+            [name_to_natural_index[name] for name in self._event_order]
+        )
+
+        def ordered_event_vals(x_flat: Array) -> Array:
+            """Per-event log-likelihoods for one particle, in
+            ``self._event_order`` (i.e. mask-index) order."""
+            event_vals_natural = jnp.concatenate([f(x_flat) for f in source_array_fns])
+            return event_vals_natural[event_order_perm]
 
         def partial_logposterior_factory(data_mask: Array) -> Callable[[Array], Array]:
             def logpost(x_flat: Array) -> Array:
-                event_vals = jnp.stack([f(x_flat) for f in ordered_event_loglik_fns])
+                event_vals = ordered_event_vals(x_flat)
                 return (
                     logprior_fn(x_flat)
                     + always_on_loglik_fn(x_flat)
@@ -1011,10 +1083,10 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             info = None
             n_substeps_taken = 0
 
-            def batched_group_loglik_fn(x: Array, group: list[int] = group) -> Array:
-                return jnp.sum(
-                    jnp.stack([ordered_event_loglik_fns[i](x) for i in group])
-                )
+            def batched_group_loglik_fn(
+                x: Array, group_indices: Array = group_indices
+            ) -> Array:
+                return jnp.sum(ordered_event_vals(x)[group_indices])
 
             batched_group_loglik_fn = jax.vmap(batched_group_loglik_fn)
             mask_fraction_history: list[float] = []
@@ -1051,7 +1123,9 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
                 key, subkey, update_key = jax.random.split(key, 3)
                 substep_start_time = time.time()
                 state, info = jitted_substep_fn(subkey, state, new_mask, mcmc_params)
-                mcmc_params = mcmc_parameter_update_fn(update_key, state, info)
+                mcmc_params = mcmc_parameter_update_fn(
+                    update_key, mcmc_params, state, info
+                )
                 substep_elapsed = time.time() - substep_start_time
                 mask = new_mask
                 substep_log_evidence_increment = float(info.log_likelihood_increment)
