@@ -246,9 +246,7 @@ class BlackjaxSMCSampler(BlackjaxSampler):
               (``blackjax.smc.from_mcmc.unshared_parameters_and_step_fn``): a leading dimension
               of 1 (e.g. via ``blackjax.smc.extend_params``) marks a parameter shared across all
               particles, any other leading dimension (e.g. ``(n_particles,)``) marks a parameter
-              that varies per particle. This class no longer wraps init_params in
-              ``extend_params`` itself, so subclasses that only have shared parameters must
-              call ``extend_params`` themselves (as before).
+              that varies per particle.
             - mcmc_parameter_update_fn: Callable with signature
               ``(key, previous_parameter_override, new_state, info) -> new_parameter_override``.
               ``previous_parameter_override`` is the parameter dict that was actually used to

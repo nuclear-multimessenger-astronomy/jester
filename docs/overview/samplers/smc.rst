@@ -34,6 +34,25 @@ The covariance shape adapts every tempering step; only the overall scale is fixe
      target_ess: 0.9         # target ESS to compute next temperature
      random_walk_sigma: 0.5  # proposal = sigma^2 * empirical covariance
 
+Adaptive step size
+^^^^^^^^^^^^^^^^^^^
+
+By default, ``random_walk_sigma`` is a single fixed scale used for the whole run. For high-SNR signals (e.g. ET), the posterior narrows quickly during annealing, and a fixed sigma can cause the acceptance rate to collapse in later tempering steps. Setting ``adaptive_step_size: true`` instead lets each particle's proposal scale adapt continuously toward a specified target acceptance rate.
+
+In this mode, ``random_walk_sigma`` is treated only as a *starting value*. However, before sampling begins, ``n_pretune_steps`` pilot Metropolis steps run on the initial prior particles to calibrate a reasonable starting scale, correcting for a poorly chosen ``random_walk_sigma``. During annealing, the per-particle scale is then adapted every MCMC step to drive the empirical acceptance rate toward ``target_acceptance_rate`` (default 0.234, the standard optimal value for random-walk Metropolis in high dimensions). The updating is done through ``blackjax``'s ``update_scale_from_acceptance_rate``.
+
+.. code-block:: yaml
+
+   sampler:
+     type: smc-rw
+     n_particles: 5000
+     n_mcmc_steps: 10
+     target_ess: 0.9
+     random_walk_sigma: 0.5          # starting scale, pretuned before annealing
+     adaptive_step_size: true        # adapt scale per particle instead of using a fixed sigma
+     target_acceptance_rate: 0.234   # Roberts-Rosenthal optimal value
+     n_pretune_steps: 20             # pilot steps on prior particles; 0 disables pretuning
+
 NUTS kernel (``smc-nuts``) — experimental
 -------------------------------------------
 

@@ -176,7 +176,11 @@ class GWLikelihoodConfig(BaseLikelihoodConfig):
     r"""Gravitational wave likelihood configuration (presampled version).
 
     This is the default GW likelihood that pre-samples masses from the
-    GW posterior for efficient evaluation during MCMC sampling.
+    GW posterior for efficient evaluation during MCMC sampling. All events are
+    evaluated as a single batched/stacked computation (``StackedGWLikelihood``)
+    rather than one likelihood per event, which requires every event's flow to
+    share the same architecture - see ``StackedGWLikelihood`` docstring for
+    what that means and what happens if it isn't satisfied.
 
     Each entry in ``events`` is a :class:`GWEventConfig` that supports three
     modes: using a pre-trained normalizing flow (default), automatically
@@ -192,7 +196,7 @@ class GWLikelihoodConfig(BaseLikelihoodConfig):
           events:
             - name: "GW170817"
               nf_model_dir: "./NFs/GW170817"
-          N_masses_evaluation: 2000
+          N_masses_evaluation: 500
     """
 
     type: Literal["gw"] = Field(default="gw", description="Likelihood type identifier")
@@ -232,15 +236,35 @@ class GWLikelihoodConfig(BaseLikelihoodConfig):
     )
 
     N_masses_evaluation: int = Field(
-        default=2000,
+        default=500,
         gt=0,
-        description="Number of mass samples to pre-sample from GW posterior",
+        description=(
+            "Number of mass samples to pre-sample from the GW posterior, i.e. "
+            "the size of the Monte Carlo sum this likelihood evaluates."
+        ),
     )
 
     N_masses_batch_size: int = Field(
-        default=1000,
+        default=1,
         gt=0,
-        description="Batch size for jax.lax.map processing of mass grid",
+        description=(
+            "Batch size for jax.lax.map processing of mass grid. Default of 1 "
+            "(a plain jax.lax.scan) keeps memory flat under the outer particle "
+            "vmap used by e.g. the SMC sampler "
+        ),
+    )
+
+    event_batch_size: int = Field(
+        default=1,
+        gt=0,
+        description=(
+            "Batch size for jax.lax.map processing of GW events. All events are "
+            "evaluated as one stacked/batched computation (StackedGWLikelihood) "
+            "rather than one likelihood per event (see likelihoods/gw.py). Default "
+            "of 1 (a plain jax.lax.scan over events) keeps memory flat under the "
+            "outer particle vmap used by SMC sampler "
+            "See StackedGWLikelihood docstring for details."
+        ),
     )
 
     seed: int = Field(
@@ -278,7 +302,7 @@ class GWResampledLikelihoodConfig(BaseLikelihoodConfig):
 
     penalty_value: float = Field(default=0.0)
     N_masses_evaluation: int = Field(default=20, gt=0)
-    N_masses_batch_size: int = Field(default=10, gt=0)
+    N_masses_batch_size: int = Field(default=1, gt=0)
 
     @field_validator("events")
     @classmethod
