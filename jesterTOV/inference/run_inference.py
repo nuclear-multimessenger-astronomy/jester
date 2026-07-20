@@ -866,6 +866,18 @@ def main(config_path: str) -> None:
         likelihood_configs=config.likelihoods,
     )
 
+    # Wire up context needed for per-step intermediate result saving
+    # (config.sampler.save_intermediate_results) -- this sampler doesn't
+    # otherwise have access to the full InferenceConfig or outdir.
+    from .samplers.blackjax.smc.partial_posteriors import (
+        BlackJAXPartialPosteriorsRandomWalkSampler,
+    )
+
+    if isinstance(sampler, BlackJAXPartialPosteriorsRandomWalkSampler):
+        sampler.configure_intermediate_saving(
+            full_config=config, outdir=Path(outdir), fixed_params=fixed_params
+        )
+
     # Log detailed sampler configuration
     logger.info("=" * 60)
     logger.info("Configuration Summary")

@@ -66,10 +66,15 @@ from jaxtyping import Array, PRNGKeyArray
 
 from jesterTOV.inference.base import LikelihoodBase
 from jesterTOV.inference.config.schema import (
+    InferenceConfig,
     SMCPartialPosteriorsRandomWalkSamplerConfig,
 )
 from jesterTOV.inference.likelihoods.combined import CombinedLikelihood, ZeroLikelihood
 from jesterTOV.inference.likelihoods.gw import GWLikelihood, GWLikelihoodResampled
+from jesterTOV.inference.samplers.blackjax.smc.base import (
+    format_elapsed,
+    make_progress_bar,
+)
 from jesterTOV.inference.samplers.blackjax.smc.random_walk import (
     BlackJAXSMCRandomWalkSampler,
 )
@@ -309,6 +314,16 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         # partial-posteriors-path plot.
         self._substep_diagnostics: dict[str, dict[str, list[float]]] = {}
 
+        # Populated by configure_intermediate_saving(), called externally
+        # (run_inference.py) because this sampler doesn't otherwise have
+        # access to the full InferenceConfig (only its own sampler
+        # sub-config) or the output directory. Only consumed if
+        # config.save_intermediate_results is True -- see
+        # _save_intermediate_result.
+        self._intermediate_save_config: InferenceConfig | None = None
+        self._intermediate_save_outdir: Path | None = None
+        self._intermediate_save_fixed_params: dict[str, float] = {}
+
     @staticmethod
     def _partition_likelihood(
         likelihood: LikelihoodBase,
@@ -356,6 +371,248 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
 
     def _get_kernel_name(self) -> str:
         return "partial_posteriors_random_walk"
+
+    def configure_intermediate_saving(
+        self,
+        full_config: InferenceConfig,
+        outdir: str | Path,
+        fixed_params: dict[str, float] | None = None,
+    ) -> None:
+        """Wire up context needed to save per-step intermediate results.
+
+        This sampler only receives its own sampler sub-config (``self.config``,
+        a ``SMCPartialPosteriorsRandomWalkSamplerConfig``), not the full
+        ``InferenceConfig`` or the run's output directory -- both are needed
+        to build and save an ``InferenceResult`` snapshot after each
+        data-tempering step (see ``_save_intermediate_result``). Call this
+        (from ``run_inference.py``, right after ``create_sampler``) before
+        ``sample()`` if ``config.sampler.save_intermediate_results`` is
+        ``True``; harmless no-op setup otherwise.
+
+        Parameters
+        ----------
+        full_config : InferenceConfig
+            The complete run configuration (serialized into each
+            intermediate result's metadata, exactly as for the final
+            ``results.h5``).
+        outdir : str or Path
+            Run output directory. Intermediate results are saved under
+            ``outdir/substep_results/``.
+        fixed_params : dict[str, float] | None, optional
+            Parameters pinned to constant values during inference, stored
+            in each intermediate result's metadata like the final result.
+        """
+        self._intermediate_save_config = full_config
+        self._intermediate_save_outdir = Path(outdir)
+        self._intermediate_save_fixed_params = fixed_params or {}
+
+    def _build_metadata(
+        self,
+        config: SMCPartialPosteriorsRandomWalkSamplerConfig,
+        n_particles: int,
+        event_order_so_far: list[str],
+        event_groups_names_so_far: list[list[str]],
+        n_prev_events: int,
+        final_ess_fraction: float,
+        ess_history_so_far: list[float],
+        acceptance_history_so_far: list[float],
+        log_evidence_history_so_far: list[float],
+        n_substeps_history_so_far: list[int],
+        log_evidence_so_far: float,
+        elapsed_seconds: float,
+    ) -> dict[str, Any]:
+        """Build the sampler metadata dict, for either an intermediate or the
+        final snapshot of the run.
+
+        Factored out of ``sample()`` so that ``_save_intermediate_result``
+        can build a metadata dict describing "the run as if it stopped
+        after this data-tempering step" using the exact same shape/keys as
+        the real final metadata -- required for it to be accepted by
+        ``InferenceResult.from_sampler`` (which reads several
+        ``blackjax_smc_partial_posteriors_rw``-specific keys, see
+        ``result.py``).
+
+        Parameters
+        ----------
+        config : SMCPartialPosteriorsRandomWalkSamplerConfig
+            Sampler configuration.
+        n_particles : int
+            Number of particles.
+        event_order_so_far : list[str]
+            GW events assimilated up to and including this point (a prefix
+            of ``self._event_order``; equals the full list for the final
+            call).
+        event_groups_names_so_far : list[list[str]]
+            Data-tempering groups processed up to and including this point.
+        n_prev_events : int
+            Number of events skipped via warm-starting (see ``sample()``).
+        final_ess_fraction : float
+            ESS as a fraction of ``n_particles`` (i.e. already divided by
+            ``n_particles``) at this point in the run.
+        ess_history_so_far, acceptance_history_so_far, log_evidence_history_so_far, n_substeps_history_so_far : list
+            Per-step diagnostic histories up to and including this point.
+        log_evidence_so_far : float
+            Cumulative log evidence up to and including this point.
+        elapsed_seconds : float
+            Wall-clock time elapsed since sampling started.
+
+        Returns
+        -------
+        dict[str, Any]
+            Metadata dict matching the shape stored in ``self.metadata`` by
+            a completed ``sample()`` call.
+        """
+        mean_ess = float(jnp.mean(jnp.array(ess_history_so_far)))
+        min_ess = float(jnp.min(jnp.array(ess_history_so_far)))
+        mean_acceptance = float(jnp.mean(jnp.array(acceptance_history_so_far)))
+        return {
+            "sampler": f"blackjax_smc_{self._get_kernel_name()}",
+            "kernel_type": self._get_kernel_name(),
+            "n_particles": n_particles,
+            "n_mcmc_steps": config.n_mcmc_steps,
+            "target_ess": config.target_ess,
+            "event_order": event_order_so_far,
+            "n_events": len(event_order_so_far),
+            "cadence": config.cadence,
+            "event_groups": event_groups_names_so_far,
+            "warm_start_from": config.warm_start_from or "",
+            "n_events_replayed": n_prev_events,
+            "final_ess": float(final_ess_fraction * n_particles),
+            "final_ess_percent": float(final_ess_fraction * 100),
+            "mean_ess": mean_ess,
+            "min_ess": min_ess,
+            "mean_acceptance": mean_acceptance,
+            "logZ": float(log_evidence_so_far),
+            "logZ_err": 0.0,  # FIXME: same placeholder as base.py
+            "sampling_time_seconds": elapsed_seconds,
+            "ess_history": ess_history_so_far,
+            "acceptance_history": acceptance_history_so_far,
+            "log_evidence_history": log_evidence_history_so_far,
+            "n_substeps_history": n_substeps_history_so_far,
+        }
+
+    def _save_intermediate_result(
+        self,
+        key: PRNGKeyArray,
+        state: PartialPosteriorsSMCState,
+        config: SMCPartialPosteriorsRandomWalkSamplerConfig,
+        n_particles: int,
+        event_order_so_far: list[str],
+        event_groups_names_so_far: list[list[str]],
+        n_prev_events: int,
+        ess_history_so_far: list[float],
+        acceptance_history_so_far: list[float],
+        log_evidence_history_so_far: list[float],
+        n_substeps_history_so_far: list[int],
+        log_evidence_so_far: float,
+        elapsed_seconds: float,
+        step_number: int,
+    ) -> None:
+        """Save an ``InferenceResult`` snapshot of the posterior after a
+        data-tempering step, including derived EOS quantities from the TOV
+        solver -- exactly mirroring what ``run_inference.py`` does for the
+        final result, just run mid-loop on the current particles instead of
+        the converged ones.
+
+        Requires ``configure_intermediate_saving()`` to have been called;
+        otherwise this logs a warning and does nothing (rather than
+        raising, since ``config.save_intermediate_results`` is read from
+        the sampler's own config and could be enabled without the caller
+        having wired up the extra context this needs).
+
+        Parameters
+        ----------
+        key : PRNGKeyArray
+            Random key used only for the equal-weight resampling below.
+        state : PartialPosteriorsSMCState
+            Current SMC state (particles/weights) after the just-completed
+            data-tempering step.
+        config, n_particles, event_order_so_far, event_groups_names_so_far, n_prev_events, ess_history_so_far, acceptance_history_so_far, log_evidence_history_so_far, n_substeps_history_so_far, log_evidence_so_far, elapsed_seconds :
+            See ``_build_metadata`` -- forwarded directly.
+        step_number : int
+            1-indexed position of this step's first event within the full
+            configured ``self._event_order``. Used as the intermediate
+            result's filename suffix (``results_<step_number>.h5``) so
+            numbering stays consistent across warm-started runs (each run
+            only produces files for the steps it actually processes).
+        """
+        if self._intermediate_save_config is None:
+            logger.warning(
+                "config.save_intermediate_results is True but "
+                "configure_intermediate_saving() was never called on this "
+                "sampler -- skipping intermediate result saving. "
+                "(run_inference.py should call it automatically; this is "
+                "expected only if the sampler is being driven manually.)"
+            )
+            return
+
+        logger.info(
+            "Postprocessing and saving intermediate run results "
+            f"(step {step_number}: events {event_order_so_far})..."
+        )
+
+        weights = state.weights
+        final_ess_fraction = float(
+            jnp.sum(weights) ** 2 / jnp.sum(weights**2) / n_particles
+        )
+        resample_idx = systematic(key, weights, n_particles)
+        particles_flat = cast(Array, state.particles)[resample_idx]
+        uniform_weights = jnp.ones(n_particles) / n_particles
+
+        intermediate_metadata = self._build_metadata(
+            config=config,
+            n_particles=n_particles,
+            event_order_so_far=event_order_so_far,
+            event_groups_names_so_far=event_groups_names_so_far,
+            n_prev_events=n_prev_events,
+            final_ess_fraction=final_ess_fraction,
+            ess_history_so_far=ess_history_so_far,
+            acceptance_history_so_far=acceptance_history_so_far,
+            log_evidence_history_so_far=log_evidence_history_so_far,
+            n_substeps_history_so_far=n_substeps_history_so_far,
+            log_evidence_so_far=log_evidence_so_far,
+            elapsed_seconds=elapsed_seconds,
+        )
+
+        # Temporarily swap in this step's particles/weights/metadata so
+        # get_samples()/get_log_prob()/get_sampler_output() -- and thus
+        # InferenceResult.from_sampler, which is driven entirely through
+        # those methods -- report this step's state. Restored in `finally`
+        # so the real end-of-run assignment in sample() (and any other
+        # caller inspecting these attributes) is unaffected; at this point
+        # in the loop they are still None (unset), matching __init__.
+        prev_particles_flat = self._particles_flat
+        prev_weights = self._weights
+        prev_final_state = self.final_state
+        prev_metadata = self.metadata
+        self._particles_flat = particles_flat
+        self._weights = uniform_weights
+        self.final_state = state
+        self.metadata = intermediate_metadata
+        try:
+            from jesterTOV.inference.result import InferenceResult
+
+            result = InferenceResult.from_sampler(
+                sampler=self,
+                config=self._intermediate_save_config,
+                runtime=elapsed_seconds,
+                fixed_params=self._intermediate_save_fixed_params,
+            )
+            result.add_eos_from_transform(
+                transform=self.likelihood_transforms[0],
+                n_eos_samples=config.n_eos_samples,
+                batch_size=config.log_prob_batch_size,
+            )
+            assert self._intermediate_save_outdir is not None
+            substep_outdir = self._intermediate_save_outdir / "substep_results"
+            substep_outdir.mkdir(parents=True, exist_ok=True)
+            result_path = substep_outdir / f"results_{step_number}.h5"
+            result.save(result_path)
+        finally:
+            self._particles_flat = prev_particles_flat
+            self._weights = prev_weights
+            self.final_state = prev_final_state
+            self.metadata = prev_metadata
 
     def _compute_event_groups(self, n_prev_events: int) -> list[list[int]]:
         """Chunk the not-yet-assimilated events into cadence groups.
@@ -807,12 +1064,13 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
                     / n_particles
                 )
                 substep_acceptance = float(info.update_info.acceptance_rate.mean())  # type: ignore[attr-defined]
+                bar = make_progress_bar(new_frac)
                 logger.info(
                     f"    -> [{group_name}] sub-step {n_substeps_taken:2d} | "
                     f"mask={new_frac:.5f} | ESS={substep_ess * 100:5.1f}% | "
                     f"Accept={substep_acceptance * 100:5.1f}% | "
                     f"dlogZ={substep_log_evidence_increment:8.3f} | "
-                    f"t={substep_elapsed:6.2f}s"
+                    f"t={substep_elapsed:6.2f}s | {bar}"
                 )
 
                 mask_fraction_history.append(new_frac)
@@ -838,19 +1096,34 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             log_evidence_history.append(log_evidence)
             n_substeps_history.append(n_substeps_taken)
 
-            elapsed = time.time() - start_time
-            hours, remainder = divmod(int(elapsed), 3600)
-            minutes, seconds = divmod(remainder, 60)
-            elapsed_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-            bar_length = 30
-            filled = int((group_num + 1) / n_groups * bar_length)
-            bar = "█" * filled + "░" * (bar_length - filled)
+            elapsed_str = format_elapsed(time.time() - start_time)
+            bar = make_progress_bar((group_num + 1) / n_groups)
             logger.info(
                 f"Step {group_num + 1:3d}/{n_groups} [{group_name}] | "
                 f"ESS={ess_value * 100:5.1f}% | Accept={acceptance_rate * 100:5.1f}% | "
                 f"logZ={log_evidence:8.3f} | substeps={n_substeps_taken:3d} | "
                 f"t={elapsed_str} | {bar}"
             )
+
+            if config.save_intermediate_results:
+                key, save_key = jax.random.split(key)
+                step_number = group[-1] + 1  # absolute 1-indexed event position
+                self._save_intermediate_result(
+                    key=save_key,
+                    state=state,
+                    config=config,
+                    n_particles=n_particles,
+                    event_order_so_far=self._event_order[: group[-1] + 1],
+                    event_groups_names_so_far=event_groups_names,
+                    n_prev_events=n_prev_events,
+                    ess_history_so_far=ess_history,
+                    acceptance_history_so_far=acceptance_history,
+                    log_evidence_history_so_far=log_evidence_history,
+                    n_substeps_history_so_far=n_substeps_history,
+                    log_evidence_so_far=log_evidence,
+                    elapsed_seconds=time.time() - start_time,
+                    step_number=step_number,
+                )
 
         end_time = time.time()
 
@@ -859,43 +1132,29 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         self.final_state = state
 
         assert self._weights is not None
-        ess = jnp.sum(self._weights) ** 2 / jnp.sum(self._weights**2)
+        final_ess_fraction = float(
+            jnp.sum(self._weights) ** 2 / jnp.sum(self._weights**2) / n_particles
+        )
 
         key, resample_key = jax.random.split(key)
         resample_idx = systematic(resample_key, self._weights, n_particles)
         self._particles_flat = self._particles_flat[resample_idx]
         self._weights = jnp.ones(n_particles) / n_particles
 
-        mean_ess = float(jnp.mean(jnp.array(ess_history)))
-        min_ess = float(jnp.min(jnp.array(ess_history)))
-        mean_acceptance = float(jnp.mean(jnp.array(acceptance_history)))
-        log_evidence_err = 0.0  # FIXME: same placeholder as base.py
-
-        self.metadata = {
-            "sampler": f"blackjax_smc_{self._get_kernel_name()}",
-            "kernel_type": self._get_kernel_name(),
-            "n_particles": n_particles,
-            "n_mcmc_steps": config.n_mcmc_steps,
-            "target_ess": config.target_ess,
-            "event_order": self._event_order,
-            "n_events": n_events,
-            "cadence": config.cadence,
-            "event_groups": event_groups_names,
-            "warm_start_from": config.warm_start_from or "",
-            "n_events_replayed": n_prev_events,
-            "final_ess": float(ess),
-            "final_ess_percent": float(ess / n_particles * 100),
-            "mean_ess": mean_ess,
-            "min_ess": min_ess,
-            "mean_acceptance": mean_acceptance,
-            "logZ": float(log_evidence),
-            "logZ_err": float(log_evidence_err),
-            "sampling_time_seconds": end_time - start_time,
-            "ess_history": ess_history,
-            "acceptance_history": acceptance_history,
-            "log_evidence_history": log_evidence_history,
-            "n_substeps_history": n_substeps_history,
-        }
+        self.metadata = self._build_metadata(
+            config=config,
+            n_particles=n_particles,
+            event_order_so_far=self._event_order,
+            event_groups_names_so_far=event_groups_names,
+            n_prev_events=n_prev_events,
+            final_ess_fraction=final_ess_fraction,
+            ess_history_so_far=ess_history,
+            acceptance_history_so_far=acceptance_history,
+            log_evidence_history_so_far=log_evidence_history,
+            n_substeps_history_so_far=n_substeps_history,
+            log_evidence_so_far=log_evidence,
+            elapsed_seconds=end_time - start_time,
+        )
         self._substep_diagnostics = substep_diagnostics
 
     def plot_diagnostics(

@@ -389,6 +389,18 @@ class SMCPartialPosteriorsRandomWalkSamplerConfig(BaseSamplerConfig):
         Configuration of the adaptive SMC-RW loop used to ramp in each
         event group's mask fraction from 0 to 1 (particles, MCMC steps per
         sub-step, target ESS, random-walk sigma).
+    save_intermediate_results : bool
+        When ``True``, save a full ``InferenceResult`` HDF5 (posterior
+        samples, derived EOS quantities via the TOV solver, and metadata)
+        after each data-tempering step, to
+        ``outdir/substep_results/results_<n>.h5`` where ``<n>`` is the
+        1-indexed position of the step's first event within the full
+        configured ``event_order`` (consistent across warm-started runs).
+        This lets users inspect how the posterior evolves as GW events are
+        assimilated one batch at a time, e.g. to identify which events are
+        most informative. Default ``True``; adds a TOV solve per step, so
+        set to ``False`` to skip it for runs that don't need the
+        intermediate posteriors.
     """
 
     type: Literal["smc-partial-posteriors-rw"] = "smc-partial-posteriors-rw"
@@ -396,6 +408,7 @@ class SMCPartialPosteriorsRandomWalkSamplerConfig(BaseSamplerConfig):
     warm_start_from: str | None = None
     cadence: int | list[int] = 1
     inner: InnerSMCRandomWalkConfig = Field(default_factory=InnerSMCRandomWalkConfig)
+    save_intermediate_results: bool = True
 
     @field_validator("cadence")
     @classmethod

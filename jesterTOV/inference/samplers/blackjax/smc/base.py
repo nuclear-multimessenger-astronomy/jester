@@ -43,6 +43,29 @@ from blackjax.smc.tempered import TemperedSMCState
 logger = get_logger("jester")
 
 
+def format_elapsed(seconds: float) -> str:
+    """Format a duration in seconds as ``HH:MM:SS``.
+
+    Shared by the lambda-tempering progress callback below and by
+    ``partial_posteriors.py``'s data-tempering progress reporting, so both
+    loops report elapsed time identically.
+    """
+    hours, remainder = divmod(int(seconds), 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
+def make_progress_bar(fraction: float, bar_length: int = 30) -> str:
+    """Render a filled/empty block progress bar for a fraction in [0, 1].
+
+    Shared by the lambda-tempering progress callback below and by
+    ``partial_posteriors.py``'s data-tempering progress reporting, so both
+    loops report progress with the same visual style.
+    """
+    filled = int(jnp.clip(fraction, 0.0, 1.0) * bar_length)
+    return "█" * filled + "░" * (bar_length - filled)
+
+
 class BlackjaxSMCSampler(BlackjaxSampler):
     """Base class for BlackJAX Sequential Monte Carlo with adaptive tempering.
 
@@ -320,16 +343,8 @@ class BlackjaxSMCSampler(BlackjaxSampler):
             log_evidence: float,
         ) -> None:
             """Print progress update during sampling (called via io_callback)."""
-            # Create progress bar
-            bar_length = 30
-            filled = int(tempering_param * bar_length)
-            bar = "█" * filled + "░" * (bar_length - filled)
-
-            # Compute elapsed time
-            elapsed = time.time() - start_time
-            hours, remainder = divmod(int(elapsed), 3600)
-            minutes, seconds = divmod(remainder, 60)
-            elapsed_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+            bar = make_progress_bar(tempering_param)
+            elapsed_str = format_elapsed(time.time() - start_time)
 
             # Print update
             logger.info(
