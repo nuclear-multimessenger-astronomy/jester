@@ -71,8 +71,12 @@ except ImportError:
 
     @contextmanager
     def disable_x64():
-        with jax.enable_x64(False):
+        previous = jax.config.read("jax_enable_x64")
+        jax.config.update("jax_enable_x64", False)
+        try:
             yield
+        finally:
+            jax.config.update("jax_enable_x64", previous)
 
 
 # Flow architectures for which the float32 evaluation recipe has actually been

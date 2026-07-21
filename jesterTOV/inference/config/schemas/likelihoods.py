@@ -275,9 +275,7 @@ class GWLikelihoodConfig(BaseLikelihoodConfig):
 
     use_float32: bool = Field(
         default=False,
-        description=(
-            "Evaluate the flows in float32 instead of the default float64. "
-        ),
+        description=("Evaluate the flows in float32 instead of the default float64. "),
     )
 
 
