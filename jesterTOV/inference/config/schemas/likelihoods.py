@@ -273,6 +273,11 @@ class GWLikelihoodConfig(BaseLikelihoodConfig):
         description="Random seed for reproducible mass sampling from GW posterior",
     )
 
+    use_float32: bool = Field(
+        default=False,
+        description=("Evaluate the flows in float32 instead of the default float64. "),
+    )
+
 
 class GWResampledLikelihoodConfig(BaseLikelihoodConfig):
     """Gravitational wave likelihood configuration (legacy resampled version).

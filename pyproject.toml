@@ -39,7 +39,7 @@ dependencies = [
     "diffrax",
     "optax<0.2.7",
     "interpax",
-    "flowjax<18.0.0",
+    "flowjax>=19.1.1",
     "typing_extensions>=4.5.0",
     "pydantic>=2.0",
     "pyyaml>=6.0",

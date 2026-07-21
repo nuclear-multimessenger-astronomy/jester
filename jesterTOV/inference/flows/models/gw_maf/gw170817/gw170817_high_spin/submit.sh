@@ -7,7 +7,7 @@
 #SBATCH --gpus-per-node=1
 #SBATCH --cpus-per-gpu=1
 #SBATCH --mem-per-gpu=10G
-#SBATCH --output="../../../../logs/%x.out"
+#SBATCH --output="training_log.out"
 #SBATCH --job-name="gw170817_high_spin"
 
 # Training script for gw170817_high_spin
@@ -22,7 +22,7 @@ echo ""
 # Loading modules
 # module load 2024
 # module load Python/3.10.4-GCCcore-11.3.0
-source /home/twouters2/projects/jester_review/jester/.venv/bin/activate
+source /home/twouters2/projects/43_eos_bayesian_updates/new_flowjax_jester/.venv/bin/activate
 
 # Display GPU name
 nvidia-smi --query-gpu=name --format=csv,noheader

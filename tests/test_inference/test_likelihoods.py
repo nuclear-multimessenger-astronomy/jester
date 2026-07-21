@@ -712,9 +712,16 @@ def _save_toy_flow(
     nn_width: int = 8,
     nn_depth: int = 2,
     standardize: bool = False,
+    transformer_type: str = "affine",
 ):
     """Build and save a tiny masked_autoregressive_flow (dim=4) to `output_dir`,
     loadable via ``Flow.from_directory`` -- a stand-in for a trained GW-event flow.
+
+    transformer_type defaults to "affine" (unrelated to float32 support -- just
+    the historical default for these lightweight tests). Float32 tests must
+    pass transformer_type="rational_quadratic_spline", the only transformer
+    the float32 recipe has been validated against (see
+    jesterTOV.inference.flows.flow._validate_float32_architecture).
     """
     from jesterTOV.inference.flows.flow import create_flow
     from jesterTOV.inference.flows.train_flow import save_model
@@ -728,7 +735,7 @@ def _save_toy_flow(
         "flow_layers": 1,
         "invert": True,
         "cond_dim": None,
-        "transformer_type": "affine",
+        "transformer_type": transformer_type,
         "transformer_knots": 4,
         "transformer_interval": 4.0,
     }
@@ -846,6 +853,136 @@ class TestStackedGWLikelihood:
                 model_dirs=[str(model_dir_a), str(model_dir_b)],
                 N_masses_evaluation=10,
                 N_masses_batch_size=5,
+            )
+
+    def test_use_float32_matches_float64_at_shared_sample_points(self, tmp_path):
+        """use_float32=True must agree with the float64 default, at the level
+        that actually isolates correctness of the recipe: evaluated at the same
+        mass-sample points. (Comparing raw evaluate() output directly between
+        independently-constructed float64 and float32 likelihoods is NOT a
+        reliable test here -- each self-samples its own mass grid via
+        flow.sample() at construction, and for an untrained/random-weight toy
+        flow those draws can diverge substantially between precisions, which
+        is expected numerical behaviour for a poorly-conditioned function, not
+        a bug. See dev/float32_investigations/FINDINGS.md and this test's
+        construction below for how that was found and isolated.)
+        """
+        model_dirs = [
+            _save_toy_flow(
+                tmp_path / f"event_{i}",
+                seed=i,
+                transformer_type="rational_quadratic_spline",
+                standardize=True,
+            )
+            for i in range(2)
+        ]
+        event_names = ["event_0", "event_1"]
+
+        lik64 = StackedGWLikelihood(
+            event_names=event_names,
+            model_dirs=[str(d) for d in model_dirs],
+            N_masses_evaluation=20,
+            N_masses_batch_size=5,
+            event_batch_size=2,
+            seed=42,
+            use_float32=False,
+        )
+        lik32 = StackedGWLikelihood(
+            event_names=event_names,
+            model_dirs=[str(d) for d in model_dirs],
+            N_masses_evaluation=20,
+            N_masses_batch_size=5,
+            event_batch_size=2,
+            seed=42,
+            use_float32=True,
+        )
+        # Force both to evaluate at the SAME mass-sample points, isolating the
+        # log_prob computation itself from self-sampling divergence.
+        object.__setattr__(
+            lik32, "_fixed_mass_samples", lik64._fixed_mass_samples.astype(jnp.float32)
+        )
+
+        masses_eos = jnp.linspace(1.0, 2.2, 100)
+        lambdas_eos = jnp.linspace(2000.0, 10.0, 100)
+        params = {"masses_EOS": masses_eos, "Lambdas_EOS": lambdas_eos}
+
+        result64 = lik64.evaluate(params)
+        result32 = lik32.evaluate(params)
+
+        assert jnp.isfinite(result64)
+        assert jnp.isfinite(result32)
+        assert jnp.allclose(result64, result32, atol=1e-3)
+
+    def test_use_float32_output_is_genuinely_float32(self, tmp_path):
+        """evaluate() must actually return a float32 array when use_float32=True,
+        not silently upcast (the specific failure mode this recipe avoids -- see
+        dev/float32_investigations/FINDINGS.md, Part 1)."""
+        model_dirs = [
+            _save_toy_flow(
+                tmp_path / "event_0",
+                seed=0,
+                transformer_type="rational_quadratic_spline",
+            )
+        ]
+        likelihood = StackedGWLikelihood(
+            event_names=["event_0"],
+            model_dirs=[str(model_dirs[0])],
+            N_masses_evaluation=10,
+            use_float32=True,
+        )
+        masses_eos = jnp.linspace(1.0, 2.2, 100)
+        lambdas_eos = jnp.linspace(2000.0, 10.0, 100)
+        params = {"masses_EOS": masses_eos, "Lambdas_EOS": lambdas_eos}
+
+        result = likelihood.evaluate(params)
+        assert result.dtype == jnp.float32
+
+    def test_use_float32_survives_outer_jit_vmap(self, tmp_path):
+        """evaluate() must work when embedded in an outer jax.jit(jax.vmap(...)),
+        matching how the real SMC sampler always wraps the whole log-posterior
+        (jesterTOV.inference.samplers.blackjax.base._create_loglikelihood_fn_from_dict).
+        This specific placement is load-bearing: wrapping disable_x64() around
+        only the innermost flow.log_prob call (rather than the whole per-event
+        mass-sample map, as evaluate() does) breaks under a real outer vmap --
+        this regression is exactly what dev/float32_investigations/FINDINGS.md
+        Part 5 found and fixed.
+        """
+        model_dirs = [
+            _save_toy_flow(
+                tmp_path / "event_0",
+                seed=0,
+                transformer_type="rational_quadratic_spline",
+            )
+        ]
+        likelihood = StackedGWLikelihood(
+            event_names=["event_0"],
+            model_dirs=[str(model_dirs[0])],
+            N_masses_evaluation=10,
+            use_float32=True,
+        )
+        n_particles = 3
+        masses_eos = jnp.tile(jnp.linspace(1.0, 2.2, 100)[None], (n_particles, 1))
+        lambdas_eos = jnp.tile(jnp.linspace(2000.0, 10.0, 100)[None], (n_particles, 1))
+
+        def evaluate_one(masses, lambdas):
+            return likelihood.evaluate({"masses_EOS": masses, "Lambdas_EOS": lambdas})
+
+        result = jax.jit(jax.vmap(evaluate_one))(masses_eos, lambdas_eos)
+        assert result.shape == (n_particles,)
+        assert jnp.all(jnp.isfinite(result))
+        assert result.dtype == jnp.float32
+
+    def test_use_float32_unsupported_architecture_raises_clear_error(self, tmp_path):
+        """use_float32=True for an unvalidated architecture (the default
+        affine transformer here) must raise a clear error, not silently
+        attempt an unverified recipe."""
+        model_dirs = [_save_toy_flow(tmp_path / "event_0", seed=0)]  # default: affine
+        with pytest.raises(ValueError, match="transformer_type"):
+            StackedGWLikelihood(
+                event_names=["event_0"],
+                model_dirs=[str(model_dirs[0])],
+                N_masses_evaluation=10,
+                use_float32=True,
             )
 
     def test_penalty_applied_beyond_mtov(self, tmp_path):

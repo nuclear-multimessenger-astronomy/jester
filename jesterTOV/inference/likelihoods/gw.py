@@ -7,7 +7,7 @@ from jaxtyping import Array, Float
 from jax.scipy.special import logsumexp
 
 from jesterTOV.inference.base.likelihood import LikelihoodBase
-from jesterTOV.inference.flows.flow import Flow
+from jesterTOV.inference.flows.flow import Flow, disable_x64
 from jesterTOV.logging_config import get_logger
 
 logger = get_logger("jester")
@@ -447,13 +447,19 @@ class StackedGWLikelihood(LikelihoodBase):
         Random seed for mass pre-sampling, same seed used for every event (matches
         ``GWLikelihood``'s default behaviour; events still get distinct samples
         because their flows differ).
+    use_float32 : bool, optional
+        Evaluate the flows in float32 instead of the default float64 (default:
+        False). Training is unaffected either way: this only changes how the already
+        trained flow is loaded and evaluated.
 
     Raises
     ------
     ValueError
         If any two events' flows have a different architecture (flow type, layer
         widths/depths, dimensionality, or standardization method), since their
-        weight pytrees then cannot be stacked into one array.
+        weight pytrees then cannot be stacked into one array. Also raised if
+        ``use_float32=True`` is requested for an architecture that hasn't been
+        validated for float32 evaluation.
 
     Examples
     --------
@@ -471,6 +477,7 @@ class StackedGWLikelihood(LikelihoodBase):
               N_masses_batch_size: 1     # Default value
               event_batch_size: 1        # Default value
               seed: 42
+              use_float32: false         # Default value
     """
 
     event_names: list[str]
@@ -480,6 +487,7 @@ class StackedGWLikelihood(LikelihoodBase):
     event_batch_size: int
     seed: int
     standardization_method: str
+    use_float32: bool
 
     def __init__(
         self,
@@ -490,6 +498,7 @@ class StackedGWLikelihood(LikelihoodBase):
         N_masses_batch_size: int = 1,
         event_batch_size: int | None = 1,
         seed: int = 42,
+        use_float32: bool = False,
     ) -> None:
         super().__init__()
         if len(event_names) != len(model_dirs):
@@ -504,12 +513,15 @@ class StackedGWLikelihood(LikelihoodBase):
         self.N_masses_batch_size = N_masses_batch_size
         self.event_batch_size = event_batch_size or len(event_names)
         self.seed = seed
+        self.use_float32 = use_float32
 
         logger.info(
             f"Loading NF models for {len(event_names)} GW events "
-            f"(stacked/batched evaluation, event_batch_size={self.event_batch_size})"
+            f"(stacked/batched evaluation, event_batch_size={self.event_batch_size}, "
+            f"use_float32={self.use_float32})"
         )
-        flows = [Flow.from_directory(d) for d in model_dirs]
+        _dtype = "float32" if use_float32 else "float64"
+        flows = [Flow.from_directory(d, dtype=_dtype) for d in model_dirs]
 
         # Fail fast with a clear message if architectures don't match, rather than
         # a confusing jax.tree_util error from jnp.stack deep inside __init__.
@@ -563,9 +575,19 @@ class StackedGWLikelihood(LikelihoodBase):
             samples = std_samples * scale + loc
             return samples[:, :2]  # (m1, m2) only
 
-        self._fixed_mass_samples: Float[Array, "n_events n_samples 2"] = jax.vmap(
-            sample_one_event
-        )(self._stacked_dynamic, self._loc, self._scale)
+        # For float32, this pre-sampling must run inside the same disable_x64()
+        # scope as the flow construction above. Doing only the weight-loading
+        # under disable_x64() but not this vmap silently raises to float64
+        vmapped_sample = jax.vmap(sample_one_event)
+        sample_args = (self._stacked_dynamic, self._loc, self._scale)
+        if self.use_float32:
+            with disable_x64():
+                fixed_mass_samples = vmapped_sample(*sample_args)
+        else:
+            fixed_mass_samples = vmapped_sample(*sample_args)
+        self._fixed_mass_samples: Float[Array, "n_events n_samples 2"] = (
+            fixed_mass_samples
+        )
 
         logger.info(f"Pre-sampled and stacked flows for {len(event_names)} GW events")
 
@@ -619,9 +641,21 @@ class StackedGWLikelihood(LikelihoodBase):
                 penalty_m2 = jnp.where(m2 > mtov, self.penalty_value, 0.0)
                 return logpdf + penalty_m1 + penalty_m2
 
-            all_logprobs = jax.lax.map(
-                process_sample, mass_samples, batch_size=self.N_masses_batch_size
-            )
+            # For float32, disable_x64() must wrap the ENTIRE per-event mass-sample
+            # map, not just the innermost flow.log_prob call. Wrapping only the
+            # innermost call breaks once this is embedded under the sampler's own
+            # outer vmap over particles (which every SMC production run has).
+            if self.use_float32:
+                with disable_x64():
+                    all_logprobs = jax.lax.map(
+                        process_sample,
+                        mass_samples,
+                        batch_size=self.N_masses_batch_size,
+                    )
+            else:
+                all_logprobs = jax.lax.map(
+                    process_sample, mass_samples, batch_size=self.N_masses_batch_size
+                )
             return logsumexp(all_logprobs) - jnp.log(n_masses_evaluation)
 
         per_event_loglike = jax.lax.map(

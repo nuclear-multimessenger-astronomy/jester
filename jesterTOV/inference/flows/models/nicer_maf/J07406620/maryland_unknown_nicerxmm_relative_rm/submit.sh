@@ -6,13 +6,13 @@
 #SBATCH --gpus-per-node=1
 #SBATCH --cpus-per-gpu=1
 #SBATCH --mem-per-gpu=10G
-#SBATCH --output="../../../../../logs/%x.out"
+#SBATCH --output="training_log.out"
 #SBATCH --job-name="maryland_unknown_nicerxmm_relative_rm"
 
 now=$(date)
 echo "$now"
 echo "Training flow for: maryland_unknown_nicerxmm_relative_rm"
-source /home/twouters2/projects/jester_review/jester/.venv/bin/activate
+source /home/twouters2/projects/43_eos_bayesian_updates/new_flowjax_jester/.venv/bin/activate
 nvidia-smi --query-gpu=name --format=csv,noheader
 train_jester_flow "./config.yaml"
 echo "DONE"
