@@ -255,6 +255,7 @@ def create_combined_likelihood(
                     N_masses_batch_size=config.N_masses_batch_size,
                     event_batch_size=config.event_batch_size,
                     seed=config.seed,
+                    use_float32=config.use_float32,
                 )
                 likelihoods.append(gw_likelihood)
 

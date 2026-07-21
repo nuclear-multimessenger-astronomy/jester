@@ -89,7 +89,7 @@ def _tov_ode_iter(h, y, eos):
     safe_dpdr = jnp.where(
         jnp.abs(dpdr) < EPS, jnp.copysign(EPS, dpdr), dpdr  # Preserve sign
     )
-    drdh = (e + p) / safe_dpdr  # Numerically stable division
+    drdh = (e + p) / safe_dpdr  # type: ignore[operator]  # Numerically stable division
 
     # Remaining equations with regularized denominators
     dmdh = (
@@ -188,7 +188,7 @@ def _tov_ode_iter_tidal(h, y, eos):
 
     # Safe division for drdh
     safe_dpdr = jnp.where(jnp.abs(dpdr) < EPS, jnp.copysign(EPS, dpdr), dpdr)
-    drdh = (e + p) / safe_dpdr
+    drdh = (e + p) / safe_dpdr  # type: ignore[operator]
 
     # Remaining derivatives
     dmdh = (four_pi_Aphi4 * r2 * e + 0.5 * r * (r - 2.0 * m) * jnp.power(psi, 2)) * drdh

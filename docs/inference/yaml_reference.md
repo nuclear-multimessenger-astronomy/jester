@@ -266,6 +266,7 @@ Constrain the EOS using gravitational wave observations of binary neutron star m
   N_masses_batch_size: 1        # Batch size for processing (optional, default: 1)
   event_batch_size: 1           # Batch size for processing events (optional, default: 1)
   seed: 42                      # Random seed for mass sampling (optional, default: 42)
+  use_float32: false            # Evaluate flows in float32 instead of float64 (optional, default: false)
 ```
 
 **Field Details:**
@@ -279,6 +280,7 @@ Constrain the EOS using gravitational wave observations of binary neutron star m
 - **`N_masses_batch_size`** (`int`, default: `1`) - Batch size for jax.lax.map processing of the mass grid. The default (a plain scan) keeps memory flat as `N_masses_evaluation` and the number of combined GW events grow, which matters most once the likelihood sits inside an outer `vmap` over SMC/FlowMC particles. Raise it only for faster standalone (non-vmapped) evaluations. See {class}`~jesterTOV.inference.likelihoods.gw.GWLikelihood` for the full tradeoff.
 - **`event_batch_size`** (`int`, default: `1`) - Batch size for `jax.lax.map` processing of GW events. All events in this likelihood's `events` list are evaluated as one stacked/batched computation ({class}`~jesterTOV.inference.likelihoods.gw.StackedGWLikelihood`), not one likelihood per event. The default (a plain scan over events) keeps memory flat as the number of combined events grows, for the same reason `N_masses_batch_size` defaults to `1`. Raise it only for faster standalone (non-vmapped) evaluations. Requires every event to use a flow with the same architecture; see {class}`~jesterTOV.inference.likelihoods.gw.StackedGWLikelihood` for what happens otherwise.
 - **`seed`** (`int`, default: `42`) - Random seed for mass pre-sampling from GW posterior
+- **`use_float32`** (`bool`, default: `false`) - Evaluate the flows in float32 instead of the default float64. For now, this is only verified for flows using `flow_type="masked_autoregressive_flow"` with `transformer_type="rational_quadratic_spline"` - other architectures need verification and are not supported yet. Training is unaffected either way; this only changes how an already-trained flow is loaded and evaluated.
 
 **Description:**
 
