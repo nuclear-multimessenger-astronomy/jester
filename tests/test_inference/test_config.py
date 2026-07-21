@@ -788,6 +788,18 @@ class TestGWEventConfig:
         assert config.events[0].name == "GW170817"
         assert config.events[1].nf_model_dir == "./my_flow"
 
+    def test_gw_likelihood_use_float32_defaults_false(self):
+        """use_float32 defaults to False -- float64 remains the safe default."""
+        events = [schema.GWEventConfig(name="GW170817")]
+        config = schema.GWLikelihoodConfig(events=events)
+        assert config.use_float32 is False
+
+    def test_gw_likelihood_use_float32_can_be_enabled(self):
+        """use_float32 can be explicitly set to True."""
+        events = [schema.GWEventConfig(name="GW170817")]
+        config = schema.GWLikelihoodConfig(events=events, use_float32=True)
+        assert config.use_float32 is True
+
     def test_gw_likelihood_config_from_dict_with_nf_model_dir(self):
         """GWLikelihoodConfig constructed from YAML-style dict with nf_model_dir."""
         config = schema.GWLikelihoodConfig(

@@ -9,7 +9,7 @@
   ],
   "filepath": "../../../../../data/gw170817/gw170817_gwtc1_lowspin_posterior.npz",
   "flow_type": "masked_autoregressive_flow",
-  "num_epochs": 2929,
+  "num_epochs": 1974,
   "learning_rate": 0.0001,
   "max_patience": 500,
   "val_prop": 0.2,

@@ -44,7 +44,7 @@ Evaluate log-probability of data points:
 
 import json
 import os
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Literal, Tuple
 
 import equinox as eqx
 import jax
@@ -60,6 +60,47 @@ from flowjax.bijections import (
     RationalQuadraticSpline,
     Affine,
 )
+
+try:
+    # jax <= 0.9: context manager for locally overriding jax_enable_x64.
+    from jax.experimental import disable_x64
+except ImportError:
+    # jax >= 0.11: disable_x64 was removed from jax.experimental; the
+    # replacement is calling jax.enable_x64 itself as a context manager
+    from contextlib import contextmanager
+
+    @contextmanager
+    def disable_x64():
+        with jax.enable_x64(False):
+            yield
+
+
+# Flow architectures for which the float32 evaluation recipe has actually been
+# validated. Requesting dtype="float32" for any other combination raises a clear
+# error rather than silently attempting an unverified architecture
+_FLOAT32_SUPPORTED_FLOW_TYPES = {"masked_autoregressive_flow"}
+_FLOAT32_SUPPORTED_TRANSFORMER_TYPES = {"rational_quadratic_spline"}
+
+
+def _validate_float32_architecture(flow_kwargs: Dict[str, Any]) -> None:
+    """Raise a clear error if dtype="float32" is requested for an
+    architecture the recipe hasn't been validated against."""
+    flow_type = flow_kwargs.get("flow_type")
+    transformer_type = flow_kwargs.get("transformer_type")
+    if flow_type not in _FLOAT32_SUPPORTED_FLOW_TYPES:
+        raise ValueError(
+            f"dtype='float32' was requested, but flow_type={flow_type!r} has not "
+            f"been validated for float32 evaluation. Supported: "
+            f"{sorted(_FLOAT32_SUPPORTED_FLOW_TYPES)}. See "
+            "dev/float32_investigations/FINDINGS.md for what has and hasn't been tested."
+        )
+    if transformer_type not in _FLOAT32_SUPPORTED_TRANSFORMER_TYPES:
+        raise ValueError(
+            f"dtype='float32' was requested, but transformer_type={transformer_type!r} "
+            f"has not been validated for float32 evaluation. Supported: "
+            f"{sorted(_FLOAT32_SUPPORTED_TRANSFORMER_TYPES)}. See "
+            "dev/float32_investigations/FINDINGS.md for what has and hasn't been tested."
+        )
 
 
 class Flow:
@@ -94,6 +135,7 @@ class Flow:
         flow: AbstractDistribution,
         metadata: Dict[str, Any],
         flow_kwargs: Dict[str, Any],
+        dtype: Literal["float32", "float64"] = "float64",
     ):
         """
         Initialize Flow wrapper.
@@ -102,11 +144,18 @@ class Flow:
             flow: Trained flowjax flow model
             metadata: Training metadata
             flow_kwargs: Flow architecture kwargs
+            dtype: Precision the (de)standardization arrays are stored at.
+                "float64" (default) preserves existing behaviour exactly. Only
+                set "float32" for a `flow` that was itself already built
+                float32-native (see `load_model`'s dtype argument) -- this
+                does not, on its own, cast an existing float64 flow.
         """
         self.flow = flow
         self.metadata = metadata
         self.flow_kwargs = flow_kwargs
+        self.dtype = dtype
         self.standardize = metadata.get("standardize", False)
+        _dtype = jnp.float32 if dtype == "float32" else jnp.float64
 
         # Detect standardization method from metadata
         has_mean_std = "data_mean" in metadata and "data_std" in metadata
@@ -116,15 +165,15 @@ class Flow:
             if has_mean_std:
                 # Z-score standardization (new default)
                 self.standardization_method = "zscore"
-                self.data_mean = jnp.array(metadata["data_mean"])
-                self.data_std = jnp.array(metadata["data_std"])
+                self.data_mean = jnp.array(metadata["data_mean"], dtype=_dtype)
+                self.data_std = jnp.array(metadata["data_std"], dtype=_dtype)
                 # Avoid division by zero
                 self.data_std = jnp.where(self.data_std == 0, 1.0, self.data_std)
             elif has_bounds:
                 # Min-max standardization (legacy)
                 self.standardization_method = "minmax"
-                self.data_min = jnp.array(metadata["data_bounds_min"])
-                self.data_max = jnp.array(metadata["data_bounds_max"])
+                self.data_min = jnp.array(metadata["data_bounds_min"], dtype=_dtype)
+                self.data_max = jnp.array(metadata["data_bounds_max"], dtype=_dtype)
                 self.data_range = self.data_max - self.data_min
                 # Avoid division by zero
                 self.data_range = jnp.where(self.data_range == 0, 1.0, self.data_range)
@@ -139,33 +188,42 @@ class Flow:
             n_features = self.flow.shape[0]
             self.standardization_method = "none"
             # For identity: use minmax with min=0, range=1
-            self.data_min = jnp.zeros(n_features)
-            self.data_max = jnp.ones(n_features)
-            self.data_range = jnp.ones(n_features)
+            self.data_min = jnp.zeros(n_features, dtype=_dtype)
+            self.data_max = jnp.ones(n_features, dtype=_dtype)
+            self.data_range = jnp.ones(n_features, dtype=_dtype)
 
     @classmethod
-    def from_directory(cls, output_dir: str) -> "Flow":
+    def from_directory(
+        cls, output_dir: str, dtype: Literal["float32", "float64"] = "float64"
+    ) -> "Flow":
         """
         Load a trained flow from a directory.
 
         Args:
             output_dir: Directory containing flow_weights.eqx, flow_kwargs.json, metadata.json
+            dtype: "float64" (default) loads the flow exactly as before. "float32"
+                builds the flow architecture natively under
+                `jax.experimental.disable_x64()` and deserializes the saved
+                (float64-trained) weights into that template.
+                Training is unaffected either way: the same saved weights file
+                works for both dtypes.
 
         Returns:
             Flow instance with loaded model and metadata
 
         Example:
             >>> flow = Flow.from_directory("./models/gw170817/")
+            >>> flow32 = Flow.from_directory("./models/gw170817/", dtype="float32")
         """
         # Load the flow model and metadata
-        flow_model, metadata = load_model(output_dir)
+        flow_model, metadata = load_model(output_dir, dtype=dtype)
 
         # Load kwargs
         kwargs_path = os.path.join(output_dir, "flow_kwargs.json")
         with open(kwargs_path, "r") as f:
             flow_kwargs = json.load(f)
 
-        return cls(flow_model, metadata, flow_kwargs)
+        return cls(flow_model, metadata, flow_kwargs, dtype=dtype)
 
     def sample(self, key: Array, shape: Tuple[int, ...]) -> Array:
         """
@@ -409,12 +467,18 @@ def create_flow(
     return flow
 
 
-def load_model(output_dir: str) -> Tuple[Any, Dict[str, Any]]:
+def load_model(
+    output_dir: str, dtype: Literal["float32", "float64"] = "float64"
+) -> Tuple[Any, Dict[str, Any]]:
     """
     Load a trained flow model from saved files.
 
     Args:
         output_dir: Directory containing saved model files
+        dtype: "float64" (default) builds the architecture and deserializes
+            weights at the ambient precision, exactly as before. "float32"
+            builds the untrained architecture inside
+            `jax.experimental.disable_x64()`.
 
     Returns:
         flow: Loaded flow model
@@ -422,6 +486,7 @@ def load_model(output_dir: str) -> Tuple[Any, Dict[str, Any]]:
 
     Example:
         >>> flow, metadata = load_model("./models/gw170817/")
+        >>> flow32, metadata = load_model("./models/gw170817/", dtype="float32")
     """
     # Load metadata first to infer dimensionality
     metadata_path = os.path.join(output_dir, "metadata.json")
@@ -433,6 +498,9 @@ def load_model(output_dir: str) -> Tuple[Any, Dict[str, Any]]:
     with open(kwargs_path, "r") as f:
         flow_kwargs = json.load(f)
 
+    if dtype == "float32":
+        _validate_float32_architecture(flow_kwargs)
+
     # Infer dimensionality from metadata
     # Try data_mean first (new format), then data_bounds_min (legacy)
     if "data_mean" in metadata:
@@ -443,25 +511,29 @@ def load_model(output_dir: str) -> Tuple[Any, Dict[str, Any]]:
         # Default to 4 for backward compatibility with old models without standardization
         dim = 4
 
-    # Recreate flow architecture
-    key = jax.random.key(flow_kwargs["seed"])
-    flow = create_flow(
-        key=key,
-        dim=dim,
-        flow_type=flow_kwargs["flow_type"],
-        nn_depth=flow_kwargs["nn_depth"],
-        nn_block_dim=flow_kwargs["nn_block_dim"],
-        nn_width=flow_kwargs["nn_width"],
-        flow_layers=flow_kwargs["flow_layers"],
-        invert=flow_kwargs["invert"],
-        cond_dim=flow_kwargs["cond_dim"],
-        transformer_type=flow_kwargs.get("transformer_type", "affine"),
-        transformer_knots=flow_kwargs.get("transformer_knots", 8),
-        transformer_interval=flow_kwargs.get("transformer_interval", 4.0),
-    )
+    def _build_and_deserialize():
+        key = jax.random.key(flow_kwargs["seed"])
+        flow = create_flow(
+            key=key,
+            dim=dim,
+            flow_type=flow_kwargs["flow_type"],
+            nn_depth=flow_kwargs["nn_depth"],
+            nn_block_dim=flow_kwargs["nn_block_dim"],
+            nn_width=flow_kwargs["nn_width"],
+            flow_layers=flow_kwargs["flow_layers"],
+            invert=flow_kwargs["invert"],
+            cond_dim=flow_kwargs["cond_dim"],
+            transformer_type=flow_kwargs.get("transformer_type", "affine"),
+            transformer_knots=flow_kwargs.get("transformer_knots", 8),
+            transformer_interval=flow_kwargs.get("transformer_interval", 4.0),
+        )
+        weights_path = os.path.join(output_dir, "flow_weights.eqx")
+        return eqx.tree_deserialise_leaves(weights_path, flow)
 
-    # Load weights
-    weights_path = os.path.join(output_dir, "flow_weights.eqx")
-    flow = eqx.tree_deserialise_leaves(weights_path, flow)
+    if dtype == "float32":
+        with disable_x64():
+            flow = _build_and_deserialize()
+    else:
+        flow = _build_and_deserialize()
 
     return flow, metadata

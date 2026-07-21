@@ -273,6 +273,20 @@ class GWLikelihoodConfig(BaseLikelihoodConfig):
         description="Random seed for reproducible mass sampling from GW posterior",
     )
 
+    use_float32: bool = Field(
+        default=False,
+        description=(
+            "Evaluate the flows in float32 instead of the default float64. Gives "
+            "a real, measured 1.9x-2.8x speedup at production scale (see "
+            "dev/float32_investigations/FINDINGS.md, Parts 3 and 5), but only for "
+            "flows using flow_type='masked_autoregressive_flow' with "
+            "transformer_type='rational_quadratic_spline' -- other architectures "
+            "raise a clear error at construction. Training is unaffected either "
+            "way; this only changes how an already-trained flow is loaded and "
+            "evaluated."
+        ),
+    )
+
 
 class GWResampledLikelihoodConfig(BaseLikelihoodConfig):
     """Gravitational wave likelihood configuration (legacy resampled version).

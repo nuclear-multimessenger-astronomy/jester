@@ -7,7 +7,7 @@
   ],
   "filepath": "../../../../../data/NICER/J04374715_maryland_3spotGPL_NICER_only_RM.npz",
   "flow_type": "masked_autoregressive_flow",
-  "num_epochs": 568,
+  "num_epochs": 537,
   "learning_rate": 0.0001,
   "max_patience": 200,
   "val_prop": 0.2,

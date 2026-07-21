@@ -7,7 +7,7 @@
   ],
   "filepath": "../../../../../data/NICER/J04374715_amsterdam_CST_PDT_NICER_only_Choudhury2024.npz",
   "flow_type": "masked_autoregressive_flow",
-  "num_epochs": 1111,
+  "num_epochs": 652,
   "learning_rate": 0.0001,
   "max_patience": 500,
   "val_prop": 0.2,

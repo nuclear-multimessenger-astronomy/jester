@@ -9,7 +9,7 @@
   ],
   "filepath": "../../../../../data/gw190425/gw190425_gwtc2p1_mixed_nocosmo_imrphenompv2_nrtidal_lowspin_posterior.npz",
   "flow_type": "masked_autoregressive_flow",
-  "num_epochs": 1869,
+  "num_epochs": 1533,
   "learning_rate": 0.0001,
   "max_patience": 500,
   "val_prop": 0.2,
