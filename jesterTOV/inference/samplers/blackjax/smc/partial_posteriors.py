@@ -20,21 +20,33 @@ is implemented as a new class in a new module so that the existing
 completely untouched; the RW kernel setup and flatten/unflatten utilities
 are reused via subclassing :class:`BlackJAXSMCRandomWalkSampler`.
 
-Correctness note (see the "path of partial posteriors" section of this
-module for detail, and ``eos_bayesian_updates/scripts/ibis_sanity_check.py``
-for the empirical validation): turning an event's mask on in a single SMC
-step is measurably biased for informative events. The underlying
-``blackjax.smc.base.step`` reweights *after* the MCMC rejuvenation move,
-which is only a good approximation for small target-to-target jumps (true
-for the existing sampler's adaptive :math:`\lambda` bisection, false for a
-whole-event jump). Each event is therefore ramped in over several small
-fractional mask increments, matching the source paper's own suggestion of
-"a geometric path between successive partial posteriors"
-(``papers/2007.11936/smcsamplers.tex:409-411``), using an ESS-targeting
+Correctness note (see ``_build_jitted_substep_fn``'s docstring below for
+the full derivation, and ``dev/biased_evidence/biased_evidence.tex`` in the
+parent development workspace for the toy-model measurements): a naive port
+of ``blackjax.smc.partial_posteriors_path.build_kernel`` -- move the
+particles with an MCMC kernel targeting the *new* mask, then reweight the
+post-move particles by the new/old ratio -- is only a good approximation
+of the incremental log-evidence for small target-to-target jumps, and is
+measurably biased for a whole-event jump. ``_build_jitted_substep_fn``
+instead builds the MCMC move to target the *old* mask (the one the
+incoming weights already represent) -- the "resample-move" construction of
+Gilks & Berzuini (2001), also used (via a different code path) by
+blackjax's own ``smc.tempered.build_kernel`` and by Chopin's reference
+``particles`` package's ``IBIS``/``Tempering`` classes -- which makes the
+per-substep log-evidence increment exact at *any* mask-jump size, not just
+asymptotically as the jump shrinks.
+
+Each event is nonetheless still ramped in over several small fractional
+mask increments (matching the source paper's own suggestion of "a
+geometric path between successive partial posteriors",
+``papers/2007.11936/smcsamplers.tex:409-411``), using an ESS-targeting
 bisection search (``blackjax.smc.ess.ess_solver`` /
 ``blackjax.smc.solver.dichotomy``) -- the same machinery the base
 sampler's adaptive :math:`\lambda` schedule uses -- applied to the mask
-fraction instead of :math:`\lambda`. This works unmodified because the
+fraction instead of :math:`\lambda`. This is now purely an MCMC-mixing /
+proposal-adaptation concern (a single enormous jump would still leave the
+random-walk proposal poorly scaled for the new target), not a correctness
+requirement for the evidence. It works unmodified because the
 mask-weighted logposterior is linear in the fraction of the single event
 currently being ramped in (all other terms cancel in the successive-target
 log-weight difference), exactly the structure ``ess_solver`` assumes. The
@@ -203,6 +215,30 @@ def _build_jitted_substep_fn(
     sampling run (every sub-step of every event) reuses one compiled
     executable, since none of the array shapes/dtypes involved change
     across sub-steps.
+
+    Correctness: the MCMC move is deliberately built to target
+    ``previous_logposterior_fn`` (the *old*, pre-substep mask), not
+    ``logposterior_fn`` (the new one) -- the opposite of what looks like
+    the "obvious" choice. This is the resample-move construction of Gilks
+    & Berzuini (2001) that Chopin's own reference SMC implementation
+    (``particles``, see ``smc_samplers.py``'s ``IBIS``/``Tempering``
+    classes -- and, by the same accidental construction, blackjax's own
+    ``smc.tempered.build_kernel``, which builds its tempered log-posterior
+    from ``state.tempering_param``, the pre-increment value) uses for
+    exactly this reason: a move that leaves the *old* target invariant
+    cannot change the particles' marginal distribution at all, however
+    large the proposal step, so reweighting the post-move particles by the
+    plain incremental ratio ``logposterior_fn(x) - previous_logposterior_fn(x)``
+    is an exact, unbiased estimate of the incremental log-evidence with no
+    reversal-kernel or small-step assumption anywhere. Building the move
+    around ``logposterior_fn`` (the new mask) instead -- what an earlier
+    version of this function did, and what
+    ``blackjax.smc.partial_posteriors_path.build_kernel`` still does -- is
+    the AIS-style construction, which only recovers exactness in the
+    small-jump limit and is measurably biased for a whole-event jump; see
+    ``dev/biased_evidence/biased_evidence.tex`` (Sections 2 and 5) in the
+    parent development workspace for the full derivation and the toy-model
+    measurements of both regimes.
     """
     delegate = smc_from_mcmc_build_kernel(mcmc_step_fn, mcmc_init_fn, systematic)
 
@@ -218,8 +254,18 @@ def _build_jitted_substep_fn(
         def log_weights_fn(x: Array) -> Array:
             return logposterior_fn(x) - previous_logposterior_fn(x)
 
+        # Move targets the OLD mask's posterior (resample-move exactness,
+        # see docstring above) -- only the move's target changed relative
+        # to a naive port of partial_posteriors_path.build_kernel; the
+        # weighting function, resample scheme and SMCInfo bookkeeping are
+        # untouched.
         new_state, info = delegate(
-            key, state, num_mcmc_steps, mcmc_parameters, logposterior_fn, log_weights_fn
+            key,
+            state,
+            num_mcmc_steps,
+            mcmc_parameters,
+            previous_logposterior_fn,
+            log_weights_fn,
         )
         return (
             PartialPosteriorsSMCState(
