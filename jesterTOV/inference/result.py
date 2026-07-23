@@ -285,6 +285,7 @@ class InferenceResult:
                 "ess_history": np.array(smc_metadata["ess_history"]),
                 "acceptance_history": np.array(smc_metadata["acceptance_history"]),
                 "log_evidence_history": np.array(smc_metadata["log_evidence_history"]),
+                "n_substeps_history": np.array(smc_metadata["n_substeps_history"]),
             }
 
         elif sampler_type == "blackjax_ns_aw":

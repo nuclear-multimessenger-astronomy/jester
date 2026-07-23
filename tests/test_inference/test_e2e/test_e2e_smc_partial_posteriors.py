@@ -103,6 +103,21 @@ class TestSMCPartialPosteriorsE2E:
         assert sampler_metadata["n_events"] == 2
         assert len(sampler_metadata["ess_history"]) == 2
         assert len(sampler_metadata["acceptance_history"]) == 2
+        assert len(sampler_metadata["n_substeps_history"]) == 2
+        assert all(n >= 1 for n in sampler_metadata["n_substeps_history"])
+
+        # n_substeps_history must survive the HDF5 round-trip (histories/
+        # group), not just live in the in-memory sampler metadata.
+        result = InferenceResult.from_sampler(
+            sampler=sampler, config=config, runtime=0.0, fixed_params=_fixed_params
+        )
+        result_path = e2e_temp_dir / "result.h5"
+        result.save(result_path)
+        loaded = InferenceResult.load(result_path)
+        assert loaded.histories is not None
+        assert list(loaded.histories["n_substeps_history"]) == list(
+            sampler_metadata["n_substeps_history"]
+        )
 
     def test_partial_posteriors_cadence_groups_events(
         self, smc_partial_posteriors_gw_config, e2e_temp_dir
