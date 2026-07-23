@@ -96,7 +96,7 @@ from jesterTOV.inference.samplers.blackjax.smc.random_walk import (
 )
 from jesterTOV.logging_config import get_logger
 
-from blackjax.smc.ess import ess_solver
+from blackjax.smc.ess import ess_solver, log_ess
 from blackjax.smc.resampling import systematic
 from blackjax.smc.solver import dichotomy
 from blackjax.smc.from_mcmc import build_kernel as smc_from_mcmc_build_kernel
@@ -542,6 +542,9 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             "event_order": event_order_so_far,
             "n_events": len(event_order_so_far),
             "cadence": config.cadence,
+            "auto_ess_threshold": (
+                config.resolved_auto_ess_threshold if config.is_auto_cadence else 0.0
+            ),
             "event_groups": event_groups_names_so_far,
             "warm_start_from": config.warm_start_from or "",
             "n_events_replayed": n_prev_events,
@@ -712,7 +715,16 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         n_new_events = len(new_event_indices)
 
         cadence = config.cadence
-        if isinstance(cadence, int):
+        if isinstance(cadence, str):
+            # Only reached if a caller invokes this fixed-schedule grouping
+            # directly with cadence="auto"/"automatic" -- sample() itself
+            # never does (it builds groups dynamically instead, see
+            # _next_auto_group).
+            raise ValueError(
+                f"_compute_event_groups does not support cadence={cadence!r}; "
+                "auto-cadence groups are built dynamically in sample()."
+            )
+        elif isinstance(cadence, int):
             group_sizes = [cadence] * (n_new_events // cadence)
             remainder = n_new_events - sum(group_sizes)
             if remainder > 0:
@@ -735,6 +747,60 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             groups.append(new_event_indices[cursor : cursor + size])
             cursor += size
         return groups
+
+    @staticmethod
+    def _predict_full_jump_ess(
+        particles: Array,
+        ordered_event_vals: Callable[[Array], Array],
+        group_indices: list[int],
+    ) -> float:
+        """Full-jump ESS of a candidate event group against the current
+        particle cloud, without running any annealing sub-steps or MCMC
+        moves -- a cheap, read-only diagnostic, never an accepted sampling
+        step (see ``dev/predictors/full_jump_ess_predictor.tex`` in the
+        parent development workspace for the full derivation).
+
+        If ``group_indices``' combined mask were jumped straight from 0 to
+        1, the resulting (unnormalized) importance weight for particle j is
+        ``exp(sum_i logl_i(particle_j))``, i.e. the current particles
+        reweighted by the candidate group's likelihood alone -- exactly the
+        quantity ``ess_solver``/``dichotomy`` evaluate as their first probe
+        (``fun(max_delta)``) at the start of every sub-step bisection, just
+        computed standalone here rather than as a side effect of actually
+        annealing. Because the current particles carry uniform weight
+        (true immediately after any resampling step, which happens after
+        every sub-step -- see ``partial_posteriors_smc.tex``), no
+        re-evaluation of previously-assimilated or not-yet-touched events'
+        likelihoods is needed: this is a plain importance-weighting
+        computation using only ``group_indices``' own log-likelihoods.
+
+        Parameters
+        ----------
+        particles : Array
+            Current flattened SMC particle cloud (``state.particles``),
+            assumed uniformly weighted.
+        ordered_event_vals : Callable[[Array], Array]
+            Per-particle function returning per-event log-likelihoods (one
+            entry per configured GW event, in ``self._event_order``/mask
+            order) -- the same closure the sub-step loop already builds and
+            vmaps over particles for each group's ``batched_group_loglik_fn``.
+        group_indices : list[int]
+            Indices into ``self._event_order`` of the candidate event(s)
+            (the pending auto-cadence queue).
+
+        Returns
+        -------
+        float
+            Normalized ESS in [0, 1] (fraction of ``n_particles``).
+        """
+        indices_arr = jnp.array(group_indices)
+
+        def group_loglik(x: Array) -> Array:
+            return jnp.sum(ordered_event_vals(x)[indices_arr])
+
+        log_weights = jax.vmap(group_loglik)(particles)
+        n_particles = log_weights.shape[0]
+        return float(jnp.exp(log_ess(log_weights)) / n_particles)
 
     def _check_always_on_likelihoods_match(
         self, path: str, prev_likelihoods: list[dict[str, Any]]
@@ -1095,9 +1161,20 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         # exactly.
         substep_diagnostics: dict[str, dict[str, list[float]]] = {}
 
-        event_groups = self._compute_event_groups(n_prev_events)
+        auto_cadence = config.is_auto_cadence
+        n_new_events = n_events - n_prev_events
+        # auto_ess_threshold is only read by _next_auto_group(), which is
+        # only ever called below when auto_cadence is True -- the 0.0
+        # placeholder in the non-auto branch is never consulted.
+        if auto_cadence:
+            event_groups: list[list[int]] | None = None
+            auto_ess_threshold: float = config.resolved_auto_ess_threshold
+            new_event_indices = list(range(n_prev_events, n_events))
+        else:
+            event_groups = self._compute_event_groups(n_prev_events)
+            auto_ess_threshold = 0.0
+            new_event_indices = []
         event_groups_names: list[list[str]] = []
-        n_groups = len(event_groups)
 
         logger.info("=" * 70)
         logger.info("STARTING DATA TEMPERING (PATH OF PARTIAL POSTERIORS)")
@@ -1105,11 +1182,20 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         logger.info(f"Kernel: {self._get_kernel_name().upper()}")
         logger.info(f"Particles: {n_particles}")
         logger.info(f"Events: {n_events} ({self._event_order})")
-        logger.info(
-            f"Cadence: {config.cadence} -> {n_groups} data-tempering "
-            f"step(s) over {n_events - n_prev_events} new event(s): "
-            f"{[[self._event_order[i] for i in g] for g in event_groups]}"
-        )
+        if auto_cadence:
+            logger.info(
+                f"Cadence: auto (full-jump ESS threshold={auto_ess_threshold}) "
+                f"-> data-tempering steps determined dynamically over "
+                f"{n_new_events} new event(s): "
+                f"{[self._event_order[i] for i in new_event_indices]}"
+            )
+        else:
+            assert event_groups is not None
+            logger.info(
+                f"Cadence: {config.cadence} -> {len(event_groups)} data-tempering "
+                f"step(s) over {n_new_events} new event(s): "
+                f"{[[self._event_order[i] for i in g] for g in event_groups]}"
+            )
         if n_prev_events > 0:
             logger.info(
                 f"Warm start: skipping {n_prev_events} already-covered "
@@ -1119,7 +1205,40 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         logger.info(f"MCMC steps per sub-step: {config.n_mcmc_steps}")
         logger.info("=" * 70)
 
-        for group_num, group in enumerate(event_groups):
+        def _next_auto_group(cursor: int) -> tuple[list[int], int]:
+            """Grow the pending queue of not-yet-assimilated events one at a
+            time, checking the full-jump ESS (see ``_predict_full_jump_ess``)
+            of the queue against the *current* particle cloud (``state``,
+            read from the enclosing scope -- reflects whatever the most
+            recently completed data-tempering step left it as) after each
+            addition. Returns as soon as that ESS drops below
+            ``auto_ess_threshold`` (an "update now" decision) or the last
+            configured event is reached (nothing left to defer to).
+            """
+            pending: list[int] = []
+            while cursor < len(new_event_indices):
+                pending.append(new_event_indices[cursor])
+                cursor += 1
+                ess_hat = self._predict_full_jump_ess(
+                    cast(Array, state.particles), ordered_event_vals, pending
+                )
+                if ess_hat < auto_ess_threshold:
+                    break
+            return pending, cursor
+
+        auto_cursor = 0
+        group_num = -1
+        while True:
+            group_num += 1
+            if auto_cadence:
+                group, auto_cursor = _next_auto_group(auto_cursor)
+                if len(group) == 0:
+                    break
+            else:
+                assert event_groups is not None
+                if group_num >= len(event_groups):
+                    break
+                group = event_groups[group_num]
             group_names = [self._event_order[i] for i in group]
             group_name = "+".join(group_names)
             event_groups_names.append(group_names)
@@ -1216,9 +1335,11 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             n_substeps_history.append(n_substeps_taken)
 
             elapsed_str = format_elapsed(time.time() - start_time)
-            bar = make_progress_bar((group_num + 1) / n_groups)
+            events_done = group[-1] + 1 - n_prev_events
+            progress_fraction = events_done / n_new_events if n_new_events > 0 else 1.0
+            bar = make_progress_bar(progress_fraction)
             logger.info(
-                f"Step {group_num + 1:3d}/{n_groups} [{group_name}] | "
+                f"Step {events_done:3d}/{n_new_events} [{group_name}] | "
                 f"ESS={ess_value * 100:5.1f}% | Accept={acceptance_rate * 100:5.1f}% | "
                 f"logZ={log_evidence:8.3f} | substeps={n_substeps_taken:3d} | "
                 f"t={elapsed_str} | {bar}"

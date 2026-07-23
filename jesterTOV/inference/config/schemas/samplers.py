@@ -1,7 +1,7 @@
 """Pydantic models for sampler configuration."""
 
 from typing import Literal, Union, Annotated
-from pydantic import Field, field_validator, ConfigDict, Discriminator
+from pydantic import Field, field_validator, model_validator, ConfigDict, Discriminator
 
 from ._base import JesterBaseModel
 
@@ -376,7 +376,7 @@ class SMCPartialPosteriorsRandomWalkSamplerConfig(BaseSamplerConfig):
         configured GW event is assimilated from scratch. ``None`` (default)
         starts from the prior, assimilating every configured event as in a
         single from-scratch run.
-    cadence : int | list[int]
+    cadence : int | list[int] | Literal["auto"]
         Controls how many *new* events (i.e. events not already covered by
         ``warm_start_from``) are turned on together per data-tempering
         step, instead of the default one-event-at-a-time. All events
@@ -394,6 +394,33 @@ class SMCPartialPosteriorsRandomWalkSamplerConfig(BaseSamplerConfig):
           list must sum to exactly the number of new events for this run;
           this is checked at sample time (once ``warm_start_from`` has been
           resolved), not at config-parse time.
+        - ``"auto"`` (or ``"automatic"``) builds each group dynamically
+          instead of using a fixed schedule: new events are added to a
+          pending queue one at a time, and after each addition a *full-jump*
+          ESS is computed from the queue's combined log-likelihood against
+          the *current* particle cloud, with no annealing and no MCMC move
+          (see ``_predict_full_jump_ess`` in
+          ``samplers/blackjax/smc/partial_posteriors.py`` -- this is exactly
+          the diagnostic ``ess_solver``/``dichotomy`` already evaluate as
+          their first probe at the start of any sub-step bisection, just run
+          standalone before committing to an update). While that ESS stays
+          at or above ``auto_ess_threshold``, the queued events are
+          quantitatively "not surprising" and are left queued rather than
+          triggering an update; once it drops below the threshold (or the
+          last configured event is reached), the whole queue is assimilated
+          together via the normal, unbiased sub-step bisection, exactly as
+          for a fixed-size group. Only reads ``auto_ess_threshold`` when set
+          to this value.
+    auto_ess_threshold : float | None
+        Full-jump ESS threshold (fraction of ``n_particles``, in (0, 1])
+        used only when ``cadence == "auto"``; ignored otherwise. Defaults to
+        ``None``, which falls back to ``inner.target_ess`` at sample time --
+        the same threshold the sub-step bisection itself targets, since the
+        auto-cadence check reuses that bisection's own first-probe
+        computation as a pre-check (see ``cadence``'s docstring). Setting
+        this explicitly is only accepted when ``cadence == "auto"``; setting
+        it with any other ``cadence`` raises a validation error, since it
+        would otherwise silently do nothing.
     inner : InnerSMCRandomWalkConfig
         Configuration of the adaptive SMC-RW loop used to ramp in each
         event group's mask fraction from 0 to 1 (particles, MCMC steps per
@@ -415,21 +442,62 @@ class SMCPartialPosteriorsRandomWalkSamplerConfig(BaseSamplerConfig):
     type: Literal["smc-partial-posteriors-rw"] = "smc-partial-posteriors-rw"
     event_order: list[str] | None = None
     warm_start_from: str | None = None
-    cadence: int | list[int] = 1
+    cadence: int | list[int] | Literal["auto", "automatic"] = 1
+    auto_ess_threshold: float | None = None
     inner: InnerSMCRandomWalkConfig = Field(default_factory=InnerSMCRandomWalkConfig)
     save_intermediate_results: bool = True
 
     @field_validator("cadence")
     @classmethod
-    def _validate_cadence(cls, v: int | list[int]) -> int | list[int]:
+    def _validate_cadence(
+        cls, v: int | list[int] | Literal["auto", "automatic"]
+    ) -> int | list[int] | Literal["auto", "automatic"]:
         if isinstance(v, list):
             if len(v) == 0:
                 raise ValueError("cadence list must not be empty")
             if any(n <= 0 for n in v):
                 raise ValueError(f"All cadence list entries must be positive, got: {v}")
-        elif v <= 0:
+        elif isinstance(v, int) and v <= 0:
             raise ValueError(f"cadence must be positive, got: {v}")
         return v
+
+    @field_validator("auto_ess_threshold")
+    @classmethod
+    def _validate_auto_ess_threshold(cls, v: float | None) -> float | None:
+        if v is not None and not (0.0 < v <= 1.0):
+            raise ValueError(f"auto_ess_threshold must be in (0, 1], got: {v}")
+        return v
+
+    @model_validator(mode="after")
+    def _check_auto_ess_threshold_requires_auto_cadence(self):
+        is_auto_cadence = isinstance(self.cadence, str) and self.cadence in (
+            "auto",
+            "automatic",
+        )
+        if self.auto_ess_threshold is not None and not is_auto_cadence:
+            raise ValueError(
+                "auto_ess_threshold is only meaningful when cadence is "
+                f'"auto"/"automatic" (got cadence={self.cadence!r}) -- it '
+                "would otherwise silently have no effect. Remove it or set "
+                'cadence to "auto".'
+            )
+        return self
+
+    @property
+    def is_auto_cadence(self) -> bool:
+        """Whether ``cadence`` requests dynamic, ESS-triggered grouping."""
+        return isinstance(self.cadence, str) and self.cadence in ("auto", "automatic")
+
+    @property
+    def resolved_auto_ess_threshold(self) -> float:
+        """The full-jump ESS threshold to use in auto-cadence mode.
+
+        Falls back to ``inner.target_ess`` when ``auto_ess_threshold`` isn't
+        explicitly set (see the class docstring).
+        """
+        if self.auto_ess_threshold is not None:
+            return self.auto_ess_threshold
+        return self.inner.target_ess
 
     def __getattr__(self, name: str):
         """Delegate any :class:`SMCRandomWalkParamsMixin` field (``n_particles``,

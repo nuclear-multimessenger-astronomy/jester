@@ -147,6 +147,77 @@ class TestSMCPartialPosteriorsE2E:
             plot_outdir / "substep_diagnostics" / "00_GW170817+GW190425.png"
         ).exists()
 
+    def test_partial_posteriors_auto_cadence_low_threshold_merges_events(
+        self, smc_partial_posteriors_gw_config, e2e_temp_dir
+    ):
+        """cadence="auto" with a threshold vanishingly close to 0 can never
+        trigger on a queued event in practice (a normalized ESS underflowing
+        to exactly 0.0 in float64 is not realistic for these likelihoods),
+        so both configured events end up queued together and are only
+        assimilated once the last event is reached -- the same outcome as
+        cadence=2.
+        """
+        config_dict = copy.deepcopy(smc_partial_posteriors_gw_config)
+        config_dict["sampler"]["cadence"] = "auto"
+        config_dict["sampler"]["auto_ess_threshold"] = 1e-300
+        _config, sampler = _run_partial_posteriors(config_dict)
+
+        metadata = sampler.metadata  # type: ignore[attr-defined]
+        assert metadata["event_order"] == ["GW170817", "GW190425"]
+        assert metadata["cadence"] == "auto"
+        assert metadata["event_groups"] == [["GW170817", "GW190425"]]
+        assert len(metadata["ess_history"]) == 1
+
+        output = sampler.get_sampler_output()
+        validate_sampler_output(output, expected_params=NEP_PARAMS, min_samples=50)
+
+    def test_partial_posteriors_auto_cadence_high_threshold_triggers_every_event(
+        self, smc_partial_posteriors_gw_config, e2e_temp_dir
+    ):
+        """cadence="auto" with a threshold of 1.0 triggers on essentially
+        every event (a real GW likelihood is never exactly flat across the
+        particle cloud, so the one-shot ESS is always < 1.0) -- the same
+        one-event-at-a-time outcome as the default cadence=1.
+        """
+        config_dict = copy.deepcopy(smc_partial_posteriors_gw_config)
+        config_dict["sampler"]["cadence"] = "auto"
+        config_dict["sampler"]["auto_ess_threshold"] = 1.0
+        _config, sampler = _run_partial_posteriors(config_dict)
+
+        metadata = sampler.metadata  # type: ignore[attr-defined]
+        assert metadata["event_order"] == ["GW170817", "GW190425"]
+        assert metadata["cadence"] == "auto"
+        assert metadata["event_groups"] == [["GW170817"], ["GW190425"]]
+        assert len(metadata["ess_history"]) == 2
+
+        output = sampler.get_sampler_output()
+        validate_sampler_output(output, expected_params=NEP_PARAMS, min_samples=50)
+
+    def test_partial_posteriors_auto_cadence_defaults_threshold_to_target_ess(
+        self, smc_partial_posteriors_gw_config
+    ):
+        """auto_ess_threshold is optional; when unset it falls back to
+        inner.target_ess (the same threshold the sub-step bisection itself
+        targets), rather than requiring users to duplicate the value."""
+        config_dict = copy.deepcopy(smc_partial_posteriors_gw_config)
+        config_dict["sampler"]["cadence"] = "auto"
+        _config, sampler = _run_partial_posteriors(config_dict)
+
+        metadata = sampler.metadata  # type: ignore[attr-defined]
+        assert metadata["auto_ess_threshold"] == metadata["target_ess"]
+
+    def test_partial_posteriors_auto_ess_threshold_requires_auto_cadence(
+        self, smc_partial_posteriors_gw_config
+    ):
+        """Setting auto_ess_threshold without cadence="auto" would silently
+        have no effect -- must fail fast at config-parse time instead."""
+        config_dict = copy.deepcopy(smc_partial_posteriors_gw_config)
+        config_dict["sampler"]["cadence"] = 1
+        config_dict["sampler"]["auto_ess_threshold"] = 0.5
+
+        with pytest.raises(ValueError, match="auto_ess_threshold"):
+            InferenceConfig(**config_dict)
+
     def test_partial_posteriors_cadence_list_must_sum_to_new_events(
         self, smc_partial_posteriors_gw_config
     ):
