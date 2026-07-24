@@ -143,7 +143,7 @@ class TestSMCPartialPosteriorsE2E:
         plot_outdir = e2e_temp_dir / "cadence_plots"
         sampler.plot_diagnostics(outdir=plot_outdir)  # type: ignore[attr-defined]
         assert (plot_outdir / "smc_diagnostics.png").exists()
-        assert (plot_outdir / "substep_diagnostics" / "batch_00.png").exists()
+        assert (plot_outdir / "substep_diagnostics" / "batch_01.png").exists()
 
     def test_partial_posteriors_auto_cadence_low_threshold_merges_events(
         self, smc_partial_posteriors_gw_config, e2e_temp_dir
@@ -188,8 +188,22 @@ class TestSMCPartialPosteriorsE2E:
         assert metadata["event_groups"] == [["GW170817"], ["GW190425"]]
         assert len(metadata["ess_history"]) == 2
 
+        # Sequential, gap-free batch numbering + the batch -> sources map.
+        assert list(metadata["batch_to_sources"].keys()) == ["batch_01", "batch_02"]
+        assert metadata["batch_to_sources"]["batch_01"] == ["GW170817"]
+        assert metadata["batch_to_sources"]["batch_02"] == ["GW190425"]
+        assert metadata["n_batches"] == 2
+
+        # Every one-shot ESS check triggered an update at threshold=1.0.
+        assert len(metadata["auto_cadence_ess_history"]) == 2
+        assert all(metadata["auto_cadence_triggered_history"])
+
         output = sampler.get_sampler_output()
         validate_sampler_output(output, expected_params=NEP_PARAMS, min_samples=50)
+
+        plot_outdir = e2e_temp_dir / "auto_cadence_plots"
+        sampler.plot_diagnostics(outdir=plot_outdir)  # type: ignore[attr-defined]
+        assert (plot_outdir / "auto_cadence_ess.png").exists()
 
     def test_partial_posteriors_auto_cadence_defaults_threshold_to_target_ess(
         self, smc_partial_posteriors_gw_config
@@ -373,6 +387,15 @@ class TestSMCPartialPosteriorsWarmStart:
         assert stage2_metadata["event_order"] == ["GW170817", "GW190425"]
         assert stage2_metadata["n_events_replayed"] == 1
         assert stage2_metadata["warm_start_from"] == str(stage1_path)
+
+        # Stage 1 used up batch_01; stage 2's own batch continues numbering
+        # from there (batch_02) instead of restarting at batch_01, so the
+        # two runs' substep_diagnostics filenames never collide if written
+        # to the same outdir.
+        assert stage1_sampler.metadata["n_batches"] == 1  # type: ignore[attr-defined]
+        assert list(stage2_metadata["batch_to_sources"].keys()) == ["batch_02"]
+        assert stage2_metadata["batch_to_sources"]["batch_02"] == ["GW190425"]
+        assert stage2_metadata["n_batches"] == 2
         # Only the new event (GW190425) is stepped through, not GW170817.
         assert len(stage2_metadata["ess_history"]) == 1
         assert len(stage2_metadata["acceptance_history"]) == 1
@@ -389,7 +412,7 @@ class TestSMCPartialPosteriorsWarmStart:
         plot_outdir = e2e_temp_dir / "plots"
         stage2_sampler.plot_diagnostics(outdir=plot_outdir)  # type: ignore[attr-defined]
         assert (plot_outdir / "smc_diagnostics.png").exists()
-        assert (plot_outdir / "substep_diagnostics" / "batch_01.png").exists()
+        assert (plot_outdir / "substep_diagnostics" / "batch_02.png").exists()
 
     def test_warm_start_rejects_non_prefix_event_order(
         self, smc_partial_posteriors_gw_config, e2e_temp_dir
