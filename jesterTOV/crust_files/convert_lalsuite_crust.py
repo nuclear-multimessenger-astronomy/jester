@@ -33,7 +33,9 @@ LALSUITE_DIR = os.path.join(
 )
 CRUST_DIR = os.path.dirname(os.path.abspath(__file__))
 
-NSAT = 0.16  # fm^-3, standard nuclear saturation density convention used throughout jester
+NSAT = (
+    0.16  # fm^-3, standard nuclear saturation density convention used throughout jester
+)
 
 
 def convert_model(
@@ -60,7 +62,8 @@ def convert_model(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "name", help="Base name of the source file under tabulated_eos/lalsuite/, e.g. HQC18"
+        "name",
+        help="Base name of the source file under tabulated_eos/lalsuite/, e.g. HQC18",
     )
     parser.add_argument(
         "--max-n-nsat",

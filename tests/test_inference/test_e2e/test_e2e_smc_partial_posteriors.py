@@ -143,9 +143,7 @@ class TestSMCPartialPosteriorsE2E:
         plot_outdir = e2e_temp_dir / "cadence_plots"
         sampler.plot_diagnostics(outdir=plot_outdir)  # type: ignore[attr-defined]
         assert (plot_outdir / "smc_diagnostics.png").exists()
-        assert (
-            plot_outdir / "substep_diagnostics" / "00_GW170817+GW190425.png"
-        ).exists()
+        assert (plot_outdir / "substep_diagnostics" / "batch_00.png").exists()
 
     def test_partial_posteriors_auto_cadence_low_threshold_merges_events(
         self, smc_partial_posteriors_gw_config, e2e_temp_dir
@@ -391,7 +389,7 @@ class TestSMCPartialPosteriorsWarmStart:
         plot_outdir = e2e_temp_dir / "plots"
         stage2_sampler.plot_diagnostics(outdir=plot_outdir)  # type: ignore[attr-defined]
         assert (plot_outdir / "smc_diagnostics.png").exists()
-        assert (plot_outdir / "substep_diagnostics" / "01_GW190425.png").exists()
+        assert (plot_outdir / "substep_diagnostics" / "batch_01.png").exists()
 
     def test_warm_start_rejects_non_prefix_event_order(
         self, smc_partial_posteriors_gw_config, e2e_temp_dir
