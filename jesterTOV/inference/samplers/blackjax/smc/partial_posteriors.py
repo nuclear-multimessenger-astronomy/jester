@@ -606,7 +606,7 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         auto_cadence_ess_checks_so_far: list[tuple[float, bool]],
         log_evidence_so_far: float,
         elapsed_seconds: float,
-        step_number: int,
+        batch_key: str,
     ) -> None:
         """Save an ``InferenceResult`` snapshot of the posterior after a
         data-tempering step, including derived EOS quantities from the TOV
@@ -629,12 +629,14 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             data-tempering step.
         config, n_particles, event_order_so_far, event_groups_names_so_far, n_prev_events, n_prev_batches, batch_to_sources_so_far, ess_history_so_far, acceptance_history_so_far, log_evidence_history_so_far, n_substeps_history_so_far, auto_cadence_ess_checks_so_far, log_evidence_so_far, elapsed_seconds :
             See ``_build_metadata`` -- forwarded directly.
-        step_number : int
-            1-indexed position of this step's first event within the full
-            configured ``self._event_order``. Used as the intermediate
-            result's filename suffix (``results_<step_number>.h5``) so
-            numbering stays consistent across warm-started runs (each run
-            only produces files for the steps it actually processes).
+        batch_key : str
+            This step's sequential ``batch_<NN>`` key (see ``sample()``),
+            used as the intermediate result's filename
+            (``results_<batch_key>.h5``) -- matches the naming used for
+            ``substep_diagnostics/<batch_key>.png`` and
+            ``metadata["batch_to_sources"]``, and stays gap-free/collision-free
+            across warm-started runs since ``batch_key`` already accounts for
+            ``n_prev_batches``.
         """
         if self._intermediate_save_config is None:
             logger.warning(
@@ -648,7 +650,7 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
 
         logger.info(
             "Postprocessing and saving intermediate run results "
-            f"(step {step_number}: events {event_order_so_far})..."
+            f"({batch_key}: events {event_order_so_far})..."
         )
 
         weights = state.weights
@@ -709,7 +711,7 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             assert self._intermediate_save_outdir is not None
             substep_outdir = self._intermediate_save_outdir / "substep_results"
             substep_outdir.mkdir(parents=True, exist_ok=True)
-            result_path = substep_outdir / f"results_{step_number}.h5"
+            result_path = substep_outdir / f"results_{batch_key}.h5"
             result.save(result_path)
         finally:
             self._particles_flat = prev_particles_flat
@@ -1422,7 +1424,6 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
 
             if config.save_intermediate_results:
                 key, save_key = jax.random.split(key)
-                step_number = group[-1] + 1  # absolute 1-indexed event position
                 self._save_intermediate_result(
                     key=save_key,
                     state=state,
@@ -1440,7 +1441,7 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
                     auto_cadence_ess_checks_so_far=auto_cadence_ess_checks,
                     log_evidence_so_far=log_evidence,
                     elapsed_seconds=time.time() - start_time,
-                    step_number=step_number,
+                    batch_key=batch_key,
                 )
 
         end_time = time.time()
