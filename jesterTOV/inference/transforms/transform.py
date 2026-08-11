@@ -274,10 +274,7 @@ class JesterTransform(NtoMTransform):
                 ndat_CSE=config.ndat_CSE,
                 nb_CSE=config.nb_CSE,
                 crust_name=config.crust_name,
-                E_sat=config.E_sat,
-                K_sat=config.K_sat,
-                Q_sat=config.Q_sat,
-                Z_sat=config.Z_sat,
+                mbpt=config.mbpt,
             )
 
         elif isinstance(config, SpectralEOSConfig):

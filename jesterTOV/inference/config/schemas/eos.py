@@ -145,10 +145,7 @@ class LECMetamodelCSEEOSConfig(BaseMetamodelEOSConfig):
     nb_CSE: int = 8
     ndat_CSE: int = 100
     max_nbreak_nsat: float | None = None
-    E_sat: float = -16.0
-    K_sat: float = 230.0
-    Q_sat: float = 0.0
-    Z_sat: float = 0.0
+    mbpt: bool = False
 
     @field_validator("nb_CSE")
     @classmethod
