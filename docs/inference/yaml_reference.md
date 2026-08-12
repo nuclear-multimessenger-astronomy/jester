@@ -21,6 +21,7 @@ seed: 43              # Random seed for reproducibility
 dry_run: false        # Validate configuration without running inference
 validate_only: false  # Only validate configuration and exit
 debug_nans: false     # Enable JAX NaN debugging for numerical issues
+debug: false          # Enable verbose debug-level logging
 ```
 
 **Field Details:**
@@ -29,6 +30,7 @@ debug_nans: false     # Enable JAX NaN debugging for numerical issues
 - **`dry_run`** (`bool`, default: `false`) - Parse and validate configuration without running inference
 - **`validate_only`** (`bool`, default: `false`) - Validate configuration and prior file, then exit
 - **`debug_nans`** (`bool`, default: `false`) - Enable JAX NaN debugging for catching numerical issues during inference
+- **`debug`** (`bool`, default: `false`) - Enable verbose debug-level logging, such as detailed per-likelihood setup information (e.g. flow-loading, KDE construction, and the full likelihood configuration dump) that is otherwise suppressed at the default INFO log level
 
 ::::
 

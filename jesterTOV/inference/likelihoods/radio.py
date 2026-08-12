@@ -137,7 +137,7 @@ class RadioTimingLikelihood(LikelihoodBase):
         self.m_min = m_min
         self.penalty_value = penalty_value
 
-        logger.info(
+        logger.debug(
             f"Initialized RadioTimingLikelihood for {self.psr_name}: mean={self.mean}, std={self.std}, m_min={self.m_min}, penalty_value={self.penalty_value}"
         )
 

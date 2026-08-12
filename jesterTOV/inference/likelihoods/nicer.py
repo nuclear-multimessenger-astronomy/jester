@@ -154,7 +154,7 @@ class NICERLikelihood(LikelihoodBase):
             if flow is not None and samples is not None
         ]
 
-        logger.info(
+        logger.debug(
             f"Loaded {len(self.active_groups)} normalizing flow(s) for {psr_name}"
         )
 
@@ -166,12 +166,12 @@ class NICERLikelihood(LikelihoodBase):
     ) -> tuple[Flow, Float[Array, "n_samples"]]:
         from jesterTOV.inference.flows.flow import Flow
 
-        logger.info(f"Loading {group_name} flow for {self.psr_name} from {model_dir}")
+        logger.debug(f"Loading {group_name} flow for {self.psr_name} from {model_dir}")
         flow = Flow.from_directory(model_dir)
         mass_samples: Float[Array, "n_samples"] = flow.sample(
             key, (self.N_masses_evaluation,)
         )[:, 0]
-        logger.info(
+        logger.debug(
             f"Pre-sampled {group_name} mass range: "
             f"[{jnp.min(mass_samples):.3f}, {jnp.max(mass_samples):.3f}] Msun"
         )
@@ -331,12 +331,12 @@ class NICERKDELikelihood(LikelihoodBase):
         self.N_masses_batch_size = N_masses_batch_size
 
         # Load samples from npz files
-        logger.info(
+        logger.debug(
             f"Loading Amsterdam samples for {psr_name} from {amsterdam_samples_file}"
         )
         amsterdam_data = np.load(amsterdam_samples_file, allow_pickle=True)
 
-        logger.info(
+        logger.debug(
             f"Loading Maryland samples for {psr_name} from {maryland_samples_file}"
         )
         maryland_data = np.load(maryland_samples_file, allow_pickle=True)
@@ -358,10 +358,10 @@ class NICERKDELikelihood(LikelihoodBase):
         maryland_mr = jnp.vstack([maryland_mass, maryland_radius])
 
         # Construct KDEs using JAX implementation
-        logger.info(f"Constructing JAX KDEs for {psr_name}")
+        logger.debug(f"Constructing JAX KDEs for {psr_name}")
         self.amsterdam_posterior = gaussian_kde(amsterdam_mr)
         self.maryland_posterior = gaussian_kde(maryland_mr)
-        logger.info(f"Loaded JAX KDEs for {psr_name}")
+        logger.debug(f"Loaded JAX KDEs for {psr_name}")
 
     def evaluate(self, params: dict[str, Float | Array]) -> Float:
         """

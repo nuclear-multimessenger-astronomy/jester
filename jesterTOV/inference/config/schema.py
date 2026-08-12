@@ -200,6 +200,9 @@ class InferenceConfig(JesterBaseModel):
         Only validate configuration, don't run inference (default: False)
     debug_nans : bool
         Enable JAX NaN debugging for catching numerical issues (default: False)
+    debug : bool
+        Enable verbose debug-level logging, e.g. detailed likelihood setup
+        information (default: False)
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -217,6 +220,10 @@ class InferenceConfig(JesterBaseModel):
     debug_nans: bool = Field(
         default=False,
         description="Enable JAX NaN debugging for catching numerical issues during inference",
+    )
+    debug: bool = Field(
+        default=False,
+        description="Enable verbose debug-level logging (e.g. detailed likelihood setup information)",
     )
 
     @field_validator("likelihoods")

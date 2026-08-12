@@ -77,9 +77,9 @@ class GWLikelihoodResampled(LikelihoodBase):
         self.N_masses_batch_size = N_masses_batch_size
 
         # Load Flow model for this event
-        logger.info(f"Loading NF model for {event_name} from {model_dir}")
+        logger.debug(f"Loading NF model for {event_name} from {model_dir}")
         self.flow = Flow.from_directory(model_dir)
-        logger.info(f"Loaded NF model for {event_name}")
+        logger.debug(f"Loaded NF model for {event_name}")
 
     def evaluate(self, params: dict[str, Float | Array]) -> Float:
         """
@@ -280,19 +280,19 @@ class GWLikelihood(LikelihoodBase):
         self.seed = seed
 
         # Load Flow model for this event
-        logger.info(f"Loading NF model for {event_name} from {model_dir}")
+        logger.debug(f"Loading NF model for {event_name} from {model_dir}")
         self.flow = Flow.from_directory(model_dir)
-        logger.info(f"Loaded NF model for {event_name}")
+        logger.debug(f"Loaded NF model for {event_name}")
 
         # Pre-sample masses ONCE at initialization
-        logger.info(
+        logger.debug(
             f"Pre-sampling {N_masses_evaluation} mass pairs with seed={seed} for {event_name}"
         )
         key = jax.random.key(seed)
         samples = self.flow.sample(key, (N_masses_evaluation,))
         # Extract only (m1, m2), discard Lambda values from flow
         self.fixed_mass_samples = samples[:, :2]  # Shape: [N, 2]
-        logger.info(
+        logger.debug(
             f"Pre-sampled mass range: m1=[{jnp.min(self.fixed_mass_samples[:, 0]):.3f}, "
             f"{jnp.max(self.fixed_mass_samples[:, 0]):.3f}] Msun, "
             f"m2=[{jnp.min(self.fixed_mass_samples[:, 1]):.3f}, "
@@ -515,7 +515,7 @@ class StackedGWLikelihood(LikelihoodBase):
         self.seed = seed
         self.use_float32 = use_float32
 
-        logger.info(
+        logger.debug(
             f"Loading NF models for {len(event_names)} GW events "
             f"(stacked/batched evaluation, event_batch_size={self.event_batch_size}, "
             f"use_float32={self.use_float32})"
@@ -589,7 +589,7 @@ class StackedGWLikelihood(LikelihoodBase):
             fixed_mass_samples
         )
 
-        logger.info(f"Pre-sampled and stacked flows for {len(event_names)} GW events")
+        logger.debug(f"Pre-sampled and stacked flows for {len(event_names)} GW events")
 
     def _log_prob_one_event(
         self, dynamic_leaf, loc, scale, ml_sample: Float[Array, " 4"]

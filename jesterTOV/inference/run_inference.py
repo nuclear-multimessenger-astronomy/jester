@@ -759,6 +759,12 @@ def main(config_path: str) -> None:
     logger.info(f"Loading configuration from {config_path}")
     config = load_config(config_path)
 
+    if config.debug:
+        from jesterTOV.logging_config import set_log_level
+        import logging as _logging
+
+        set_log_level(_logging.DEBUG)
+
     # Enable NaN debugging if requested
     if config.debug_nans:
         logger.info("Enabling JAX NaN debugging")
@@ -846,15 +852,15 @@ def main(config_path: str) -> None:
 
     # Log detailed likelihood information
     enabled_likelihoods = [lk for lk in config.likelihoods if lk.enabled]
-    logger.info(f"Number of enabled likelihoods: {len(enabled_likelihoods)}")
+    logger.debug(f"Number of enabled likelihoods: {len(enabled_likelihoods)}")
     for lk in enabled_likelihoods:
         # Use Pydantic's model_dump to serialize config for logging
 
         lk_dict = lk.model_dump(
             exclude={"enabled"}
         )  # Exclude enabled since we already filtered
-        logger.info(f"  - {lk.type.upper()}:")
-        logger.info(f"    {json.dumps(lk_dict, indent=6)}")
+        logger.debug(f"  - {lk.type.upper()}:")
+        logger.debug(f"    {json.dumps(lk_dict, indent=6)}")
 
     logger.info(f"Setting up {config.sampler.type} sampler...")
     sampler = create_sampler(

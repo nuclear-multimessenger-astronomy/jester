@@ -130,7 +130,7 @@ class MockMassRadiusLikelihood(LikelihoodBase):
 
         # Pre-sample (mass, radius) pairs from the joint distribution once at
         # initialisation so that each likelihood evaluation is deterministic.
-        logger.info(
+        logger.debug(
             f"Pre-sampling {N_masses_evaluation} masses with seed={seed} "
             f"for mock observation '{psr_name}'"
         )
@@ -138,7 +138,7 @@ class MockMassRadiusLikelihood(LikelihoodBase):
         samples = self.distribution.sample(key, N_masses_evaluation)
         # Keep only the mass component; radius comes from the EOS during evaluation
         self.fixed_mass_samples = samples["mass"]
-        logger.info(
+        logger.debug(
             f"Mock '{psr_name}' mass sample range: "
             f"[{float(jnp.min(self.fixed_mass_samples)):.3f}, "
             f"{float(jnp.max(self.fixed_mass_samples)):.3f}] Msun"
