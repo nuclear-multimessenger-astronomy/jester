@@ -271,6 +271,11 @@ class InferenceResult:
                     "n_events": int(smc_metadata["n_events"]),
                     "warm_start_from": str(smc_metadata.get("warm_start_from", "")),
                     "n_events_replayed": int(smc_metadata.get("n_events_replayed", 0)),
+                    "n_batches": int(smc_metadata.get("n_batches", 0)),
+                    "batch_to_sources": dict(smc_metadata.get("batch_to_sources", {})),
+                    "auto_ess_threshold": float(
+                        smc_metadata.get("auto_ess_threshold", 0.0)
+                    ),
                     "final_ess": float(smc_metadata["final_ess"]),
                     "final_ess_percent": float(smc_metadata["final_ess_percent"]),
                     "mean_ess": float(smc_metadata["mean_ess"]),
@@ -285,6 +290,13 @@ class InferenceResult:
                 "ess_history": np.array(smc_metadata["ess_history"]),
                 "acceptance_history": np.array(smc_metadata["acceptance_history"]),
                 "log_evidence_history": np.array(smc_metadata["log_evidence_history"]),
+                "n_substeps_history": np.array(smc_metadata["n_substeps_history"]),
+                "auto_cadence_ess_history": np.array(
+                    smc_metadata.get("auto_cadence_ess_history", [])
+                ),
+                "auto_cadence_triggered_history": np.array(
+                    smc_metadata.get("auto_cadence_triggered_history", [])
+                ),
             }
 
         elif sampler_type == "blackjax_ns_aw":
@@ -678,6 +690,12 @@ class InferenceResult:
                     # per-event diagnostics.
                     metadata_grp.attrs[key] = json.dumps(value)
                     continue
+                elif key == "batch_to_sources":
+                    # Store as JSON string (dict[str, list[str]]) --
+                    # blackjax_smc_partial_posteriors_rw only. Maps each
+                    # batch_<NN> key to the event names it contains.
+                    metadata_grp.attrs[key] = json.dumps(value)
+                    continue
                 # HDF5 attributes must be scalars or small arrays
                 if isinstance(value, (int, float, str, bool)):
                     metadata_grp.attrs[key] = value
@@ -780,6 +798,11 @@ class InferenceResult:
                         metadata[key] = json.loads(value)
                     elif key == "event_order":
                         # Deserialize from JSON string (list of strings)
+                        if isinstance(value, bytes):
+                            value = value.decode("utf-8")
+                        metadata[key] = json.loads(value)
+                    elif key == "batch_to_sources":
+                        # Deserialize from JSON string (dict[str, list[str]])
                         if isinstance(value, bytes):
                             value = value.decode("utf-8")
                         metadata[key] = json.loads(value)

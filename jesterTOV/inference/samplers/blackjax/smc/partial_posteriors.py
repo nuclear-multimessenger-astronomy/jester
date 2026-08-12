@@ -20,21 +20,33 @@ is implemented as a new class in a new module so that the existing
 completely untouched; the RW kernel setup and flatten/unflatten utilities
 are reused via subclassing :class:`BlackJAXSMCRandomWalkSampler`.
 
-Correctness note (see the "path of partial posteriors" section of this
-module for detail, and ``eos_bayesian_updates/scripts/ibis_sanity_check.py``
-for the empirical validation): turning an event's mask on in a single SMC
-step is measurably biased for informative events. The underlying
-``blackjax.smc.base.step`` reweights *after* the MCMC rejuvenation move,
-which is only a good approximation for small target-to-target jumps (true
-for the existing sampler's adaptive :math:`\lambda` bisection, false for a
-whole-event jump). Each event is therefore ramped in over several small
-fractional mask increments, matching the source paper's own suggestion of
-"a geometric path between successive partial posteriors"
-(``papers/2007.11936/smcsamplers.tex:409-411``), using an ESS-targeting
+Correctness note (see ``_build_jitted_substep_fn``'s docstring below for
+the full derivation, and ``dev/biased_evidence/biased_evidence.tex`` in the
+parent development workspace for the toy-model measurements): a naive port
+of ``blackjax.smc.partial_posteriors_path.build_kernel`` -- move the
+particles with an MCMC kernel targeting the *new* mask, then reweight the
+post-move particles by the new/old ratio -- is only a good approximation
+of the incremental log-evidence for small target-to-target jumps, and is
+measurably biased for a whole-event jump. ``_build_jitted_substep_fn``
+instead builds the MCMC move to target the *old* mask (the one the
+incoming weights already represent) -- the "resample-move" construction of
+Gilks & Berzuini (2001), also used (via a different code path) by
+blackjax's own ``smc.tempered.build_kernel`` and by Chopin's reference
+``particles`` package's ``IBIS``/``Tempering`` classes -- which makes the
+per-substep log-evidence increment exact at *any* mask-jump size, not just
+asymptotically as the jump shrinks.
+
+Each event is nonetheless still ramped in over several small fractional
+mask increments (matching the source paper's own suggestion of "a
+geometric path between successive partial posteriors",
+``papers/2007.11936/smcsamplers.tex:409-411``), using an ESS-targeting
 bisection search (``blackjax.smc.ess.ess_solver`` /
 ``blackjax.smc.solver.dichotomy``) -- the same machinery the base
 sampler's adaptive :math:`\lambda` schedule uses -- applied to the mask
-fraction instead of :math:`\lambda`. This works unmodified because the
+fraction instead of :math:`\lambda`. This is now purely an MCMC-mixing /
+proposal-adaptation concern (a single enormous jump would still leave the
+random-walk proposal poorly scaled for the new target), not a correctness
+requirement for the evidence. It works unmodified because the
 mask-weighted logposterior is linear in the fraction of the single event
 currently being ramped in (all other terms cancel in the successive-target
 log-weight difference), exactly the structure ``ess_solver`` assumes. The
@@ -84,7 +96,7 @@ from jesterTOV.inference.samplers.blackjax.smc.random_walk import (
 )
 from jesterTOV.logging_config import get_logger
 
-from blackjax.smc.ess import ess_solver
+from blackjax.smc.ess import ess_solver, log_ess
 from blackjax.smc.resampling import systematic
 from blackjax.smc.solver import dichotomy
 from blackjax.smc.from_mcmc import build_kernel as smc_from_mcmc_build_kernel
@@ -203,6 +215,30 @@ def _build_jitted_substep_fn(
     sampling run (every sub-step of every event) reuses one compiled
     executable, since none of the array shapes/dtypes involved change
     across sub-steps.
+
+    Correctness: the MCMC move is deliberately built to target
+    ``previous_logposterior_fn`` (the *old*, pre-substep mask), not
+    ``logposterior_fn`` (the new one) -- the opposite of what looks like
+    the "obvious" choice. This is the resample-move construction of Gilks
+    & Berzuini (2001) that Chopin's own reference SMC implementation
+    (``particles``, see ``smc_samplers.py``'s ``IBIS``/``Tempering``
+    classes -- and, by the same accidental construction, blackjax's own
+    ``smc.tempered.build_kernel``, which builds its tempered log-posterior
+    from ``state.tempering_param``, the pre-increment value) uses for
+    exactly this reason: a move that leaves the *old* target invariant
+    cannot change the particles' marginal distribution at all, however
+    large the proposal step, so reweighting the post-move particles by the
+    plain incremental ratio ``logposterior_fn(x) - previous_logposterior_fn(x)``
+    is an exact, unbiased estimate of the incremental log-evidence with no
+    reversal-kernel or small-step assumption anywhere. Building the move
+    around ``logposterior_fn`` (the new mask) instead -- what an earlier
+    version of this function did, and what
+    ``blackjax.smc.partial_posteriors_path.build_kernel`` still does -- is
+    the AIS-style construction, which only recovers exactness in the
+    small-jump limit and is measurably biased for a whole-event jump; see
+    ``dev/biased_evidence/biased_evidence.tex`` (Sections 2 and 5) in the
+    parent development workspace for the full derivation and the toy-model
+    measurements of both regimes.
     """
     delegate = smc_from_mcmc_build_kernel(mcmc_step_fn, mcmc_init_fn, systematic)
 
@@ -218,8 +254,18 @@ def _build_jitted_substep_fn(
         def log_weights_fn(x: Array) -> Array:
             return logposterior_fn(x) - previous_logposterior_fn(x)
 
+        # Move targets the OLD mask's posterior (resample-move exactness,
+        # see docstring above) -- only the move's target changed relative
+        # to a naive port of partial_posteriors_path.build_kernel; the
+        # weighting function, resample scheme and SMCInfo bookkeeping are
+        # untouched.
         new_state, info = delegate(
-            key, state, num_mcmc_steps, mcmc_parameters, logposterior_fn, log_weights_fn
+            key,
+            state,
+            num_mcmc_steps,
+            mcmc_parameters,
+            previous_logposterior_fn,
+            log_weights_fn,
         )
         return (
             PartialPosteriorsSMCState(
@@ -435,11 +481,14 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         event_order_so_far: list[str],
         event_groups_names_so_far: list[list[str]],
         n_prev_events: int,
+        n_prev_batches: int,
+        batch_to_sources_so_far: dict[str, list[str]],
         final_ess_fraction: float,
         ess_history_so_far: list[float],
         acceptance_history_so_far: list[float],
         log_evidence_history_so_far: list[float],
         n_substeps_history_so_far: list[int],
+        auto_cadence_ess_checks_so_far: list[tuple[float, bool]],
         log_evidence_so_far: float,
         elapsed_seconds: float,
     ) -> dict[str, Any]:
@@ -468,11 +517,26 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             Data-tempering groups processed up to and including this point.
         n_prev_events : int
             Number of events skipped via warm-starting (see ``sample()``).
+        n_prev_batches : int
+            Number of data-tempering batches already used up by a
+            warm-start source run (0 if not warm-starting) -- this run's
+            own batches are numbered starting from ``n_prev_batches + 1``,
+            so ``batch_<NN>`` labels/filenames never collide with the
+            warm-start source's when both land under the same ``outdir``.
+        batch_to_sources_so_far : dict[str, list[str]]
+            Maps each processed ``batch_<NN>`` key to the list of event
+            names it contains, up to and including this point.
         final_ess_fraction : float
             ESS as a fraction of ``n_particles`` (i.e. already divided by
             ``n_particles``) at this point in the run.
         ess_history_so_far, acceptance_history_so_far, log_evidence_history_so_far, n_substeps_history_so_far : list
             Per-step diagnostic histories up to and including this point.
+        auto_cadence_ess_checks_so_far : list[tuple[float, bool]]
+            Auto-cadence full-jump ESS predictor checks made so far, one
+            per not-yet-assimilated event considered (``(ess, triggered)``
+            pairs, in the order added to the pending queue) -- empty when
+            ``cadence`` isn't ``"auto"``/``"automatic"``. See
+            ``_plot_auto_cadence_ess``.
         log_evidence_so_far : float
             Cumulative log evidence up to and including this point.
         elapsed_seconds : float
@@ -496,7 +560,18 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             "event_order": event_order_so_far,
             "n_events": len(event_order_so_far),
             "cadence": config.cadence,
+            "auto_ess_threshold": (
+                config.resolved_auto_ess_threshold if config.is_auto_cadence else 0.0
+            ),
             "event_groups": event_groups_names_so_far,
+            "batch_to_sources": dict(batch_to_sources_so_far),
+            "n_batches": n_prev_batches + len(event_groups_names_so_far),
+            "auto_cadence_ess_history": [
+                ess for ess, _ in auto_cadence_ess_checks_so_far
+            ],
+            "auto_cadence_triggered_history": [
+                triggered for _, triggered in auto_cadence_ess_checks_so_far
+            ],
             "warm_start_from": config.warm_start_from or "",
             "n_events_replayed": n_prev_events,
             "final_ess": float(final_ess_fraction * n_particles),
@@ -522,13 +597,16 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         event_order_so_far: list[str],
         event_groups_names_so_far: list[list[str]],
         n_prev_events: int,
+        n_prev_batches: int,
+        batch_to_sources_so_far: dict[str, list[str]],
         ess_history_so_far: list[float],
         acceptance_history_so_far: list[float],
         log_evidence_history_so_far: list[float],
         n_substeps_history_so_far: list[int],
+        auto_cadence_ess_checks_so_far: list[tuple[float, bool]],
         log_evidence_so_far: float,
         elapsed_seconds: float,
-        step_number: int,
+        batch_key: str,
     ) -> None:
         """Save an ``InferenceResult`` snapshot of the posterior after a
         data-tempering step, including derived EOS quantities from the TOV
@@ -549,14 +627,16 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         state : PartialPosteriorsSMCState
             Current SMC state (particles/weights) after the just-completed
             data-tempering step.
-        config, n_particles, event_order_so_far, event_groups_names_so_far, n_prev_events, ess_history_so_far, acceptance_history_so_far, log_evidence_history_so_far, n_substeps_history_so_far, log_evidence_so_far, elapsed_seconds :
+        config, n_particles, event_order_so_far, event_groups_names_so_far, n_prev_events, n_prev_batches, batch_to_sources_so_far, ess_history_so_far, acceptance_history_so_far, log_evidence_history_so_far, n_substeps_history_so_far, auto_cadence_ess_checks_so_far, log_evidence_so_far, elapsed_seconds :
             See ``_build_metadata`` -- forwarded directly.
-        step_number : int
-            1-indexed position of this step's first event within the full
-            configured ``self._event_order``. Used as the intermediate
-            result's filename suffix (``results_<step_number>.h5``) so
-            numbering stays consistent across warm-started runs (each run
-            only produces files for the steps it actually processes).
+        batch_key : str
+            This step's sequential ``batch_<NN>`` key (see ``sample()``),
+            used as the intermediate result's filename
+            (``results_<batch_key>.h5``) -- matches the naming used for
+            ``substep_diagnostics/<batch_key>.png`` and
+            ``metadata["batch_to_sources"]``, and stays gap-free/collision-free
+            across warm-started runs since ``batch_key`` already accounts for
+            ``n_prev_batches``.
         """
         if self._intermediate_save_config is None:
             logger.warning(
@@ -570,7 +650,7 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
 
         logger.info(
             "Postprocessing and saving intermediate run results "
-            f"(step {step_number}: events {event_order_so_far})..."
+            f"({batch_key}: events {event_order_so_far})..."
         )
 
         weights = state.weights
@@ -587,11 +667,14 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             event_order_so_far=event_order_so_far,
             event_groups_names_so_far=event_groups_names_so_far,
             n_prev_events=n_prev_events,
+            n_prev_batches=n_prev_batches,
+            batch_to_sources_so_far=batch_to_sources_so_far,
             final_ess_fraction=final_ess_fraction,
             ess_history_so_far=ess_history_so_far,
             acceptance_history_so_far=acceptance_history_so_far,
             log_evidence_history_so_far=log_evidence_history_so_far,
             n_substeps_history_so_far=n_substeps_history_so_far,
+            auto_cadence_ess_checks_so_far=auto_cadence_ess_checks_so_far,
             log_evidence_so_far=log_evidence_so_far,
             elapsed_seconds=elapsed_seconds,
         )
@@ -628,7 +711,7 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             assert self._intermediate_save_outdir is not None
             substep_outdir = self._intermediate_save_outdir / "substep_results"
             substep_outdir.mkdir(parents=True, exist_ok=True)
-            result_path = substep_outdir / f"results_{step_number}.h5"
+            result_path = substep_outdir / f"results_{batch_key}.h5"
             result.save(result_path)
         finally:
             self._particles_flat = prev_particles_flat
@@ -666,7 +749,16 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         n_new_events = len(new_event_indices)
 
         cadence = config.cadence
-        if isinstance(cadence, int):
+        if isinstance(cadence, str):
+            # Only reached if a caller invokes this fixed-schedule grouping
+            # directly with cadence="auto"/"automatic" -- sample() itself
+            # never does (it builds groups dynamically instead, see
+            # _next_auto_group).
+            raise ValueError(
+                f"_compute_event_groups does not support cadence={cadence!r}; "
+                "auto-cadence groups are built dynamically in sample()."
+            )
+        elif isinstance(cadence, int):
             group_sizes = [cadence] * (n_new_events // cadence)
             remainder = n_new_events - sum(group_sizes)
             if remainder > 0:
@@ -689,6 +781,60 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             groups.append(new_event_indices[cursor : cursor + size])
             cursor += size
         return groups
+
+    @staticmethod
+    def _predict_full_jump_ess(
+        particles: Array,
+        ordered_event_vals: Callable[[Array], Array],
+        group_indices: list[int],
+    ) -> float:
+        """Full-jump ESS of a candidate event group against the current
+        particle cloud, without running any annealing sub-steps or MCMC
+        moves -- a cheap, read-only diagnostic, never an accepted sampling
+        step (see ``dev/predictors/full_jump_ess_predictor.tex`` in the
+        parent development workspace for the full derivation).
+
+        If ``group_indices``' combined mask were jumped straight from 0 to
+        1, the resulting (unnormalized) importance weight for particle j is
+        ``exp(sum_i logl_i(particle_j))``, i.e. the current particles
+        reweighted by the candidate group's likelihood alone -- exactly the
+        quantity ``ess_solver``/``dichotomy`` evaluate as their first probe
+        (``fun(max_delta)``) at the start of every sub-step bisection, just
+        computed standalone here rather than as a side effect of actually
+        annealing. Because the current particles carry uniform weight
+        (true immediately after any resampling step, which happens after
+        every sub-step -- see ``partial_posteriors_smc.tex``), no
+        re-evaluation of previously-assimilated or not-yet-touched events'
+        likelihoods is needed: this is a plain importance-weighting
+        computation using only ``group_indices``' own log-likelihoods.
+
+        Parameters
+        ----------
+        particles : Array
+            Current flattened SMC particle cloud (``state.particles``),
+            assumed uniformly weighted.
+        ordered_event_vals : Callable[[Array], Array]
+            Per-particle function returning per-event log-likelihoods (one
+            entry per configured GW event, in ``self._event_order``/mask
+            order) -- the same closure the sub-step loop already builds and
+            vmaps over particles for each group's ``batched_group_loglik_fn``.
+        group_indices : list[int]
+            Indices into ``self._event_order`` of the candidate event(s)
+            (the pending auto-cadence queue).
+
+        Returns
+        -------
+        float
+            Normalized ESS in [0, 1] (fraction of ``n_particles``).
+        """
+        indices_arr = jnp.array(group_indices)
+
+        def group_loglik(x: Array) -> Array:
+            return jnp.sum(ordered_event_vals(x)[indices_arr])
+
+        log_weights = jax.vmap(group_loglik)(particles)
+        n_particles = log_weights.shape[0]
+        return float(jnp.exp(log_ess(log_weights)) / n_particles)
 
     def _check_always_on_likelihoods_match(
         self, path: str, prev_likelihoods: list[dict[str, Any]]
@@ -741,7 +887,7 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
 
     def _load_warm_start(
         self, path: str, n_particles: int, key: PRNGKeyArray
-    ) -> tuple[dict[str, Array], int, float]:
+    ) -> tuple[dict[str, Array], int, float, int]:
         """Load initial particles from a previous run's converged posterior.
 
         The previous run does not have to have used this sampler: any saved
@@ -771,13 +917,20 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
 
         Returns
         -------
-        tuple[dict[str, Array], int, float]
-            (initial_position_dict, n_prev_events, prev_log_evidence):
-            particle positions in prior-parameter space (same shape as
-            ``self.prior.sample(...)``), the number of events already
-            assimilated by the previous run, and its final ``logZ`` (used
-            to keep the cumulative evidence history meaningful across the
-            warm-started run).
+        tuple[dict[str, Array], int, float, int]
+            (initial_position_dict, n_prev_events, prev_log_evidence,
+            n_prev_batches): particle positions in prior-parameter space
+            (same shape as ``self.prior.sample(...)``), the number of
+            events already assimilated by the previous run, its final
+            ``logZ`` (used to keep the cumulative evidence history
+            meaningful across the warm-started run), and the number of
+            data-tempering batches already used up by the previous run
+            (read from its saved ``n_batches`` metadata, default 0 for
+            older results that predate it) -- so this run's own batches
+            continue numbering from there (``batch_<n_prev_batches+1>``,
+            ...) instead of colliding with the previous run's ``batch_01``,
+            ``batch_02``, ... filenames when both land under the same
+            ``outdir``.
 
         Raises
         ------
@@ -833,13 +986,19 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         }
 
         prev_log_evidence = float(prev_result.metadata.get("logZ", 0.0))
+        n_prev_batches = int(prev_result.metadata.get("n_batches", 0))
         logger.info(
             f"Warm start: {len(prev_event_order)} event(s) already "
             f"assimilated ({prev_event_order}), resampled {n_particles} "
             f"particles from {n_prev_particles} previous particles, "
-            f"prev logZ={prev_log_evidence:.3f}"
+            f"prev logZ={prev_log_evidence:.3f}, prev n_batches={n_prev_batches}"
         )
-        return initial_position_dict, len(prev_event_order), prev_log_evidence
+        return (
+            initial_position_dict,
+            len(prev_event_order),
+            prev_log_evidence,
+            n_prev_batches,
+        )
 
     def _make_loglikelihood_dict_fn(
         self, single_likelihood: LikelihoodBase
@@ -924,11 +1083,15 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         key, subkey = jax.random.split(key)
         n_prev_events = 0
         warm_start_log_evidence = 0.0
+        n_prev_batches = 0
         if config.warm_start_from is not None:
-            initial_position_dict, n_prev_events, warm_start_log_evidence = (
-                self._load_warm_start(
-                    config.warm_start_from, config.n_particles, subkey
-                )
+            (
+                initial_position_dict,
+                n_prev_events,
+                warm_start_log_evidence,
+                n_prev_batches,
+            ) = self._load_warm_start(
+                config.warm_start_from, config.n_particles, subkey
             )
         else:
             initial_position_dict = self.prior.sample(subkey, config.n_particles)
@@ -1043,15 +1206,45 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         # Per-group sub-step diagnostics (mask fraction / ESS / acceptance /
         # cumulative logZ at each sub-step), for the per-group SMC-diagnostics
         # style plot produced in plot_diagnostics() -- see
-        # _plot_substep_diagnostics. Keyed by group_name (see below); with
-        # the default cadence=1, each group is a single event and
-        # group_name == event_name, matching the pre-cadence behaviour
-        # exactly.
+        # _plot_substep_diagnostics. Keyed by batch_key ("batch_<NN>", NN
+        # a sequential 1-indexed counter of data-tempering batches processed
+        # so far -- across warm-started runs too, via n_prev_batches -- so
+        # batch numbers always increase by exactly 1 (batch_01, batch_02,
+        # ...) regardless of how many events land in each batch, rather than
+        # jumping by each batch's event count (previously NN was the
+        # absolute index of the group's first event in event_order, e.g.
+        # batch_00, batch_01, batch_04, batch_08, ... once batches started
+        # holding more than one event). Kept short rather than the full
+        # "+"-joined event-name string, which can get arbitrarily long (and
+        # blow past OS filename limits) once many events are batched into
+        # one group; batch_to_sources (below) recovers the full mapping.
         substep_diagnostics: dict[str, dict[str, list[float]]] = {}
+        # Maps each batch_key to the list of event names it contains --
+        # the same information as event_groups_names, just keyed by the
+        # short batch label for easy lookup/reporting.
+        batch_to_sources: dict[str, list[str]] = {}
+        # One-shot full-jump ESS predictor checks made by _next_auto_group
+        # (auto-cadence only): one entry per not-yet-assimilated event
+        # considered, in the order it was added to the pending queue,
+        # recording the resulting ESS and whether it dropped below
+        # auto_ess_threshold (triggering that batch to be assimilated) --
+        # see _plot_auto_cadence_ess.
+        auto_cadence_ess_checks: list[tuple[float, bool]] = []
 
-        event_groups = self._compute_event_groups(n_prev_events)
+        auto_cadence = config.is_auto_cadence
+        n_new_events = n_events - n_prev_events
+        # auto_ess_threshold is only read by _next_auto_group(), which is
+        # only ever called below when auto_cadence is True -- the 0.0
+        # placeholder in the non-auto branch is never consulted.
+        if auto_cadence:
+            event_groups: list[list[int]] | None = None
+            auto_ess_threshold: float = config.resolved_auto_ess_threshold
+            new_event_indices = list(range(n_prev_events, n_events))
+        else:
+            event_groups = self._compute_event_groups(n_prev_events)
+            auto_ess_threshold = 0.0
+            new_event_indices = []
         event_groups_names: list[list[str]] = []
-        n_groups = len(event_groups)
 
         logger.info("=" * 70)
         logger.info("STARTING DATA TEMPERING (PATH OF PARTIAL POSTERIORS)")
@@ -1059,11 +1252,18 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         logger.info(f"Kernel: {self._get_kernel_name().upper()}")
         logger.info(f"Particles: {n_particles}")
         logger.info(f"Events: {n_events} ({self._event_order})")
-        logger.info(
-            f"Cadence: {config.cadence} -> {n_groups} data-tempering "
-            f"step(s) over {n_events - n_prev_events} new event(s): "
-            f"{[[self._event_order[i] for i in g] for g in event_groups]}"
-        )
+        if auto_cadence:
+            logger.info(
+                f"Cadence: auto (full-jump ESS threshold={auto_ess_threshold}) "
+                f"-> data-tempering steps determined dynamically over "
+                f"{n_new_events} new event(s), batches assigned as processed"
+            )
+        else:
+            assert event_groups is not None
+            logger.info(
+                f"Cadence: {config.cadence} -> {len(event_groups)} data-tempering "
+                f"step(s) (batches) over {n_new_events} new event(s)"
+            )
         if n_prev_events > 0:
             logger.info(
                 f"Warm start: skipping {n_prev_events} already-covered "
@@ -1073,10 +1273,52 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         logger.info(f"MCMC steps per sub-step: {config.n_mcmc_steps}")
         logger.info("=" * 70)
 
-        for group_num, group in enumerate(event_groups):
+        def _next_auto_group(cursor: int) -> tuple[list[int], int]:
+            """Grow the pending queue of not-yet-assimilated events one at a
+            time, checking the full-jump ESS (see ``_predict_full_jump_ess``)
+            of the queue against the *current* particle cloud (``state``,
+            read from the enclosing scope -- reflects whatever the most
+            recently completed data-tempering step left it as) after each
+            addition. Returns as soon as that ESS drops below
+            ``auto_ess_threshold`` (an "update now" decision) or the last
+            configured event is reached (nothing left to defer to). Every
+            check made (whether or not it triggers) is appended to the
+            enclosing ``auto_cadence_ess_checks`` list, for the
+            ``_plot_auto_cadence_ess`` diagnostic plot.
+            """
+            pending: list[int] = []
+            while cursor < len(new_event_indices):
+                pending.append(new_event_indices[cursor])
+                cursor += 1
+                ess_hat = self._predict_full_jump_ess(
+                    cast(Array, state.particles), ordered_event_vals, pending
+                )
+                triggered = ess_hat < auto_ess_threshold
+                auto_cadence_ess_checks.append((ess_hat, triggered))
+                if triggered:
+                    break
+            return pending, cursor
+
+        auto_cursor = 0
+        group_num = -1
+        while True:
+            group_num += 1
+            if auto_cadence:
+                group, auto_cursor = _next_auto_group(auto_cursor)
+                if len(group) == 0:
+                    break
+            else:
+                assert event_groups is not None
+                if group_num >= len(event_groups):
+                    break
+                group = event_groups[group_num]
             group_names = [self._event_order[i] for i in group]
             group_name = "+".join(group_names)
+            batch_number = n_prev_batches + group_num + 1
+            batch_key = f"batch_{batch_number:02d}"
+            logger.info(f"{batch_key}: {group_name}")
             event_groups_names.append(group_names)
+            batch_to_sources[batch_key] = group_names
             group_indices = jnp.array(group)
             group_log_evidence = 0.0
             info = None
@@ -1109,7 +1351,7 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
                     # fall back to a minimal fractional increment rather
                     # than stalling, to stay on the safe (small-jump) side.
                     logger.warning(
-                        f"Event group {group_name}: ESS already below "
+                        f"{batch_key}: ESS already below "
                         "target_ess before this sub-step -- falling "
                         "back to a minimal fractional increment."
                     )
@@ -1139,7 +1381,7 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
                 substep_acceptance = float(info.update_info.acceptance_rate.mean())  # type: ignore[attr-defined]
                 bar = make_progress_bar(new_frac)
                 logger.info(
-                    f"    -> [{group_name}] sub-step {n_substeps_taken:2d} | "
+                    f"    -> [{batch_key}] sub-step {n_substeps_taken:2d} | "
                     f"mask={new_frac:.5f} | ESS={substep_ess * 100:5.1f}% | "
                     f"Accept={substep_acceptance * 100:5.1f}% | "
                     f"dlogZ={substep_log_evidence_increment:8.3f} | "
@@ -1151,7 +1393,7 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
                 substep_acceptance_history.append(substep_acceptance)
                 substep_log_evidence_history.append(log_evidence + group_log_evidence)
 
-            substep_diagnostics[group_name] = {
+            substep_diagnostics[batch_key] = {
                 "mask_fraction_history": mask_fraction_history,
                 "ess_history": substep_ess_history,
                 "acceptance_history": substep_acceptance_history,
@@ -1170,9 +1412,11 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             n_substeps_history.append(n_substeps_taken)
 
             elapsed_str = format_elapsed(time.time() - start_time)
-            bar = make_progress_bar((group_num + 1) / n_groups)
+            events_done = group[-1] + 1 - n_prev_events
+            progress_fraction = events_done / n_new_events if n_new_events > 0 else 1.0
+            bar = make_progress_bar(progress_fraction)
             logger.info(
-                f"Step {group_num + 1:3d}/{n_groups} [{group_name}] | "
+                f"Step {events_done:3d}/{n_new_events} [{batch_key}] | "
                 f"ESS={ess_value * 100:5.1f}% | Accept={acceptance_rate * 100:5.1f}% | "
                 f"logZ={log_evidence:8.3f} | substeps={n_substeps_taken:3d} | "
                 f"t={elapsed_str} | {bar}"
@@ -1180,7 +1424,6 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
 
             if config.save_intermediate_results:
                 key, save_key = jax.random.split(key)
-                step_number = group[-1] + 1  # absolute 1-indexed event position
                 self._save_intermediate_result(
                     key=save_key,
                     state=state,
@@ -1189,13 +1432,16 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
                     event_order_so_far=self._event_order[: group[-1] + 1],
                     event_groups_names_so_far=event_groups_names,
                     n_prev_events=n_prev_events,
+                    n_prev_batches=n_prev_batches,
+                    batch_to_sources_so_far=batch_to_sources,
                     ess_history_so_far=ess_history,
                     acceptance_history_so_far=acceptance_history,
                     log_evidence_history_so_far=log_evidence_history,
                     n_substeps_history_so_far=n_substeps_history,
+                    auto_cadence_ess_checks_so_far=auto_cadence_ess_checks,
                     log_evidence_so_far=log_evidence,
                     elapsed_seconds=time.time() - start_time,
-                    step_number=step_number,
+                    batch_key=batch_key,
                 )
 
         end_time = time.time()
@@ -1220,11 +1466,14 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             event_order_so_far=self._event_order,
             event_groups_names_so_far=event_groups_names,
             n_prev_events=n_prev_events,
+            n_prev_batches=n_prev_batches,
+            batch_to_sources_so_far=batch_to_sources,
             final_ess_fraction=final_ess_fraction,
             ess_history_so_far=ess_history,
             acceptance_history_so_far=acceptance_history,
             log_evidence_history_so_far=log_evidence_history,
             n_substeps_history_so_far=n_substeps_history,
+            auto_cadence_ess_checks_so_far=auto_cadence_ess_checks,
             log_evidence_so_far=log_evidence,
             elapsed_seconds=end_time - start_time,
         )
@@ -1301,7 +1550,7 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         axes[2].set_xlabel("Data-tempering step", fontsize=12)
         axes[2].grid(True, alpha=0.3)
 
-        group_labels = ["+".join(names) for names in event_groups]
+        group_labels = list(self.metadata["batch_to_sources"].keys())
         axes[2].set_xticks(list(x))
         axes[2].set_xticklabels(group_labels, rotation=45, ha="right", fontsize=8)
 
@@ -1315,6 +1564,7 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         plt.close(fig)
 
         self._plot_substep_diagnostics(outdir_path)
+        self._plot_auto_cadence_ess(outdir_path)
 
     def _plot_substep_diagnostics(self, outdir_path: Path) -> None:
         """Plot one SMC-diagnostics-style figure per data-tempering step.
@@ -1343,16 +1593,14 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         ).target_ess
         kernel_name = self._get_kernel_name().upper()
 
-        event_order = self.metadata["event_order"]
-        for group_names in self.metadata["event_groups"]:
-            group_name = "+".join(group_names)
-            # Absolute index of the group's first event within the full
-            # configured event_order -- keeps filenames/labels consistent
-            # across separate warm-started runs (each run only plots the
-            # groups it actually processed), rather than renumbering from 0
-            # within just this run's processed groups.
-            group_idx = event_order.index(group_names[0])
-            diagnostics = self._substep_diagnostics.get(group_name)
+        # batch_to_sources is keyed by the same sequential batch_key used to
+        # populate self._substep_diagnostics (see sample()), so iterating it
+        # directly recovers both the key and its event names without any
+        # extra lookup -- unlike the pre-sequential-numbering scheme, a
+        # batch's number no longer depends on its first event's absolute
+        # position in event_order.
+        for batch_key in self.metadata["batch_to_sources"]:
+            diagnostics = self._substep_diagnostics.get(batch_key)
             if diagnostics is None:
                 # Should not happen -- event_groups only lists groups
                 # actually processed this run (see _compute_event_groups).
@@ -1365,8 +1613,7 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
 
             fig, axes = plt.subplots(3, 1, figsize=(10, 9), sharex=True)
             fig.suptitle(
-                f"Step {group_idx + 1} [{group_name}] Sub-step Diagnostics "
-                f"({kernel_name} kernel)",
+                f"[{batch_key}] Sub-step Diagnostics ({kernel_name} kernel)",
                 fontsize=14,
                 fontweight="bold",
             )
@@ -1411,7 +1658,75 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
 
             plt.tight_layout()
 
-            output_path = substep_outdir / f"{group_idx:02d}_{group_name}.png"
+            output_path = substep_outdir / f"{batch_key}.png"
             plt.savefig(output_path, dpi=150, bbox_inches="tight")
             logger.info(f"Saved sub-step diagnostic plot to {output_path}")
             plt.close(fig)
+
+    def _plot_auto_cadence_ess(self, outdir_path: Path) -> None:
+        """Plot the auto-cadence full-jump ESS predictor's decision trace.
+
+        One point per not-yet-assimilated event considered by
+        ``_next_auto_group`` during ``sample()``, in the order it was added
+        to the pending queue: the resulting one-shot full-jump ESS
+        (``_predict_full_jump_ess``) against the current particle cloud,
+        and whether it dropped below ``auto_ess_threshold`` and thereby
+        triggered that queue to be assimilated (vs. staying queued/deferred
+        for the next event to be added). No-op when ``cadence`` isn't
+        ``"auto"``/``"automatic"`` (``auto_cadence_ess_history`` is empty).
+
+        Parameters
+        ----------
+        outdir_path : Path
+            Directory the plot (``auto_cadence_ess.png``) is saved under.
+        """
+        ess_history = self.metadata.get("auto_cadence_ess_history", [])
+        if not ess_history:
+            return
+        triggered_history = self.metadata["auto_cadence_triggered_history"]
+        threshold = self.metadata["auto_ess_threshold"]
+
+        x = list(range(1, len(ess_history) + 1))
+        deferred_x = [xi for xi, t in zip(x, triggered_history) if not t]
+        deferred_y = [yi for yi, t in zip(ess_history, triggered_history) if not t]
+        triggered_x = [xi for xi, t in zip(x, triggered_history) if t]
+        triggered_y = [yi for yi, t in zip(ess_history, triggered_history) if t]
+
+        fig, ax = plt.subplots(figsize=(12, 4))
+        ax.plot(x, ess_history, "-", color="tab:blue", linewidth=1.5, zorder=1)
+        ax.plot(
+            deferred_x,
+            deferred_y,
+            "o",
+            color="tab:blue",
+            zorder=2,
+            label="deferred (queued)",
+        )
+        ax.plot(
+            triggered_x,
+            triggered_y,
+            "v",
+            color="red",
+            markersize=10,
+            zorder=3,
+            label="triggered update",
+        )
+        ax.axhline(
+            threshold,
+            color="black",
+            linestyle="--",
+            linewidth=1,
+            label=f"threshold={threshold:g}",
+        )
+        ax.set_ylim(0, 1.05)
+        ax.set_xlabel("event added to queue")
+        ax.set_ylabel("queue one-shot ESS")
+        ax.set_title(f"auto-cadence threshold = {threshold:g}")
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc="lower left", fontsize=9)
+
+        plt.tight_layout()
+        output_path = outdir_path / "auto_cadence_ess.png"
+        plt.savefig(output_path, dpi=150, bbox_inches="tight")
+        logger.info(f"Saved auto-cadence ESS plot to {output_path}")
+        plt.close(fig)

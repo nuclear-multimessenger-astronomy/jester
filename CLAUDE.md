@@ -72,7 +72,7 @@ Five sampler backends available for Bayesian inference:
 4. **BlackJAX SMC Partial-Posteriors-RW** (`type: "smc-partial-posteriors-rw"`) - SMC on the "path of partial posteriors" (IBIS)
    - Tempers by *number of GW events included*, not by inverse-temperature λ
    - Requires at least one `gw` likelihood event
-   - Each event's mask is ramped in over an adaptive, uncapped sequence of fractional steps (ESS-targeting bisection reusing `smc-rw`'s `target_ess` machinery, not a single jump) — see `jesterTOV/inference/samplers/blackjax/smc/partial_posteriors.py` module docstring for why a single-step jump is measurably biased
+   - The MCMC move within each sub-step targets the *old* (pre-substep) mask, not the new one — the "resample-move" construction (Gilks & Berzuini 2001), which makes the per-substep log-evidence increment exact at any mask-jump size (see `_build_jitted_substep_fn`'s docstring in `jesterTOV/inference/samplers/blackjax/smc/partial_posteriors.py`); each event is still ramped in over an adaptive, uncapped sequence of fractional steps (ESS-targeting bisection reusing `smc-rw`'s `target_ess` machinery), now purely for MCMC-mixing quality rather than evidence correctness
    - Config is split into two levels: the top level (`event_order`, `warm_start_from`) only orchestrates event assimilation; the nested `inner` block fully specifies the adaptive SMC-RW loop used to ramp in each event
    - See {ref}`sampler-smc-partial-posteriors` in the docs for the full write-up
 

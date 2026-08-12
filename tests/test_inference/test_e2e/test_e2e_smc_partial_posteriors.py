@@ -103,6 +103,21 @@ class TestSMCPartialPosteriorsE2E:
         assert sampler_metadata["n_events"] == 2
         assert len(sampler_metadata["ess_history"]) == 2
         assert len(sampler_metadata["acceptance_history"]) == 2
+        assert len(sampler_metadata["n_substeps_history"]) == 2
+        assert all(n >= 1 for n in sampler_metadata["n_substeps_history"])
+
+        # n_substeps_history must survive the HDF5 round-trip (histories/
+        # group), not just live in the in-memory sampler metadata.
+        result = InferenceResult.from_sampler(
+            sampler=sampler, config=config, runtime=0.0, fixed_params=_fixed_params
+        )
+        result_path = e2e_temp_dir / "result.h5"
+        result.save(result_path)
+        loaded = InferenceResult.load(result_path)
+        assert loaded.histories is not None
+        assert list(loaded.histories["n_substeps_history"]) == list(
+            sampler_metadata["n_substeps_history"]
+        )
 
     def test_partial_posteriors_cadence_groups_events(
         self, smc_partial_posteriors_gw_config, e2e_temp_dir
@@ -128,9 +143,92 @@ class TestSMCPartialPosteriorsE2E:
         plot_outdir = e2e_temp_dir / "cadence_plots"
         sampler.plot_diagnostics(outdir=plot_outdir)  # type: ignore[attr-defined]
         assert (plot_outdir / "smc_diagnostics.png").exists()
-        assert (
-            plot_outdir / "substep_diagnostics" / "00_GW170817+GW190425.png"
-        ).exists()
+        assert (plot_outdir / "substep_diagnostics" / "batch_01.png").exists()
+
+    def test_partial_posteriors_auto_cadence_low_threshold_merges_events(
+        self, smc_partial_posteriors_gw_config, e2e_temp_dir
+    ):
+        """cadence="auto" with a threshold vanishingly close to 0 can never
+        trigger on a queued event in practice (a normalized ESS underflowing
+        to exactly 0.0 in float64 is not realistic for these likelihoods),
+        so both configured events end up queued together and are only
+        assimilated once the last event is reached -- the same outcome as
+        cadence=2.
+        """
+        config_dict = copy.deepcopy(smc_partial_posteriors_gw_config)
+        config_dict["sampler"]["cadence"] = "auto"
+        config_dict["sampler"]["auto_ess_threshold"] = 1e-300
+        _config, sampler = _run_partial_posteriors(config_dict)
+
+        metadata = sampler.metadata  # type: ignore[attr-defined]
+        assert metadata["event_order"] == ["GW170817", "GW190425"]
+        assert metadata["cadence"] == "auto"
+        assert metadata["event_groups"] == [["GW170817", "GW190425"]]
+        assert len(metadata["ess_history"]) == 1
+
+        output = sampler.get_sampler_output()
+        validate_sampler_output(output, expected_params=NEP_PARAMS, min_samples=50)
+
+    def test_partial_posteriors_auto_cadence_high_threshold_triggers_every_event(
+        self, smc_partial_posteriors_gw_config, e2e_temp_dir
+    ):
+        """cadence="auto" with a threshold of 1.0 triggers on essentially
+        every event (a real GW likelihood is never exactly flat across the
+        particle cloud, so the one-shot ESS is always < 1.0) -- the same
+        one-event-at-a-time outcome as the default cadence=1.
+        """
+        config_dict = copy.deepcopy(smc_partial_posteriors_gw_config)
+        config_dict["sampler"]["cadence"] = "auto"
+        config_dict["sampler"]["auto_ess_threshold"] = 1.0
+        _config, sampler = _run_partial_posteriors(config_dict)
+
+        metadata = sampler.metadata  # type: ignore[attr-defined]
+        assert metadata["event_order"] == ["GW170817", "GW190425"]
+        assert metadata["cadence"] == "auto"
+        assert metadata["event_groups"] == [["GW170817"], ["GW190425"]]
+        assert len(metadata["ess_history"]) == 2
+
+        # Sequential, gap-free batch numbering + the batch -> sources map.
+        assert list(metadata["batch_to_sources"].keys()) == ["batch_01", "batch_02"]
+        assert metadata["batch_to_sources"]["batch_01"] == ["GW170817"]
+        assert metadata["batch_to_sources"]["batch_02"] == ["GW190425"]
+        assert metadata["n_batches"] == 2
+
+        # Every one-shot ESS check triggered an update at threshold=1.0.
+        assert len(metadata["auto_cadence_ess_history"]) == 2
+        assert all(metadata["auto_cadence_triggered_history"])
+
+        output = sampler.get_sampler_output()
+        validate_sampler_output(output, expected_params=NEP_PARAMS, min_samples=50)
+
+        plot_outdir = e2e_temp_dir / "auto_cadence_plots"
+        sampler.plot_diagnostics(outdir=plot_outdir)  # type: ignore[attr-defined]
+        assert (plot_outdir / "auto_cadence_ess.png").exists()
+
+    def test_partial_posteriors_auto_cadence_defaults_threshold_to_target_ess(
+        self, smc_partial_posteriors_gw_config
+    ):
+        """auto_ess_threshold is optional; when unset it falls back to
+        inner.target_ess (the same threshold the sub-step bisection itself
+        targets), rather than requiring users to duplicate the value."""
+        config_dict = copy.deepcopy(smc_partial_posteriors_gw_config)
+        config_dict["sampler"]["cadence"] = "auto"
+        _config, sampler = _run_partial_posteriors(config_dict)
+
+        metadata = sampler.metadata  # type: ignore[attr-defined]
+        assert metadata["auto_ess_threshold"] == metadata["target_ess"]
+
+    def test_partial_posteriors_auto_ess_threshold_requires_auto_cadence(
+        self, smc_partial_posteriors_gw_config
+    ):
+        """Setting auto_ess_threshold without cadence="auto" would silently
+        have no effect -- must fail fast at config-parse time instead."""
+        config_dict = copy.deepcopy(smc_partial_posteriors_gw_config)
+        config_dict["sampler"]["cadence"] = 1
+        config_dict["sampler"]["auto_ess_threshold"] = 0.5
+
+        with pytest.raises(ValueError, match="auto_ess_threshold"):
+            InferenceConfig(**config_dict)
 
     def test_partial_posteriors_cadence_list_must_sum_to_new_events(
         self, smc_partial_posteriors_gw_config
@@ -289,6 +387,15 @@ class TestSMCPartialPosteriorsWarmStart:
         assert stage2_metadata["event_order"] == ["GW170817", "GW190425"]
         assert stage2_metadata["n_events_replayed"] == 1
         assert stage2_metadata["warm_start_from"] == str(stage1_path)
+
+        # Stage 1 used up batch_01; stage 2's own batch continues numbering
+        # from there (batch_02) instead of restarting at batch_01, so the
+        # two runs' substep_diagnostics filenames never collide if written
+        # to the same outdir.
+        assert stage1_sampler.metadata["n_batches"] == 1  # type: ignore[attr-defined]
+        assert list(stage2_metadata["batch_to_sources"].keys()) == ["batch_02"]
+        assert stage2_metadata["batch_to_sources"]["batch_02"] == ["GW190425"]
+        assert stage2_metadata["n_batches"] == 2
         # Only the new event (GW190425) is stepped through, not GW170817.
         assert len(stage2_metadata["ess_history"]) == 1
         assert len(stage2_metadata["acceptance_history"]) == 1
@@ -305,7 +412,7 @@ class TestSMCPartialPosteriorsWarmStart:
         plot_outdir = e2e_temp_dir / "plots"
         stage2_sampler.plot_diagnostics(outdir=plot_outdir)  # type: ignore[attr-defined]
         assert (plot_outdir / "smc_diagnostics.png").exists()
-        assert (plot_outdir / "substep_diagnostics" / "01_GW190425.png").exists()
+        assert (plot_outdir / "substep_diagnostics" / "batch_02.png").exists()
 
     def test_warm_start_rejects_non_prefix_event_order(
         self, smc_partial_posteriors_gw_config, e2e_temp_dir
