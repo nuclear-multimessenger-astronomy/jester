@@ -785,8 +785,7 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
     @staticmethod
     def _predict_full_jump_ess(
         particles: Array,
-        ordered_event_vals: Callable[[Array], Array],
-        group_indices: list[int],
+        candidate_event_vals_fn: Callable[[Array], Array],
     ) -> float:
         """Full-jump ESS of a candidate event group against the current
         particle cloud, without running any annealing sub-steps or MCMC
@@ -794,9 +793,9 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         step (see ``dev/predictors/full_jump_ess_predictor.tex`` in the
         parent development workspace for the full derivation).
 
-        If ``group_indices``' combined mask were jumped straight from 0 to
-        1, the resulting (unnormalized) importance weight for particle j is
-        ``exp(sum_i logl_i(particle_j))``, i.e. the current particles
+        If the candidate group's combined mask were jumped straight from 0
+        to 1, the resulting (unnormalized) importance weight for particle j
+        is ``exp(sum_i logl_i(particle_j))``, i.e. the current particles
         reweighted by the candidate group's likelihood alone -- exactly the
         quantity ``ess_solver``/``dichotomy`` evaluate as their first probe
         (``fun(max_delta)``) at the start of every sub-step bisection, just
@@ -806,31 +805,29 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         every sub-step -- see ``partial_posteriors_smc.tex``), no
         re-evaluation of previously-assimilated or not-yet-touched events'
         likelihoods is needed: this is a plain importance-weighting
-        computation using only ``group_indices``' own log-likelihoods.
+        computation using only the candidate group's own log-likelihoods.
 
         Parameters
         ----------
         particles : Array
             Current flattened SMC particle cloud (``state.particles``),
             assumed uniformly weighted.
-        ordered_event_vals : Callable[[Array], Array]
-            Per-particle function returning per-event log-likelihoods (one
-            entry per configured GW event, in ``self._event_order``/mask
-            order) -- the same closure the sub-step loop already builds and
-            vmaps over particles for each group's ``batched_group_loglik_fn``.
-        group_indices : list[int]
-            Indices into ``self._event_order`` of the candidate event(s)
-            (the pending auto-cadence queue).
+        candidate_event_vals_fn : Callable[[Array], Array]
+            Per-particle function returning one log-likelihood per candidate
+            (pending) event -- e.g. from
+            ``self._build_ordered_event_vals_fn(pending_names)``. Deliberately
+            built over *only* the candidate events, not every configured
+            event, so this check's cost scales with the (small) pending
+            queue rather than the full event count.
 
         Returns
         -------
         float
             Normalized ESS in [0, 1] (fraction of ``n_particles``).
         """
-        indices_arr = jnp.array(group_indices)
 
         def group_loglik(x: Array) -> Array:
-            return jnp.sum(ordered_event_vals(x)[indices_arr])
+            return jnp.sum(candidate_event_vals_fn(x))
 
         log_weights = jax.vmap(group_loglik)(particles)
         n_particles = log_weights.shape[0]
@@ -1051,6 +1048,72 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
 
         return jax.jit(loglikelihood_array_fn)
 
+    def _build_ordered_event_vals_fn(
+        self, names: list[str]
+    ) -> Callable[[Array], Array]:
+        """Per-event log-likelihood function restricted to ``names``, in
+        that order -- the compute graph it builds only ever covers
+        ``names``, not every configured GW event.
+
+        Sources (``self._event_likelihoods``) not contributing any event in
+        ``names`` are dropped entirely; a ``StackedGWLikelihood`` source
+        contributing only some of its events is narrowed with
+        :meth:`~jesterTOV.inference.likelihoods.gw.StackedGWLikelihood.subset`
+        (a cheap slice of already-loaded, already-stacked flow weights -- no
+        flow is reloaded or retrained).
+
+        This is what lets ``sample()`` build a fresh, smaller substep
+        function at each data-tempering batch boundary instead of one fixed
+        function tracing/compiling (and, at every substep, evaluating) all
+        ``len(self._event_order)`` events regardless of how many are
+        actually in play yet -- see the module docstring and ``sample()``'s
+        per-batch setup below. Also used, with a much smaller ``names``, by
+        ``_predict_full_jump_ess``'s auto-cadence look-ahead, so that check
+        no longer evaluates every configured event just to look at a
+        handful of pending candidates either.
+
+        Parameters
+        ----------
+        names : list[str]
+            Event names to include, in the order the returned function's
+            output array should follow. Must be non-empty and a subset of
+            the event names found across ``self._event_likelihoods``.
+
+        Returns
+        -------
+        Callable[[Array], Array]
+            Function of one flattened particle position, returning one
+            log-likelihood value per name in ``names``, in that order.
+        """
+        names_set = set(names)
+        source_array_fns = []
+        natural_order_names: list[str] = []
+        for lik in self._event_likelihoods:
+            lik_names = [n for n in self._event_names_for(lik) if n in names_set]
+            if not lik_names:
+                continue
+            source = (
+                lik.subset(lik_names) if isinstance(lik, StackedGWLikelihood) else lik
+            )
+            source_array_fns.append(
+                self._wrap_dict_fn_for_flat_arrays(
+                    cast(
+                        Callable[[dict[str, Any]], float],
+                        self._make_event_source_array_fn(source),
+                    )
+                )
+            )
+            natural_order_names.extend(lik_names)
+
+        name_to_local_index = {name: i for i, name in enumerate(natural_order_names)}
+        local_perm = jnp.array([name_to_local_index[name] for name in names])
+
+        def ordered_vals(x_flat: Array) -> Array:
+            vals = jnp.concatenate([f(x_flat) for f in source_array_fns])
+            return vals[local_perm]
+
+        return ordered_vals
+
     def sample(self, key: PRNGKeyArray) -> None:
         """Run SMC on the path of partial posteriors, one event at a time.
 
@@ -1125,76 +1188,39 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         always_on_loglik_fn = self._wrap_dict_fn_for_flat_arrays(
             self._make_loglikelihood_dict_fn(self._always_on_likelihood)
         )
-        # Each source contributes an array of per-event log-likelihoods (one
-        # entry per event for a plain GWLikelihood/GWLikelihoodResampled,
-        # several for a StackedGWLikelihood -- see _event_names_for). These
-        # arrays are concatenated in source order ("natural order"), then
-        # permuted once (a static, Python-level index list, not something
-        # traced) into self._event_order so the mask lines up regardless of
-        # how sources/events happen to be grouped or configured.
-        source_array_fns = [
-            self._wrap_dict_fn_for_flat_arrays(
-                cast(
-                    Callable[[dict[str, Any]], float],
-                    self._make_event_source_array_fn(lik),
-                )
-            )
-            for lik in self._event_likelihoods
-        ]
-        natural_order_names = [
-            name
-            for lik in self._event_likelihoods
-            for name in self._event_names_for(lik)
-        ]
-        name_to_natural_index = {name: i for i, name in enumerate(natural_order_names)}
-        event_order_perm = jnp.array(
-            [name_to_natural_index[name] for name in self._event_order]
-        )
 
-        def ordered_event_vals(x_flat: Array) -> Array:
-            """Per-event log-likelihoods for one particle, in
-            ``self._event_order`` (i.e. mask-index) order."""
-            event_vals_natural = jnp.concatenate([f(x_flat) for f in source_array_fns])
-            return event_vals_natural[event_order_perm]
-
-        def partial_logposterior_factory(data_mask: Array) -> Callable[[Array], Array]:
-            def logpost(x_flat: Array) -> Array:
-                event_vals = ordered_event_vals(x_flat)
-                return (
-                    logprior_fn(x_flat)
-                    + always_on_loglik_fn(x_flat)
-                    + jnp.sum(data_mask * event_vals)
-                )
-
-            return logpost
-
-        n_events = len(self._event_order)
-        full_logposterior_fn = partial_logposterior_factory(jnp.ones(n_events))
-
+        # mcmc_step_fn/mcmc_init_fn/mcmc_parameter_update_fn (RW kernel) only
+        # depend on parameter-space dimensionality via initial_particles --
+        # see _setup_mcmc_kernel's docstring in smc/random_walk.py, which
+        # documents logprior_fn/loglikelihood_fn/logposterior_fn as unused
+        # for the random-walk kernel. So logprior_fn alone is a fine stand-in
+        # for the (unused) logposterior_fn argument here -- building the real
+        # per-event graph eagerly, before any event is even assimilated,
+        # would defeat the point of the per-batch construction below.
         mcmc_step_fn, mcmc_init_fn, init_params, mcmc_parameter_update_fn = (
             self._setup_mcmc_kernel(
                 logprior_fn,
                 always_on_loglik_fn,
-                full_logposterior_fn,
+                logprior_fn,
                 initial_position_flat,
             )
         )
 
+        n_events = len(self._event_order)
         state: PartialPosteriorsSMCState = pp_init(initial_position_flat, n_events)
         mcmc_params = init_params
-        mask = jnp.zeros(n_events)
-        if n_prev_events > 0:
-            # Already-covered events start (and stay) fully on -- they are
-            # not replayed, per the warm-start design (see _load_warm_start).
-            mask = mask.at[:n_prev_events].set(1.0)
-            state = state._replace(data_mask=mask)
-
-        jitted_substep_fn = _build_jitted_substep_fn(
-            mcmc_step_fn,
-            mcmc_init_fn,
-            config.n_mcmc_steps,
-            partial_logposterior_factory,
-        )
+        # active_names tracks which events currently have a place in the
+        # compute graph -- the already-assimilated prefix, grown by one
+        # group at each data-tempering batch boundary below. Events beyond
+        # it are not referenced by any traced function at all (not just
+        # masked to 0), which is the whole point of this incremental
+        # construction -- see _build_ordered_event_vals_fn's docstring and
+        # the module docstring.
+        active_names: list[str] = list(self._event_order[:n_prev_events])
+        # Already-covered events start (and stay) fully on -- they are
+        # not replayed, per the warm-start design (see _load_warm_start).
+        mask = jnp.ones(len(active_names))
+        state = state._replace(data_mask=mask)
 
         n_particles = config.n_particles
         ess_history = []
@@ -1290,8 +1316,15 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             while cursor < len(new_event_indices):
                 pending.append(new_event_indices[cursor])
                 cursor += 1
+                # Built fresh over just the pending (candidate) events, not
+                # every configured event -- see _build_ordered_event_vals_fn
+                # and _predict_full_jump_ess's docstrings.
+                pending_names = [self._event_order[i] for i in pending]
+                candidate_event_vals_fn = self._build_ordered_event_vals_fn(
+                    pending_names
+                )
                 ess_hat = self._predict_full_jump_ess(
-                    cast(Array, state.particles), ordered_event_vals, pending
+                    cast(Array, state.particles), candidate_event_vals_fn
                 )
                 triggered = ess_hat < auto_ess_threshold
                 auto_cadence_ess_checks.append((ess_hat, triggered))
@@ -1319,15 +1352,63 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             logger.info(f"{batch_key}: {group_name}")
             event_groups_names.append(group_names)
             batch_to_sources[batch_key] = group_names
-            group_indices = jnp.array(group)
             group_log_evidence = 0.0
             info = None
             n_substeps_taken = 0
 
+            # Grow the active set by this batch's group and rebuild the
+            # compute graph (ordered_event_vals / partial_logposterior_factory
+            # / the jitted substep function) over exactly active_names --
+            # not every configured event. This is what makes batch_01's
+            # graph cover 1-2 events instead of every configured event, and
+            # every substep's runtime cost scale with events-assimilated-
+            # so-far rather than the total count -- see the module docstring
+            # and _build_ordered_event_vals_fn's docstring. A fresh jax.jit
+            # is deliberately paid for once per batch boundary here (not
+            # once per substep -- that recompilation trap is what
+            # _build_jitted_substep_fn's own docstring already fixed).
+            n_prev_active = len(active_names)
+            active_names = active_names + group_names
+            ordered_event_vals = self._build_ordered_event_vals_fn(active_names)
+
+            def partial_logposterior_factory(
+                data_mask: Array,
+                ordered_event_vals: Callable[[Array], Array] = ordered_event_vals,
+            ) -> Callable[[Array], Array]:
+                def logpost(x_flat: Array) -> Array:
+                    return (
+                        logprior_fn(x_flat)
+                        + always_on_loglik_fn(x_flat)
+                        + jnp.sum(data_mask * ordered_event_vals(x_flat))
+                    )
+
+                return logpost
+
+            jitted_substep_fn = _build_jitted_substep_fn(
+                mcmc_step_fn,
+                mcmc_init_fn,
+                config.n_mcmc_steps,
+                partial_logposterior_factory,
+            )
+
+            # Local indices into this batch's (grown) active_names-length
+            # mask -- always the newly appended suffix, contiguous, unlike
+            # the old global self._event_order indices.
+            group_local_indices = jnp.arange(n_prev_active, len(active_names))
+            mask = jnp.concatenate([mask, jnp.zeros(len(group_names))])
+            # state.data_mask must be resized to match before the first
+            # substep call below: the substep function reads
+            # state.data_mask to build previous_logposterior_fn (the
+            # resample-move target, see _build_jitted_substep_fn's
+            # docstring), and that must line up with this batch's (grown)
+            # ordered_event_vals -- already-assimilated events at 1.0, the
+            # new group at 0.0, exactly mask's value before ramping starts.
+            state = state._replace(data_mask=mask)
+
             def batched_group_loglik_fn(
-                x: Array, group_indices: Array = group_indices
+                x: Array, group_local_indices: Array = group_local_indices
             ) -> Array:
-                return jnp.sum(ordered_event_vals(x)[group_indices])
+                return jnp.sum(ordered_event_vals(x)[group_local_indices])
 
             batched_group_loglik_fn = jax.vmap(batched_group_loglik_fn)
             mask_fraction_history: list[float] = []
@@ -1335,8 +1416,8 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             substep_acceptance_history: list[float] = []
             substep_log_evidence_history: list[float] = []
 
-            while float(mask[group[0]]) < 1.0:
-                current_frac = float(mask[group[0]])
+            current_frac = 0.0
+            while current_frac < 1.0:
                 max_delta = 1.0 - current_frac
                 raw_delta = ess_solver(
                     batched_group_loglik_fn,
@@ -1360,7 +1441,7 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
                     delta = float(jnp.clip(raw_delta, 0.0, max_delta))
                 new_frac = current_frac + delta
 
-                new_mask = mask.at[group_indices].set(new_frac)
+                new_mask = mask.at[group_local_indices].set(new_frac)
                 key, subkey, update_key = jax.random.split(key, 3)
                 substep_start_time = time.time()
                 state, info = jitted_substep_fn(subkey, state, new_mask, mcmc_params)
@@ -1369,6 +1450,7 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
                 )
                 substep_elapsed = time.time() - substep_start_time
                 mask = new_mask
+                current_frac = new_frac
                 substep_log_evidence_increment = float(info.log_likelihood_increment)
                 group_log_evidence += substep_log_evidence_increment
                 n_substeps_taken += 1

@@ -683,3 +683,64 @@ class StackedGWLikelihood(LikelihoodBase):
             GWLikelihood.evaluate() calls through CombinedLikelihood).
         """
         return jnp.sum(self.evaluate_per_event(params))
+
+    def subset(self, event_names: list[str]) -> "StackedGWLikelihood":
+        """A new StackedGWLikelihood restricted to a subset of events.
+
+        Slices the already-stacked flow weights, (de)standardization arrays
+        and pre-sampled masses along their leading "event" axis -- no flows
+        are reloaded, retrained, or re-sampled. Used by
+        :class:`~jesterTOV.inference.samplers.blackjax.smc.partial_posteriors.BlackJAXPartialPosteriorsRandomWalkSampler`
+        to build a compute graph over only the events assimilated so far in
+        a data-tempering run, instead of every configured event.
+
+        Parameters
+        ----------
+        event_names : list[str]
+            Subset of ``self.event_names`` to keep, in this order (need not
+            match ``self.event_names``' order, and need not be contiguous).
+
+        Returns
+        -------
+        StackedGWLikelihood
+            A new instance sharing this one's flow architecture
+            (``self._static``) and scalar config (penalty_value,
+            N_masses_evaluation, seed, ...), with ``event_names`` and all
+            per-event stacked arrays restricted to ``event_names``.
+            ``event_batch_size`` is capped at ``len(event_names)`` so it
+            never exceeds the new (smaller) event axis.
+
+        Raises
+        ------
+        ValueError
+            If ``event_names`` is empty, or contains a name not present in
+            ``self.event_names``.
+        """
+        if not event_names:
+            raise ValueError("subset() requires at least one event name")
+        missing = sorted(set(event_names) - set(self.event_names))
+        if missing:
+            raise ValueError(
+                f"subset() got event name(s) not in this likelihood: {missing}. "
+                f"Available: {self.event_names}"
+            )
+
+        idx = jnp.array([self.event_names.index(name) for name in event_names])
+
+        new = object.__new__(StackedGWLikelihood)
+        new.event_names = list(event_names)
+        new.penalty_value = self.penalty_value
+        new.N_masses_evaluation = self.N_masses_evaluation
+        new.N_masses_batch_size = self.N_masses_batch_size
+        new.event_batch_size = min(self.event_batch_size, len(event_names))
+        new.seed = self.seed
+        new.standardization_method = self.standardization_method
+        new.use_float32 = self.use_float32
+        new._static = self._static
+        new._stacked_dynamic = jax.tree_util.tree_map(
+            lambda leaf: leaf[idx], self._stacked_dynamic
+        )
+        new._loc = self._loc[idx]
+        new._scale = self._scale[idx]
+        new._fixed_mass_samples = self._fixed_mass_samples[idx]
+        return new

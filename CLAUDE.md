@@ -73,6 +73,7 @@ Five sampler backends available for Bayesian inference:
    - Tempers by *number of GW events included*, not by inverse-temperature λ
    - Requires at least one `gw` likelihood event
    - The MCMC move within each sub-step targets the *old* (pre-substep) mask, not the new one — the "resample-move" construction (Gilks & Berzuini 2001), which makes the per-substep log-evidence increment exact at any mask-jump size (see `_build_jitted_substep_fn`'s docstring in `jesterTOV/inference/samplers/blackjax/smc/partial_posteriors.py`); each event is still ramped in over an adaptive, uncapped sequence of fractional steps (ESS-targeting bisection reusing `smc-rw`'s `target_ess` machinery), now purely for MCMC-mixing quality rather than evidence correctness
+   - The jitted substep function's compute graph is rebuilt once per data-tempering batch, over only the events assimilated so far (`_build_ordered_event_vals_fn`, `StackedGWLikelihood.subset()`) — not once for the whole run over every configured event, which would otherwise force every substep of every batch to evaluate every configured event's flow regardless of mask (see `jesterTOV/inference/CLAUDE.md` for the full explanation)
    - Config is split into two levels: the top level (`event_order`, `warm_start_from`) only orchestrates event assimilation; the nested `inner` block fully specifies the adaptive SMC-RW loop used to ramp in each event
    - See {ref}`sampler-smc-partial-posteriors` in the docs for the full write-up
 

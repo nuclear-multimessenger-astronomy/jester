@@ -1025,6 +1025,122 @@ class TestStackedGWLikelihood:
                 model_dirs=["/some/dir"],
             )
 
+    def test_subset_matches_fresh_likelihood_built_from_same_events(self, tmp_path):
+        """subset() must be numerically equivalent to constructing a fresh
+        StackedGWLikelihood directly from the subset's model dirs -- it's a
+        cheap re-slicing of already-loaded arrays, not a different
+        computation. Covers both evaluate_per_event (per-event array) and
+        evaluate (summed scalar)."""
+        n_events = 4
+        model_dirs = [
+            _save_toy_flow(tmp_path / f"event_{i}", seed=i) for i in range(n_events)
+        ]
+        event_names = [f"event_{i}" for i in range(n_events)]
+
+        full = StackedGWLikelihood(
+            event_names=event_names,
+            model_dirs=[str(d) for d in model_dirs],
+            N_masses_evaluation=20,
+            N_masses_batch_size=5,
+            event_batch_size=2,
+            seed=42,
+        )
+
+        # Non-contiguous, reordered subset -- would surface index-mixup bugs.
+        subset_names = ["event_2", "event_0"]
+        subset = full.subset(subset_names)
+
+        fresh = StackedGWLikelihood(
+            event_names=subset_names,
+            model_dirs=[str(model_dirs[2]), str(model_dirs[0])],
+            N_masses_evaluation=20,
+            N_masses_batch_size=5,
+            event_batch_size=2,
+            seed=42,
+        )
+
+        masses_eos = jnp.linspace(1.0, 2.2, 100)
+        lambdas_eos = jnp.linspace(2000.0, 10.0, 100)
+        params = {"masses_EOS": masses_eos, "Lambdas_EOS": lambdas_eos}
+
+        assert subset.event_names == subset_names
+        assert jnp.allclose(
+            subset.evaluate_per_event(params),
+            fresh.evaluate_per_event(params),
+            rtol=1e-6,
+        )
+        assert jnp.allclose(subset.evaluate(params), fresh.evaluate(params), rtol=1e-6)
+
+        # The original (un-subset) likelihood is untouched.
+        assert full.event_names == event_names
+
+    def test_subset_single_event_matches_plain_gw_likelihood(self, tmp_path):
+        """A one-event subset must agree with GWLikelihood on that one event
+        -- the same equivalence StackedGWLikelihood itself is tested against."""
+        n_events = 3
+        model_dirs = [
+            _save_toy_flow(tmp_path / f"event_{i}", seed=i) for i in range(n_events)
+        ]
+        event_names = [f"event_{i}" for i in range(n_events)]
+        full = StackedGWLikelihood(
+            event_names=event_names,
+            model_dirs=[str(d) for d in model_dirs],
+            N_masses_evaluation=20,
+            N_masses_batch_size=5,
+            seed=42,
+        )
+        subset = full.subset(["event_1"])
+
+        individual = GWLikelihood(
+            event_name="event_1",
+            model_dir=str(model_dirs[1]),
+            N_masses_evaluation=20,
+            N_masses_batch_size=5,
+            seed=42,
+        )
+
+        masses_eos = jnp.linspace(1.0, 2.2, 100)
+        lambdas_eos = jnp.linspace(2000.0, 10.0, 100)
+        params = {"masses_EOS": masses_eos, "Lambdas_EOS": lambdas_eos}
+
+        assert jnp.allclose(
+            subset.evaluate(params), individual.evaluate(params), rtol=1e-6
+        )
+
+    def test_subset_caps_event_batch_size(self, tmp_path):
+        """event_batch_size must never exceed the new (smaller) event axis,
+        or jax.lax.map would be handed a batch_size larger than its input."""
+        n_events = 4
+        model_dirs = [
+            _save_toy_flow(tmp_path / f"event_{i}", seed=i) for i in range(n_events)
+        ]
+        event_names = [f"event_{i}" for i in range(n_events)]
+        full = StackedGWLikelihood(
+            event_names=event_names,
+            model_dirs=[str(d) for d in model_dirs],
+            N_masses_evaluation=10,
+            event_batch_size=4,
+            seed=0,
+        )
+        subset = full.subset(["event_0", "event_1"])
+        assert subset.event_batch_size == 2
+
+    def test_subset_raises_on_empty_list(self, tmp_path):
+        model_dirs = [_save_toy_flow(tmp_path / "event_0", seed=0)]
+        full = StackedGWLikelihood(
+            event_names=["event_0"], model_dirs=[str(model_dirs[0])]
+        )
+        with pytest.raises(ValueError, match="at least one event"):
+            full.subset([])
+
+    def test_subset_raises_on_unknown_event_name(self, tmp_path):
+        model_dirs = [_save_toy_flow(tmp_path / "event_0", seed=0)]
+        full = StackedGWLikelihood(
+            event_names=["event_0"], model_dirs=[str(model_dirs[0])]
+        )
+        with pytest.raises(ValueError, match="not_a_real_event"):
+            full.subset(["not_a_real_event"])
+
 
 class TestLikelihoodFactory:
     """Test likelihood factory functionality."""
