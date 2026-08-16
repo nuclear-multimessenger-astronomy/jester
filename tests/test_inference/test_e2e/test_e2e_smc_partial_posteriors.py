@@ -8,6 +8,8 @@ jesterTOV/inference/samplers/blackjax/smc/partial_posteriors.py).
 
 import copy
 
+import numpy as np
+
 import pytest
 import jax
 import jax.numpy as jnp
@@ -575,3 +577,75 @@ class TestSMCPartialPosteriorsWarmStart:
 
         output = stage2_sampler.get_sampler_output()
         validate_sampler_output(output, expected_params=NEP_PARAMS, min_samples=50)
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+@pytest.mark.e2e
+class TestSMCPartialPosteriorsFinalRejuvenation:
+    """Tests for the optional final-rejuvenation move on the
+    partial-posteriors sampler (``inner.n_final_rejuvenation_steps``, see
+    ``smc/rejuvenation.py``).
+
+    Jester's own partial-posteriors substep kernel deliberately builds
+    each sub-step's MCMC move to target the *old* (pre-substep) mask, not
+    the new one -- the Gilks & Berzuini (2001) resample-move construction
+    that keeps the per-substep log-evidence increment exact. One
+    consequence is that the particles are only ever *reweighted*, never
+    actually MCMC-moved, to represent the truly final (fully-assimilated)
+    target -- so the terminal resample-to-uniform-weights step leaves
+    exact-duplicate particles behind, exactly as in plain ``smc-rw`` (see
+    ``TestSMCRandomWalkFinalRejuvenation`` in ``test_e2e_smc_rw.py``).
+    """
+
+    def test_rejuvenation_eliminates_exact_duplicates_without_shifting_posterior(
+        self, smc_partial_posteriors_gw_config
+    ):
+        """Same seed for both runs, isolating the rejuvenation steps'
+        effect exactly as the smc-rw counterpart test does."""
+        seed = 7
+        config_off = copy.deepcopy(smc_partial_posteriors_gw_config)
+        config_off["sampler"]["inner"]["n_final_rejuvenation_steps"] = 0
+        config_off["seed"] = seed
+        config_on = copy.deepcopy(smc_partial_posteriors_gw_config)
+        config_on["sampler"]["inner"]["n_final_rejuvenation_steps"] = 30
+        config_on["seed"] = seed
+
+        _config_off, sampler_off = _run_partial_posteriors(config_off)
+        _config_on, sampler_on = _run_partial_posteriors(config_on)
+
+        out_off = sampler_off.get_sampler_output()
+        out_on = sampler_on.get_sampler_output()
+
+        samples_off = np.column_stack(
+            [np.asarray(out_off.samples[k]) for k in NEP_PARAMS]
+        )
+        samples_on = np.column_stack(
+            [np.asarray(out_on.samples[k]) for k in NEP_PARAMS]
+        )
+        n_particles = samples_off.shape[0]
+        n_unique_off = len(np.unique(samples_off, axis=0))
+        n_unique_on = len(np.unique(samples_on, axis=0))
+
+        assert n_unique_off < n_particles, (
+            "Expected the baseline (no rejuvenation) run to contain some "
+            "exact-duplicate particles from SMC resampling degeneracy -- "
+            "if this now fails, either this lightweight config's "
+            "n_particles is too small to reliably reproduce the artifact, "
+            "or something upstream changed."
+        )
+        assert n_unique_on == n_particles, (
+            f"Rejuvenation should eliminate exact-duplicate particles: "
+            f"got {n_unique_on}/{n_particles} unique (baseline had "
+            f"{n_unique_off}/{n_particles})"
+        )
+
+        mean_off = samples_off.mean(axis=0)
+        mean_on = samples_on.mean(axis=0)
+        std_off = samples_off.std(axis=0)
+        standard_error = std_off / np.sqrt(n_particles)
+        assert np.all(np.abs(mean_on - mean_off) < 5 * standard_error), (
+            f"Posterior means shifted more than expected after adding "
+            f"rejuvenation: max |shift|/SE = "
+            f"{np.max(np.abs(mean_on - mean_off) / standard_error):.2f}"
+        )

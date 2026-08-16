@@ -665,6 +665,7 @@ sampler:
   adaptive_step_size: false      # Adapt step size toward target_acceptance_rate (recommended for high-SNR signals)
   target_acceptance_rate: 0.234  # Target acceptance rate (Roberts-Rosenthal optimal for random-walk Metropolis)
   n_pretune_steps: 20            # Pilot steps to calibrate the initial step size before annealing starts
+  n_final_rejuvenation_steps: 0  # Extra MCMC steps after the terminal resample, targeting the fixed final posterior (0 = disabled)
 ```
 
 **Field Details:**
@@ -676,6 +677,7 @@ sampler:
 - **`adaptive_step_size`** (`bool`, default: `False`) - Adapt the step size per particle toward `target_acceptance_rate` instead of using a fixed `random_walk_sigma` throughout. Recommended for high-SNR signals (e.g. ET), where the posterior narrows quickly during annealing and a fixed sigma causes the acceptance rate to collapse. Uses BlackJAX's `update_scale_from_acceptance_rate`, the standard Roberts-Rosenthal optimal-scaling update for random-walk Metropolis.
 - **`target_acceptance_rate`** (`float`, default: `0.234`) - Target acceptance rate for adaptive step size. Only used when `adaptive_step_size` is `True`.
 - **`n_pretune_steps`** (`int`, default: `20`) - Number of pilot Metropolis steps run on the initial (prior) particles before annealing starts, to calibrate a good initial step size regardless of the chosen `random_walk_sigma`. Only used when `adaptive_step_size` is `True`; set to `0` to disable and start annealing directly from `random_walk_sigma`.
+- **`n_final_rejuvenation_steps`** (`int`, default: `0`) - Number of extra MCMC steps run on the particles after the terminal resample-to-uniform-weights step, targeting the fixed final posterior. BlackJAX's tempered-SMC move always targets the *previous* tempering step's distribution, so the particles are only ever reweighted -- never actually MCMC-moved -- under the true final target; the terminal resample this produces leaves some exact-duplicate particles (typically ~5-10% of `n_particles`), invisible to most summary statistics but visible as sampling noise in finely-resolved derived quantities (e.g. a mass-Lambda credible band). Since the final target is fixed, these extra steps are a plain invariance-preserving rejuvenation move (no bias): set to a small positive value (e.g. `10`-`20`) to de-duplicate the stored posterior.
 
 ::::
 

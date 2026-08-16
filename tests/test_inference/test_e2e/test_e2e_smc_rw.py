@@ -4,9 +4,12 @@ SMC-RW is the production-ready, recommended sampler.
 These tests verify the full pipeline: config -> sampler.sample() -> SamplerOutput.
 """
 
+import copy
+
 import pytest
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 from jesterTOV.inference.config.schema import InferenceConfig
 from jesterTOV.inference.run_inference import (
@@ -216,4 +219,96 @@ class TestSMCRandomWalkE2E:
             f"Adaptive step size did not improve on mis-tuned fixed sigma: "
             f"fixed acceptance={fixed_acceptance:.4f} (|error|={fixed_error:.4f}), "
             f"adaptive acceptance={adaptive_acceptance:.4f} (|error|={adaptive_error:.4f})"
+        )
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+@pytest.mark.e2e
+class TestSMCRandomWalkFinalRejuvenation:
+    """Tests for the optional final-rejuvenation move
+    (``n_final_rejuvenation_steps``, see ``smc/rejuvenation.py``).
+
+    BlackJAX's tempered SMC builds each step's MCMC move to target the
+    *previous* step's distribution, so the terminal resample-to-uniform-
+    weights step (done to produce an i.i.d.-looking sample for storage)
+    leaves some exact-duplicate particles behind (SMC resampling
+    degeneracy at ESS < n_particles) that are never subsequently moved.
+    ``n_final_rejuvenation_steps`` > 0 runs a few extra MCMC steps
+    targeting the fixed final posterior after that resample, which should
+    eliminate the duplicates without shifting the posterior.
+    """
+
+    @staticmethod
+    def _run(config_dict, n_final_rejuvenation_steps, seed):
+        config_dict = copy.deepcopy(config_dict)
+        config_dict["sampler"][
+            "n_final_rejuvenation_steps"
+        ] = n_final_rejuvenation_steps
+        config_dict["seed"] = seed
+        config = InferenceConfig(**config_dict)
+        prior, _fixed_params = setup_prior(config)
+        keep_names = determine_keep_names(config, prior)
+        transform = setup_transform(config, prior=prior, keep_names=keep_names)
+        likelihood = setup_likelihood(config, transform)
+        sampler = create_sampler(
+            config=config.sampler,
+            prior=prior,
+            likelihood=likelihood,
+            likelihood_transforms=[transform],
+            seed=config.seed,
+        )
+        sampler.sample(jax.random.PRNGKey(config.seed))
+        return sampler.get_sampler_output()
+
+    def test_rejuvenation_eliminates_exact_duplicates_without_shifting_posterior(
+        self, smc_rw_prior_config
+    ):
+        """Same seed for both runs: the annealing schedule and the
+        terminal resample are bitwise identical between the two, so any
+        difference is caused purely by the extra rejuvenation MCMC steps
+        (an invariance-preserving move on the *same* fixed final target,
+        not an independent re-run) -- isolating the effect cleanly.
+        """
+        seed = 123
+        out_off = self._run(smc_rw_prior_config, 0, seed)
+        out_on = self._run(smc_rw_prior_config, 30, seed)
+
+        samples_off = np.column_stack(
+            [np.asarray(out_off.samples[k]) for k in NEP_PARAMS]
+        )
+        samples_on = np.column_stack(
+            [np.asarray(out_on.samples[k]) for k in NEP_PARAMS]
+        )
+        n_particles = samples_off.shape[0]
+        n_unique_off = len(np.unique(samples_off, axis=0))
+        n_unique_on = len(np.unique(samples_on, axis=0))
+
+        assert n_unique_off < n_particles, (
+            "Expected the baseline (no rejuvenation) run to contain some "
+            "exact-duplicate particles from SMC resampling degeneracy -- "
+            "if this now fails, either this lightweight config's "
+            "n_particles is too small to reliably reproduce the artifact, "
+            "or something upstream changed (e.g. target_ess, resampling)."
+        )
+        assert n_unique_on == n_particles, (
+            f"Rejuvenation should eliminate exact-duplicate particles: "
+            f"got {n_unique_on}/{n_particles} unique (baseline had "
+            f"{n_unique_off}/{n_particles})"
+        )
+
+        # Bias check: rejuvenation only adds invariance-preserving MCMC
+        # steps targeting the same fixed final posterior the pre-
+        # rejuvenation particles already (approximately) represent, so
+        # per-parameter means should barely move -- generous tolerance
+        # since this is a smoke check on a tiny (n_particles=100) run, not
+        # a precision benchmark.
+        mean_off = samples_off.mean(axis=0)
+        mean_on = samples_on.mean(axis=0)
+        std_off = samples_off.std(axis=0)
+        standard_error = std_off / np.sqrt(n_particles)
+        assert np.all(np.abs(mean_on - mean_off) < 5 * standard_error), (
+            f"Posterior means shifted more than expected after adding "
+            f"rejuvenation: max |shift|/SE = "
+            f"{np.max(np.abs(mean_on - mean_off) / standard_error):.2f}"
         )

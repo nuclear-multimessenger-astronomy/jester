@@ -31,6 +31,7 @@ from jesterTOV.inference.config.schema import (
 )
 from jesterTOV.inference.samplers.jester_sampler import SamplerOutput
 from jesterTOV.inference.samplers.blackjax.base import BlackjaxSampler
+from jesterTOV.inference.samplers.blackjax.smc.rejuvenation import rejuvenate_particles
 from jesterTOV.logging_config import get_logger
 
 from blackjax import adaptive_tempered_smc
@@ -532,6 +533,25 @@ class BlackjaxSMCSampler(BlackjaxSampler):
         resample_idx = systematic(resample_key, self._weights, self.config.n_particles)
         self._particles_flat = self._particles_flat[resample_idx]
         self._weights = jnp.ones(self.config.n_particles) / self.config.n_particles
+
+        # Optional final rejuvenation: the resample above corrects the
+        # *weighting* but the resampled particles were last actually
+        # MCMC-moved under the previous tempering step, not this final one
+        # (blackjax's tempered-SMC move always targets the pre-increment
+        # lambda -- see rejuvenation.py's module docstring). Left disabled
+        # by default (n_final_rejuvenation_steps=0) for backward
+        # compatibility with existing configs/results.
+        if self.config.n_final_rejuvenation_steps > 0:
+            key, rejuvenation_key = jax.random.split(key)
+            self._particles_flat = rejuvenate_particles(
+                rejuvenation_key,
+                self._particles_flat,
+                logposterior_fn,
+                mcmc_step_fn,
+                mcmc_init_fn,
+                state.parameter_override,
+                self.config.n_final_rejuvenation_steps,
+            )
 
         # Compute summary statistics
         mean_ess = float(jnp.mean(ess_history[:steps]))

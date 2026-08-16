@@ -189,6 +189,19 @@ class SMCRandomWalkParamsMixin(JesterBaseModel):
         starts, to calibrate a good initial step size regardless of how `random_walk_sigma` was
         set (default: 20). Only used when `adaptive_step_size` is True. Set to 0 to disable
         pretuning and start annealing directly from `random_walk_sigma`.
+    n_final_rejuvenation_steps : int
+        Number of extra MCMC steps run on the particles *after* the terminal
+        resample-to-uniform-weights step, targeting the fixed final posterior (default: 0,
+        disabled). BlackJAX's tempered-SMC kernel builds each step's MCMC move to target the
+        *previous* step's distribution (an intentional "resample-move" construction, see
+        ``smc/base.py``'s and ``smc/partial_posteriors.py``'s module docstrings), so the
+        particles are only ever reweighted -- never actually MCMC-moved -- under the true final
+        target. The terminal resample this run makes uniform-weight duplicates of a subset of
+        those never-moved particles (typically ~5-10% of `n_particles`), which is invisible to
+        most summary statistics but shows up as sampling noise in finely-resolved derived
+        quantities. Since the final target doesn't change anymore, these extra steps are a
+        plain invariance-preserving MCMC rejuvenation move (no bias): set to a small positive
+        value (e.g. 10-20) to de-duplicate the stored posterior sample.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -200,6 +213,7 @@ class SMCRandomWalkParamsMixin(JesterBaseModel):
     adaptive_step_size: bool = False
     target_acceptance_rate: float = 0.234
     n_pretune_steps: int = 20
+    n_final_rejuvenation_steps: int = 0
 
     @field_validator("n_particles", "n_mcmc_steps")
     @classmethod
@@ -208,7 +222,7 @@ class SMCRandomWalkParamsMixin(JesterBaseModel):
             raise ValueError(f"Value must be positive, got: {v}")
         return v
 
-    @field_validator("n_pretune_steps")
+    @field_validator("n_pretune_steps", "n_final_rejuvenation_steps")
     @classmethod
     def _validate_nonnegative(cls, v: int) -> int:
         if v < 0:
@@ -270,6 +284,11 @@ class SMCNUTSSamplerConfig(BaseSamplerConfig):
         Target acceptance rate (default: 0.7)
     adaptation_rate : float
         Adaptation rate for step size tuning (default: 0.3)
+    n_final_rejuvenation_steps : int
+        Number of extra MCMC steps run on the particles after the terminal
+        resample-to-uniform-weights step, targeting the fixed final posterior (default: 0,
+        disabled). See :class:`SMCRandomWalkParamsMixin`'s field of the same name for the full
+        rationale -- identical mechanism, shared post-loop code path in ``smc/base.py``.
     """
 
     type: Literal["smc-nuts"] = "smc-nuts"
@@ -281,12 +300,20 @@ class SMCNUTSSamplerConfig(BaseSamplerConfig):
     mass_matrix_param_scales: dict[str, float] = Field(default_factory=dict)
     target_acceptance: float = 0.7
     adaptation_rate: float = 0.3
+    n_final_rejuvenation_steps: int = 0
 
     @field_validator("n_particles", "n_mcmc_steps")
     @classmethod
     def _validate_positive(cls, v: int) -> int:
         if v <= 0:
             raise ValueError(f"Value must be positive, got: {v}")
+        return v
+
+    @field_validator("n_final_rejuvenation_steps")
+    @classmethod
+    def _validate_nonnegative(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError(f"Value must be non-negative, got: {v}")
         return v
 
     @field_validator("target_ess", "target_acceptance", "adaptation_rate")

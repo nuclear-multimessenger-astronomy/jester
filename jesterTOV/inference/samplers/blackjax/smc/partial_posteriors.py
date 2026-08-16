@@ -91,6 +91,7 @@ from jesterTOV.inference.samplers.blackjax.smc.base import (
     format_elapsed,
     make_progress_bar,
 )
+from jesterTOV.inference.samplers.blackjax.smc.rejuvenation import rejuvenate_particles
 from jesterTOV.inference.samplers.blackjax.smc.random_walk import (
     BlackJAXSMCRandomWalkSampler,
 )
@@ -594,6 +595,10 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         state: PartialPosteriorsSMCState,
         config: SMCPartialPosteriorsRandomWalkSamplerConfig,
         n_particles: int,
+        logposterior_fn: Callable[[Array], Array],
+        mcmc_step_fn: Callable,
+        mcmc_init_fn: Callable,
+        mcmc_parameters: Any,
         event_order_so_far: list[str],
         event_groups_names_so_far: list[list[str]],
         n_prev_events: int,
@@ -627,6 +632,19 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         state : PartialPosteriorsSMCState
             Current SMC state (particles/weights) after the just-completed
             data-tempering step.
+        logposterior_fn : Callable
+            The target this step's ``state.data_mask`` represents (i.e.
+            ``partial_logposterior_factory(state.data_mask)``, computed by
+            the caller). Used only for the optional final-rejuvenation
+            move below (see ``config.n_final_rejuvenation_steps``) -- not
+            for resampling or reweighting, which use ``state.weights`` as
+            already computed by the just-completed sub-step.
+        mcmc_step_fn, mcmc_init_fn, mcmc_parameters :
+            The same MCMC kernel/parameters used for this batch's
+            sub-steps (``mcmc_params`` in ``sample()``'s loop), reused for
+            the optional final-rejuvenation move so it uses an identical
+            proposal family to whatever already explored this checkpoint's
+            posterior.
         config, n_particles, event_order_so_far, event_groups_names_so_far, n_prev_events, n_prev_batches, batch_to_sources_so_far, ess_history_so_far, acceptance_history_so_far, log_evidence_history_so_far, n_substeps_history_so_far, auto_cadence_ess_checks_so_far, log_evidence_so_far, elapsed_seconds :
             See ``_build_metadata`` -- forwarded directly.
         batch_key : str
@@ -660,6 +678,24 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         resample_idx = systematic(key, weights, n_particles)
         particles_flat = cast(Array, state.particles)[resample_idx]
         uniform_weights = jnp.ones(n_particles) / n_particles
+
+        # Optional final rejuvenation for this checkpoint: the resample
+        # above corrects the *weighting* but the resampled particles were
+        # last actually MCMC-moved under the previous sub-step's mask, not
+        # this one -- see rejuvenation.py's module docstring (same
+        # mechanism as base.py's terminal resample, just once per batch
+        # checkpoint here). Disabled by default (n_final_rejuvenation_steps=0).
+        if config.n_final_rejuvenation_steps > 0:
+            key, rejuvenation_key = jax.random.split(key)
+            particles_flat = rejuvenate_particles(
+                rejuvenation_key,
+                particles_flat,
+                logposterior_fn,
+                mcmc_step_fn,
+                mcmc_init_fn,
+                mcmc_parameters,
+                config.n_final_rejuvenation_steps,
+            )
 
         intermediate_metadata = self._build_metadata(
             config=config,
@@ -1429,6 +1465,10 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
                     state=state,
                     config=config,
                     n_particles=n_particles,
+                    logposterior_fn=partial_logposterior_factory(state.data_mask),
+                    mcmc_step_fn=mcmc_step_fn,
+                    mcmc_init_fn=mcmc_init_fn,
+                    mcmc_parameters=mcmc_params,
                     event_order_so_far=self._event_order[: group[-1] + 1],
                     event_groups_names_so_far=event_groups_names,
                     n_prev_events=n_prev_events,
@@ -1459,6 +1499,24 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         resample_idx = systematic(resample_key, self._weights, n_particles)
         self._particles_flat = self._particles_flat[resample_idx]
         self._weights = jnp.ones(n_particles) / n_particles
+
+        # Optional final rejuvenation, mirroring smc/base.py's terminal
+        # step -- see rejuvenation.py's module docstring. By this point
+        # every configured event's mask has reached 1.0, so
+        # full_logposterior_fn (built earlier in this method) is exactly
+        # the fixed final target. Disabled by default
+        # (n_final_rejuvenation_steps=0).
+        if config.n_final_rejuvenation_steps > 0:
+            key, rejuvenation_key = jax.random.split(key)
+            self._particles_flat = rejuvenate_particles(
+                rejuvenation_key,
+                self._particles_flat,
+                full_logposterior_fn,
+                mcmc_step_fn,
+                mcmc_init_fn,
+                mcmc_params,
+                config.n_final_rejuvenation_steps,
+            )
 
         self.metadata = self._build_metadata(
             config=config,
