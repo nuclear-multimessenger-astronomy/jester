@@ -13,7 +13,6 @@ from jax import vmap
 import jax.numpy as jnp
 from functools import partial
 from jaxtyping import Array, Float, Int
-from interpax._spline import interp1d as interpax_interp1d
 
 from diffrax import diffeqsolve, ODETerm, Tsit5, SaveAt, PIDController
 
@@ -287,18 +286,33 @@ def limit_by_MTOV(
 
 def cubic_spline(xq: Float[Array, "n"], xp: Float[Array, "n"], fp: Float[Array, "n"]):
     r"""
-    Cubic spline interpolation using interpax.
+    Local cubic Hermite spline interpolation.
 
-    This function creates a cubic spline interpolator through the given
-    data points and evaluates it at the query points. Cubic splines
-    provide smooth interpolation with continuous first and second derivatives.
+    Builds a piecewise cubic through the data points that is continuous in
+    value and first derivative (:math:`C^1`), and evaluates it at the query
+    points. The node derivatives are estimated by finite differences of the
+    segment slopes,
+
+    .. math::
+        d_j = \frac{f_{j+1} - f_j}{x_{j+1} - x_j},
+
+    with the interior derivatives given by the average of the adjacent slopes
+    and the endpoint derivatives by the one-sided slope:
+
+    .. math::
+        f'_0 = d_0, \qquad
+        f'_j = \tfrac{1}{2}\left(d_{j-1} + d_j\right), \qquad
+        f'_{N-1} = d_{N-2}.
+
+    On each interval the cubic Hermite basis is evaluated in the local
+    coordinate :math:`t = (x_q - x_{i-1}) / (x_i - x_{i-1})`.
 
     Parameters
     ----------
     xq : Float[Array, "n"]
         Query points for evaluation
     xp : Float[Array, "n"]
-        Known x-coordinates of data points
+        Known x-coordinates of data points, in ascending order
     fp : Float[Array, "n"]
         Known y-coordinates, i.e., fp = f(xp)
 
@@ -309,10 +323,34 @@ def cubic_spline(xq: Float[Array, "n"], xp: Float[Array, "n"], fp: Float[Array, 
 
     Notes
     -----
-    Uses the interpax library for JAX-compatible spline interpolation.
-    See: https://github.com/f0uriest/interpax
+    This is a local scheme: each interval depends only on its four
+    neighbouring data points, so no linear system is solved and the result is
+    cheap to evaluate, differentiate and JIT-compile. It is only
+    :math:`C^1`, not :math:`C^2`, unlike a global natural spline.
+
+    Query points outside ``[xp[0], xp[-1]]`` are extrapolated with the cubic
+    of the nearest interval rather than being flagged, so accuracy degrades
+    quickly away from the data range.
     """
-    return interpax_interp1d(xq, xp, fp, method="cubic")
+    dx = jnp.diff(xp)
+    slopes = jnp.diff(fp) / dx
+    dfp = jnp.concatenate([slopes[:1], 0.5 * (slopes[:-1] + slopes[1:]), slopes[-1:]])
+
+    i = jnp.clip(jnp.searchsorted(xp, xq, side="right"), 1, len(xp) - 1)
+    h = xp[i] - xp[i - 1]
+    t = (xq - xp[i - 1]) / h
+
+    f0, f1 = fp[i - 1], fp[i]
+    m0, m1 = dfp[i - 1] * h, dfp[i] * h
+
+    t2 = t * t
+    t3 = t2 * t
+    return (
+        (2.0 * t3 - 3.0 * t2 + 1.0) * f0
+        + (t3 - 2.0 * t2 + t) * m0
+        + (-2.0 * t3 + 3.0 * t2) * f1
+        + (t3 - t2) * m1
+    )
 
 
 def sigmoid(x: Array) -> Array:

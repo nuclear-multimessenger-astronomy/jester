@@ -38,7 +38,6 @@ dependencies = [
     "jaxtyping",
     "diffrax",
     "optax<0.2.7",
-    "interpax",
     "flowjax>=19.1.1",
     "typing_extensions>=4.5.0",
     "pydantic>=2.0",

@@ -1168,22 +1168,6 @@ wheels = [
 ]
 
 [[package]]
-name = "interpax"
-version = "0.3.12"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "equinox" },
-    { name = "jax" },
-    { name = "jaxtyping" },
-    { name = "lineax" },
-    { name = "numpy" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/1b/39/55576cf2c33c1f4df483ec1507fb36027389c00863772b78abf04c75afff/interpax-0.3.12.tar.gz", hash = "sha256:9563b5458a70a9bac34372c68d8fca34a03864e19805b06763a1c48dbd420699", size = 58170, upload-time = "2025-11-03T19:01:45.591Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e6/41/2077ef0c346d44ec66d1ee807493631fbe07e6088255191b4324fc258949/interpax-0.3.12-py3-none-any.whl", hash = "sha256:1f447c238ae629dabf23f9c04671d52a03d11251f31ec7607556c576a81142b6", size = 27795, upload-time = "2025-11-03T19:01:44.422Z" },
-]
-
-[[package]]
 name = "ipykernel"
 version = "7.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1396,7 +1380,6 @@ dependencies = [
     { name = "flowjax" },
     { name = "flowmc" },
     { name = "h5py" },
-    { name = "interpax" },
     { name = "ipython" },
     { name = "jax" },
     { name = "jaxlib" },
@@ -1465,7 +1448,6 @@ requires-dist = [
     { name = "flowmc", specifier = "==0.4.5" },
     { name = "h5py", specifier = ">=3.0" },
     { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.0" },
-    { name = "interpax" },
     { name = "ipykernel", marker = "extra == 'dev'", specifier = ">=7.1.0" },
     { name = "ipython", specifier = ">=8.0" },
     { name = "jax", specifier = ">=0.4.20" },
