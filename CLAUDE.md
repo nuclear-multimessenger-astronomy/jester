@@ -498,3 +498,6 @@ git push origin v0.x.x
 # (https://github.com/handley-lab/blackjax) which cannot be published to PyPI.
 # Users install directly from the GitHub repository via git clone.
 ```
+
+**If `uv build` hangs or produces a multi-GB artifact**: hatchling only reads the *root* `.gitignore` and silently ignores nested per-directory `.gitignore` files (see [pypa/hatch#1273](https://github.com/pypa/hatch/issues/1273), [#1203](https://github.com/pypa/hatch/issues/1203)). Data caches excluded only by a nested `.gitignore` (e.g. `jesterTOV/inference/data/NICER/.gitignore` for `zenodo_data/`) get walked and bundled anyway, which is what caused a 20-minute hang and a 19GB `dist/jestertov-0.2.0.tar.gz` in the past. `exclude` patterns for such paths must be listed explicitly in `pyproject.toml`, and should live under the top-level `[tool.hatch.build]` table (not just `[tool.hatch.build.targets.sdist]`) so they also apply to the wheel target — otherwise the installable wheel bundles the same large files. If a build ever hangs again, check `du -sh jesterTOV/* dist/*` for oversized directories/artifacts before assuming it's just slow.
+```
