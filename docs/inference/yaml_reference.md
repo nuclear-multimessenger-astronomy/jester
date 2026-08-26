@@ -350,6 +350,41 @@ events:
 
 ::::
 
+#### Fisher-forecast GW likelihood (simulated populations)
+
+::::{dropdown} **Fisher-forecast GW Likelihood (gwfast)**
+
+```yaml
+- type: "gw_fisher"
+  enabled: true
+  gwfast_result_file: "./gwfast_results_Delta_BNS_SFHo_snrth-8.h5"    # required
+  injection_catalog_file: "./BNS_cat_5yr_LVKpop_SFHo.h5"              # required
+  snr_threshold: 12.0            # Extra SNR cut on top of the file's own threshold (optional, default: 0.0)
+  q_min: 0.4                     # Lower bound of the mass-ratio quadrature grid (required, 0 < q_min < q_max)
+  q_max: 1.0                     # Upper bound of the mass-ratio quadrature grid (required, q_max <= 1)
+  dq: 0.01                       # Requested mass-ratio grid spacing (required)
+  penalty_value: 0.0             # Log-likelihood penalty for M > M_TOV (optional, default: 0.0)
+  source_batch_size: 1           # Batch size for jax.lax.map over sources (optional, default: 1)
+  q_batch_size: 1                # Batch size for jax.lax.map over the mass-ratio grid (optional, default: 1)
+```
+
+**Field Details:**
+
+- **`gwfast_result_file`** (`str`, required) - Path to a gwfast Fisher-matrix result HDF5 file (per-detected-source `err_LambdaTilde`, `err_m1_src`, `err_m2_src`, `idx_det_in_cat`, `snrs`).
+- **`injection_catalog_file`** (`str`, required) - Path to the matching injection catalog HDF5 file (true/injected `m1_src`, `m2_src`, `Mc`, `z`, `Lambda1`, `Lambda2`, `eta` for every injected source, indexed by `idx_det_in_cat`).
+- **`snr_threshold`** (`float`, default: `0.0`) - Additional SNR cut applied on top of whatever detection threshold is already baked into `gwfast_result_file`. Sources below this are dropped; construction raises a clear error if no sources survive.
+- **`q_min`**, **`q_max`** (`float`, required) - Bounds of the mass-ratio (`q = m2/m1`) quadrature grid, `0 < q_min < q_max <= 1`. Population-specific; there is no universally sensible default.
+- **`dq`** (`float`, required) - Requested mass-ratio grid spacing. The actual grid is `np.linspace(q_min, q_max, n_q)` with `n_q = round((q_max-q_min)/dq)+1`.
+- **`penalty_value`** (`float`, default: `0.0`) - Log-likelihood penalty when a trial component mass exceeds the candidate EOS's `M_TOV`.
+- **`source_batch_size`** (`int`, default: `1`) - Batch size for `jax.lax.map` over sources. The default (a plain scan) keeps memory flat under the outer particle `vmap` used by e.g. the SMC sampler. This is the knob that matters most for this likelihood: unlike the standard GW likelihood (1-2 real events), a simulated population can put hundreds-to-thousands of sources through this axis.
+- **`q_batch_size`** (`int`, default: `1`) - Batch size for `jax.lax.map` over the mass-ratio grid, mirroring `N_masses_batch_size` elsewhere. Less critical than `source_batch_size`, since the grid size is a small, user-chosen quadrature-accuracy parameter rather than something that scales with the dataset.
+
+**Description:**
+
+Constrains the EOS using gwfast Fisher-matrix forecasts for a simulated BNS population (e.g. a mock Einstein Telescope catalogue), by marginalizing each source's approximate 2D Gaussian `P(Lambda_tilde, q)` posterior over mass ratio via deterministic trapezoidal quadrature against the candidate EOS's predicted `Lambda_tilde(q)` curve, at fixed source-frame chirp mass. Unlike the standard/resampled GW likelihoods above, evaluation involves no random sampling (the mass-ratio grid is fixed at construction) and no bundled default datasets (both input files are always user-supplied). For the physics and methodology, see {ref}`likelihood-gw-fisher`; for the full API, see {class}`~jesterTOV.inference.likelihoods.gw_fisher.GWFisherLikelihood`.
+
+::::
+
 ### NICER observations
 
 Constrain the mass–radius relation using NICER X-ray timing observations of millisecond pulsars. For the physics and methodology, see {ref}`likelihood-nicer`.

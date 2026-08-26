@@ -33,5 +33,6 @@
       ~StackedGWLikelihood.event_batch_size
       ~StackedGWLikelihood.seed
       ~StackedGWLikelihood.standardization_method
+      ~StackedGWLikelihood.use_float32
    
    

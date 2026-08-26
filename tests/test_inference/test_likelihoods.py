@@ -26,6 +26,7 @@ from jesterTOV.inference.likelihoods.chieft import ChiEFTLikelihood
 from jesterTOV.inference.likelihoods.radio import RadioTimingLikelihood
 from jesterTOV.inference.likelihoods.mock_mr import MockMassRadiusLikelihood
 from jesterTOV.inference.likelihoods.gw import GWLikelihood, StackedGWLikelihood
+from jesterTOV.inference.likelihoods.gw_fisher import GWFisherLikelihood
 from jesterTOV.inference.base import LikelihoodBase
 
 
@@ -1026,6 +1027,412 @@ class TestStackedGWLikelihood:
             )
 
 
+def _default_gwfast_source(**overrides) -> dict:
+    """Default synthetic gwfast source, mass ordering m1_true >= m2_true.
+
+    Override any field, e.g. ``_default_gwfast_source(snr=30.0)``.
+    """
+    source = dict(
+        m1_true=1.5,
+        m2_true=1.3,
+        err_m1=0.01,
+        err_m2=0.01,
+        lambda1_true=300.0,
+        lambda2_true=500.0,
+        err_lambda_tilde=50.0,
+        snr=20.0,
+    )
+    source.update(overrides)
+    return source
+
+
+def _write_synthetic_gwfast_files(
+    tmp_path, sources: list[dict], n_nondetected: int = 0, prefix: str = "synthetic"
+):
+    """Write a small (gwfast_result.h5, injection_catalog.h5) pair with the real
+    gwfast/injection-catalog schema (only the keys GWFisherLikelihood reads), for
+    ``len(sources)`` detected sources plus optional extra non-detected catalog rows.
+
+    Each entry in ``sources`` is a dict with keys: m1_true, m2_true, err_m1, err_m2,
+    lambda1_true, lambda2_true, err_lambda_tilde, snr (see
+    ``_default_gwfast_source``). Redshift is fixed to 0 so Mc == Mc_src.
+
+    Returns
+    -------
+    (gwfast_result_path, injection_catalog_path) : tuple[Path, Path]
+    """
+    import h5py
+    import numpy as np
+    from jesterTOV import utils as jester_utils
+
+    m1 = np.array([s["m1_true"] for s in sources])
+    m2 = np.array([s["m2_true"] for s in sources])
+    lambda1 = np.array([s["lambda1_true"] for s in sources])
+    lambda2 = np.array([s["lambda2_true"] for s in sources])
+    err_m1 = np.array([s["err_m1"] for s in sources])
+    err_m2 = np.array([s["err_m2"] for s in sources])
+    err_lambda_tilde = np.array([s["err_lambda_tilde"] for s in sources])
+    snr = np.array([s["snr"] for s in sources])
+
+    eta = m1 * m2 / (m1 + m2) ** 2
+    lambda_tilde_true = np.asarray(
+        jester_utils.lambda_tilde_from_lambda1_lambda2(
+            jnp.asarray(lambda1), jnp.asarray(lambda2), jnp.asarray(eta)
+        )
+    )
+    z = np.zeros_like(m1)
+    Mc = (m1 * m2) ** 0.6 / (m1 + m2) ** 0.2  # detector frame; == Mc_src since z=0
+    n = len(sources)
+    snrs_full = np.concatenate([snr, np.full(n_nondetected, 1.0)])
+
+    result_path = tmp_path / f"{prefix}_result.h5"
+    injection_path = tmp_path / f"{prefix}_injection.h5"
+
+    with h5py.File(result_path, "w") as f:
+        f.create_dataset("err_LambdaTilde", data=err_lambda_tilde)
+        f.create_dataset("err_m1_src", data=err_m1)
+        f.create_dataset("err_m2_src", data=err_m2)
+        f.create_dataset("idx_det_in_cat", data=np.arange(n))
+        f.create_dataset("snrs", data=snrs_full)
+
+    with h5py.File(injection_path, "w") as f:
+        f.create_dataset("m1_src", data=m1)
+        f.create_dataset("m2_src", data=m2)
+        f.create_dataset("Mc", data=Mc)
+        f.create_dataset("z", data=z)
+        f.create_dataset("Lambda1", data=lambda1)
+        f.create_dataset("Lambda2", data=lambda2)
+        f.create_dataset("eta", data=eta)
+        # Not read by GWFisherLikelihood, but present in real files.
+        del lambda_tilde_true
+
+    return result_path, injection_path
+
+
+class TestGWFisherLikelihood:
+    """Test GWFisherLikelihood: EOS likelihood from gwfast Fisher-forecast BNS
+    sources via Lambda_tilde-q marginalization. See likelihoods/gw_fisher.py's
+    module docstring for the formalism."""
+
+    def test_initialization_loads_and_filters_sources(self, tmp_path):
+        sources = [
+            _default_gwfast_source(),
+            _default_gwfast_source(m1_true=1.7, m2_true=1.4),
+        ]
+        result_path, injection_path = _write_synthetic_gwfast_files(tmp_path, sources)
+
+        likelihood = GWFisherLikelihood(
+            gwfast_result_file=str(result_path),
+            injection_catalog_file=str(injection_path),
+            q_min=0.5,
+            q_max=1.0,
+            dq=0.1,
+        )
+
+        assert likelihood.n_sources == 2
+        assert likelihood._means.shape == (2, 2)
+        assert likelihood._covs.shape == (2, 2, 2)
+        assert likelihood._q_grid.shape[0] == 6  # (1.0-0.5)/0.1 + 1
+        assert float(likelihood._q_grid[0]) == pytest.approx(0.5)
+        assert float(likelihood._q_grid[-1]) == pytest.approx(1.0)
+
+    def test_q_grid_construction_matches_expected_n_q(self):
+        from jesterTOV.inference.likelihoods.gw_fisher import _build_q_grid
+
+        q_grid, weights = _build_q_grid(0.5, 1.0, 0.1)
+        assert q_grid.shape[0] == 6
+        assert q_grid[0] == pytest.approx(0.5)
+        assert q_grid[-1] == pytest.approx(1.0)
+
+        # dq does not evenly divide q_max - q_min: (1.0-0.5)/0.3 ~= 1.67 -> round -> 2 -> n_q=3
+        q_grid_uneven, _ = _build_q_grid(0.5, 1.0, 0.3)
+        assert q_grid_uneven.shape[0] == 3
+        assert q_grid_uneven[0] == pytest.approx(0.5)
+        assert q_grid_uneven[-1] == pytest.approx(1.0)
+
+        # dq larger than the whole range must still give a valid (>=2-point) grid.
+        q_grid_degenerate, weights_degenerate = _build_q_grid(0.5, 0.6, 5.0)
+        assert q_grid_degenerate.shape[0] == 2
+        assert weights_degenerate.shape[0] == 2
+
+    def test_missing_required_key_raises(self, tmp_path):
+        import h5py
+
+        result_path, injection_path = _write_synthetic_gwfast_files(
+            tmp_path, [_default_gwfast_source()]
+        )
+        with h5py.File(result_path, "a") as f:
+            del f["err_LambdaTilde"]
+
+        with pytest.raises(KeyError, match="err_LambdaTilde"):
+            GWFisherLikelihood(
+                gwfast_result_file=str(result_path),
+                injection_catalog_file=str(injection_path),
+                q_min=0.5,
+                q_max=1.0,
+                dq=0.1,
+            )
+
+    def test_component_mass_ordering_violation_raises(self, tmp_path):
+        # m1_true < m2_true violates the assumed "m1 is heavier" convention.
+        sources = [_default_gwfast_source(m1_true=1.0, m2_true=1.5)]
+        result_path, injection_path = _write_synthetic_gwfast_files(tmp_path, sources)
+
+        with pytest.raises(ValueError, match="m1_src >= m2_src"):
+            GWFisherLikelihood(
+                gwfast_result_file=str(result_path),
+                injection_catalog_file=str(injection_path),
+                q_min=0.5,
+                q_max=1.0,
+                dq=0.1,
+            )
+
+    def test_snr_threshold_filters_sources(self, tmp_path):
+        sources = [
+            _default_gwfast_source(snr=8.0),
+            _default_gwfast_source(m1_true=1.6, m2_true=1.2, snr=20.0),
+            _default_gwfast_source(m1_true=1.8, m2_true=1.1, snr=50.0),
+        ]
+        result_path, injection_path = _write_synthetic_gwfast_files(tmp_path, sources)
+
+        likelihood = GWFisherLikelihood(
+            gwfast_result_file=str(result_path),
+            injection_catalog_file=str(injection_path),
+            q_min=0.5,
+            q_max=1.0,
+            dq=0.1,
+            snr_threshold=15.0,
+        )
+        assert likelihood.n_sources == 2
+
+    def test_all_sources_filtered_by_snr_raises(self, tmp_path):
+        sources = [_default_gwfast_source(snr=8.0)]
+        result_path, injection_path = _write_synthetic_gwfast_files(tmp_path, sources)
+
+        with pytest.raises(ValueError, match="SNR"):
+            GWFisherLikelihood(
+                gwfast_result_file=str(result_path),
+                injection_catalog_file=str(injection_path),
+                q_min=0.5,
+                q_max=1.0,
+                dq=0.1,
+                snr_threshold=50.0,
+            )
+
+    def test_gaussian_fit_zero_cross_covariance_and_matches_formula(self, tmp_path):
+        source = _default_gwfast_source(
+            m1_true=1.5, m2_true=1.3, err_m1=0.02, err_m2=0.03, err_lambda_tilde=40.0
+        )
+        result_path, injection_path = _write_synthetic_gwfast_files(tmp_path, [source])
+
+        likelihood = GWFisherLikelihood(
+            gwfast_result_file=str(result_path),
+            injection_catalog_file=str(injection_path),
+            q_min=0.5,
+            q_max=1.0,
+            dq=0.1,
+        )
+
+        cov = likelihood._covs[0]
+        assert float(cov[0, 1]) == 0.0
+        assert float(cov[1, 0]) == 0.0
+        assert float(cov[0, 0]) == pytest.approx(40.0**2)
+
+        m1, m2, err_m1, err_m2 = 1.5, 1.3, 0.02, 0.03
+        expected_var_q = (m2 / m1**2) ** 2 * err_m1**2 + (1.0 / m1) ** 2 * err_m2**2
+        assert float(cov[1, 1]) == pytest.approx(expected_var_q)
+
+        mean = likelihood._means[0]
+        assert float(mean[1]) == pytest.approx(m2 / m1)
+
+    def test_evaluate_is_finite(self, tmp_path):
+        result_path, injection_path = _write_synthetic_gwfast_files(
+            tmp_path, [_default_gwfast_source()]
+        )
+        likelihood = GWFisherLikelihood(
+            gwfast_result_file=str(result_path),
+            injection_catalog_file=str(injection_path),
+            q_min=0.5,
+            q_max=1.0,
+            dq=0.05,
+        )
+        masses_eos = jnp.linspace(1.0, 2.5, 200)
+        lambdas_eos = jnp.linspace(2000.0, 10.0, 200)
+        result = likelihood.evaluate(
+            {"masses_EOS": masses_eos, "Lambdas_EOS": lambdas_eos}
+        )
+        assert jnp.isfinite(result)
+
+    def test_evaluate_sensitivity(self, tmp_path):
+        """An EOS curve consistent with the injected truth should score higher
+        than one shifted away from it."""
+        source = _default_gwfast_source(
+            m1_true=1.5,
+            m2_true=1.3,
+            lambda1_true=300.0,
+            lambda2_true=500.0,
+            err_m1=0.01,
+            err_m2=0.01,
+            err_lambda_tilde=20.0,
+        )
+        result_path, injection_path = _write_synthetic_gwfast_files(tmp_path, [source])
+        likelihood = GWFisherLikelihood(
+            gwfast_result_file=str(result_path),
+            injection_catalog_file=str(injection_path),
+            q_min=0.5,
+            q_max=1.0,
+            dq=0.02,
+        )
+
+        # Piecewise-linear Lambda(M) curve that passes exactly through the
+        # injected (m1_true, lambda1_true) and (m2_true, lambda2_true) points.
+        masses_eos = jnp.array([1.0, 1.3, 1.5, 2.5])
+        good_lambdas_eos = jnp.array([1500.0, 500.0, 300.0, 5.0])
+        bad_lambdas_eos = good_lambdas_eos + 300.0
+
+        log_prob_good = likelihood.evaluate(
+            {"masses_EOS": masses_eos, "Lambdas_EOS": good_lambdas_eos}
+        )
+        log_prob_bad = likelihood.evaluate(
+            {"masses_EOS": masses_eos, "Lambdas_EOS": bad_lambdas_eos}
+        )
+
+        assert log_prob_bad < log_prob_good
+
+    def test_evaluate_applies_penalty_beyond_mtov(self, tmp_path):
+        # Source component masses (2.5, 2.3) sit well above the EOS's M_TOV=2.0.
+        source = _default_gwfast_source(
+            m1_true=2.5, m2_true=2.3, err_m1=0.02, err_m2=0.02
+        )
+        result_path, injection_path = _write_synthetic_gwfast_files(tmp_path, [source])
+
+        masses_eos = jnp.linspace(1.0, 2.0, 50)
+        lambdas_eos = jnp.linspace(2000.0, 10.0, 50)
+        params = {"masses_EOS": masses_eos, "Lambdas_EOS": lambdas_eos}
+
+        likelihood_no_penalty = GWFisherLikelihood(
+            gwfast_result_file=str(result_path),
+            injection_catalog_file=str(injection_path),
+            q_min=0.8,
+            q_max=1.0,
+            dq=0.02,
+            penalty_value=0.0,
+        )
+        likelihood_with_penalty = GWFisherLikelihood(
+            gwfast_result_file=str(result_path),
+            injection_catalog_file=str(injection_path),
+            q_min=0.8,
+            q_max=1.0,
+            dq=0.02,
+            penalty_value=-1e4,
+        )
+
+        log_prob_no_penalty = likelihood_no_penalty.evaluate(params)
+        log_prob_with_penalty = likelihood_with_penalty.evaluate(params)
+
+        assert log_prob_with_penalty < log_prob_no_penalty
+
+    def test_matches_sum_of_single_source_likelihoods(self, tmp_path):
+        """GWFisherLikelihood(sources) must equal sum(GWFisherLikelihood([s]) for s
+        in sources) -- like StackedGWLikelihood, this is a batching change over
+        independent sources, not a different likelihood."""
+        source_a = _default_gwfast_source(m1_true=1.4, m2_true=1.2, snr=15.0)
+        source_b = _default_gwfast_source(
+            m1_true=1.8,
+            m2_true=1.5,
+            lambda1_true=150.0,
+            lambda2_true=250.0,
+            snr=25.0,
+        )
+
+        combined_result, combined_injection = _write_synthetic_gwfast_files(
+            tmp_path, [source_a, source_b], prefix="combined"
+        )
+        single_a_result, single_a_injection = _write_synthetic_gwfast_files(
+            tmp_path, [source_a], prefix="single_a"
+        )
+        single_b_result, single_b_injection = _write_synthetic_gwfast_files(
+            tmp_path, [source_b], prefix="single_b"
+        )
+
+        q_min, q_max, dq = 0.5, 1.0, 0.02
+        combined = GWFisherLikelihood(
+            str(combined_result),
+            str(combined_injection),
+            q_min=q_min,
+            q_max=q_max,
+            dq=dq,
+        )
+        single_a = GWFisherLikelihood(
+            str(single_a_result),
+            str(single_a_injection),
+            q_min=q_min,
+            q_max=q_max,
+            dq=dq,
+        )
+        single_b = GWFisherLikelihood(
+            str(single_b_result),
+            str(single_b_injection),
+            q_min=q_min,
+            q_max=q_max,
+            dq=dq,
+        )
+
+        masses_eos = jnp.linspace(1.0, 2.5, 200)
+        lambdas_eos = jnp.linspace(2000.0, 10.0, 200)
+        params = {"masses_EOS": masses_eos, "Lambdas_EOS": lambdas_eos}
+
+        combined_loglike = combined.evaluate(params)
+        summed_loglike = single_a.evaluate(params) + single_b.evaluate(params)
+
+        assert jnp.allclose(combined_loglike, summed_loglike, rtol=1e-6)
+
+    def test_batch_sizes_do_not_change_result(self, tmp_path):
+        """Chunking the source axis and/or the q-grid axis differently must not
+        change the answer, only how much is materialized concurrently."""
+        sources = [
+            _default_gwfast_source(snr=10.0),
+            _default_gwfast_source(m1_true=1.7, m2_true=1.4, snr=20.0),
+            _default_gwfast_source(m1_true=2.0, m2_true=1.1, snr=30.0),
+        ]
+        result_path, injection_path = _write_synthetic_gwfast_files(tmp_path, sources)
+
+        masses_eos = jnp.linspace(1.0, 2.5, 200)
+        lambdas_eos = jnp.linspace(2000.0, 10.0, 200)
+        params = {"masses_EOS": masses_eos, "Lambdas_EOS": lambdas_eos}
+
+        results = {}
+        for source_batch_size in [1, 3]:
+            for q_batch_size in [1, 5]:
+                likelihood = GWFisherLikelihood(
+                    gwfast_result_file=str(result_path),
+                    injection_catalog_file=str(injection_path),
+                    q_min=0.4,
+                    q_max=1.0,
+                    dq=0.02,
+                    source_batch_size=source_batch_size,
+                    q_batch_size=q_batch_size,
+                )
+                results[(source_batch_size, q_batch_size)] = likelihood.evaluate(params)
+
+        baseline = results[(1, 1)]
+        for key, value in results.items():
+            assert jnp.allclose(value, baseline, rtol=1e-6), key
+
+    def test_invalid_q_range_raises(self, tmp_path):
+        result_path, injection_path = _write_synthetic_gwfast_files(
+            tmp_path, [_default_gwfast_source()]
+        )
+        with pytest.raises(ValueError, match="q_min"):
+            GWFisherLikelihood(
+                gwfast_result_file=str(result_path),
+                injection_catalog_file=str(injection_path),
+                q_min=0.9,
+                q_max=0.5,
+                dq=0.02,
+            )
+
+
 class TestLikelihoodFactory:
     """Test likelihood factory functionality."""
 
@@ -1098,6 +1505,33 @@ class TestLikelihoodFactory:
             assert likelihood.nb_n == 100
         except FileNotFoundError:
             pytest.skip("ChiEFT data files not found")
+
+    def test_create_gw_fisher_likelihood_via_factory(self, tmp_path):
+        """Test creating GWFisherLikelihood via factory.create_likelihood -- unlike
+        GW/NICER/Radio/MockMassRadius, this is a plain one-config-to-one-object
+        likelihood (per-source loading/filtering happens inside the class itself),
+        so it goes through create_likelihood directly, not create_combined_likelihood.
+        """
+        result_path, injection_path = _write_synthetic_gwfast_files(
+            tmp_path,
+            [
+                _default_gwfast_source(),
+                _default_gwfast_source(m1_true=1.7, m2_true=1.4),
+            ],
+        )
+        config = schema.GWFisherLikelihoodConfig(
+            enabled=True,
+            gwfast_result_file=str(result_path),
+            injection_catalog_file=str(injection_path),
+            q_min=0.5,
+            q_max=1.0,
+            dq=0.1,
+        )
+
+        likelihood = factory.create_likelihood(config)
+
+        assert isinstance(likelihood, GWFisherLikelihood)
+        assert likelihood.n_sources == 2
 
     def test_create_disabled_likelihood_returns_none(self):
         """Test that factory returns None for disabled likelihoods."""
@@ -1344,6 +1778,29 @@ class TestCombinedLikelihoodFactory:
             "PSR0",
             "PSR1",
         }
+
+    def test_create_combined_likelihood_with_gw_fisher(self, tmp_path):
+        """GWFisherLikelihoodConfig produces exactly one GWFisherLikelihood object
+        (per-source loading/filtering happens inside the class), reached via
+        create_combined_likelihood's create_likelihood() fallback case."""
+        result_path, injection_path = _write_synthetic_gwfast_files(
+            tmp_path, [_default_gwfast_source()]
+        )
+        configs = [
+            schema.GWFisherLikelihoodConfig(
+                enabled=True,
+                gwfast_result_file=str(result_path),
+                injection_catalog_file=str(injection_path),
+                q_min=0.5,
+                q_max=1.0,
+                dq=0.1,
+            ),
+        ]
+
+        likelihood = factory.create_combined_likelihood(configs)
+
+        assert isinstance(likelihood, GWFisherLikelihood)
+        assert likelihood.n_sources == 1
 
 
 class TestGWEventPresets:

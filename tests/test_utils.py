@@ -279,3 +279,74 @@ def test_sigmoid_specific_values(test_input, expected, tolerance):
     """Test sigmoid function at specific values."""
     result = utils.sigmoid(test_input)
     assert abs(result - expected) < tolerance
+
+
+def _reference_lambda_tilde(lambda_1, lambda_2, eta):
+    """Plain-Python re-implementation of arXiv:1402.5156 eq. 5, independent of
+    utils.lambda_tilde_from_lambda1_lambda2 (not imported from et-bgr-jester, which
+    is not a jester dependency), used to cross-check that function."""
+    import math
+
+    eta2 = eta * eta
+    seta = math.sqrt(1.0 - 4.0 * eta)
+    return (8.0 / 13.0) * (
+        (1.0 + 7.0 * eta - 31.0 * eta2) * (lambda_1 + lambda_2)
+        + seta * (1.0 + 9.0 * eta - 11.0 * eta2) * (lambda_1 - lambda_2)
+    )
+
+
+class TestGravitationalWaveBinaryConversions:
+    """Test chirp-mass/mass-ratio/Lambda_tilde helpers used by GWFisherLikelihood."""
+
+    @pytest.mark.parametrize(
+        "lambda_1,lambda_2,eta",
+        [
+            (300.0, 500.0, 0.2475),  # m1=1.5, m2=1.3
+            (100.0, 100.0, 0.25),  # equal mass: eta -> 0.25, sqrt(1-4eta) -> 0
+            (800.0, 50.0, 0.16),  # strongly asymmetric
+        ],
+    )
+    def test_lambda_tilde_matches_reference_formula(self, lambda_1, lambda_2, eta):
+        """utils.lambda_tilde_from_lambda1_lambda2 must match a hand-written
+        re-implementation of arXiv:1402.5156 eq. 5."""
+        result = utils.lambda_tilde_from_lambda1_lambda2(
+            jnp.asarray(lambda_1), jnp.asarray(lambda_2), jnp.asarray(eta)
+        )
+        expected = _reference_lambda_tilde(lambda_1, lambda_2, eta)
+        assert float(result) == pytest.approx(expected, rel=1e-10)
+
+    def test_lambda_tilde_equal_mass_limit(self):
+        """At eta=0.25 (equal mass), sqrt(1-4*eta) vanishes and Lambda_tilde reduces
+        to a pure function of (Lambda_1 + Lambda_2)."""
+        result = utils.lambda_tilde_from_lambda1_lambda2(
+            jnp.asarray(300.0), jnp.asarray(300.0), jnp.asarray(0.25)
+        )
+        eta, eta2 = 0.25, 0.0625
+        expected = (8.0 / 13.0) * (1.0 + 7.0 * eta - 31.0 * eta2) * (300.0 + 300.0)
+        assert float(result) == pytest.approx(expected, rel=1e-10)
+
+    @pytest.mark.parametrize("m1,m2", [(1.5, 1.3), (2.0, 1.1), (1.4, 1.4)])
+    def test_component_masses_from_chirp_mass_and_mass_ratio_roundtrips(self, m1, m2):
+        """Recovering (m1, m2) from their own (chirp_mass, mass_ratio) must return
+        the original values, without depending on bilby (an optional dependency)."""
+        chirp_mass = (m1 * m2) ** 0.6 / (m1 + m2) ** 0.2
+        mass_ratio = m2 / m1
+
+        recovered_m1, recovered_m2 = (
+            utils.component_masses_from_chirp_mass_and_mass_ratio(
+                jnp.asarray(chirp_mass), jnp.asarray(mass_ratio)
+            )
+        )
+
+        assert float(recovered_m1) == pytest.approx(m1, rel=1e-10)
+        assert float(recovered_m2) == pytest.approx(m2, rel=1e-10)
+
+    def test_symmetric_mass_ratio_from_mass_ratio(self):
+        """eta = q/(1+q)^2; eta(1) = 0.25 (equal mass, the maximum of eta)."""
+        assert float(
+            utils.symmetric_mass_ratio_from_mass_ratio(jnp.asarray(1.0))
+        ) == pytest.approx(0.25)
+        q = jnp.linspace(0.05, 1.0, 20)
+        eta = utils.symmetric_mass_ratio_from_mass_ratio(q)
+        # Monotonically increasing on (0, 1].
+        assert jnp.all(jnp.diff(eta) > 0)

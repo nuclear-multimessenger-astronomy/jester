@@ -1,3 +1,4 @@
 *.npz
+*.h5
 outdir/
 outdir_*/

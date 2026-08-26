@@ -239,6 +239,71 @@ class TestLikelihoodConfig:
                 events=[],  # Empty list
             )
 
+    def test_gw_fisher_likelihood_config(self):
+        """Test GW Fisher-forecast likelihood configuration."""
+        config = schema.GWFisherLikelihoodConfig(
+            enabled=True,
+            gwfast_result_file="/path/to/gwfast_result.h5",
+            injection_catalog_file="/path/to/injection_catalog.h5",
+            q_min=0.4,
+            q_max=1.0,
+            dq=0.01,
+        )
+        assert config.type == "gw_fisher"
+        assert config.snr_threshold == 0.0
+        assert config.penalty_value == 0.0
+        assert config.source_batch_size == 1
+        assert config.q_batch_size == 1
+
+    def test_gw_fisher_likelihood_q_min_greater_than_q_max_fails(self):
+        """Test that q_min >= q_max is rejected."""
+        with pytest.raises(ValidationError):
+            schema.GWFisherLikelihoodConfig(
+                gwfast_result_file="/path/to/gwfast_result.h5",
+                injection_catalog_file="/path/to/injection_catalog.h5",
+                q_min=0.9,
+                q_max=0.5,
+                dq=0.01,
+            )
+
+    def test_gw_fisher_likelihood_q_min_non_positive_fails(self):
+        """Test that q_min <= 0 is rejected."""
+        with pytest.raises(ValidationError):
+            schema.GWFisherLikelihoodConfig(
+                gwfast_result_file="/path/to/gwfast_result.h5",
+                injection_catalog_file="/path/to/injection_catalog.h5",
+                q_min=0.0,
+                q_max=1.0,
+                dq=0.01,
+            )
+
+    def test_gw_fisher_likelihood_q_max_above_one_fails(self):
+        """Test that q_max > 1 is rejected."""
+        with pytest.raises(ValidationError):
+            schema.GWFisherLikelihoodConfig(
+                gwfast_result_file="/path/to/gwfast_result.h5",
+                injection_catalog_file="/path/to/injection_catalog.h5",
+                q_min=0.4,
+                q_max=1.1,
+                dq=0.01,
+            )
+
+    def test_gw_fisher_likelihood_nonpositive_dq_fails(self):
+        """Test that dq <= 0 is rejected."""
+        with pytest.raises(ValidationError):
+            schema.GWFisherLikelihoodConfig(
+                gwfast_result_file="/path/to/gwfast_result.h5",
+                injection_catalog_file="/path/to/injection_catalog.h5",
+                q_min=0.4,
+                q_max=1.0,
+                dq=0.0,
+            )
+
+    def test_gw_fisher_likelihood_missing_required_file_fields_fails(self):
+        """Test that omitting the required file-path fields is rejected."""
+        with pytest.raises(ValidationError):
+            schema.GWFisherLikelihoodConfig(q_min=0.4, q_max=1.0, dq=0.01)
+
     def test_nicer_likelihood_config(self):
         """Test NICER flow-based likelihood configuration."""
         config = schema.NICERLikelihoodConfig(

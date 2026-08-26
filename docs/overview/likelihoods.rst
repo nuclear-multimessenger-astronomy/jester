@@ -40,6 +40,13 @@ Binary neutron star merger observations (GW170817, etc.).
 
 :doc:`likelihoods/gw`
 
+Gravitational-wave Fisher forecasts
+-------------------------------------
+
+Fisher-matrix forecasts (via gwfast) for simulated BNS populations, e.g. for Einstein Telescope forecasting studies.
+
+:doc:`likelihoods/gw_fisher`
+
 Mock likelihoods
 ----------------
 
@@ -55,4 +62,5 @@ Synthetic bivariate Gaussian mass-radius observations for testing the inference 
    likelihoods/radio
    likelihoods/nicer
    likelihoods/gw
+   likelihoods/gw_fisher
    likelihoods/mock_mr

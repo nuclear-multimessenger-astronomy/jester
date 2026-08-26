@@ -329,6 +329,104 @@ class GWResampledLikelihoodConfig(BaseLikelihoodConfig):
         return v
 
 
+class GWFisherLikelihoodConfig(BaseLikelihoodConfig):
+    r"""Gravitational-wave Fisher-forecast likelihood for a simulated BNS population.
+
+    Consumes gwfast Fisher-matrix forecasts for many simulated sources (e.g. a mock
+    Einstein Telescope BNS catalog) rather than a trained normalizing-flow posterior
+    for one real event. Marginalizes each source's approximate 2D Gaussian
+    :math:`P(\tilde{\Lambda}, q)` posterior over mass ratio :math:`q` via numerical
+    quadrature against the candidate EOS's predicted :math:`\tilde{\Lambda}_X(q)`
+    curve, at fixed source-frame chirp mass. See
+    :class:`~jesterTOV.inference.likelihoods.gw_fisher.GWFisherLikelihood` for the
+    full formalism and required input-file schema.
+
+    Examples
+    --------
+    .. code-block:: yaml
+
+        - type: "gw_fisher"
+          enabled: true
+          gwfast_result_file: "./gwfast_results_Delta_BNS_SFHo_snrth-8.h5"
+          injection_catalog_file: "./BNS_cat_5yr_LVKpop_SFHo.h5"
+          snr_threshold: 12.0
+          q_min: 0.4
+          q_max: 1.0
+          dq: 0.01
+    """
+
+    type: Literal["gw_fisher"] = Field(
+        default="gw_fisher", description="Likelihood type identifier"
+    )
+
+    gwfast_result_file: str = Field(
+        description=(
+            "Path to a gwfast Fisher-matrix result HDF5 file: per-detected-source "
+            "err_LambdaTilde, err_m1_src, err_m2_src columns, idx_det_in_cat, and snrs."
+        )
+    )
+    injection_catalog_file: str = Field(
+        description=(
+            "Path to the matching injection catalog HDF5 file with true/injected "
+            "values for every injected source (m1_src, m2_src, Mc, z, Lambda1, "
+            "Lambda2, eta required), indexed by idx_det_in_cat."
+        )
+    )
+    snr_threshold: float = Field(
+        default=0.0,
+        ge=0.0,
+        description=(
+            "Additional SNR cut on top of whatever detection threshold is already "
+            "baked into gwfast_result_file. Sources with SNR below this are dropped. "
+            "Default 0.0 applies no extra cut beyond the file's own threshold."
+        ),
+    )
+    q_min: float = Field(
+        gt=0.0,
+        lt=1.0,
+        description="Lower bound of the mass-ratio (q = m2/m1) quadrature grid.",
+    )
+    q_max: float = Field(
+        gt=0.0,
+        le=1.0,
+        description="Upper bound of the mass-ratio quadrature grid (q <= 1).",
+    )
+    dq: float = Field(
+        gt=0.0,
+        description=(
+            "Requested mass-ratio grid spacing. The actual grid is "
+            "np.linspace(q_min, q_max, n_q) with n_q = round((q_max-q_min)/dq)+1."
+        ),
+    )
+    penalty_value: float = Field(
+        default=0.0,
+        description=(
+            "Log-likelihood penalty when a trial component mass exceeds M_TOV "
+            "(default: 0.0, i.e. no penalty)"
+        ),
+    )
+    source_batch_size: int = Field(
+        default=1,
+        gt=0,
+        description=(
+            "Batch size for jax.lax.map over sources. Default of 1 (a plain scan) "
+            "keeps memory flat under the outer particle vmap used by e.g. the SMC "
+            "sampler; raise for faster standalone evaluation with many sources."
+        ),
+    )
+    q_batch_size: int = Field(
+        default=1,
+        gt=0,
+        description="Batch size for jax.lax.map over the mass-ratio grid, mirroring N_masses_batch_size elsewhere.",
+    )
+
+    @model_validator(mode="after")
+    def _validate_q_range(self) -> "GWFisherLikelihoodConfig":
+        if self.q_min >= self.q_max:
+            raise ValueError(f"q_min ({self.q_min}) must be < q_max ({self.q_max})")
+        return self
+
+
 class NICERLikelihoodConfig(BaseLikelihoodConfig):
     """NICER X-ray timing likelihood configuration using normalizing flows (DEFAULT).
 
@@ -905,6 +1003,7 @@ LikelihoodConfig = Annotated[
     Union[
         GWLikelihoodConfig,
         GWResampledLikelihoodConfig,
+        GWFisherLikelihoodConfig,
         NICERLikelihoodConfig,
         NICERKDELikelihoodConfig,
         RadioLikelihoodConfig,

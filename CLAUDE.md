@@ -390,6 +390,7 @@ jesterTOV/inference/
 │   └── __init__.py              # Exports
 ├── likelihoods/                 # Observational constraints
 │   ├── gw.py                    # Gravitational wave (GW170817, GW190425)
+│   ├── gw_fisher.py             # GW Fisher-forecast likelihood for simulated BNS populations (gwfast)
 │   ├── nicer.py                 # X-ray timing (J0030, J0740, B0437)
 │   ├── radio.py                 # Radio pulsar timing
 │   ├── chieft.py                # Chiral EFT low-density constraints

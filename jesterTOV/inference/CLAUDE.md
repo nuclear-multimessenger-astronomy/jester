@@ -117,6 +117,39 @@ always trains with the same defaults). `GWLikelihood` itself is unchanged
 and still directly usable/importable for a single event or outside the
 config system.
 
+### GW Fisher-forecast likelihood batching (`GWFisherLikelihood`)
+
+`GWFisherLikelihood` (`likelihoods/gw_fisher.py`) is the counterpart to
+`StackedGWLikelihood` for forecasting studies: instead of 1-2 real events each with a
+trained normalizing-flow posterior, it consumes gwfast Fisher-matrix forecasts for a
+*simulated* BNS population, which can run to hundreds or thousands of sources (e.g. a
+mock Einstein Telescope catalogue). One config maps to one `GWFisherLikelihood`
+instance — unlike GW/NICER/Radio/MockMassRadius, the factory does not build one object
+per source; `GWFisherLikelihood.__init__` loads both input files, filters by SNR, and
+stacks every source's data itself.
+
+**Why no architecture-compatibility check is needed here, unlike `StackedGWLikelihood`:**
+`StackedGWLikelihood` must check `_flow_architecture_signature` across events because
+normalizing-flow weight pytrees can structurally differ. `GWFisherLikelihood` has no
+such concern — every source's data is just a `(mean, cov, Mc_src)` triple (a 2D Gaussian
+fit built analytically from that source's Fisher errors, see the class docstring), which
+trivially stacks via `jnp.stack`/`np.array` regardless of source count.
+
+**Evaluation is deterministic quadrature, not Monte Carlo averaging.** Every other
+multi-sample GW/NICER/mock likelihood averages over *pre-sampled* points via
+`logsumexp(...) - log(n)`. `GWFisherLikelihood.evaluate()` instead integrates over a
+fixed mass-ratio grid (built once at construction from `q_min`/`q_max`/`dq`) via
+trapezoidal quadrature (`logsumexp(logpdf_grid, b=trapz_weights)`) — so there is no
+random seed and no sampling noise involved in a single evaluation.
+
+**Batch-size knobs**, mirroring `N_masses_batch_size`/`event_batch_size`: `source_batch_size`
+(over the source axis) and `q_batch_size` (over the mass-ratio grid axis), both
+defaulting to `1` for the same memory-flat-under-the-outer-particle-`vmap` reason as
+`StackedGWLikelihood`'s knobs. `source_batch_size` is the one that matters most for
+this class, since the source axis is the one that scales with catalogue size (the
+mass-ratio grid stays small — tens to low hundreds of points — regardless of how many
+sources are included).
+
 ### Inference Documentation
 - `docs/inference_index.md` - Navigation hub
 - `docs/inference_quickstart.md` - Quick start guide
@@ -158,6 +191,7 @@ jesterTOV/inference/
 │   └── __init__.py      # Exports JesterTransform
 ├── likelihoods/         # Observational constraints
 │   ├── gw.py            # Gravitational wave events (GW170817, GW190425)
+│   ├── gw_fisher.py     # GW Fisher-forecast likelihood for simulated BNS populations (gwfast)
 │   ├── nicer.py         # X-ray timing (J0030, J0740, B0437)
 │   ├── radio.py         # Radio pulsar timing (FIDUCEO/FIDUCEO2)
 │   ├── chieft.py        # Chiral EFT low-density constraints
@@ -456,17 +490,20 @@ Configuration files use YAML with Pydantic validation. See `examples/inference/*
    - `GWEventConfig` fields: `name` (required), `nf_model_dir`, `from_bilby_result`, `flow_config`, `retrain_flow`
    - `from_bilby_result` and `nf_model_dir` are mutually exclusive; `flow_config`/`retrain_flow` only valid with `from_bilby_result`
 2. `GWResampledLikelihoodConfig` - GW with resampling during MCMC
-3. `NICERLikelihoodConfig` - X-ray timing
+3. `GWFisherLikelihoodConfig` - GW Fisher-forecast likelihood for a simulated BNS population (gwfast)
+   - `gwfast_result_file`/`injection_catalog_file`: required HDF5 inputs (no bundled defaults)
+   - `q_min`/`q_max`/`dq`: mass-ratio quadrature grid (required, population-specific)
+4. `NICERLikelihoodConfig` - X-ray timing
    - sources: list of sources (e.g., ["J0030", "J0740"])
-4. `RadioLikelihoodConfig` - Radio pulsar timing
+5. `RadioLikelihoodConfig` - Radio pulsar timing
    - database: "FIDUCEO" or "FIDUCEO2"
-5. `ChiEFTLikelihoodConfig` - Chiral EFT constraints
+6. `ChiEFTLikelihoodConfig` - Chiral EFT constraints
    - nb_n: number of density points
-6. `REXLikelihoodConfig` - PREX/CREX neutron skin
-7. `EOSConstraintsLikelihoodConfig` - EOS physical validity (causality, stability)
-8. `TOVConstraintsLikelihoodConfig` - TOV solver success
-9. `GammaConstraintsLikelihoodConfig` - Spectral gamma bounds
-10. `ZeroLikelihoodConfig` - Prior-only sampling (no data)
+7. `REXLikelihoodConfig` - PREX/CREX neutron skin
+8. `EOSConstraintsLikelihoodConfig` - EOS physical validity (causality, stability)
+9. `TOVConstraintsLikelihoodConfig` - TOV solver success
+10. `GammaConstraintsLikelihoodConfig` - Spectral gamma bounds
+11. `ZeroLikelihoodConfig` - Prior-only sampling (no data)
 
 **IMPORTANT**: When modifying any file under `config/schemas/`, update `docs/inference/yaml_reference.md` by hand to keep the user documentation in sync.
 

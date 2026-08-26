@@ -8,6 +8,7 @@ from ..config.schema import (
     GWEventConfig,
     GWLikelihoodConfig,
     GWResampledLikelihoodConfig,
+    GWFisherLikelihoodConfig,
     NICERLikelihoodConfig,
     NICERKDELikelihoodConfig,
     RadioLikelihoodConfig,
@@ -23,6 +24,7 @@ from ..config.schema import (
 )
 from .combined import CombinedLikelihood, ZeroLikelihood
 from .gw import GWLikelihoodResampled, StackedGWLikelihood
+from .gw_fisher import GWFisherLikelihood
 from .nicer import NICERLikelihood, NICERKDELikelihood
 from .radio import RadioTimingLikelihood
 from .chieft import ChiEFTLikelihood
@@ -145,6 +147,19 @@ def create_likelihood(
             raise RuntimeError(
                 "Mock mass-radius likelihoods should be created via create_combined_likelihood, "
                 "not create_likelihood directly"
+            )
+
+        case GWFisherLikelihoodConfig():
+            return GWFisherLikelihood(
+                gwfast_result_file=config.gwfast_result_file,
+                injection_catalog_file=config.injection_catalog_file,
+                q_min=config.q_min,
+                q_max=config.q_max,
+                dq=config.dq,
+                snr_threshold=config.snr_threshold,
+                penalty_value=config.penalty_value,
+                source_batch_size=config.source_batch_size,
+                q_batch_size=config.q_batch_size,
             )
 
         case ChiEFTLikelihoodConfig():

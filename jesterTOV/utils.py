@@ -402,6 +402,114 @@ def calculate_rest_mass_density(e: Float[Array, "n"], p: Float[Array, "n"]):
     return solution.ys
 
 
+#############################################
+### GRAVITATIONAL-WAVE BINARY CONVERSIONS ###
+#############################################
+
+
+def component_masses_from_chirp_mass_and_mass_ratio(
+    chirp_mass: Float[Array, "..."], mass_ratio: Float[Array, "..."]
+) -> tuple[Float[Array, "..."], Float[Array, "..."]]:
+    r"""
+    Recover component masses from chirp mass and mass ratio.
+
+    Uses the standard post-Newtonian convention :math:`q = m_2 / m_1 \leq 1`
+    (secondary over primary, matching the LVK/bilby convention), so the first
+    returned mass is always the heavier component:
+
+    .. math::
+        M = \mathcal{M} \, (1+q)^{6/5} \, q^{-3/5}, \qquad
+        m_1 = \frac{M}{1+q}, \qquad
+        m_2 = q \, m_1
+
+    Matches ``bilby.gw.conversion.chirp_mass_and_mass_ratio_to_component_masses``.
+
+    Parameters
+    ----------
+    chirp_mass : Float[Array, "..."]
+        Chirp mass :math:`\mathcal{M}` (any consistent mass unit, e.g. source-frame
+        solar masses).
+    mass_ratio : Float[Array, "..."]
+        Mass ratio :math:`q = m_2/m_1 \in (0, 1]`.
+
+    Returns
+    -------
+    m1 : Float[Array, "..."]
+        Heavier component mass, same unit as ``chirp_mass``.
+    m2 : Float[Array, "..."]
+        Lighter component mass, same unit as ``chirp_mass``.
+    """
+    total_mass = chirp_mass * (1.0 + mass_ratio) ** 1.2 / mass_ratio**0.6
+    m1 = total_mass / (1.0 + mass_ratio)
+    m2 = mass_ratio * m1
+    return m1, m2
+
+
+def symmetric_mass_ratio_from_mass_ratio(
+    mass_ratio: Float[Array, "..."],
+) -> Float[Array, "..."]:
+    r"""
+    Symmetric mass ratio from mass ratio.
+
+    .. math::
+        \eta = \frac{q}{(1+q)^2}
+
+    Parameters
+    ----------
+    mass_ratio : Float[Array, "..."]
+        Mass ratio :math:`q = m_2/m_1 \in (0, 1]`.
+
+    Returns
+    -------
+    Float[Array, "..."]
+        Symmetric mass ratio :math:`\eta \in (0, 0.25]`.
+    """
+    return mass_ratio / (1.0 + mass_ratio) ** 2
+
+
+def lambda_tilde_from_lambda1_lambda2(
+    lambda_1: Float[Array, "..."],
+    lambda_2: Float[Array, "..."],
+    eta: Float[Array, "..."],
+) -> Float[Array, "..."]:
+    r"""
+    Mass-weighted effective tidal deformability :math:`\tilde{\Lambda}`.
+
+    :math:`\Lambda_1` must correspond to the heavier component (:math:`m_1 \geq m_2`,
+    :math:`q = m_2/m_1 \leq 1`) for the sign of the second term to be correct.
+
+    .. math::
+        \tilde{\Lambda} = \frac{8}{13} \Big[
+            (1 + 7\eta - 31\eta^2)(\Lambda_1 + \Lambda_2)
+            + \sqrt{1 - 4\eta}\,(1 + 9\eta - 11\eta^2)(\Lambda_1 - \Lambda_2)
+        \Big]
+
+    Parameters
+    ----------
+    lambda_1 : Float[Array, "..."]
+        Tidal deformability of the heavier component.
+    lambda_2 : Float[Array, "..."]
+        Tidal deformability of the lighter component.
+    eta : Float[Array, "..."]
+        Symmetric mass ratio, see :func:`symmetric_mass_ratio_from_mass_ratio`.
+
+    Returns
+    -------
+    Float[Array, "..."]
+        Effective tidal deformability :math:`\tilde{\Lambda}`.
+
+    Notes
+    -----
+    Reference: arXiv:1402.5156, eq. 5.
+    """
+    eta2 = eta * eta
+    seta = jnp.sqrt(1.0 - 4.0 * eta)
+    return (8.0 / 13.0) * (
+        (1.0 + 7.0 * eta - 31.0 * eta2) * (lambda_1 + lambda_2)
+        + seta * (1.0 + 9.0 * eta - 11.0 * eta2) * (lambda_1 - lambda_2)
+    )
+
+
 def locate_lowest_non_causal_point(cs2: Float[Array, "n"]) -> Int[Array, ""]:
     r"""
     Find the first point where the equation of state becomes non-causal.
