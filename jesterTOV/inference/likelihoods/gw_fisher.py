@@ -188,6 +188,64 @@ def _validate_component_mass_ordering(
         )
 
 
+def _positivity_quality_mask(
+    values: np.ndarray, errors: np.ndarray, n_sigma: float, name: str
+) -> np.ndarray:
+    r"""Data-quality cut for a quantity that is physically constrained to be positive
+    (component masses, :math:`\tilde{\Lambda}`): flag sources where the reported 1-sigma
+    Fisher error is so large that the value isn't significantly positive.
+
+    Motivation: gwfast's marginalized Fisher errors are occasionally enormous relative
+    to the value itself for poorly-localized sources -- e.g. some real sources have
+    ``err_m1_src`` more than 100x ``m1_src`` (traced to the redshift/luminosity-distance
+    degeneracy dominating the source-frame mass uncertainty; see the investigation this
+    check grew out of). Sampling or evaluating a Gaussian built from such a wildly
+    disproportionate error is not "using noisy data," it's using a Gaussian
+    approximation that has already broken down for that source: the true (necessarily
+    positive) quantity would need to sit many sigma from its own reported mean for the
+    Gaussian to make sense at all. This is an explicit, auditable data-quality cut
+    (not a hidden truncation) applied at construction time, independent of the
+    correlation issue that's the deeper cause of the bias this whole module is built
+    around -- it does not fix that, it just avoids compounding it with sources whose
+    Fisher errors aren't even self-consistent.
+
+    Does not apply to :math:`\delta\tilde{\Lambda}` (the antisymmetric tidal term),
+    which is physically allowed to be negative -- do not use this function for it.
+
+    Parameters
+    ----------
+    values : np.ndarray
+        True (injected) values of the positive-definite quantity.
+    errors : np.ndarray
+        1-sigma Fisher errors on ``values``.
+    n_sigma : float
+        Minimum number of standard deviations ``values`` must sit above zero to be
+        retained (e.g. ``3.0`` for a 3-sigma positivity requirement). ``n_sigma <= 0``
+        disables the cut entirely (returns an all-``True`` mask), rather than being
+        interpreted arithmetically.
+    name : str
+        Human-readable name of the quantity, for the log message.
+
+    Returns
+    -------
+    np.ndarray
+        Boolean mask, ``True`` for sources passing the cut. Logs the number and
+        fraction excluded (if any) via the module logger.
+    """
+    if n_sigma <= 0:
+        return np.ones_like(values, dtype=bool)
+    good = values - n_sigma * errors > 0
+    n_bad = int(np.sum(~good))
+    if n_bad > 0:
+        logger.info(
+            f"Data quality cut: excluding {n_bad}/{len(values)} sources "
+            f"({100 * n_bad / len(values):.1f}%) where {name} is not significantly "
+            f"positive (< {n_sigma} sigma above zero) -- Fisher Gaussian approximation "
+            "has likely broken down for these sources."
+        )
+    return good
+
+
 def _build_q_grid(
     q_min: float, q_max: float, dq: float
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -330,6 +388,20 @@ class GWFisherLikelihood(LikelihoodBase):
     snr_threshold : float, optional
         Additional SNR cut on top of whatever detection threshold is already baked
         into ``gwfast_result_file`` (default: ``0.0``, i.e. no extra cut).
+    quality_cut_n_sigma : float, optional
+        Data-quality cut (default: ``0.0``, **disabled**): exclude sources where
+        ``m1_src``, ``m2_src``, or ``LambdaTilde`` isn't significantly positive
+        relative to its own Fisher error (fewer than this many sigma above zero) --
+        see :func:`_positivity_quality_mask`. gwfast's marginalized errors are
+        occasionally enormous for poorly-localized sources (e.g. ``err_m1_src`` more
+        than 100x ``m1_src`` for some real sources, traced to the redshift/distance
+        degeneracy), and a Gaussian this disproportionate to its own mean has
+        effectively broken down rather than just being "noisy." **Disabled by
+        default**: even a strict 3-sigma cut removes ~99% of detected SFHo sources
+        at SNR>=30 in the real catalog this was tested against -- this is the norm
+        for this data, not a rare outlier, so enabling it is a deliberate choice
+        that trades away most of the sample, not a small safety margin. Check
+        ``n_sources`` after construction if you do enable it.
     penalty_value : float, optional
         Log-likelihood penalty applied when a trial component mass exceeds
         :math:`M_{\rm TOV}` of the candidate EOS (default: ``0.0``, i.e. no penalty).
@@ -374,6 +446,7 @@ class GWFisherLikelihood(LikelihoodBase):
         penalty_value: float = 0.0,
         source_batch_size: int = 1,
         q_batch_size: int = 1,
+        quality_cut_n_sigma: float = 0.0,
     ) -> None:
         super().__init__()
 
@@ -393,6 +466,7 @@ class GWFisherLikelihood(LikelihoodBase):
         self.penalty_value = penalty_value
         self.source_batch_size = source_batch_size
         self.q_batch_size = q_batch_size
+        self.quality_cut_n_sigma = quality_cut_n_sigma
 
         logger.info(
             f"Loading gwfast Fisher-forecast data from {gwfast_result_file} "
@@ -412,11 +486,38 @@ class GWFisherLikelihood(LikelihoodBase):
         lambda_tilde_true = injections["LambdaTilde"][idx]
         snrs = result["snrs"][idx]
 
-        mask = snrs >= snr_threshold
-        if not np.any(mask):
+        mask_snr = snrs >= snr_threshold
+        if not np.any(mask_snr):
             raise ValueError(
                 f"0 of {n_detected} detected sources in {gwfast_result_file} have "
                 f"SNR >= {snr_threshold}; max SNR in file is {float(np.max(snrs))}."
+            )
+        n_excluded_snr = n_detected - int(np.sum(mask_snr))
+        if n_excluded_snr > 0:
+            logger.info(
+                f"SNR cut: excluding {n_excluded_snr}/{n_detected} sources with "
+                f"SNR < {snr_threshold}"
+            )
+
+        # Data-quality cut: m1_src, m2_src, and LambdaTilde are all physically
+        # constrained to be positive -- exclude sources whose Fisher error is so
+        # large the value isn't significantly positive (see _positivity_quality_mask's
+        # docstring). Not applied to err_m2_src/LambdaTilde error-implied *correlation*
+        # with anything else -- this is a per-quantity sanity check, independent of
+        # (and does not fix) the zero-correlation assumption elsewhere in this class.
+        mask_quality = (
+            _positivity_quality_mask(m1_true, result["err_m1_src"], quality_cut_n_sigma, "m1_src")
+            & _positivity_quality_mask(m2_true, result["err_m2_src"], quality_cut_n_sigma, "m2_src")
+            & _positivity_quality_mask(
+                lambda_tilde_true, result["err_LambdaTilde"], quality_cut_n_sigma, "LambdaTilde"
+            )
+        )
+        mask = mask_snr & mask_quality
+        if not np.any(mask):
+            raise ValueError(
+                f"0 of {n_detected} detected sources in {gwfast_result_file} survive "
+                f"the combined SNR (>= {snr_threshold}) and {quality_cut_n_sigma}-sigma "
+                "positivity data-quality cuts."
             )
 
         means, covs = _fit_source_gaussians(
@@ -439,7 +540,9 @@ class GWFisherLikelihood(LikelihoodBase):
 
         logger.info(
             f"GWFisherLikelihood: {n_detected} detected sources, "
-            f"{self.n_sources} retained after snr_threshold={snr_threshold}, "
+            f"{self.n_sources} retained after snr_threshold={snr_threshold} and "
+            f"{quality_cut_n_sigma}-sigma positivity data-quality cuts "
+            f"({n_detected - self.n_sources} excluded total), "
             f"q-grid has {q_grid.shape[0]} points over [{q_min}, {q_max}], "
             f"source_batch_size={source_batch_size}, q_batch_size={q_batch_size}"
         )

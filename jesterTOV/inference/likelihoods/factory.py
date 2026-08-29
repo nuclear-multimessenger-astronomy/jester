@@ -9,6 +9,7 @@ from ..config.schema import (
     GWLikelihoodConfig,
     GWResampledLikelihoodConfig,
     GWFisherLikelihoodConfig,
+    GWFisherLikelihoodV2Config,
     NICERLikelihoodConfig,
     NICERKDELikelihoodConfig,
     RadioLikelihoodConfig,
@@ -25,6 +26,7 @@ from ..config.schema import (
 from .combined import CombinedLikelihood, ZeroLikelihood
 from .gw import GWLikelihoodResampled, StackedGWLikelihood
 from .gw_fisher import GWFisherLikelihood
+from .gw_fisher_v2 import GWFisherLikelihoodV2
 from .nicer import NICERLikelihood, NICERKDELikelihood
 from .radio import RadioTimingLikelihood
 from .chieft import ChiEFTLikelihood
@@ -160,6 +162,20 @@ def create_likelihood(
                 penalty_value=config.penalty_value,
                 source_batch_size=config.source_batch_size,
                 q_batch_size=config.q_batch_size,
+                quality_cut_n_sigma=config.quality_cut_n_sigma,
+            )
+
+        case GWFisherLikelihoodV2Config():
+            return GWFisherLikelihoodV2(
+                gwfast_result_file=config.gwfast_result_file,
+                injection_catalog_file=config.injection_catalog_file,
+                snr_threshold=config.snr_threshold,
+                penalty_value=config.penalty_value,
+                n_mass_samples=config.n_mass_samples,
+                source_batch_size=config.source_batch_size,
+                mass_batch_size=config.mass_batch_size,
+                seed=config.seed,
+                quality_cut_n_sigma=config.quality_cut_n_sigma,
             )
 
         case ChiEFTLikelihoodConfig():

@@ -510,6 +510,67 @@ def lambda_tilde_from_lambda1_lambda2(
     )
 
 
+def delta_lambda_tilde_from_lambda1_lambda2(
+    lambda_1: Float[Array, "..."],
+    lambda_2: Float[Array, "..."],
+    eta: Float[Array, "..."],
+) -> Float[Array, "..."]:
+    r"""
+    Antisymmetric tidal term :math:`\delta\tilde{\Lambda}`, the second (subdominant)
+    combination alongside :math:`\tilde{\Lambda}` (see :func:`lambda_tilde_from_lambda1_lambda2`)
+    needed to invert an observed :math:`(\tilde{\Lambda}, \delta\tilde{\Lambda})` measurement
+    back to :math:`(\Lambda_1, \Lambda_2)` -- :math:`\tilde{\Lambda}` alone is degenerate in
+    :math:`(\Lambda_1, \Lambda_2)` at fixed masses.
+
+    :math:`\Lambda_1` must correspond to the heavier component (:math:`m_1 \geq m_2`,
+    :math:`q = m_2/m_1 \leq 1`) for the sign of the second term to be correct, matching
+    :func:`lambda_tilde_from_lambda1_lambda2`.
+
+    .. math::
+        \delta\tilde{\Lambda} = \frac{1}{2} \Big[
+            \sqrt{1 - 4\eta}\,\Big(1 - \frac{13272}{1319}\eta + \frac{8944}{1319}\eta^2\Big)
+                (\Lambda_1 + \Lambda_2)
+            + \Big(1 - \frac{15910}{1319}\eta + \frac{32850}{1319}\eta^2
+                + \frac{3380}{1319}\eta^3\Big)(\Lambda_1 - \Lambda_2)
+        \Big]
+
+    Parameters
+    ----------
+    lambda_1 : Float[Array, "..."]
+        Tidal deformability of the heavier component.
+    lambda_2 : Float[Array, "..."]
+        Tidal deformability of the lighter component.
+    eta : Float[Array, "..."]
+        Symmetric mass ratio, see :func:`symmetric_mass_ratio_from_mass_ratio`.
+
+    Returns
+    -------
+    Float[Array, "..."]
+        Antisymmetric tidal term :math:`\delta\tilde{\Lambda}`.
+
+    Notes
+    -----
+    Reference: arXiv:1402.5156 (Wade et al.). Matches
+    ``bilby.gw.conversion.lambda_1_lambda_2_to_delta_lambda_tilde`` exactly (verified
+    to ~1e-13 relative precision in ``et-bgr-jester/runs/debug/check_lambda_conversion.py``).
+    """
+    eta2 = eta * eta
+    eta3 = eta2 * eta
+    seta = jnp.sqrt(1.0 - 4.0 * eta)
+    lambda_plus = lambda_1 + lambda_2
+    lambda_minus = lambda_1 - lambda_2
+    return 0.5 * (
+        seta * (1.0 - 13272.0 / 1319.0 * eta + 8944.0 / 1319.0 * eta2) * lambda_plus
+        + (
+            1.0
+            - 15910.0 / 1319.0 * eta
+            + 32850.0 / 1319.0 * eta2
+            + 3380.0 / 1319.0 * eta3
+        )
+        * lambda_minus
+    )
+
+
 def locate_lowest_non_causal_point(cs2: Float[Array, "n"]) -> Int[Array, ""]:
     r"""
     Find the first point where the equation of state becomes non-causal.

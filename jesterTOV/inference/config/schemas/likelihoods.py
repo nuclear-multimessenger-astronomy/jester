@@ -419,12 +419,134 @@ class GWFisherLikelihoodConfig(BaseLikelihoodConfig):
         gt=0,
         description="Batch size for jax.lax.map over the mass-ratio grid, mirroring N_masses_batch_size elsewhere.",
     )
+    quality_cut_n_sigma: float = Field(
+        default=0.0,
+        description=(
+            "Data-quality cut (default: 0.0, DISABLED): exclude sources where "
+            "m1_src, m2_src, or LambdaTilde isn't significantly positive relative "
+            "to its own Fisher error (fewer than this many sigma above zero) -- "
+            "gwfast's marginalized errors are occasionally enormous relative to the "
+            "value for poorly-localized sources (e.g. err_m1_src > 100x m1_src for "
+            "some real sources, traced to the redshift/distance degeneracy), and "
+            "such a disproportionate Gaussian has effectively broken down rather "
+            "than just being noisy. Disabled by default because even a strict "
+            "3-sigma cut removes ~99% of detected SFHo sources at SNR>=30 in "
+            "practice (redshift-driven mass/LambdaTilde uncertainty is the norm, "
+            "not a rare outlier, in this catalog) -- enable deliberately, and check "
+            "how many sources survive, rather than assuming a small effect."
+        ),
+    )
 
     @model_validator(mode="after")
     def _validate_q_range(self) -> "GWFisherLikelihoodConfig":
         if self.q_min >= self.q_max:
             raise ValueError(f"q_min ({self.q_min}) must be < q_max ({self.q_max})")
         return self
+
+
+class GWFisherLikelihoodV2Config(BaseLikelihoodConfig):
+    r"""Gravitational-wave Fisher-forecast likelihood (v2): direct 4D comparison.
+
+    Experimental alternative to ``type: "gw_fisher"`` -- compares candidate EOS
+    predictions directly against each source's Fisher-measured
+    :math:`(m_1, m_2, \tilde{\Lambda}, \delta\tilde{\Lambda})`, forward-transforming
+    the EOS's :math:`\Lambda_{1,X}(m_1)`, :math:`\Lambda_{2,X}(m_2)` predictions rather
+    than inverting the observed :math:`\tilde{\Lambda}`/:math:`\delta\tilde{\Lambda}`
+    to :math:`(\Lambda_1, \Lambda_2)` (found to be numerically unstable for realistic
+    Fisher-error magnitudes). See
+    :class:`~jesterTOV.inference.likelihoods.gw_fisher_v2.GWFisherLikelihoodV2` for the
+    full motivation and design.
+
+    Requires ``err_deltaLambda`` in ``gwfast_result_file`` -- only ``2Lmis``/``2Lpar``
+    detector configurations provide this column, not ``Delta``.
+
+    Examples
+    --------
+    .. code-block:: yaml
+
+        - type: "gw_fisher_v2"
+          enabled: true
+          gwfast_result_file: "./gwfast_results_2Lmis_BNS_SFHo_snrth-8.h5"
+          injection_catalog_file: "./BNS_cat_5yr_LVKpop_SFHo.h5"
+          snr_threshold: 12.0
+          n_mass_samples: 500
+    """
+
+    type: Literal["gw_fisher_v2"] = Field(
+        default="gw_fisher_v2", description="Likelihood type identifier"
+    )
+
+    gwfast_result_file: str = Field(
+        description=(
+            "Path to a gwfast Fisher-matrix result HDF5 file: per-detected-source "
+            "err_LambdaTilde, err_deltaLambda, err_m1_src, err_m2_src columns, "
+            "idx_det_in_cat, and snrs. err_deltaLambda is only present for "
+            "2Lmis/2Lpar detector configs, not Delta."
+        )
+    )
+    injection_catalog_file: str = Field(
+        description=(
+            "Path to the matching injection catalog HDF5 file with true/injected "
+            "values for every injected source (m1_src, m2_src, Mc, z, Lambda1, "
+            "Lambda2, eta required), indexed by idx_det_in_cat."
+        )
+    )
+    snr_threshold: float = Field(
+        default=0.0,
+        ge=0.0,
+        description=(
+            "Additional SNR cut on top of whatever detection threshold is already "
+            "baked into gwfast_result_file. Sources with SNR below this are dropped. "
+            "Default 0.0 applies no extra cut beyond the file's own threshold."
+        ),
+    )
+    penalty_value: float = Field(
+        default=0.0,
+        description=(
+            "Log-likelihood penalty when a sampled component mass exceeds M_TOV "
+            "(default: 0.0, i.e. no penalty)"
+        ),
+    )
+    n_mass_samples: int = Field(
+        default=500,
+        gt=0,
+        description=(
+            "Number of pre-sampled (m1, m2) pairs per source, drawn once at "
+            "construction from that source's own Fisher-measured Gaussian. Larger "
+            "values reduce Monte Carlo estimator noise at the cost of proportionally "
+            "more likelihood evaluations per source."
+        ),
+    )
+    source_batch_size: int = Field(
+        default=1,
+        gt=0,
+        description=(
+            "Batch size for jax.lax.map over sources. Default of 1 (a plain scan) "
+            "keeps memory flat under the outer particle vmap used by e.g. the SMC "
+            "sampler; raise for faster standalone evaluation with many sources."
+        ),
+    )
+    mass_batch_size: int = Field(
+        default=1,
+        gt=0,
+        description="Batch size for jax.lax.map over the pre-sampled mass pairs.",
+    )
+    seed: int = Field(
+        default=42,
+        description="Random seed for mass pre-sampling (fixed for deterministic, reproducible likelihood evaluation).",
+    )
+    quality_cut_n_sigma: float = Field(
+        default=0.0,
+        description=(
+            "Data-quality cut (default: 0.0, DISABLED): exclude sources where "
+            "m1_src, m2_src, or LambdaTilde isn't significantly positive relative "
+            "to its own Fisher error (fewer than this many sigma above zero). Not "
+            "applied to deltaLambda, which is physically allowed to be negative. "
+            "Disabled by default because even a strict 3-sigma cut removes ~99% of "
+            "detected SFHo sources at SNR>=30 in practice -- enable deliberately, "
+            "and check how many sources survive, rather than assuming a small effect."
+        ),
+    )
 
 
 class NICERLikelihoodConfig(BaseLikelihoodConfig):
@@ -1004,6 +1126,7 @@ LikelihoodConfig = Annotated[
         GWLikelihoodConfig,
         GWResampledLikelihoodConfig,
         GWFisherLikelihoodConfig,
+        GWFisherLikelihoodV2Config,
         NICERLikelihoodConfig,
         NICERKDELikelihoodConfig,
         RadioLikelihoodConfig,
