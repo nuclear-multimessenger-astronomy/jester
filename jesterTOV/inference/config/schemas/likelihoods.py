@@ -445,20 +445,18 @@ class GWFisherLikelihoodConfig(BaseLikelihoodConfig):
 
 
 class GWFisherLikelihoodV2Config(BaseLikelihoodConfig):
-    r"""Gravitational-wave Fisher-forecast likelihood (v2): direct 4D comparison.
+    r"""Gravitational-wave Fisher-forecast likelihood (v2): full-covariance comparison.
 
-    Experimental alternative to ``type: "gw_fisher"`` -- compares candidate EOS
-    predictions directly against each source's Fisher-measured
-    :math:`(m_1, m_2, \tilde{\Lambda}, \delta\tilde{\Lambda})`, forward-transforming
-    the EOS's :math:`\Lambda_{1,X}(m_1)`, :math:`\Lambda_{2,X}(m_2)` predictions rather
-    than inverting the observed :math:`\tilde{\Lambda}`/:math:`\delta\tilde{\Lambda}`
-    to :math:`(\Lambda_1, \Lambda_2)` (found to be numerically unstable for realistic
-    Fisher-error magnitudes). See
+    Alternative to ``type: "gw_fisher"`` that consumes gwfast's full per-source 4x4
+    Fisher covariance matrix over
+    :math:`(\mathcal{M}_{c,\rm src}, \eta, \tilde{\Lambda}, \delta\tilde{\Lambda})`,
+    including genuine cross-correlations between all four quantities, rather than
+    only marginal (diagonal) errors. Compares candidate EOS predictions -- forward-
+    transformed from :math:`\Lambda_{1,X}(m_1)`, :math:`\Lambda_{2,X}(m_2)` -- against
+    that full covariance for pre-sampled mass pairs drawn from each source's own
+    correlated :math:`(\mathcal{M}_{c,\rm src}, \eta)` sub-block. See
     :class:`~jesterTOV.inference.likelihoods.gw_fisher_v2.GWFisherLikelihoodV2` for the
-    full motivation and design.
-
-    Requires ``err_deltaLambda`` in ``gwfast_result_file`` -- only ``2Lmis``/``2Lpar``
-    detector configurations provide this column, not ``Delta``.
+    full data-file format and evaluation scheme.
 
     Examples
     --------
@@ -466,8 +464,7 @@ class GWFisherLikelihoodV2Config(BaseLikelihoodConfig):
 
         - type: "gw_fisher_v2"
           enabled: true
-          gwfast_result_file: "./gwfast_results_2Lmis_BNS_SFHo_snrth-8.h5"
-          injection_catalog_file: "./BNS_cat_5yr_LVKpop_SFHo.h5"
+          gwfast_result_file: "./gwfast_results_covariance_2Lmis_BNS_SFHo_snrth-8.h5"
           snr_threshold: 12.0
           n_mass_samples: 500
     """
@@ -478,17 +475,12 @@ class GWFisherLikelihoodV2Config(BaseLikelihoodConfig):
 
     gwfast_result_file: str = Field(
         description=(
-            "Path to a gwfast Fisher-matrix result HDF5 file: per-detected-source "
-            "err_LambdaTilde, err_deltaLambda, err_m1_src, err_m2_src columns, "
-            "idx_det_in_cat, and snrs. err_deltaLambda is only present for "
-            "2Lmis/2Lpar detector configs, not Delta."
-        )
-    )
-    injection_catalog_file: str = Field(
-        description=(
-            "Path to the matching injection catalog HDF5 file with true/injected "
-            "values for every injected source (m1_src, m2_src, Mc, z, Lambda1, "
-            "Lambda2, eta required), indexed by idx_det_in_cat."
+            "Path to a gwfast Fisher-covariance result HDF5 file: a 'covariance' "
+            "dataset (shape (4,4,n_sources)), a 'covariance_keys' group naming the "
+            "basis ordering (Mc_src, eta, LambdaTilde, deltaLambda), a "
+            "'detected_event_parameters' group with true per-source values, "
+            "'idx_det_in_cat', and 'snrs'. No separate injection catalog file is "
+            "needed -- every detected source's true parameters are included."
         )
     )
     snr_threshold: float = Field(

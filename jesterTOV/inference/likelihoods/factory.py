@@ -168,7 +168,6 @@ def create_likelihood(
         case GWFisherLikelihoodV2Config():
             return GWFisherLikelihoodV2(
                 gwfast_result_file=config.gwfast_result_file,
-                injection_catalog_file=config.injection_catalog_file,
                 snr_threshold=config.snr_threshold,
                 penalty_value=config.penalty_value,
                 n_mass_samples=config.n_mass_samples,
@@ -347,13 +346,13 @@ def create_combined_likelihood(
                     psr_name = pulsar["name"]
                     assert isinstance(psr_name, str), "name must be a string"
                     mass_mean = pulsar["mass_mean"]
-                    assert isinstance(
-                        mass_mean, (int, float)
-                    ), "mass_mean must be a number"
+                    assert isinstance(mass_mean, (int, float)), (
+                        "mass_mean must be a number"
+                    )
                     mass_std = pulsar["mass_std"]
-                    assert isinstance(
-                        mass_std, (int, float)
-                    ), "mass_std must be a number"
+                    assert isinstance(mass_std, (int, float)), (
+                        "mass_std must be a number"
+                    )
 
                     radio_likelihood = RadioTimingLikelihood(
                         psr_name=psr_name,

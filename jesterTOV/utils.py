@@ -445,6 +445,28 @@ def component_masses_from_chirp_mass_and_mass_ratio(
     return m1, m2
 
 
+def chirp_mass_from_component_masses(
+    m1: Float[Array, "..."], m2: Float[Array, "..."]
+) -> Float[Array, "..."]:
+    r"""
+    Chirp mass from component masses.
+
+    .. math::
+        \mathcal{M} = \frac{(m_1 m_2)^{3/5}}{(m_1+m_2)^{1/5}}
+
+    Parameters
+    ----------
+    m1, m2 : Float[Array, "..."]
+        Component masses (any consistent mass unit, e.g. source-frame solar masses).
+
+    Returns
+    -------
+    Float[Array, "..."]
+        Chirp mass :math:`\mathcal{M}`, same unit as ``m1``/``m2``.
+    """
+    return (m1 * m2) ** 0.6 / (m1 + m2) ** 0.2
+
+
 def symmetric_mass_ratio_from_mass_ratio(
     mass_ratio: Float[Array, "..."],
 ) -> Float[Array, "..."]:
@@ -465,6 +487,33 @@ def symmetric_mass_ratio_from_mass_ratio(
         Symmetric mass ratio :math:`\eta \in (0, 0.25]`.
     """
     return mass_ratio / (1.0 + mass_ratio) ** 2
+
+
+def mass_ratio_from_symmetric_mass_ratio(
+    eta: Float[Array, "..."],
+) -> Float[Array, "..."]:
+    r"""
+    Mass ratio from symmetric mass ratio (inverse of
+    :func:`symmetric_mass_ratio_from_mass_ratio`), taking the :math:`q \leq 1` root.
+
+    .. math::
+        q = \frac{2\eta}{(1-2\eta) + \sqrt{1-4\eta}}
+
+    Written in this (rationalized) form rather than the more obvious
+    :math:`q = [(1-2\eta) - \sqrt{1-4\eta}] / (2\eta)` to avoid catastrophic
+    cancellation between two nearly equal terms as :math:`\eta \to 0`.
+
+    Parameters
+    ----------
+    eta : Float[Array, "..."]
+        Symmetric mass ratio :math:`\eta \in (0, 0.25]`.
+
+    Returns
+    -------
+    Float[Array, "..."]
+        Mass ratio :math:`q = m_2/m_1 \in (0, 1]`.
+    """
+    return 2.0 * eta / ((1.0 - 2.0 * eta) + jnp.sqrt(1.0 - 4.0 * eta))
 
 
 def lambda_tilde_from_lambda1_lambda2(
