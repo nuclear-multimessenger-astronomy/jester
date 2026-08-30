@@ -1,6 +1,7 @@
 """Unit tests for utils module."""
 
 import pytest
+import jax
 import jax.numpy as jnp
 from hypothesis import given, strategies as st
 from jesterTOV import utils
@@ -67,6 +68,46 @@ class TestInterpolationFunctions:
 
         # Should be close to true sine function
         assert jnp.mean(jnp.abs(result - expected)) < 0.1
+
+    def test_cubic_spline_passes_through_knots(self):
+        """Test that the spline reproduces the data at the knots."""
+        xp = jnp.linspace(0, 2 * jnp.pi, 15)
+        fp = jnp.sin(xp)
+
+        result = utils.cubic_spline(xp, xp, fp)
+
+        assert jnp.allclose(result, fp, atol=1e-12)
+
+    def test_cubic_spline_nonuniform_grid(self):
+        """Test interpolation on a log-spaced grid, as used for the EOS."""
+        xp = jnp.logspace(-3, 0, 60)
+        xq = jnp.linspace(xp[0], xp[-1], 200)
+
+        result = utils.cubic_spline(xq, xp, jnp.exp(-xp))
+
+        assert jnp.max(jnp.abs(result - jnp.exp(-xq))) < 1e-3
+
+    def test_cubic_spline_reproduces_cubic(self):
+        """Test that a cubic polynomial is recovered to high accuracy."""
+        poly = lambda x: 2.0 * x**3 - 1.5 * x**2 + 0.5 * x + 3.0
+        xp = jnp.linspace(-2.0, 2.0, 40)
+        xq = jnp.linspace(-1.5, 1.5, 100)
+
+        result = utils.cubic_spline(xq, xp, poly(xp))
+
+        assert jnp.max(jnp.abs(result - poly(xq))) < 1e-3
+
+    def test_cubic_spline_jit_and_grad(self):
+        """Test that the spline is JIT-compilable and differentiable."""
+        xp = jnp.linspace(0, 2 * jnp.pi, 12)
+        fp = jnp.sin(xp)
+        xq = jnp.linspace(0.1, 2 * jnp.pi - 0.1, 30)
+
+        jitted = jax.jit(utils.cubic_spline)(xq, xp, fp)
+        assert jnp.allclose(jitted, utils.cubic_spline(xq, xp, fp))
+
+        grad = jax.grad(lambda f: jnp.sum(utils.cubic_spline(xq, xp, f)))(fp)
+        assert jnp.all(jnp.isfinite(grad))
 
 
 class TestCumtrapz:
