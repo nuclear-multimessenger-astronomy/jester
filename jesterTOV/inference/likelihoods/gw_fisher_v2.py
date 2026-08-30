@@ -218,16 +218,106 @@ _MIN_ETA: float = 1e-6
 _MAX_ETA: float = 0.25 - _MIN_ETA
 
 
+def _minimum_variance_quality_mask(
+    variances: np.ndarray, min_variance: float, name: str
+) -> np.ndarray:
+    r"""Data-quality cut for a source whose Fisher variance on some quantity is
+    implausibly, artificially tiny -- the opposite failure mode from
+    :func:`~jesterTOV.inference.likelihoods.gw_fisher._positivity_quality_mask`'s
+    "error too large" case.
+
+    Motivation: near the symmetric-mass-ratio boundary (:math:`\eta \to 0.25`, i.e.
+    :math:`m_1 \to m_2`), the linearized Fisher-matrix approximation is known to become
+    unreliable (a standard, documented pathology of Fisher-matrix parameter estimation
+    near near-degenerate points, e.g. Vallisneri 2008) -- waveform derivatives w.r.t.
+    different intrinsic parameters become nearly degenerate there, and a covariance
+    matrix (the Fisher matrix's inverse) approaching singularity does not uniformly
+    blow up: it develops both an enormous eigenvalue (the near-degenerate combined
+    direction) *and* a spuriously tiny eigenvalue (the orthogonal combination), even
+    though the *true* physical information about that combination has not actually
+    improved. This is a linearization artifact, not real measurement precision.
+
+    Empirically confirmed on the real SFHo/Delta SNR>=12 covariance data: sources
+    within :math:`10^{-6}` of the :math:`\eta=0.25` boundary have a median
+    ``Var(eta)`` five orders of magnitude below the population median (`4.4e-9` vs.
+    `4.4e-4`), with the worst cases down to `~1e-12` -- i.e. `eta` reported as known to
+    aphysically high precision. Because ``GWFisherLikelihoodV2`` samples `(Mc_src,eta)`
+    from this same covariance and then evaluates the full 4D Gaussian at the
+    EOS-substituted point, an artificially tiny ``Var(eta)`` turns that source's
+    contribution into a near-delta-function constraint: any candidate EOS whose
+    predicted point deviates from the mean by even a small amount (inevitable once many
+    other sources are also being satisfied simultaneously) incurs an enormous
+    log-likelihood penalty. Stacked over the ~100-600 such sources present in a
+    full SNR>=12 catalog (a small fraction of sources, but a large absolute count now
+    that thousands of sources are retained), this creates a badly-conditioned,
+    needle-like posterior that a fixed-size random-walk step cannot navigate --
+    diagnosed as the root cause of the SMC acceptance collapse this cut was added to
+    fix (see ``et-bgr-jester/runs/debug/FINDINGS.md``, Part 5).
+
+    Parameters
+    ----------
+    variances : np.ndarray
+        Per-source Fisher variances (diagonal covariance entries) for one quantity.
+    min_variance : float
+        Minimum variance a source must have to be retained. ``min_variance <= 0``
+        disables the cut entirely (returns an all-``True`` mask).
+    name : str
+        Human-readable name of the quantity, for the log message.
+
+    Returns
+    -------
+    np.ndarray
+        Boolean mask, ``True`` for sources passing the cut. Logs the number and
+        fraction excluded (if any) via the module logger.
+    """
+    if min_variance <= 0:
+        return np.ones_like(variances, dtype=bool)
+    good = variances >= min_variance
+    n_bad = int(np.sum(~good))
+    if n_bad > 0:
+        logger.info(
+            f"Data quality cut: excluding {n_bad}/{len(variances)} sources "
+            f"({100 * n_bad / len(variances):.1f}%) where Var({name}) < {min_variance:.3e} "
+            "-- Fisher covariance implausibly over-precise, likely a linearization "
+            "artifact near a parameter-degeneracy boundary (see docstring)."
+        )
+    return good
+
+
 def _sample_masses(
     means: np.ndarray,
     covs: np.ndarray,
     key_order: dict[str, int],
     n_mass_samples: int,
     seed: int,
-) -> np.ndarray:
+    pool_size: int = 2000,
+    max_rounds: int = 6,
+) -> tuple[np.ndarray, np.ndarray]:
     r"""Pre-sample :math:`(m_1, m_2)` pairs per source from the source's own correlated
     :math:`(\mathcal{M}_{c,\rm src}, \eta)` sub-block (the real Fisher covariance, not
     an independent-Gaussian approximation), then convert to component masses.
+
+    Uses **rejection sampling**, not clipping: a draw is accepted only if its raw
+    :math:`\eta` is in the valid domain :math:`(0,0.25)` *and* its implied
+    :math:`(m_1,m_2)` falls in the physical window
+    ``[_MIN_SAMPLED_MASS, _MAX_SAMPLED_MASS]``. This matters because ``evaluate()``
+    later re-derives ``(Mc_src, eta)`` from whatever ``(m1,m2)`` ends up stored here and
+    evaluates the source's 4D Gaussian *at that recomputed point* -- for a *clipped*
+    draw, the recomputed ``(Mc_src,eta)`` no longer equals the ``(Mc_src,eta)`` actually
+    drawn from the source's own covariance, silently invalidating the "evaluate at the
+    point you sampled" identity the Monte Carlo estimator's correctness depends on (see
+    ``et-bgr-jester/runs/debug/FINDINGS.md``, Part 6 #35). Rejection sampling never
+    evaluates at a point other than one that was actually drawn, so no such drift is
+    possible by construction.
+
+    Poorly-measured sources (huge ``Var(Mc_src)``/``Var(eta)``) may have low acceptance
+    probability and end up with fewer than ``n_mass_samples`` accepted draws -- this is
+    honest (more Monte Carlo noise for that source, not a silent bias) rather than the
+    previous behaviour of padding with a systematically-wrong point. Sampling proceeds
+    in rounds of ``pool_size`` draws, each round only re-sampling sources still short of
+    ``n_mass_samples`` accepted draws (bounds memory: a single ``pool_size`` large enough
+    to satisfy the *worst* source for the *whole* population is infeasible -- e.g.
+    ``pool_size=30_000`` for ~14,000 SNR>=12 sources exhausts available memory).
 
     Parameters
     ----------
@@ -236,12 +326,25 @@ def _sample_masses(
     key_order : dict[str, int]
     n_mass_samples : int
     seed : int
+    pool_size : int, optional
+        Number of raw ``(Mc_src,eta)`` draws per source per round (default 2000).
+    max_rounds : int, optional
+        Maximum number of resampling rounds for sources still short of
+        ``n_mass_samples`` accepted draws (default 6). Empirically (real SFHo/Delta
+        SNR>=12 data, the hardest production case): round-by-round shortfall count
+        4424 -> 2446 -> 1605 -> 1179 -> 937 -> 766 (of 14,470 sources), ~5.7s total,
+        zero sources left with 0 accepted draws.
 
     Returns
     -------
-    np.ndarray, shape (n_sources, n_mass_samples, 2)
-        Pre-sampled ``[m1, m2]`` pairs, clipped to
-        ``[_MIN_SAMPLED_MASS, _MAX_SAMPLED_MASS]``, with ``m1 >= m2``.
+    mass_samples : np.ndarray, shape (n_sources, n_mass_samples, 2)
+        Accepted ``[m1, m2]`` pairs. Slots beyond a source's accepted count are filled
+        with a physically-valid dummy value (``1.0`` Msun for both components) --
+        ``evaluate()`` masks these out via ``n_accepted``, never mistaking them for real
+        constraints.
+    n_accepted : np.ndarray, shape (n_sources,), dtype int
+        Number of accepted draws per source (``<= n_mass_samples``). The true Monte
+        Carlo sample count to normalize by in ``evaluate()`` -- NOT ``n_mass_samples``.
     """
     rng = np.random.default_rng(seed)
     n_sources = means.shape[0]
@@ -249,20 +352,71 @@ def _sample_masses(
     sub_mean = means[:, idx]
     sub_cov = covs[:, idx][:, :, idx]
     L = np.linalg.cholesky(sub_cov)
-    z = rng.standard_normal((n_sources, n_mass_samples, 2))
-    samples = sub_mean[:, None, :] + np.einsum("sij,skj->ski", L, z)
 
-    mc_src_samples = np.clip(samples[..., 0], 1e-6, None)
-    eta_samples = np.clip(samples[..., 1], _MIN_ETA, _MAX_ETA)
-    q_samples = np.asarray(
-        utils.mass_ratio_from_symmetric_mass_ratio(jnp.asarray(eta_samples))
-    )
-    m1_samples, m2_samples = utils.component_masses_from_chirp_mass_and_mass_ratio(
-        jnp.asarray(mc_src_samples), jnp.asarray(q_samples)
-    )
-    m1_samples = np.clip(np.asarray(m1_samples), _MIN_SAMPLED_MASS, _MAX_SAMPLED_MASS)
-    m2_samples = np.clip(np.asarray(m2_samples), _MIN_SAMPLED_MASS, _MAX_SAMPLED_MASS)
-    return np.stack([m1_samples, m2_samples], axis=-1)
+    m1_out = np.ones((n_sources, n_mass_samples))
+    m2_out = np.ones((n_sources, n_mass_samples))
+    n_accepted = np.zeros(n_sources, dtype=int)
+    pending = np.arange(n_sources)
+
+    for _ in range(max_rounds):
+        if len(pending) == 0:
+            break
+        z = rng.standard_normal((len(pending), pool_size, 2))
+        raw = sub_mean[pending, None, :] + np.einsum("sij,skj->ski", L[pending], z)
+        mc_src_raw, eta_raw = raw[..., 0], raw[..., 1]
+
+        valid_eta = (eta_raw > _MIN_ETA) & (eta_raw < _MAX_ETA) & (mc_src_raw > 1e-6)
+        eta_safe = np.where(valid_eta, eta_raw, 0.1)
+        mc_src_safe = np.where(valid_eta, mc_src_raw, 1.0)
+        q = np.asarray(
+            utils.mass_ratio_from_symmetric_mass_ratio(jnp.asarray(eta_safe))
+        )
+        m1, m2 = utils.component_masses_from_chirp_mass_and_mass_ratio(
+            jnp.asarray(mc_src_safe), jnp.asarray(q)
+        )
+        m1, m2 = np.asarray(m1), np.asarray(m2)
+        valid = (
+            valid_eta
+            & (m1 >= _MIN_SAMPLED_MASS)
+            & (m1 <= _MAX_SAMPLED_MASS)
+            & (m2 >= _MIN_SAMPLED_MASS)
+            & (m2 <= _MAX_SAMPLED_MASS)
+        )
+
+        still_pending = []
+        for local_i, s in enumerate(pending):
+            need = n_mass_samples - n_accepted[s]
+            good = np.nonzero(valid[local_i])[0][:need]
+            n_new = len(good)
+            if n_new > 0:
+                sl = slice(n_accepted[s], n_accepted[s] + n_new)
+                m1_out[s, sl] = m1[local_i, good]
+                m2_out[s, sl] = m2[local_i, good]
+                n_accepted[s] += n_new
+            if n_accepted[s] < n_mass_samples:
+                still_pending.append(s)
+        pending = np.asarray(still_pending, dtype=int)
+
+    n_short = len(pending)
+    n_zero = int(np.sum(n_accepted == 0))
+    if n_zero > 0:
+        raise ValueError(
+            f"{n_zero}/{n_sources} sources have ZERO accepted mass samples after "
+            f"{max_rounds} rounds of {pool_size} draws each -- their Fisher covariance "
+            "puts essentially no probability in the physical mass window "
+            f"[{_MIN_SAMPLED_MASS}, {_MAX_SAMPLED_MASS}] Msun. Increase pool_size/"
+            "max_rounds, or apply a data-quality cut (quality_cut_n_sigma/"
+            "min_eta_variance) to exclude these sources."
+        )
+    if n_short > 0:
+        logger.info(
+            f"Mass rejection sampling: {n_short}/{n_sources} sources ({100 * n_short / n_sources:.1f}%) "
+            f"did not reach the full {n_mass_samples} accepted draws after {max_rounds} rounds "
+            f"(min accepted: {int(n_accepted[n_accepted > 0].min()) if n_short < n_sources or n_zero == 0 else 'n/a'}) "
+            "-- these sources' log-likelihood contribution uses a smaller, honest Monte "
+            "Carlo sample count instead of a silently-biased one."
+        )
+    return np.stack([m1_out, m2_out], axis=-1), n_accepted
 
 
 class GWFisherLikelihoodV2(LikelihoodBase):
@@ -284,13 +438,29 @@ class GWFisherLikelihoodV2(LikelihoodBase):
         to its own Fisher error -- see
         :func:`~jesterTOV.inference.likelihoods.gw_fisher._positivity_quality_mask`.
         Not applied to ``deltaLambda``, which is physically allowed to be negative.
+    min_eta_variance : float, optional
+        Data-quality cut (default: ``0.0``, disabled): exclude sources whose Fisher
+        ``Var(eta)`` is below this floor -- see
+        :func:`_minimum_variance_quality_mask` for the mechanism this guards against
+        (Fisher-matrix linearization breakdown near the :math:`\eta=0.25` equal-mass
+        boundary, which can report an artificially over-precise ``eta``, turning that
+        source into a near-delta-function constraint that can stall an MCMC sampler).
     penalty_value : float, optional
         Log-likelihood penalty applied when a sampled component mass exceeds
         :math:`M_{\rm TOV}` of the candidate EOS (default: ``0.0``, i.e. no penalty).
     n_mass_samples : int, optional
         Number of pre-sampled ``(m1, m2)`` pairs per source (default: ``500``).
         Larger values reduce Monte Carlo estimator noise at the cost of proportionally
-        more likelihood evaluations.
+        more likelihood evaluations. Sampled via rejection sampling (see
+        :func:`_sample_masses`) -- poorly-measured sources may end up with fewer than
+        this many accepted draws; ``evaluate()`` accounts for this per source rather
+        than assuming every source reaches the full count.
+    mass_rejection_pool_size : int, optional
+        Raw ``(Mc_src,eta)`` draws per source per rejection-sampling round
+        (default: ``2000``). See :func:`_sample_masses`.
+    mass_rejection_max_rounds : int, optional
+        Maximum rejection-sampling rounds for sources still short of
+        ``n_mass_samples`` accepted draws (default: ``6``). See :func:`_sample_masses`.
     source_batch_size : int, optional
         Batch size for ``jax.lax.map`` over sources (default: ``1``, a plain scan --
         keeps memory flat under the outer particle ``vmap`` used by e.g. the SMC
@@ -311,18 +481,24 @@ class GWFisherLikelihoodV2(LikelihoodBase):
     snr_threshold: float
     penalty_value: float
     n_mass_samples: int
+    mass_rejection_pool_size: int
+    mass_rejection_max_rounds: int
     source_batch_size: int
     mass_batch_size: int
     seed: int
     quality_cut_n_sigma: float
+    min_eta_variance: float
     n_sources: int
 
     def __init__(
         self,
         gwfast_result_file: str,
         snr_threshold: float = 0.0,
+        min_eta_variance: float = 0.0,
         penalty_value: float = 0.0,
         n_mass_samples: int = 500,
+        mass_rejection_pool_size: int = 2000,
+        mass_rejection_max_rounds: int = 6,
         source_batch_size: int = 1,
         mass_batch_size: int = 1,
         seed: int = 42,
@@ -332,8 +508,11 @@ class GWFisherLikelihoodV2(LikelihoodBase):
 
         self.gwfast_result_file = gwfast_result_file
         self.snr_threshold = snr_threshold
+        self.min_eta_variance = min_eta_variance
         self.penalty_value = penalty_value
         self.n_mass_samples = n_mass_samples
+        self.mass_rejection_pool_size = mass_rejection_pool_size
+        self.mass_rejection_max_rounds = mass_rejection_max_rounds
         self.source_batch_size = source_batch_size
         self.mass_batch_size = mass_batch_size
         self.seed = seed
@@ -383,13 +562,17 @@ class GWFisherLikelihoodV2(LikelihoodBase):
             & _positivity_quality_mask(
                 means[:, i_lt], err_lambda_tilde, quality_cut_n_sigma, "LambdaTilde"
             )
+            & _minimum_variance_quality_mask(
+                covariance[:, i_eta, i_eta], min_eta_variance, "eta"
+            )
         )
         mask = mask_snr & mask_quality
         if not np.any(mask):
             raise ValueError(
                 f"0 of {n_detected} detected sources in {gwfast_result_file} survive "
-                f"the combined SNR (>= {snr_threshold}) and {quality_cut_n_sigma}-sigma "
-                "positivity data-quality cuts."
+                f"the combined SNR (>= {snr_threshold}), {quality_cut_n_sigma}-sigma "
+                f"positivity, and min_eta_variance={min_eta_variance:.3e} data-quality "
+                "cuts."
             )
 
         self.n_sources = int(np.sum(mask))
@@ -403,19 +586,28 @@ class GWFisherLikelihoodV2(LikelihoodBase):
         logger.info(
             f"Pre-sampling {n_mass_samples} (m1,m2) pairs per source, seed={seed}"
         )
-        mass_samples = _sample_masses(
-            means[mask], covariance[mask], key_order, n_mass_samples, seed
+        mass_samples, n_accepted = _sample_masses(
+            means[mask],
+            covariance[mask],
+            key_order,
+            n_mass_samples,
+            seed,
+            pool_size=mass_rejection_pool_size,
+            max_rounds=mass_rejection_max_rounds,
         )
         self._mass_samples: Float[Array, "n_sources n_mass_samples 2"] = jnp.asarray(
             mass_samples
         )
+        self._n_accepted: Float[Array, " n_sources"] = jnp.asarray(n_accepted)
 
         logger.info(
             f"GWFisherLikelihoodV2: {n_detected} detected sources, "
-            f"{self.n_sources} retained after snr_threshold={snr_threshold} and "
-            f"{quality_cut_n_sigma}-sigma positivity data-quality cuts "
+            f"{self.n_sources} retained after snr_threshold={snr_threshold}, "
+            f"{quality_cut_n_sigma}-sigma positivity, and min_eta_variance="
+            f"{min_eta_variance:.3e} data-quality cuts "
             f"({n_detected - self.n_sources} excluded total), "
-            f"n_mass_samples={n_mass_samples}, "
+            f"n_mass_samples={n_mass_samples} (rejection-sampled, pool_size="
+            f"{mass_rejection_pool_size}, max_rounds={mass_rejection_max_rounds}), "
             f"source_batch_size={source_batch_size}, mass_batch_size={mass_batch_size}"
         )
 
@@ -444,10 +636,11 @@ class GWFisherLikelihoodV2(LikelihoodBase):
         Lambdas_EOS: Float[Array, " n_points"] = params["Lambdas_EOS"]
         mtov: Float = jnp.max(masses_EOS)
         n_mass_samples = self.n_mass_samples
+        slot_idx = jnp.arange(n_mass_samples)
         i_mc, i_eta, i_lt, i_dlt = self._i_mc, self._i_eta, self._i_lt, self._i_dlt
 
         def process_one_source(carry) -> Float:
-            mean, cov, mass_samples = carry
+            mean, cov, mass_samples, n_accepted = carry
 
             def process_one_sample(mass_pair: Float[Array, " 2"]) -> Float:
                 m1, m2 = mass_pair[0], mass_pair[1]
@@ -480,11 +673,19 @@ class GWFisherLikelihoodV2(LikelihoodBase):
             all_logprobs = jax.lax.map(
                 process_one_sample, mass_samples, batch_size=self.mass_batch_size
             )
-            return logsumexp(all_logprobs) - jnp.log(n_mass_samples)
+            # Slots beyond this source's accepted count hold a dummy-valid mass pair
+            # (see _sample_masses) -- mask them out rather than let them silently
+            # contribute a meaningless logpdf, and normalize by the true accepted
+            # count (n_accepted), not the nominal n_mass_samples: a source that only
+            # produced e.g. 65/200 accepted draws (poorly-measured source, low
+            # acceptance probability) is a smaller, honest Monte Carlo average, not
+            # padded out to look like a full-precision one.
+            all_logprobs = jnp.where(slot_idx < n_accepted, all_logprobs, -jnp.inf)
+            return logsumexp(all_logprobs) - jnp.log(n_accepted)
 
         per_source_loglike = jax.lax.map(
             process_one_source,
-            (self._means, self._covs, self._mass_samples),
+            (self._means, self._covs, self._mass_samples, self._n_accepted),
             batch_size=self.source_batch_size,
         )
         return jnp.sum(per_source_loglike)

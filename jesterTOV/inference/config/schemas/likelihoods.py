@@ -504,9 +504,39 @@ class GWFisherLikelihoodV2Config(BaseLikelihoodConfig):
         gt=0,
         description=(
             "Number of pre-sampled (m1, m2) pairs per source, drawn once at "
-            "construction from that source's own Fisher-measured Gaussian. Larger "
-            "values reduce Monte Carlo estimator noise at the cost of proportionally "
-            "more likelihood evaluations per source."
+            "construction from that source's own Fisher-measured Gaussian via "
+            "rejection sampling (not clipping -- see mass_rejection_pool_size). "
+            "Larger values reduce Monte Carlo estimator noise at the cost of "
+            "proportionally more likelihood evaluations per source. Poorly-measured "
+            "sources may end up with fewer than this many accepted draws; evaluate() "
+            "accounts for this per source (see GWFisherLikelihoodV2's evaluate() "
+            "docstring and et-bgr-jester/runs/debug/FINDINGS.md, Part 6)."
+        ),
+    )
+    mass_rejection_pool_size: int = Field(
+        default=2000,
+        gt=0,
+        description=(
+            "Raw (Mc_src, eta) draws per source per rejection-sampling round when "
+            "pre-sampling mass pairs. A draw is accepted only if its eta is in the "
+            "valid domain (0, 0.25) and its implied (m1, m2) falls in the physical "
+            "mass window -- this replaces clipping, which could silently evaluate "
+            "the likelihood at a point other than the one actually drawn (see "
+            "et-bgr-jester/runs/debug/FINDINGS.md, Part 6 for the mechanism). Keep "
+            "this moderate: a single pool large enough to satisfy the worst source "
+            "across the whole population can exhaust memory -- sampling instead "
+            "proceeds in rounds (see mass_rejection_max_rounds), each only "
+            "re-sampling sources still short of n_mass_samples accepted draws."
+        ),
+    )
+    mass_rejection_max_rounds: int = Field(
+        default=6,
+        gt=0,
+        description=(
+            "Maximum rejection-sampling rounds for sources still short of "
+            "n_mass_samples accepted draws (default 6). Empirically, on the real "
+            "SFHo/Delta SNR>=12 dataset (the hardest production case tested), 6 "
+            "rounds of pool_size=2000 leaves 0 sources with zero accepted draws."
         ),
     )
     source_batch_size: int = Field(
@@ -537,6 +567,21 @@ class GWFisherLikelihoodV2Config(BaseLikelihoodConfig):
             "Disabled by default because even a strict 3-sigma cut removes ~99% of "
             "detected SFHo sources at SNR>=30 in practice -- enable deliberately, "
             "and check how many sources survive, rather than assuming a small effect."
+        ),
+    )
+    min_eta_variance: float = Field(
+        default=0.0,
+        description=(
+            "Data-quality cut (default: 0.0, DISABLED): exclude sources whose Fisher "
+            "Var(eta) is below this floor. Guards against a Fisher-matrix "
+            "linearization breakdown near the eta=0.25 (equal-mass) boundary, which "
+            "can report an implausibly over-precise eta and turn that source into a "
+            "near-delta-function constraint capable of stalling an MCMC sampler -- "
+            "see GWFisherLikelihoodV2's _minimum_variance_quality_mask docstring and "
+            "et-bgr-jester/runs/debug/FINDINGS.md (Part 5) for the full mechanism. "
+            "On the real SFHo/Delta SNR>=12 dataset, 1e-6 excludes ~1.3% of sources "
+            "(the clearest outliers); check retained source counts for your own "
+            "dataset before relying on a specific value."
         ),
     )
 

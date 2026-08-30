@@ -171,10 +171,13 @@ def create_likelihood(
                 snr_threshold=config.snr_threshold,
                 penalty_value=config.penalty_value,
                 n_mass_samples=config.n_mass_samples,
+                mass_rejection_pool_size=config.mass_rejection_pool_size,
+                mass_rejection_max_rounds=config.mass_rejection_max_rounds,
                 source_batch_size=config.source_batch_size,
                 mass_batch_size=config.mass_batch_size,
                 seed=config.seed,
                 quality_cut_n_sigma=config.quality_cut_n_sigma,
+                min_eta_variance=config.min_eta_variance,
             )
 
         case ChiEFTLikelihoodConfig():
