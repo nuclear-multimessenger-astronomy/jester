@@ -649,3 +649,88 @@ class TestSMCPartialPosteriorsFinalRejuvenation:
             f"rejuvenation: max |shift|/SE = "
             f"{np.max(np.abs(mean_on - mean_off) / standard_error):.2f}"
         )
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+@pytest.mark.e2e
+@pytest.mark.blackjax
+class TestSMCPartialPosteriorsSkipMove:
+    """Tests for the opt-in ESS-gated skip of resample+move
+    (``inner``-sibling config field ``skip_move_when_ess_ok``, see PLAN.md
+    "ESS-gated skip of resample+move in jester's partial-posteriors SMC
+    sampler" and ``_reweight_only_step``/``_build_jitted_ess_check_fn`` in
+    ``samplers/blackjax/smc/partial_posteriors.py``).
+
+    Real GW event likelihoods are individually informative enough that the
+    skip condition may rarely or never fire on this lightweight config (the
+    same "informative events" regime the design doc's toy-model sweep flags
+    as a low-payoff sanity check) -- these tests assert the flag is safe to
+    turn on (runs to completion, produces a valid posterior, agrees with the
+    flag-off run within the tolerance already used elsewhere in this file
+    for run-to-run comparisons), not that it necessarily changes anything
+    for this particular config.
+    """
+
+    def test_skip_move_off_by_default(self, smc_partial_posteriors_gw_config):
+        """The flag defaults to False and is recorded in metadata either way,
+        so a saved result can be inspected for which behavior produced it."""
+        _config, sampler = _run_partial_posteriors(smc_partial_posteriors_gw_config)
+        assert sampler.metadata["skip_move_when_ess_ok"] is False  # type: ignore[attr-defined]
+
+    def test_skip_move_runs_and_agrees_with_baseline(
+        self, smc_partial_posteriors_gw_config
+    ):
+        """Same seed, flag on vs. off: the skip only ever defers *when* a
+        resample+move happens, never what distribution a move (once it does
+        happen) targets (see the module docstring's correctness invariant),
+        so the two posteriors should agree to within the same run-to-run
+        tolerance ``TestSMCPartialPosteriorsFinalRejuvenation`` above uses.
+        """
+        seed = 11
+        config_off = copy.deepcopy(smc_partial_posteriors_gw_config)
+        config_off["sampler"]["skip_move_when_ess_ok"] = False
+        config_off["seed"] = seed
+        config_on = copy.deepcopy(smc_partial_posteriors_gw_config)
+        config_on["sampler"]["skip_move_when_ess_ok"] = True
+        config_on["seed"] = seed
+
+        _config_off, sampler_off = _run_partial_posteriors(config_off)
+        _config_on, sampler_on = _run_partial_posteriors(config_on)
+
+        metadata_on = sampler_on.metadata  # type: ignore[attr-defined]
+        assert metadata_on["skip_move_when_ess_ok"] is True
+        assert metadata_on["event_order"] == sampler_off.metadata["event_order"]  # type: ignore[attr-defined]
+
+        out_off = sampler_off.get_sampler_output()
+        out_on = sampler_on.get_sampler_output()
+        validate_sampler_output(out_on, expected_params=NEP_PARAMS, min_samples=50)
+
+        samples_off = np.column_stack(
+            [np.asarray(out_off.samples[k]) for k in NEP_PARAMS]
+        )
+        samples_on = np.column_stack(
+            [np.asarray(out_on.samples[k]) for k in NEP_PARAMS]
+        )
+        n_particles = samples_off.shape[0]
+        mean_off = samples_off.mean(axis=0)
+        mean_on = samples_on.mean(axis=0)
+        std_off = samples_off.std(axis=0)
+        standard_error = std_off / np.sqrt(n_particles)
+        # Loose tolerance: even with the same seed, a real skip changes RNG
+        # consumption (fewer jax.random.split calls once any sub-step is
+        # skipped), so this is a statistical-agreement check, not a
+        # bit-exact replay -- mirrors the rejuvenation test's own tolerance
+        # above.
+        assert np.all(np.abs(mean_on - mean_off) < 8 * standard_error), (
+            f"Posterior means shifted more than expected with "
+            f"skip_move_when_ess_ok=True: max |shift|/SE = "
+            f"{np.max(np.abs(mean_on - mean_off) / standard_error):.2f}"
+        )
+
+        # substep_diagnostics carries a skipped_history entry (possibly
+        # all-False on this informative-events config) of the same length
+        # as the other per-substep histories, for every processed batch.
+        for batch_key, diag in sampler_on._substep_diagnostics.items():  # type: ignore[attr-defined]
+            assert "skipped_history" in diag
+            assert len(diag["skipped_history"]) == len(diag["mask_fraction_history"])

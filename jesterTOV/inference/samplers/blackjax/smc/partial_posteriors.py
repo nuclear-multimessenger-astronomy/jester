@@ -97,7 +97,9 @@ from jesterTOV.inference.samplers.blackjax.smc.random_walk import (
 )
 from jesterTOV.logging_config import get_logger
 
-from blackjax.smc.ess import ess_solver, log_ess
+from jax.scipy.special import logsumexp
+
+from blackjax.smc.ess import log_ess
 from blackjax.smc.resampling import systematic
 from blackjax.smc.solver import dichotomy
 from blackjax.smc.from_mcmc import build_kernel as smc_from_mcmc_build_kernel
@@ -146,7 +148,7 @@ def _extract_gw_event_order(likelihoods: list[dict[str, Any]]) -> list[str]:
 
 
 def _canonical_always_on_signature(
-    likelihoods: list[dict[str, Any]]
+    likelihoods: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Canonical, order-independent form of the "always-on" likelihoods.
 
@@ -185,6 +187,7 @@ def _build_jitted_substep_fn(
     mcmc_init_fn: Callable,
     num_mcmc_steps: int,
     partial_logposterior_factory: Callable[[Array], Callable[[Array], Array]],
+    ordered_event_vals: Callable[[Array], Array],
 ) -> Callable[
     [PRNGKeyArray, PartialPosteriorsSMCState, Array, Any],
     tuple[PartialPosteriorsSMCState, Any],
@@ -240,6 +243,20 @@ def _build_jitted_substep_fn(
     ``dev/biased_evidence/biased_evidence.tex`` (Sections 2 and 5) in the
     parent development workspace for the full derivation and the toy-model
     measurements of both regimes.
+
+    ``ordered_event_vals`` lets ``log_weights_fn`` compute the mask-diff
+    likelihood ratio directly (``sum((data_mask - state.data_mask) *
+    ordered_event_vals(x))``) instead of building two separate
+    ``partial_logposterior_factory(...)`` closures and subtracting their
+    outputs -- both would otherwise independently recompute
+    ``ordered_event_vals(x)`` (the shared, potentially expensive forward-model
+    likelihood array) for the same particle, which XLA's common-subexpression
+    elimination does not reliably fold away (measured ~1.5x slowdown in
+    isolation for a synthetic analogue -- see the optimization plan's Finding
+    2). ``previous_logposterior_fn`` still needs its own
+    ``ordered_event_vals`` evaluation since it is also the MCMC move's
+    target, evaluated many times during the inner MCMC steps, not just once
+    for the reweight.
     """
     delegate = smc_from_mcmc_build_kernel(mcmc_step_fn, mcmc_init_fn, systematic)
 
@@ -249,11 +266,11 @@ def _build_jitted_substep_fn(
         data_mask: Array,
         mcmc_parameters: Any,
     ) -> tuple[PartialPosteriorsSMCState, Any]:
-        logposterior_fn = partial_logposterior_factory(data_mask)
         previous_logposterior_fn = partial_logposterior_factory(state.data_mask)
+        mask_diff = data_mask - state.data_mask
 
         def log_weights_fn(x: Array) -> Array:
-            return logposterior_fn(x) - previous_logposterior_fn(x)
+            return jnp.sum(mask_diff * ordered_event_vals(x))
 
         # Move targets the OLD mask's posterior (resample-move exactness,
         # see docstring above) -- only the move's target changed relative
@@ -276,6 +293,166 @@ def _build_jitted_substep_fn(
         )
 
     return jax.jit(substep)
+
+
+def _build_jitted_ess_check_fn(
+    ordered_event_vals: Callable[[Array], Array],
+) -> Callable[[Array, Array, Array, float | Array, float | Array], tuple[Array, Array]]:
+    """Build a single ``jax.jit``-compiled, fixed-shape ESS lookahead,
+    compiled once and reused for every candidate-mask ESS check of the run.
+
+    Two call sites need exactly this "if I jumped the mask by up to
+    ``max_delta`` along ``candidate_mask``, what would ESS be" question,
+    answered without any resample or MCMC move: the per-sub-step delta
+    bisection (mirroring ``blackjax.smc.ess.ess_solver``/
+    ``blackjax.smc.solver.dichotomy``, but jitted -- see the optimization
+    plan's Finding 1: calling ``ess_solver`` bare, unjitted, rebuilds a fresh
+    Python closure and retraces/recompiles the bisection on *every*
+    sub-step of *every* run, measured ~250x slower than a pre-jitted
+    version) and the ``cadence="auto"`` full-jump ESS predictor (replacing
+    the old ``_predict_full_jump_ess``, which built a variable-length
+    ``jnp.array(group_indices)`` gather inside a fresh Python closure on
+    every call -- retracing/recompiling for every distinct candidate-queue
+    length, up to ~T times per run).
+
+    The fix for both is the same: represent "which events are in play" as a
+    fixed-length ``(T,)`` mask (multiplied against the *already*
+    fixed-length ``ordered_event_vals(x)`` array), not a Python list of
+    indices gathered out of it. A candidate mask changes *values*, never
+    *shape*, as a queue grows or a bisection narrows -- so this compiles
+    exactly once for the whole run, unlike either replaced call site.
+
+    Parameters
+    ----------
+    ordered_event_vals : Callable[[Array], Array]
+        Per-particle, per-event log-likelihood array, in mask-index order
+        (see ``sample()``) -- closed over once, fixed for the whole run.
+
+    Returns
+    -------
+    Callable
+        ``(particles, base_log_weights, candidate_mask, target_ess,
+        max_delta) -> (delta, ess_at_max_delta_fraction)``.
+        ``base_log_weights`` (shape ``(n_particles,)``) is added to the
+        candidate log-likelihood ratio before the ESS is evaluated -- pass
+        all zeros to recover ``ess_solver``'s own implicit assumption that
+        the incoming particles are already uniformly weighted (the case
+        right after any real resample+move), or ``jnp.log(state.weights)``
+        to correctly account for weights already carrying an un-resampled
+        importance-sampling ratio (the case while
+        ``skip_move_when_ess_ok`` is deferring a move -- see
+        ``_reweight_only_step``). ``delta`` is the bisected mask-fraction
+        increment (identical, to floating-point tolerance, to
+        ``ess_solver``/``dichotomy``'s own output when ``base_log_weights``
+        is all zeros). ``ess_at_max_delta_fraction`` is the ESS (as a
+        fraction of ``n_particles``) if the *entire* ``max_delta`` jump were
+        taken -- exactly the one-shot full-jump ESS
+        ``_predict_full_jump_ess`` used to compute standalone, and (for the
+        skip design) the quantity that decides whether the whole remaining
+        jump can be taken as a cheap reweight-only step instead of a real
+        move -- available here for free, since it is a strict subset of
+        what the bisection already evaluates internally.
+    """
+
+    def _check(
+        particles: Array,
+        base_log_weights: Array,
+        candidate_mask: Array,
+        target_ess: float | Array,
+        max_delta: float | Array,
+    ) -> tuple[Array, Array]:
+        def group_loglik(x: Array) -> Array:
+            return jnp.sum(candidate_mask * ordered_event_vals(x))
+
+        logprob = jax.vmap(group_loglik)(particles)
+        n_particles = logprob.shape[0]
+        target_val = jnp.log(n_particles * target_ess)
+
+        def fun_to_solve(delta: Array) -> Array:
+            log_weights = jnp.nan_to_num(base_log_weights + delta * logprob)
+            return log_ess(log_weights) - target_val
+
+        delta = dichotomy(fun_to_solve, 0.0, max_delta)
+        log_ess_at_max = log_ess(jnp.nan_to_num(base_log_weights + max_delta * logprob))
+        ess_at_max_fraction = jnp.exp(log_ess_at_max) / n_particles
+        return delta, ess_at_max_fraction
+
+    return jax.jit(_check)
+
+
+def _build_jitted_reweight_only_step_fn(
+    ordered_event_vals: Callable[[Array], Array],
+) -> Callable[
+    [PartialPosteriorsSMCState, Array], tuple[PartialPosteriorsSMCState, Array]
+]:
+    """Build a jitted, resample-free, move-free reweighting step -- the
+    "skip" branch of ``skip_move_when_ess_ok`` (Chopin's IBIS Algorithm
+    17.2; see the optimization plan's "New cheap reweight-only step").
+
+    Multiplies the running importance weights by the new/old likelihood
+    ratio at the *current*, frozen particle positions (no resample, no
+    MCMC) -- ordinary un-resampled importance sampling, unbiased for the
+    same reason a single IS step always is, regardless of how large the
+    mask jump is (see the module docstring's "Correctness invariant this
+    must preserve").
+
+    Crucially, this keeps ``state.data_mask`` in sync with whatever
+    ``state.weights`` currently represent -- exactly the invariant
+    ``_build_jitted_substep_fn``'s resample-move step already relies on
+    every time it runs (going into any call, ``state.weights`` must
+    represent the importance ratio of ``state.data_mask`` relative to the
+    actual, already-resampled-and-moved particle population; resample-move
+    exactness follows from the subsequent MCMC move being invariant to
+    exactly that mask). Because this function updates ``data_mask`` and
+    ``weights`` together on every call (never advancing one without the
+    other), no separate "pending mask" vs. "last-moved mask" bookkeeping is
+    needed: whenever a real move eventually fires (because the next
+    candidate jump would drop ESS below target), the ordinary
+    ``jitted_substep_fn`` can be called completely unmodified on whatever
+    ``state`` this function last returned -- it transparently moves
+    relative to however many (zero or more) cheap reweight-only steps
+    preceded it, and reweights across the *whole* deferred span in one
+    exact resample-move step.
+
+    Parameters
+    ----------
+    ordered_event_vals : Callable[[Array], Array]
+        Per-particle, per-event log-likelihood array (see ``sample()``),
+        closed over once, fixed for the whole run.
+
+    Returns
+    -------
+    Callable
+        ``(state, new_mask) -> (new_state, log_evidence_increment)``.
+        ``log_evidence_increment`` is this step's unbiased contribution to
+        the cumulative log evidence, on the same footing as
+        ``info.log_likelihood_increment`` from a real move -- summing it
+        alongside real moves' increments telescopes correctly to the
+        overall log-evidence estimate regardless of how the run splits
+        between cheap and real steps (see the module docstring's
+        correctness invariant).
+    """
+
+    def reweight_only_step(
+        state: PartialPosteriorsSMCState, new_mask: Array
+    ) -> tuple[PartialPosteriorsSMCState, Array]:
+        mask_diff = new_mask - state.data_mask
+
+        def log_ratio(x: Array) -> Array:
+            return jnp.sum(mask_diff * ordered_event_vals(x))
+
+        log_ratio_vals = jax.vmap(log_ratio)(cast(Array, state.particles))
+        log_weights = jnp.log(state.weights) + log_ratio_vals
+        # state.weights already sums to 1 (softmax-normalized, both right
+        # after a real move and after any prior reweight-only step), so the
+        # incremental log-evidence contribution needs no further
+        # normalization -- see the module docstring's derivation.
+        log_evidence_increment = logsumexp(log_weights)
+        weights = jnp.exp(log_weights - log_evidence_increment)
+        new_state = state._replace(weights=weights, data_mask=new_mask)
+        return new_state, log_evidence_increment
+
+    return jax.jit(reweight_only_step)
 
 
 class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
@@ -362,7 +539,7 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         # name. Used by plot_diagnostics() to produce one SMC-diagnostics
         # style plot per event, in addition to the overall
         # partial-posteriors-path plot.
-        self._substep_diagnostics: dict[str, dict[str, list[float]]] = {}
+        self._substep_diagnostics: dict[str, dict[str, list[float] | list[bool]]] = {}
 
         # Populated by configure_intermediate_saving(), called externally
         # (run_inference.py) because this sampler doesn't otherwise have
@@ -551,7 +728,12 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         """
         mean_ess = float(jnp.mean(jnp.array(ess_history_so_far)))
         min_ess = float(jnp.min(jnp.array(ess_history_so_far)))
-        mean_acceptance = float(jnp.mean(jnp.array(acceptance_history_so_far)))
+        # nanmean, not mean: a data-tempering step that finishes via
+        # reweight-only skips alone (skip_move_when_ess_ok=True, no real
+        # move at all that step) records NaN acceptance for that step (see
+        # sample()'s group loop) -- identical to jnp.mean when no NaNs are
+        # present, i.e. always, when skip_move_when_ess_ok is False.
+        mean_acceptance = float(jnp.nanmean(jnp.array(acceptance_history_so_far)))
         return {
             "sampler": f"blackjax_smc_{self._get_kernel_name()}",
             "kernel_type": self._get_kernel_name(),
@@ -564,6 +746,7 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             "auto_ess_threshold": (
                 config.resolved_auto_ess_threshold if config.is_auto_cadence else 0.0
             ),
+            "skip_move_when_ess_ok": config.skip_move_when_ess_ok,
             "event_groups": event_groups_names_so_far,
             "batch_to_sources": dict(batch_to_sources_so_far),
             "n_batches": n_prev_batches + len(event_groups_names_so_far),
@@ -817,60 +1000,6 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             groups.append(new_event_indices[cursor : cursor + size])
             cursor += size
         return groups
-
-    @staticmethod
-    def _predict_full_jump_ess(
-        particles: Array,
-        ordered_event_vals: Callable[[Array], Array],
-        group_indices: list[int],
-    ) -> float:
-        """Full-jump ESS of a candidate event group against the current
-        particle cloud, without running any annealing sub-steps or MCMC
-        moves -- a cheap, read-only diagnostic, never an accepted sampling
-        step (see ``dev/predictors/full_jump_ess_predictor.tex`` in the
-        parent development workspace for the full derivation).
-
-        If ``group_indices``' combined mask were jumped straight from 0 to
-        1, the resulting (unnormalized) importance weight for particle j is
-        ``exp(sum_i logl_i(particle_j))``, i.e. the current particles
-        reweighted by the candidate group's likelihood alone -- exactly the
-        quantity ``ess_solver``/``dichotomy`` evaluate as their first probe
-        (``fun(max_delta)``) at the start of every sub-step bisection, just
-        computed standalone here rather than as a side effect of actually
-        annealing. Because the current particles carry uniform weight
-        (true immediately after any resampling step, which happens after
-        every sub-step -- see ``partial_posteriors_smc.tex``), no
-        re-evaluation of previously-assimilated or not-yet-touched events'
-        likelihoods is needed: this is a plain importance-weighting
-        computation using only ``group_indices``' own log-likelihoods.
-
-        Parameters
-        ----------
-        particles : Array
-            Current flattened SMC particle cloud (``state.particles``),
-            assumed uniformly weighted.
-        ordered_event_vals : Callable[[Array], Array]
-            Per-particle function returning per-event log-likelihoods (one
-            entry per configured GW event, in ``self._event_order``/mask
-            order) -- the same closure the sub-step loop already builds and
-            vmaps over particles for each group's ``batched_group_loglik_fn``.
-        group_indices : list[int]
-            Indices into ``self._event_order`` of the candidate event(s)
-            (the pending auto-cadence queue).
-
-        Returns
-        -------
-        float
-            Normalized ESS in [0, 1] (fraction of ``n_particles``).
-        """
-        indices_arr = jnp.array(group_indices)
-
-        def group_loglik(x: Array) -> Array:
-            return jnp.sum(ordered_event_vals(x)[indices_arr])
-
-        log_weights = jax.vmap(group_loglik)(particles)
-        n_particles = log_weights.shape[0]
-        return float(jnp.exp(log_ess(log_weights)) / n_particles)
 
     def _check_always_on_likelihoods_match(
         self, path: str, prev_likelihoods: list[dict[str, Any]]
@@ -1230,6 +1359,23 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             mcmc_init_fn,
             config.n_mcmc_steps,
             partial_logposterior_factory,
+            ordered_event_vals,
+        )
+        # Compiled once, fixed-(n_events,)-shape ESS lookahead, shared by
+        # the per-sub-step bisection below (Finding 1: a bare, unjitted
+        # ess_solver() call retraces/recompiles on every sub-step) and the
+        # auto-cadence full-jump predictor inside _next_auto_group
+        # (previously _predict_full_jump_ess, which retraced/recompiled for
+        # every distinct pending-queue length) -- see
+        # _build_jitted_ess_check_fn's docstring.
+        jitted_ess_check_fn = _build_jitted_ess_check_fn(ordered_event_vals)
+        # Compiled once, resample-free/move-free reweighting step -- the
+        # "skip" branch used when config.skip_move_when_ess_ok is True (see
+        # _build_jitted_reweight_only_step_fn's docstring). Built
+        # unconditionally (cheap) so the flag can be toggled without any
+        # other change to this method.
+        jitted_reweight_only_step_fn = _build_jitted_reweight_only_step_fn(
+            ordered_event_vals
         )
 
         n_particles = config.n_particles
@@ -1254,7 +1400,7 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         # "+"-joined event-name string, which can get arbitrarily long (and
         # blow past OS filename limits) once many events are batched into
         # one group; batch_to_sources (below) recovers the full mapping.
-        substep_diagnostics: dict[str, dict[str, list[float]]] = {}
+        substep_diagnostics: dict[str, dict[str, list[float] | list[bool]]] = {}
         # Maps each batch_key to the list of event names it contains --
         # the same information as event_groups_names, just keyed by the
         # short batch label for easy lookup/reporting.
@@ -1309,26 +1455,42 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
         logger.info(f"MCMC steps per sub-step: {config.n_mcmc_steps}")
         logger.info("=" * 70)
 
+        zero_log_weights = jnp.zeros(n_particles)
+
         def _next_auto_group(cursor: int) -> tuple[list[int], int]:
             """Grow the pending queue of not-yet-assimilated events one at a
-            time, checking the full-jump ESS (see ``_predict_full_jump_ess``)
-            of the queue against the *current* particle cloud (``state``,
-            read from the enclosing scope -- reflects whatever the most
-            recently completed data-tempering step left it as) after each
-            addition. Returns as soon as that ESS drops below
-            ``auto_ess_threshold`` (an "update now" decision) or the last
-            configured event is reached (nothing left to defer to). Every
-            check made (whether or not it triggers) is appended to the
-            enclosing ``auto_cadence_ess_checks`` list, for the
+            time, checking the full-jump ESS (via ``jitted_ess_check_fn``,
+            see its docstring) of the queue against the *current* particle
+            cloud (``state``, read from the enclosing scope -- reflects
+            whatever the most recently completed data-tempering step left
+            it as) after each addition. Returns as soon as that ESS drops
+            below ``auto_ess_threshold`` (an "update now" decision) or the
+            last configured event is reached (nothing left to defer to).
+            Every check made (whether or not it triggers) is appended to
+            the enclosing ``auto_cadence_ess_checks`` list, for the
             ``_plot_auto_cadence_ess`` diagnostic plot.
+
+            ``queue_mask`` is a fixed-``(n_events,)``-shape indicator
+            array, flipped ``0 -> 1`` as events are added to the queue --
+            not a variable-length ``jnp.array(pending)`` gather -- so this
+            reuses the same compiled executable regardless of how long the
+            pending queue grows (see ``_build_jitted_ess_check_fn``).
             """
             pending: list[int] = []
+            queue_mask = jnp.zeros(n_events)
             while cursor < len(new_event_indices):
-                pending.append(new_event_indices[cursor])
+                idx = new_event_indices[cursor]
+                pending.append(idx)
+                queue_mask = queue_mask.at[idx].set(1.0)
                 cursor += 1
-                ess_hat = self._predict_full_jump_ess(
-                    cast(Array, state.particles), ordered_event_vals, pending
+                _, ess_hat_arr = jitted_ess_check_fn(
+                    cast(Array, state.particles),
+                    zero_log_weights,
+                    queue_mask,
+                    config.target_ess,
+                    1.0,
                 )
+                ess_hat = float(ess_hat_arr)
                 triggered = ess_hat < auto_ess_threshold
                 auto_cadence_ess_checks.append((ess_hat, triggered))
                 if triggered:
@@ -1356,31 +1518,87 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             event_groups_names.append(group_names)
             batch_to_sources[batch_key] = group_names
             group_indices = jnp.array(group)
+            group_one_hot = jnp.zeros(n_events).at[group_indices].set(1.0)
             group_log_evidence = 0.0
             info = None
             n_substeps_taken = 0
+            n_skips_taken = 0
 
-            def batched_group_loglik_fn(
-                x: Array, group_indices: Array = group_indices
-            ) -> Array:
-                return jnp.sum(ordered_event_vals(x)[group_indices])
-
-            batched_group_loglik_fn = jax.vmap(batched_group_loglik_fn)
             mask_fraction_history: list[float] = []
             substep_ess_history: list[float] = []
             substep_acceptance_history: list[float] = []
             substep_log_evidence_history: list[float] = []
+            skipped_history: list[bool] = []
 
             while float(mask[group[0]]) < 1.0:
                 current_frac = float(mask[group[0]])
                 max_delta = 1.0 - current_frac
-                raw_delta = ess_solver(
-                    batched_group_loglik_fn,
-                    state.particles,
+
+                # base_log_weights=0 recovers ess_solver's own implicit
+                # assumption that incoming particles are already uniformly
+                # weighted (always true here when skip_move_when_ess_ok is
+                # False, since every substep resamples+moves). Under the
+                # skip flag, state.weights may already carry an
+                # un-resampled importance-sampling ratio from prior
+                # reweight-only steps -- see _build_jitted_ess_check_fn.
+                base_log_weights = (
+                    jnp.log(state.weights)
+                    if config.skip_move_when_ess_ok
+                    else zero_log_weights
+                )
+                raw_delta, ess_at_max_delta = jitted_ess_check_fn(
+                    cast(Array, state.particles),
+                    base_log_weights,
+                    group_one_hot,
                     config.target_ess,
                     max_delta,
-                    dichotomy,
                 )
+
+                if (
+                    config.skip_move_when_ess_ok
+                    and float(ess_at_max_delta) >= config.target_ess
+                ):
+                    # The entire remaining jump for this group is cheap and
+                    # safe -- accumulate the reweighting only (Chopin's
+                    # IBIS Algorithm 17.2 skip branch), deferring the real
+                    # resample+move. state.data_mask stays in sync with
+                    # what state.weights represent (see
+                    # _build_jitted_reweight_only_step_fn), so if a real
+                    # move fires later (in this group or a subsequent one --
+                    # the outer group loop just continues, naturally
+                    # extending the deferral across event boundaries too),
+                    # jitted_substep_fn below runs completely unmodified.
+                    new_frac = 1.0
+                    new_mask = mask.at[group_indices].set(new_frac)
+                    state, dlogZ_arr = jitted_reweight_only_step_fn(state, new_mask)
+                    substep_log_evidence_increment = float(dlogZ_arr)
+                    mask = new_mask
+                    group_log_evidence += substep_log_evidence_increment
+                    n_substeps_taken += 1
+                    n_skips_taken += 1
+
+                    substep_ess = float(
+                        jnp.sum(state.weights) ** 2
+                        / jnp.sum(state.weights**2)
+                        / n_particles
+                    )
+                    bar = make_progress_bar(new_frac)
+                    logger.info(
+                        f"    -> [{batch_key}] sub-step {n_substeps_taken:2d} | "
+                        f"mask={new_frac:.5f} | ESS={substep_ess * 100:5.1f}% | "
+                        f"SKIPPED (reweight-only, no move) | "
+                        f"dlogZ={substep_log_evidence_increment:8.3f} | {bar}"
+                    )
+
+                    mask_fraction_history.append(new_frac)
+                    substep_ess_history.append(substep_ess)
+                    substep_acceptance_history.append(float("nan"))
+                    substep_log_evidence_history.append(
+                        log_evidence + group_log_evidence
+                    )
+                    skipped_history.append(True)
+                    continue
+
                 if not jnp.isfinite(raw_delta):
                     # Particles are already below target_ess even at
                     # delta=0 (dichotomy has no admissible root) --
@@ -1428,18 +1646,27 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
                 substep_ess_history.append(substep_ess)
                 substep_acceptance_history.append(substep_acceptance)
                 substep_log_evidence_history.append(log_evidence + group_log_evidence)
+                skipped_history.append(False)
 
             substep_diagnostics[batch_key] = {
                 "mask_fraction_history": mask_fraction_history,
                 "ess_history": substep_ess_history,
                 "acceptance_history": substep_acceptance_history,
                 "log_evidence_history": substep_log_evidence_history,
+                "skipped_history": skipped_history,
             }
 
-            assert info is not None
             weights = state.weights
             ess_value = float(jnp.sum(weights) ** 2 / jnp.sum(weights**2) / n_particles)
-            acceptance_rate = float(info.update_info.acceptance_rate.mean())  # type: ignore[attr-defined]
+            # A group can finish via reweight-only skips alone (no real move
+            # at all, so info stays None) -- acceptance rate is undefined in
+            # that case, not zero; recorded as NaN and ignored by
+            # _build_metadata's nanmean.
+            acceptance_rate = (
+                float(info.update_info.acceptance_rate.mean())  # type: ignore[attr-defined]
+                if info is not None
+                else float("nan")
+            )
             log_evidence += group_log_evidence
 
             ess_history.append(ess_value)
@@ -1454,8 +1681,8 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             logger.info(
                 f"Step {events_done:3d}/{n_new_events} [{batch_key}] | "
                 f"ESS={ess_value * 100:5.1f}% | Accept={acceptance_rate * 100:5.1f}% | "
-                f"logZ={log_evidence:8.3f} | substeps={n_substeps_taken:3d} | "
-                f"t={elapsed_str} | {bar}"
+                f"logZ={log_evidence:8.3f} | substeps={n_substeps_taken:3d} "
+                f"(skipped={n_skips_taken}) | t={elapsed_str} | {bar}"
             )
 
             if config.save_intermediate_results:
@@ -1667,6 +1894,7 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             mask_fraction_history = diagnostics["mask_fraction_history"]
             ess_history = diagnostics["ess_history"]
             acceptance_history = diagnostics["acceptance_history"]
+            skipped_history = diagnostics.get("skipped_history", [])
             n_substeps = len(mask_fraction_history)
 
             fig, axes = plt.subplots(3, 1, figsize=(10, 9), sharex=True)
@@ -1679,6 +1907,24 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
             x = range(1, n_substeps + 1)
 
             axes[0].plot(x, mask_fraction_history, "b-o", linewidth=2)
+            # skip_move_when_ess_ok only: mark sub-steps that took the cheap
+            # reweight-only branch (no resample, no MCMC move) with a
+            # distinct red 'x', so a real run's realized skip rate is
+            # visible at a glance -- see the ESS-gated-skip optimization
+            # plan's Phase 2 diagnostics ask.
+            skip_x = [xi for xi, s in zip(x, skipped_history) if s]
+            skip_y = [yi for yi, s in zip(mask_fraction_history, skipped_history) if s]
+            if skip_x:
+                axes[0].plot(
+                    skip_x,
+                    skip_y,
+                    "rx",
+                    markersize=10,
+                    markeredgewidth=2,
+                    zorder=3,
+                    label="skipped (no move)",
+                )
+                axes[0].legend(loc="best", fontsize=9)
             axes[0].set_ylabel("Mask fraction", fontsize=12)
             axes[0].grid(True, alpha=0.3)
             axes[0].set_ylim(-0.05, 1.05)

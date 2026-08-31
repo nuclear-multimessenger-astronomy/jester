@@ -452,6 +452,28 @@ class SMCPartialPosteriorsRandomWalkSamplerConfig(BaseSamplerConfig):
         Configuration of the adaptive SMC-RW loop used to ramp in each
         event group's mask fraction from 0 to 1 (particles, MCMC steps per
         sub-step, target ESS, random-walk sigma).
+    skip_move_when_ess_ok : bool
+        Opt-in ESS-gated skip of the resample+move step, recovering
+        Chopin's IBIS Algorithm 17.2 behavior (see ``Introduction to
+        Sequential Monte Carlo``) at the sub-event/fractional-mask
+        granularity this sampler already operates at. When ``True``, each
+        sub-step first checks -- cheaply, with no resample and no MCMC --
+        whether the *entire* remaining jump for the current event group
+        would keep ESS at or above ``target_ess``; if so, only the
+        importance weights are updated (ordinary un-resampled reweighting,
+        unbiased for the same reason a single importance-sampling step
+        always is) and the resample+move is deferred, potentially across
+        several events, until a candidate jump would actually drop ESS
+        below target. Defaults to ``False`` (today's behavior: every
+        sub-step resamples and moves unconditionally), since this changes
+        the sampling trajectory (though not, by construction, the
+        correctness of the evidence/posterior estimators -- see
+        ``_reweight_only_step`` in
+        ``samplers/blackjax/smc/partial_posteriors.py``) and should be
+        validated against a specific run before relying on it in
+        production. See ``PLAN.md`` (ESS-gated skip of resample+move in
+        jester's partial-posteriors SMC sampler) for the full design and
+        toy-model validation.
     save_intermediate_results : bool
         When ``True``, save a full ``InferenceResult`` HDF5 (posterior
         samples, derived EOS quantities via the TOV solver, and metadata)
@@ -472,6 +494,7 @@ class SMCPartialPosteriorsRandomWalkSamplerConfig(BaseSamplerConfig):
     cadence: int | list[int] | Literal["auto", "automatic"] = 1
     auto_ess_threshold: float | None = None
     inner: InnerSMCRandomWalkConfig = Field(default_factory=InnerSMCRandomWalkConfig)
+    skip_move_when_ess_ok: bool = False
     save_intermediate_results: bool = True
 
     @field_validator("cadence")
