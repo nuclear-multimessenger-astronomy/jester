@@ -1499,6 +1499,15 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
 
         auto_cursor = 0
         group_num = -1
+        # Tracks whether state.weights currently represents a genuinely
+        # accumulated, un-resampled importance ratio from one or more prior
+        # cheap reweight-only (skip) steps -- as opposed to the fresh,
+        # single-sub-step ratio a real resample+move just produced (which
+        # jitted_substep_fn's own next call would discard via resampling
+        # regardless of its magnitude). Only the former needs to be fed into
+        # the next sub-step's ESS bisection as a non-trivial baseline -- see
+        # the base_log_weights computation below.
+        weights_are_pending_reweight_only = False
         while True:
             group_num += 1
             if auto_cadence:
@@ -1536,14 +1545,24 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
 
                 # base_log_weights=0 recovers ess_solver's own implicit
                 # assumption that incoming particles are already uniformly
-                # weighted (always true here when skip_move_when_ess_ok is
-                # False, since every substep resamples+moves). Under the
-                # skip flag, state.weights may already carry an
-                # un-resampled importance-sampling ratio from prior
-                # reweight-only steps -- see _build_jitted_ess_check_fn.
+                # weighted -- always true right after a real resample+move
+                # (every substep resamples+moves when skip_move_when_ess_ok
+                # is False; and even when the flag is on, blackjax's own
+                # weight_fn recomputes state.weights from scratch out of
+                # that one substep's incremental ratio -- see
+                # _build_jitted_substep_fn's docstring and
+                # blackjax.smc.base.step -- so whatever ESS it landed at is
+                # about to be discarded by the *next* real move's resample
+                # step regardless of magnitude, and must not be fed forward
+                # here as extra baseline degeneracy). Only when the *last*
+                # sub-step actually taken was itself a cheap reweight-only
+                # skip does state.weights hold a genuinely un-resampled,
+                # accumulating importance ratio that this bisection needs to
+                # account for -- see _build_jitted_ess_check_fn and
+                # _build_jitted_reweight_only_step_fn.
                 base_log_weights = (
                     jnp.log(state.weights)
-                    if config.skip_move_when_ess_ok
+                    if (config.skip_move_when_ess_ok and weights_are_pending_reweight_only)
                     else zero_log_weights
                 )
                 raw_delta, ess_at_max_delta = jitted_ess_check_fn(
@@ -1576,6 +1595,7 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
                     group_log_evidence += substep_log_evidence_increment
                     n_substeps_taken += 1
                     n_skips_taken += 1
+                    weights_are_pending_reweight_only = True
 
                     substep_ess = float(
                         jnp.sum(state.weights) ** 2
@@ -1626,6 +1646,7 @@ class BlackJAXPartialPosteriorsRandomWalkSampler(BlackJAXSMCRandomWalkSampler):
                 substep_log_evidence_increment = float(info.log_likelihood_increment)
                 group_log_evidence += substep_log_evidence_increment
                 n_substeps_taken += 1
+                weights_are_pending_reweight_only = False
 
                 substep_ess = float(
                     jnp.sum(state.weights) ** 2

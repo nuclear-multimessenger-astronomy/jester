@@ -207,3 +207,158 @@ class TestReweightOnlyStepAgainstClosedForm:
         assert float(predicted_ess_fraction) == pytest.approx(
             realized_ess_fraction, rel=1e-6
         )
+
+
+def _run_substep_loop(
+    ordered_event_vals,
+    particles: jnp.ndarray,
+    weights0: jnp.ndarray,
+    *,
+    always_carry_weights_forward: bool,
+    target_ess: float = 0.9,
+    min_fallback_fraction: float = 1e-3,
+) -> dict[str, int]:
+    """Reimplements ``sample()``'s per-sub-step loop (``partial_posteriors.py``,
+    the ``while float(mask[group[0]]) < 1.0`` loop) against a single group
+    covering every event, using the *real* production
+    ``_build_jitted_ess_check_fn``/``_build_jitted_reweight_only_step_fn``
+    helpers -- with a hand-rolled stand-in for a real MCMC move's *weight*
+    output, since this test has no MCMC kernel: a fresh
+    ``softmax(mask_diff * ordered_event_vals(x))``, exactly matching what
+    ``blackjax.smc.base.step`` actually computes (it discards whatever
+    ``state.weights`` were on the way in -- see ``base.py:169-172`` --
+    consuming them only to pick resampling indices, which is a no-op here
+    since particles never move in this stand-in and is irrelevant to the
+    weight/ESS bookkeeping under test).
+
+    ``always_carry_weights_forward=True`` reproduces the bug this test
+    guards against: feeding ``jnp.log(state.weights)`` into the next
+    sub-step's ESS bisection *unconditionally* whenever the skip flag is on,
+    even right after a real move (whose output weights are a fresh,
+    single-sub-step quantity, not a genuinely accumulated pending ratio).
+    ``False`` reproduces the fix: zero baseline after a real move, the
+    running weights only when the immediately preceding sub-step was itself
+    a skip.
+    """
+    n_events = int(ordered_event_vals(particles[0]).shape[0])
+    group_mask = jnp.ones(n_events)
+    ess_check_fn = _build_jitted_ess_check_fn(ordered_event_vals)
+    reweight_only_fn = _build_jitted_reweight_only_step_fn(ordered_event_vals)
+    zero_log_weights = jnp.zeros(particles.shape[0])
+
+    state = PartialPosteriorsSMCState(particles, weights0, jnp.zeros(n_events))
+    mask_frac = 0.0
+    pending_reweight_only = False
+    n_real_moves = 0
+    n_skips = 0
+    n_warnings = 0
+
+    while mask_frac < 1.0:
+        max_delta = 1.0 - mask_frac
+        if always_carry_weights_forward:
+            base_log_weights = jnp.log(state.weights)
+        else:
+            base_log_weights = (
+                jnp.log(state.weights) if pending_reweight_only else zero_log_weights
+            )
+
+        raw_delta, ess_at_max = ess_check_fn(
+            cast(Array, state.particles), base_log_weights, group_mask, target_ess, max_delta
+        )
+
+        if float(ess_at_max) >= target_ess:
+            new_mask = jnp.full(n_events, 1.0)
+            state, _ = reweight_only_fn(state, new_mask)
+            n_skips += 1
+            pending_reweight_only = True
+            mask_frac = 1.0
+            continue
+
+        if not jnp.isfinite(raw_delta):
+            n_warnings += 1
+            delta = min(max_delta, min_fallback_fraction)
+        else:
+            delta = float(jnp.clip(raw_delta, 0.0, max_delta))
+        new_frac = mask_frac + delta
+
+        mask_diff = new_frac - mask_frac
+        log_w = mask_diff * jax.vmap(ordered_event_vals)(state.particles).sum(axis=1)
+        new_weights = jax.nn.softmax(log_w)
+        state = state._replace(
+            weights=new_weights, data_mask=jnp.full(n_events, new_frac)
+        )
+        n_real_moves += 1
+        pending_reweight_only = False
+        mask_frac = new_frac
+
+    return {"n_real_moves": n_real_moves, "n_skips": n_skips, "n_warnings": n_warnings}
+
+
+class TestSubstepLoopBaseLogWeightsAfterRealMove:
+    """Regression test for the ``base_log_weights`` bug found by comparing
+    real Snellius partial-posteriors runs with ``skip_move_when_ess_ok``
+    on vs. off (see PLAN.md and the session that diagnosed it): gating
+    ``base_log_weights`` purely on the static ``skip_move_when_ess_ok``
+    flag -- rather than on whether the *immediately preceding* sub-step was
+    itself a skip -- fed a real move's fresh, single-sub-step output
+    weights back into the *next* sub-step's ESS bisection as if they were a
+    genuinely accumulated, un-resampled ratio. Because that output already
+    sits at (or, with real MCMC/finite-particle noise, sometimes just
+    under) ``target_ess``, this makes the very next bisection see almost no
+    headroom, forcing either the explicit "ESS already below target_ess"
+    ``_MIN_FALLBACK_FRACTION`` fallback or, more often, a legitimate but
+    near-zero delta -- both collapsing into a pathological
+    jump-then-reset-to-100%-ESS pair every one or two sub-steps, roughly
+    *doubling* the number of real moves needed to assimilate the same
+    events (observed directly on Snellius: 23 sub-steps with the bug vs. 15
+    without it, on an otherwise-identical single-event batch) while the
+    skip branch itself almost never fires.
+    """
+
+    @pytest.fixture(scope="class")
+    def uniform_particles(self):
+        """A real particle cloud right after ``pp_init``: i.i.d. prior
+        draws with UNIFORM weights -- unlike ``toy_setup``'s fixed
+        quadrature grid (whose weights approximate the prior *density* and
+        are deliberately non-uniform, the right stand-in for exact-evidence
+        checks but the wrong one here, since it would contaminate the very
+        first sub-step's baseline with a non-uniform quantity no real run
+        ever starts from).
+        """
+        rng = np.random.default_rng(1)
+        n_particles = 5000
+        particles = jnp.asarray(rng.normal(0.0, TAU0, size=n_particles))
+        weights = jnp.ones(n_particles) / n_particles
+        return particles, weights
+
+    def test_fixed_logic_does_not_double_real_move_count(self, uniform_particles):
+        particles, weights0 = uniform_particles
+        y = jnp.asarray(_make_data(seed=0))
+        ordered_event_vals = _make_ordered_event_vals(y)
+
+        buggy = _run_substep_loop(
+            ordered_event_vals,
+            particles,
+            weights0,
+            always_carry_weights_forward=True,
+        )
+        fixed = _run_substep_loop(
+            ordered_event_vals,
+            particles,
+            weights0,
+            always_carry_weights_forward=False,
+        )
+
+        # The bug's signature: real-move count roughly doubles because
+        # every "real" jump gets paired with a near-zero corrective move.
+        # The fix must break that pairing, not just reduce it slightly.
+        assert fixed["n_real_moves"] < 0.7 * buggy["n_real_moves"], (
+            f"expected the fixed base_log_weights logic to need "
+            f"substantially fewer real moves than always-carry-forward "
+            f"(bug: {buggy['n_real_moves']}, fixed: {fixed['n_real_moves']})"
+        )
+        # Both variants must still assimilate all events exactly once via
+        # the terminal full-remaining-jump skip -- this test is about
+        # sub-step *count*, not about breaking the skip branch itself.
+        assert fixed["n_skips"] >= 1
+        assert buggy["n_skips"] >= 1
