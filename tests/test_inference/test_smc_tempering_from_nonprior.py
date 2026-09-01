@@ -42,7 +42,9 @@ class _GaussianEventLikelihood(LikelihoodBase):
         return norm.logpdf(theta, loc=self.mu, scale=self.sigma)
 
 
-def _conjugate_update(m: float, v: float, mu: float, sigma: float) -> tuple[float, float]:
+def _conjugate_update(
+    m: float, v: float, mu: float, sigma: float
+) -> tuple[float, float]:
     """Fold Gaussian factor N(theta; mu, sigma^2) into current N(theta; m, v)
     (v = variance, not std), returning the new (mean, variance)."""
     v_new = 1.0 / (1.0 / v + 1.0 / sigma**2)
@@ -54,6 +56,98 @@ def _conjugate_logZ_increment(m: float, v: float, mu: float, sigma: float) -> fl
     """log evidence increment for folding N(theta; mu, sigma^2) into the
     current N(theta; m, v) state: log Z_incr = log N(m; mu, v + sigma^2)."""
     return float(norm.logpdf(m, loc=mu, scale=jnp.sqrt(v + sigma**2)))
+
+
+class _Float32EventLikelihood(LikelihoodBase):
+    """Toy "event" likelihood whose ``evaluate()`` genuinely returns a
+    float32 array -- mimicking ``StackedGWLikelihood.evaluate_per_event``'s
+    ``use_float32=True`` fast path (``jesterTOV/inference/likelihoods/gw.py``),
+    which deliberately evaluates GW flows in float32 for speed.
+
+    Regression test for the bug this reproduces: when *all* of a batch's
+    events are float32-typed (no float64-typed likelihood term contributing
+    to that batch's ``loglikelihood_fn``), blackjax's own per-step
+    importance-weight update (``blackjax.smc.base.step``:
+    ``weights = jnp.exp(log_weights - logsum_weights)``) is derived *purely*
+    from ``loglikelihood_fn``'s output, with no admixture of the previous
+    float64 ``state.weights`` to force an upcast -- so the SMC particle
+    weights silently become float32 partway through the run, and
+    ``jax.lax.while_loop`` (``BlackjaxSMCSampler._run_tempering``) then
+    raises a carry dtype mismatch (weights float64 in, float32 out).
+    """
+
+    def __init__(self, mu: float, sigma: float, param_name: str = "x"):
+        super().__init__()
+        self.mu = mu
+        self.sigma = sigma
+        self.param_name = param_name
+
+    def evaluate(self, params):
+        theta = params[self.param_name]
+        return norm.logpdf(theta, loc=self.mu, scale=self.sigma).astype(jnp.float32)
+
+
+def test_run_tempering_with_float32_loglikelihood_does_not_crash():
+    """`_run_tempering` must not crash with a `jax.lax.while_loop` carry
+    dtype mismatch when `loglikelihood_fn` is entirely float32-typed (the
+    IBIS sampler's per-batch `loglikelihood_fn`, built from
+    `StackedGWLikelihood.evaluate_per_event` with `use_float32=True`, is
+    exactly this shape when every event in the batch uses float32) while the
+    particles/prior are the usual float64 -- see
+    `_Float32EventLikelihood`'s docstring for the exact mechanism."""
+    seed = 0
+    n_particles = 500
+
+    m0, s0 = 0.0, 2.0
+    mu, sigma = 1.0, 1.0
+
+    prior = MultivariateGaussianPrior(
+        ["x"], mean=jnp.array([m0]), cov=jnp.array([[s0**2]])
+    )
+    L_float32 = _Float32EventLikelihood(mu, sigma)
+
+    config = SMCRandomWalkSamplerConfig(
+        n_particles=n_particles,
+        n_mcmc_steps=5,
+        target_ess=0.9,
+        random_walk_sigma=1.0,
+    )
+
+    sampler = BlackJAXSMCRandomWalkSampler(
+        likelihood=L_float32,
+        prior=prior,
+        sample_transforms=[],
+        likelihood_transforms=[],
+        config=config,
+        seed=seed,
+    )
+
+    key = jax.random.PRNGKey(seed)
+    key, subkey = jax.random.split(key)
+    initial_particles = m0 + s0 * jax.random.normal(subkey, (n_particles,))
+    initial_particles_flat = initial_particles[:, None].astype(jnp.float64)
+    sampler._create_flatten_unflatten_utilities({"x": initial_particles})
+
+    def logprior_fn_dict(params) -> float:
+        return prior.log_prob(params)  # type: ignore[return-value]
+
+    def loglik_fn_dict(params) -> float:
+        return L_float32.evaluate(params)  # type: ignore[return-value]
+
+    logprior_fn = sampler._wrap_dict_fn_for_flat_arrays(logprior_fn_dict)
+    loglik_fn = sampler._wrap_dict_fn_for_flat_arrays(loglik_fn_dict)
+
+    # Sanity check that the toy likelihood actually reproduces the float32
+    # output shape the bug depends on before trusting the rest of the test.
+    assert jnp.asarray(loglik_fn(initial_particles_flat[0])).dtype == jnp.float32
+
+    key, subkey = jax.random.split(key)
+    result = sampler._run_tempering(
+        subkey, initial_particles_flat, logprior_fn, loglik_fn
+    )
+
+    assert result.particles_flat.dtype == jnp.float64
+    assert result.weights.dtype == jnp.float64
 
 
 def test_run_tempering_from_nonprior_matches_full_batch_from_prior():

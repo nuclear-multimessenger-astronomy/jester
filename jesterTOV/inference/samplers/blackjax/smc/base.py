@@ -343,6 +343,34 @@ class BlackjaxSMCSampler(BlackjaxSampler):
         """
         start_time = time.time()
 
+        # Pin logprior_fn/loglikelihood_fn's *output* dtype to the particles'
+        # working dtype (float64 under jester's default jax_enable_x64=True).
+        # A likelihood term is allowed to use a faster, explicitly lower
+        # internal precision (e.g. StackedGWLikelihood's use_float32 flag) --
+        # that is by design and stays a pure implementation detail, see its
+        # docstring. Left unguarded, though, that lower precision can leak
+        # into the *carry* of the while_loop below: blackjax's own per-step
+        # importance-weight update (blackjax.smc.base.step:
+        # ``weights = jnp.exp(log_weights - logsum_weights)``) is derived
+        # *purely* from loglikelihood_fn's output, with no admixture of the
+        # previous (float64) ``state.weights`` to force an upcast. If
+        # loglikelihood_fn's output is entirely float32 -- e.g. the IBIS
+        # sampler annealing a batch of GW events that all set
+        # ``use_float32=True``, with no float64-typed background likelihood
+        # term in that particular loglikelihood_fn to promote the sum -- the
+        # SMC particle weights silently become float32 partway through a run,
+        # and jax.lax.while_loop then raises "carry input ... float64 ... but
+        # the corresponding output component has type float32". Casting both
+        # functions' outputs once, here, keeps that always consistent
+        # regardless of what any individual likelihood term does internally.
+        _dtype = initial_particles_flat.dtype
+        _raw_logprior_fn, _raw_loglikelihood_fn = logprior_fn, loglikelihood_fn
+        # Callable[[Array], float] is the declared signature (matching
+        # blackjax's own type hints), but these always return a scalar Array
+        # in practice -- same JAX-tracing type-ignore pattern as elsewhere.
+        logprior_fn = lambda x: jnp.asarray(_raw_logprior_fn(x)).astype(_dtype)  # type: ignore[assignment]
+        loglikelihood_fn = lambda x: jnp.asarray(_raw_loglikelihood_fn(x)).astype(_dtype)  # type: ignore[assignment]
+
         # Create posterior for kernel setup (e.g., NUTS Hessian)
         logposterior_fn = lambda x: logprior_fn(x) + loglikelihood_fn(x)
 

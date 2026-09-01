@@ -855,7 +855,9 @@ def main(config_path: str) -> None:
             exclude={"enabled"}
         )  # Exclude enabled since we already filtered
         logger.info(f"  - {lk.type.upper()}:")
-        logger.info(f"    {json.dumps(lk_dict, indent=6)}")
+        # Full config dump (e.g. every GW event's nf_model_dir) is verbose --
+        # keep it debug-only so it doesn't flood the default INFO-level log.
+        logger.debug(f"    {json.dumps(lk_dict, indent=6)}")
 
     logger.info(f"Setting up {config.sampler.type} sampler...")
     sampler = create_sampler(
