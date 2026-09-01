@@ -13,6 +13,7 @@ import jax
 import jax.numpy as jnp
 
 from jesterTOV.inference.samplers import SamplerOutput
+from ..test_likelihoods import _save_toy_flow
 
 # Enable 64-bit precision for all E2E tests
 jax.config.update("jax_enable_x64", True)
@@ -53,6 +54,45 @@ SMC_RW_LIGHTWEIGHT = {
     "n_mcmc_steps": 3,  # 10 -> 3
     "target_ess": 0.9,
     "random_walk_sigma": 0.1,
+}
+
+# SMC-RW lightweight params, tuned for the mock/untrained GW-event flows
+# (see mock_gw_events_model_dirs): an untrained, randomly-initialized flow
+# evaluated at physically-realistic mass/Lambda values produces a very
+# peaked/badly-scaled log-likelihood surface as a function of theta. Two
+# adjustments compared to the plain chiEFT-only SMC_RW_LIGHTWEIGHT:
+# - adaptive_step_size=True, since a single fixed random_walk_sigma tuned
+#   for chiEFT alone collapses the acceptance rate to ~0 partway through
+#   annealing (see CLAUDE.md's "Adaptive step size (SMC-RW)" section).
+# - target_ess lowered to 0.5 (from 0.9): a strict 0.9 target forces the
+#   adaptive-lambda root solver into vanishingly small steps against such a
+#   peaked likelihood (lambda barely advances after 50+ steps at 0.9); 0.5
+#   allows the same larger, noisier per-step jumps IBIS's own outer
+#   ess_threshold=0.5 decision already uses, so annealing actually completes.
+# Used for both the smc-rw GW baseline and smc-pp's inner config below, so
+# the comparison is against a stable, comparably-configured baseline.
+SMC_RW_GW_LIGHTWEIGHT = {
+    "n_particles": 100,
+    "n_mcmc_steps": 8,
+    "target_ess": 0.5,
+    "random_walk_sigma": 0.1,
+    "adaptive_step_size": True,
+    "target_acceptance_rate": 0.234,
+    "n_pretune_steps": 10,
+}
+
+# smc-pp (IBIS) lightweight params -- inner is a plain SMC-RW config
+SMC_PP_LIGHTWEIGHT = {
+    "ess_threshold": 0.5,
+    "n_final_rejuvenation_steps": 3,
+    "inner": {"type": "smc-rw", **SMC_RW_GW_LIGHTWEIGHT},
+}
+
+# GW likelihood lightweight params, for use with mock_gw_events_model_dirs
+GW_LIGHTWEIGHT = {
+    "N_masses_evaluation": 20,
+    "N_masses_batch_size": 5,
+    "event_batch_size": 2,
 }
 
 # BlackJAX NS-AW lightweight params
@@ -141,6 +181,32 @@ nbreak = UniformPrior(0.16, 0.32, parameter_names=["nbreak"])
     return prior_file
 
 
+@pytest.fixture
+def mock_gw_events_model_dirs(e2e_temp_dir: Path) -> list[Path]:
+    """Two cheap, untrained toy normalizing-flow directories standing in for
+    trained GW-event flows (same mechanism used by
+    TestStackedGWLikelihood -- see test_likelihoods.py::_save_toy_flow).
+    Physically nonsensical (random init, no training), but sufficient for
+    exercising the smc-pp/IBIS event-assimilation pipeline numerically.
+
+    standardize=True is important here (unlike test_likelihoods.py's own
+    numerical-consistency tests, which don't care): without it, the flow's
+    native ~N(0,1) density is queried directly at physically-realistic
+    mass/Lambda values (e.g. m~1.4, Lambda~300), a huge scale mismatch that
+    makes the untrained flow's log-density pathologically spiky as a
+    function of theta (annealing lambda jumping straight from ~0 to 1 in a
+    single step) -- standardize=True aligns the flow's (fixed, per-event)
+    mean/std metadata with realistic physical scales, giving a much
+    smoother, better-conditioned mock likelihood.
+    """
+    return [
+        _save_toy_flow(
+            e2e_temp_dir / f"mock_gw_event_{i}", seed=i, standardize=True
+        )
+        for i in range(2)
+    ]
+
+
 # ============================================================================
 # CONFIG BUILDER FUNCTIONS
 # ============================================================================
@@ -212,6 +278,30 @@ def build_chieft_config(
         },
         "postprocessing": {"enabled": False},
     }
+
+
+def build_chieft_gw_config(
+    sampler_config: dict[str, Any],
+    prior_file: Path,
+    model_dirs: list[Path],
+    output_dir: Path,
+) -> dict[str, Any]:
+    """Build a chiEFT + 2 mock GW events config -- the "always-on" (chiEFT +
+    EOS constraints) likelihood from build_chieft_config, plus a type: "gw"
+    block for smc-pp/IBIS event assimilation to split off."""
+    config = build_chieft_config(sampler_config, prior_file, output_dir)
+    config["likelihoods"].append(
+        {
+            "type": "gw",
+            "enabled": True,
+            "events": [
+                {"name": f"mock_gw_event_{i}", "nf_model_dir": str(d)}
+                for i, d in enumerate(model_dirs)
+            ],
+            **GW_LIGHTWEIGHT,
+        }
+    )
+    return config
 
 
 def build_spectral_prior_only_config(
@@ -313,6 +403,34 @@ def smc_rw_adaptive_step_size_config(
         },
     }
     return build_prior_only_config(sampler_config, minimal_prior_file, e2e_temp_dir)
+
+
+@pytest.fixture
+def smc_rw_gw_config(
+    chieft_prior_file: Path,
+    mock_gw_events_model_dirs: list[Path],
+    e2e_temp_dir: Path,
+) -> dict[str, Any]:
+    """SMC-RW config with chiEFT + 2 mock GW events, on the combined
+    likelihood -- comparison baseline for the smc-pp/IBIS e2e test."""
+    sampler_config = {"type": "smc-rw", **SMC_RW_GW_LIGHTWEIGHT}
+    return build_chieft_gw_config(
+        sampler_config, chieft_prior_file, mock_gw_events_model_dirs, e2e_temp_dir
+    )
+
+
+@pytest.fixture
+def smc_pp_config(
+    chieft_prior_file: Path,
+    mock_gw_events_model_dirs: list[Path],
+    e2e_temp_dir: Path,
+) -> dict[str, Any]:
+    """smc-pp (IBIS) config with chiEFT (always-on) + 2 mock GW events
+    (assimilated one at a time)."""
+    sampler_config = {"type": "smc-pp", **SMC_PP_LIGHTWEIGHT}
+    return build_chieft_gw_config(
+        sampler_config, chieft_prior_file, mock_gw_events_model_dirs, e2e_temp_dir
+    )
 
 
 @pytest.fixture

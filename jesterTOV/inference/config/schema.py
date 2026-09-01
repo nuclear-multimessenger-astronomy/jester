@@ -69,6 +69,7 @@ from .schemas.samplers import (
     BlackJAXNSAWConfig,
     SMCRandomWalkSamplerConfig,
     SMCNUTSSamplerConfig,
+    SMCPartialPosteriorsSamplerConfig,
     EOSReweightingConfig,
     SamplerConfig,
 )
@@ -270,6 +271,7 @@ __all__ = [
     "BlackJAXNSAWConfig",
     "SMCRandomWalkSamplerConfig",
     "SMCNUTSSamplerConfig",
+    "SMCPartialPosteriorsSamplerConfig",
     "EOSReweightingConfig",
     "SamplerConfig",
     # Other

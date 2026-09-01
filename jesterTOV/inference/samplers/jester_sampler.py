@@ -7,6 +7,7 @@ inherit from JesterSampler and implement the sampler initialization.
 """
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from jaxtyping import Array, Float, PRNGKeyArray
@@ -243,6 +244,27 @@ class JesterSampler:
         raise NotImplementedError(
             "sample() must be implemented by backend-specific subclass"
         )
+
+    def plot_diagnostics(
+        self, outdir: str | Path = ".", filename: str = "diagnostics.png"
+    ) -> None:
+        """
+        Generate sampler-specific diagnostic plots.
+
+        No-op by default; backend-specific subclasses that have meaningful
+        diagnostics to show (e.g. SMC's ESS/acceptance/tempering-progress
+        plots) override this. Should be called after sampling is complete.
+
+        Parameters
+        ----------
+        outdir : str, optional
+            Output directory for saving the plot(s) (default: current directory)
+        filename : str, optional
+            Filename for the diagnostic plot, if a subclass produces exactly
+            one (default: "diagnostics.png"). Subclasses that produce their
+            own naturally-named plot(s) may ignore this argument.
+        """
+        pass
 
     def print_summary(self, transform: bool = True) -> None:
         """

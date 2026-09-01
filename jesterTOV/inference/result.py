@@ -23,6 +23,7 @@ SamplerType = Literal[
     "flowmc",
     "blackjax_smc_rw",
     "blackjax_smc_nuts",
+    "blackjax_smc_ibis",
     "blackjax_ns_aw",
     "eos_reweighting",
 ]
@@ -132,6 +133,8 @@ class InferenceResult:
             sampler_type = "blackjax_smc_rw"
         elif "SMCNUTS" in sampler_class_name:
             sampler_type = "blackjax_smc_nuts"
+        elif "IBIS" in sampler_class_name:
+            sampler_type = "blackjax_smc_ibis"
         elif "NS" in sampler_class_name or "NestedSampling" in sampler_class_name:
             sampler_type = "blackjax_ns_aw"
         else:
@@ -246,6 +249,36 @@ class InferenceResult:
                 "ess_history": np.array(smc_metadata["ess_history"]),
                 "acceptance_history": np.array(smc_metadata["acceptance_history"]),
                 "log_evidence_history": np.array(smc_metadata["log_evidence_history"]),
+            }
+
+        elif sampler_type == "blackjax_smc_ibis":
+            # IBIS: Get metadata from sampler.metadata dict
+            ibis_metadata = sampler.metadata  # type: ignore[attr-defined]
+
+            # Add IBIS-specific metadata
+            metadata.update(
+                {
+                    "n_particles": int(ibis_metadata["n_particles"]),
+                    "n_events": int(ibis_metadata["n_events"]),
+                    "n_batches": int(ibis_metadata["n_batches"]),
+                    "ess_threshold": float(ibis_metadata["ess_threshold"]),
+                    "logZ": float(ibis_metadata["logZ"]),
+                    "logZ_err": float(ibis_metadata["logZ_err"]),
+                }
+            )
+
+            # Extract histories
+            histories = {
+                "batch_boundaries": np.array(ibis_metadata["batch_boundaries"]),
+                "cheap_reweight_ess_history": np.array(
+                    ibis_metadata["cheap_reweight_ess_history"]
+                ),
+                "cheap_reweight_logZ_increment_history": np.array(
+                    ibis_metadata["cheap_reweight_logZ_increment_history"]
+                ),
+                "cumulative_logZ_history": np.array(
+                    ibis_metadata["cumulative_logZ_history"]
+                ),
             }
 
         elif sampler_type == "blackjax_ns_aw":
@@ -814,6 +847,15 @@ class InferenceResult:
             lines.append(
                 f"  Mean acceptance: {self.metadata.get('mean_acceptance', '?'):.3f}"
             )
+            if "logZ" in self.metadata:
+                lines.append(f"  Evidence: log(Z) = {self.metadata.get('logZ', 0):.2f}")
+
+        elif self.sampler_type == "blackjax_smc_ibis":
+            lines.append("\nBlackJAX IBIS (partial posteriors) Configuration:")
+            lines.append(f"  Particles: {self.metadata.get('n_particles', '?')}")
+            lines.append(f"  Events assimilated: {self.metadata.get('n_events', '?')}")
+            lines.append(f"  SMC batches triggered: {self.metadata.get('n_batches', '?')}")
+            lines.append(f"  ESS threshold: {self.metadata.get('ess_threshold', '?')}")
             if "logZ" in self.metadata:
                 lines.append(f"  Evidence: log(Z) = {self.metadata.get('logZ', 0):.2f}")
 

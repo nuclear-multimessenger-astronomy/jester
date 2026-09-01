@@ -601,9 +601,16 @@ class StackedGWLikelihood(LikelihoodBase):
         log_det_jacobian = -jnp.sum(jnp.log(scale))
         return log_p + log_det_jacobian
 
-    def evaluate(self, params: dict[str, Float | Array]) -> Float:
+    def evaluate_per_event(
+        self, params: dict[str, Float | Array]
+    ) -> Float[Array, " n_events"]:
         """
-        Evaluate summed log likelihood over all events for given EOS parameters.
+        Evaluate the log likelihood of each event separately, without summing.
+
+        Used by ``BlackJAXIBISSampler`` (``samplers/blackjax/smc/ibis.py``),
+        which needs per-event log-likelihoods to cheaply reweight particles by
+        one new GW event at a time during IBIS-style data tempering --
+        ``evaluate()`` only exposes their sum.
 
         Parameters
         ----------
@@ -614,9 +621,8 @@ class StackedGWLikelihood(LikelihoodBase):
 
         Returns
         -------
-        Float
-            Sum of log likelihoods over all events (matches summing individual
-            GWLikelihood.evaluate() calls through CombinedLikelihood).
+        Float[Array, "n_events"]
+            Log likelihood of each event, in ``self.event_names`` order.
         """
         masses_EOS: Float[Array, " n_points"] = params["masses_EOS"]
         Lambdas_EOS: Float[Array, " n_points"] = params["Lambdas_EOS"]
@@ -658,4 +664,23 @@ class StackedGWLikelihood(LikelihoodBase):
             (self._stacked_dynamic, self._loc, self._scale, self._fixed_mass_samples),
             batch_size=self.event_batch_size,
         )
-        return jnp.sum(per_event_loglike)
+        return per_event_loglike
+
+    def evaluate(self, params: dict[str, Float | Array]) -> Float:
+        """
+        Evaluate summed log likelihood over all events for given EOS parameters.
+
+        Parameters
+        ----------
+        params : dict[str, Float | Array]
+            Must contain:
+            - 'masses_EOS': Array of neutron star masses from EOS
+            - 'Lambdas_EOS': Array of tidal deformabilities from EOS
+
+        Returns
+        -------
+        Float
+            Sum of log likelihoods over all events (matches summing individual
+            GWLikelihood.evaluate() calls through CombinedLikelihood).
+        """
+        return jnp.sum(self.evaluate_per_event(params))

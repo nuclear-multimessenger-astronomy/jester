@@ -803,6 +803,70 @@ class TestStackedGWLikelihood:
         assert jnp.isfinite(stacked_result)
         assert jnp.allclose(stacked_result, expected, rtol=1e-6, atol=1e-8)
 
+    def test_evaluate_per_event_sums_to_evaluate(self, tmp_path):
+        """evaluate_per_event's summed entries must equal evaluate() -- used
+        by BlackJAXIBISSampler to cheaply reweight by one event at a time."""
+        n_events = 3
+        model_dirs = [
+            _save_toy_flow(tmp_path / f"event_{i}", seed=i) for i in range(n_events)
+        ]
+        event_names = [f"event_{i}" for i in range(n_events)]
+
+        stacked = StackedGWLikelihood(
+            event_names=event_names,
+            model_dirs=[str(d) for d in model_dirs],
+            N_masses_evaluation=20,
+            N_masses_batch_size=5,
+            event_batch_size=2,
+            seed=42,
+        )
+
+        masses_eos = jnp.linspace(1.0, 2.2, 100)
+        lambdas_eos = jnp.linspace(2000.0, 10.0, 100)
+        params = {"masses_EOS": masses_eos, "Lambdas_EOS": lambdas_eos}
+
+        per_event = stacked.evaluate_per_event(params)
+        assert per_event.shape == (n_events,)
+        assert jnp.all(jnp.isfinite(per_event))
+        assert jnp.allclose(jnp.sum(per_event), stacked.evaluate(params), rtol=1e-10)
+
+    def test_evaluate_per_event_matches_individual_gw_likelihoods(self, tmp_path):
+        """Each entry of evaluate_per_event must match a standalone
+        GWLikelihood for that event, in event_names order."""
+        n_events = 3
+        model_dirs = [
+            _save_toy_flow(tmp_path / f"event_{i}", seed=i) for i in range(n_events)
+        ]
+        event_names = [f"event_{i}" for i in range(n_events)]
+
+        stacked = StackedGWLikelihood(
+            event_names=event_names,
+            model_dirs=[str(d) for d in model_dirs],
+            N_masses_evaluation=20,
+            N_masses_batch_size=5,
+            event_batch_size=2,
+            seed=42,
+        )
+
+        individual = [
+            GWLikelihood(
+                event_name=name,
+                model_dir=str(d),
+                N_masses_evaluation=20,
+                N_masses_batch_size=5,
+                seed=42,
+            )
+            for name, d in zip(event_names, model_dirs)
+        ]
+
+        masses_eos = jnp.linspace(1.0, 2.2, 100)
+        lambdas_eos = jnp.linspace(2000.0, 10.0, 100)
+        params = {"masses_EOS": masses_eos, "Lambdas_EOS": lambdas_eos}
+
+        per_event = stacked.evaluate_per_event(params)
+        for i, lik in enumerate(individual):
+            assert jnp.allclose(per_event[i], lik.evaluate(params), rtol=1e-6, atol=1e-8)
+
     def test_event_batch_size_does_not_change_result(self, tmp_path):
         """Chunking the event axis differently must not change the answer, only
         how much is materialized concurrently (see dev/FINDINGS.md Part 4)."""

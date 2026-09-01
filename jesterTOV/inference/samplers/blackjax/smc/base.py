@@ -6,6 +6,7 @@ only the kernel-specific parts to subclasses.
 """
 
 from abc import abstractmethod
+from dataclasses import dataclass
 from typing import Any, Callable, cast
 import time
 from pathlib import Path
@@ -14,8 +15,6 @@ import matplotlib.pyplot as plt
 import jax
 import jax.numpy as jnp
 import jax.random
-from jax import flatten_util
-from jax.tree_util import tree_map
 from jax.experimental import io_callback
 from jaxtyping import Array, PRNGKeyArray
 
@@ -44,6 +43,48 @@ from jesterTOV.inference.samplers.blackjax.smc.persistent_inner_kernel_tuning im
 )
 
 logger = get_logger("jester")
+
+
+@dataclass
+class TemperingResult:
+    """Result of one adaptive-tempered-SMC anneal (lambda: 0 -> 1).
+
+    Returned by :meth:`BlackjaxSMCSampler._run_tempering`. Bundles everything
+    a caller needs both to store results directly (plain ``smc-rw``/``smc-nuts``
+    use, via :meth:`BlackjaxSMCSampler.sample`) and to chain a further step
+    targeting the same fixed final distribution (the IBIS sampler's final
+    rejuvenation pass; see ``samplers/blackjax/smc/ibis.py``).
+
+    Attributes
+    ----------
+    particles_flat : Array
+        Final particle positions, shape (n_particles, n_dim), uniformly
+        weighted (post terminal resample-to-uniform-weights).
+    weights : Array
+        Final particle weights, shape (n_particles,), all equal to
+        1 / n_particles.
+    mcmc_step_fn : Callable
+        The MCMC step function used during this anneal (for reuse, e.g. by a
+        subsequent rejuvenation pass targeting the same final distribution).
+    mcmc_init_fn : Callable
+        The MCMC init function used during this anneal.
+    final_mcmc_parameters : dict
+        The last tuned ``parameter_override`` (e.g. adapted proposal
+        covariance/scale) from the end of annealing -- lets a caller reuse a
+        properly-tuned kernel rather than re-deriving one from scratch.
+    metadata : dict
+        Same keys as :attr:`BlackjaxSMCSampler.metadata` (kernel_type,
+        n_particles, n_mcmc_steps, target_ess, annealing_steps, final_ess,
+        final_ess_percent, mean_ess, min_ess, mean_acceptance, logZ,
+        logZ_err, loop_time_seconds, and the four *_history lists).
+    """
+
+    particles_flat: Array
+    weights: Array
+    mcmc_step_fn: Callable
+    mcmc_init_fn: Callable
+    final_mcmc_parameters: dict
+    metadata: dict
 
 
 class BlackjaxSMCSampler(BlackjaxSampler):
@@ -140,58 +181,6 @@ class BlackjaxSMCSampler(BlackjaxSampler):
         )
         logger.info(f"Target ESS: {config.target_ess}")
 
-    def _create_flatten_unflatten_utilities(
-        self, initial_position_dict: dict[str, Array]
-    ) -> None:
-        """Create flatten/unflatten functions for SMC's flat array API.
-
-        Parameters
-        ----------
-        initial_position_dict : dict[str, Array]
-            Dictionary of initial particle positions (each value is array of shape (n_particles,))
-        """
-        # Extract single sample to determine structure
-        single_sample_dict = tree_map(lambda x: x[0], initial_position_dict)
-
-        # Create unflatten function using ravel_pytree (alphabetical ordering)
-        _, self._unflatten_fn = flatten_util.ravel_pytree(single_sample_dict)
-
-        # Create flatten function
-        self._flatten_fn = lambda x: flatten_util.ravel_pytree(x)[0]
-
-    def _wrap_dict_fn_for_flat_arrays(
-        self, dict_fn: Callable[[dict], float]
-    ) -> Callable[[Array], float]:
-        """Wrap a dict-based function to work with flat arrays.
-
-        This is the bridge between BlackjaxSampler's dict functions
-        and SMC's flat array API.
-
-        Parameters
-        ----------
-        dict_fn : Callable[[dict], float]
-            Function that takes parameter dict and returns float
-
-        Returns
-        -------
-        Callable[[Array], float]
-            Function that takes flat array and returns float
-
-        Examples
-        --------
-        >>> logprior_dict = self._create_logprior_fn_from_dict()
-        >>> logprior_flat = self._wrap_dict_fn_for_flat_arrays(logprior_dict)
-        >>> # Now logprior_flat can be passed to BlackJAX SMC
-        """
-
-        def flat_fn(x_flat: Array) -> float:
-            """Convert flat array to dict, evaluate function."""
-            x_flat = jnp.atleast_1d(x_flat)
-            x_dict = self._unflatten_fn(x_flat)
-            return dict_fn(x_dict)
-
-        return flat_fn
-
     @abstractmethod
     def _setup_mcmc_kernel(
         self,
@@ -251,7 +240,11 @@ class BlackjaxSMCSampler(BlackjaxSampler):
 
         Notes
         -----
-        Initial particles are sampled from the prior internally.
+        Initial particles are sampled from the prior internally. This is a
+        thin wrapper around :meth:`_run_tempering`: it draws from the prior,
+        builds the usual logprior_fn/loglikelihood_fn from self.prior/
+        self.likelihood, then delegates the whole annealing loop to
+        _run_tempering.
         """
         logger.info(f"Starting SMC sampling with {self._get_kernel_name()} kernel...")
         start_time = time.time()
@@ -299,13 +292,64 @@ class BlackjaxSMCSampler(BlackjaxSampler):
         logprior_fn = self._wrap_dict_fn_for_flat_arrays(logprior_dict)
         loglikelihood_fn = self._wrap_dict_fn_for_flat_arrays(loglikelihood_dict)
 
+        key, subkey = jax.random.split(key)
+        result = self._run_tempering(
+            subkey, initial_position_flat, logprior_fn, loglikelihood_fn
+        )
+
+        self._particles_flat = result.particles_flat
+        self._weights = result.weights
+        self.metadata = result.metadata
+        self.metadata["sampling_time_seconds"] = time.time() - start_time
+
+    def _run_tempering(
+        self,
+        key: PRNGKeyArray,
+        initial_particles_flat: Array,
+        logprior_fn: Callable[[Array], float],
+        loglikelihood_fn: Callable[[Array], float],
+    ) -> TemperingResult:
+        """Run one adaptive-tempered-SMC anneal (lambda: 0 -> 1) from an
+        arbitrary initial particle set and an arbitrary
+        (logprior_fn, loglikelihood_fn) pair.
+
+        This is the tempering-loop body factored out of :meth:`sample`
+        (kernel setup through the terminal resample-to-uniform-weights step),
+        so it can be reused by ``BlackJAXIBISSampler`` to run one SMC "batch"
+        annealing a queued group of GW events into the posterior, starting
+        from a real (not-necessarily-prior) particle set. ``logprior_fn`` and
+        ``loglikelihood_fn`` are ordinary flat-array closures -- no
+        assumption is made about what distributions they represent, the
+        caller decides.
+
+        Parameters
+        ----------
+        key : PRNGKeyArray
+            JAX random key.
+        initial_particles_flat : Array
+            Initial particle positions, shape (n_particles, n_dim).
+            ``initial_particles_flat.shape[0]`` must equal
+            ``self.config.n_particles``.
+        logprior_fn : Callable[[Array], float]
+            Log prior/log-base-distribution function for a single flat
+            particle (lambda=0 target).
+        loglikelihood_fn : Callable[[Array], float]
+            Log likelihood function -- the piece being annealed in,
+            lambda: 0 -> 1 -- for a single flat particle.
+
+        Returns
+        -------
+        TemperingResult
+        """
+        start_time = time.time()
+
         # Create posterior for kernel setup (e.g., NUTS Hessian)
         logposterior_fn = lambda x: logprior_fn(x) + loglikelihood_fn(x)
 
         # Setup kernel-specific components
         mcmc_step_fn, mcmc_init_fn, init_params, mcmc_parameter_update_fn = (
             self._setup_mcmc_kernel(
-                logprior_fn, loglikelihood_fn, logposterior_fn, initial_position_flat
+                logprior_fn, loglikelihood_fn, logposterior_fn, initial_particles_flat
             )
         )
 
@@ -329,7 +373,7 @@ class BlackjaxSMCSampler(BlackjaxSampler):
 
         # Initialize SMC state
         key, subkey = jax.random.split(key)
-        state = smc_alg.init(initial_position_flat, subkey)
+        state = smc_alg.init(initial_particles_flat, subkey)
 
         # Progress callback for live updates during sampling
         def progress_callback(
@@ -499,7 +543,6 @@ class BlackjaxSMCSampler(BlackjaxSampler):
 
         loop_end_time = time.time()
         steps = int(steps)
-        end_time = time.time()
 
         # Extract final particles
         # Cast to proper type for type checker (runtime type is correct)
@@ -507,12 +550,13 @@ class BlackjaxSMCSampler(BlackjaxSampler):
         self._particles_flat = cast(Array, final_sampler_state.particles)
         self._weights = final_sampler_state.weights
         self.final_state = state
+        final_mcmc_parameters = state.parameter_override
 
         # Compute final ESS (weights guaranteed non-None after assignment above)
         assert self._weights is not None
         ess = jnp.sum(self._weights) ** 2 / jnp.sum(self._weights**2)
 
-        # Resample to uniform weights so saved particles are i.i.d. posterior draws.
+        # Resample to uniform weights so saved particles are i.i.d. draws from the target.
         key, resample_key = jax.random.split(key)
         resample_idx = systematic(resample_key, self._weights, self.config.n_particles)
         self._particles_flat = self._particles_flat[resample_idx]
@@ -526,8 +570,8 @@ class BlackjaxSMCSampler(BlackjaxSampler):
         # FIXME: Need to implement a way to compute evidence error estimate
         log_evidence_err = 0.0  # Placeholder for now
 
-        # Store metadata (kernel name will be set by subclass)
-        self.metadata = {
+        # Metadata (kernel name will be set by subclass)
+        metadata = {
             "sampler": f"blackjax_smc_{self._get_kernel_name()}",
             "kernel_type": self._get_kernel_name(),
             "n_particles": self.config.n_particles,
@@ -541,13 +585,21 @@ class BlackjaxSMCSampler(BlackjaxSampler):
             "mean_acceptance": mean_acceptance,
             "logZ": float(log_evidence),
             "logZ_err": float(log_evidence_err),
-            "sampling_time_seconds": end_time - start_time,
             "loop_time_seconds": loop_end_time - loop_start_time,
             "tempering_param_history": tempering_param_history[:steps].tolist(),
             "ess_history": ess_history[:steps].tolist(),
             "acceptance_history": acceptance_history[:steps].tolist(),
             "log_evidence_history": log_evidence_history[:steps].tolist(),
         }
+
+        return TemperingResult(
+            particles_flat=self._particles_flat,
+            weights=self._weights,
+            mcmc_step_fn=mcmc_step_fn,
+            mcmc_init_fn=mcmc_init_fn,
+            final_mcmc_parameters=final_mcmc_parameters,
+            metadata=metadata,
+        )
 
     def plot_diagnostics(
         self, outdir: str | Path = ".", filename: str = "smc_diagnostics.png"

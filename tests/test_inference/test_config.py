@@ -428,6 +428,82 @@ class TestSamplerConfig:
             )
 
 
+class TestSMCPartialPosteriorsSamplerConfig:
+    """Test SMCPartialPosteriorsSamplerConfig (smc-pp / IBIS sampler) validation."""
+
+    def test_valid_default_config(self):
+        """Default config is valid and inner defaults to SMCRandomWalkSamplerConfig."""
+        config = schema.SMCPartialPosteriorsSamplerConfig()
+        assert config.type == "smc-pp"
+        assert config.ess_threshold == 0.5
+        assert isinstance(config.inner, schema.SMCRandomWalkSamplerConfig)
+        assert config.inner.n_particles == 10000
+        assert config.n_final_rejuvenation_steps == 10
+        assert config.particle_batch_size == 1000
+
+    def test_custom_inner_config(self):
+        """inner.n_particles is authoritative -- no top-level n_particles field."""
+        config = schema.SMCPartialPosteriorsSamplerConfig(
+            ess_threshold=0.7,
+            inner=schema.SMCRandomWalkSamplerConfig(n_particles=500, n_mcmc_steps=5),
+        )
+        assert config.ess_threshold == 0.7
+        assert config.inner.n_particles == 500
+        assert config.inner.n_mcmc_steps == 5
+
+    @pytest.mark.parametrize("value", [0.0, -0.1, 1.1])
+    def test_ess_threshold_out_of_bounds_fails(self, value):
+        """ess_threshold must be in (0, 1]."""
+        with pytest.raises(ValidationError):
+            schema.SMCPartialPosteriorsSamplerConfig(ess_threshold=value)
+
+    def test_ess_threshold_upper_bound_included(self):
+        """ess_threshold == 1.0 is valid (gt=0, le=1)."""
+        config = schema.SMCPartialPosteriorsSamplerConfig(ess_threshold=1.0)
+        assert config.ess_threshold == 1.0
+
+    def test_negative_n_final_rejuvenation_steps_fails(self):
+        with pytest.raises(ValidationError):
+            schema.SMCPartialPosteriorsSamplerConfig(n_final_rejuvenation_steps=-1)
+
+    def test_zero_n_final_rejuvenation_steps_is_valid(self):
+        """0 is a valid (disabled) rejuvenation step count."""
+        config = schema.SMCPartialPosteriorsSamplerConfig(n_final_rejuvenation_steps=0)
+        assert config.n_final_rejuvenation_steps == 0
+
+    @pytest.mark.parametrize("value", [0, -1])
+    def test_particle_batch_size_not_positive_fails(self, value):
+        with pytest.raises(ValidationError):
+            schema.SMCPartialPosteriorsSamplerConfig(particle_batch_size=value)
+
+    def test_discriminated_union_from_dict(self):
+        """SamplerConfig union resolves type: 'smc-pp' to the right class."""
+        from pydantic import TypeAdapter
+
+        adapter = TypeAdapter(schema.SamplerConfig)
+        config_dict = {
+            "type": "smc-pp",
+            "ess_threshold": 0.6,
+            "inner": {"type": "smc-rw", "n_particles": 200},
+        }
+        config = adapter.validate_python(config_dict)
+        assert isinstance(config, schema.SMCPartialPosteriorsSamplerConfig)
+        assert config.ess_threshold == 0.6
+        assert config.inner.n_particles == 200
+
+    def test_registry_maps_smc_pp_to_ibis_sampler(self):
+        """SAMPLER_REGISTRY['smc-pp'] must resolve to BlackJAXIBISSampler."""
+        from jesterTOV.inference.samplers import SAMPLER_REGISTRY, BlackJAXIBISSampler
+
+        assert SAMPLER_REGISTRY["smc-pp"] is BlackJAXIBISSampler
+
+    def test_extra_field_forbidden(self):
+        """model_config extra='forbid' (inherited from BaseSamplerConfig)
+        rejects unknown fields."""
+        with pytest.raises(ValidationError):
+            schema.SMCPartialPosteriorsSamplerConfig(not_a_real_field=1)  # type: ignore[call-arg]
+
+
 class TestInferenceConfig:
     """Test InferenceConfig (top-level configuration)."""
 
