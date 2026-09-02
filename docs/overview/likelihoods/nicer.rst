@@ -134,13 +134,24 @@ an equal-weight posterior before saving:
 PSR J0614-3329
 ^^^^^^^^^^^^^^
 
-A 1.4 solar-mass edge-on pulsar observed with NICER only.
+A 1.4 solar-mass edge-on pulsar observed with NICER only. Two independent
+analyses are available and both are shown in the overview figure above.
 
 **Amsterdam group — Mauviard et al. 2025** (`ApJ 995, 60 <https://inspirehep.net/literature/2936527>`_; `Zenodo 17380576 <https://zenodo.org/records/17380576>`_)
 
 Headline result using ST+PDT hotspot model:
 
 * ``J06143329_amsterdam_ST_PDT_NICER_only_Mauviard2025.npz``
+
+**Maryland group — Miller, Dittmann, Holt, et al. 2026** (`arXiv:2609.00965 <https://arxiv.org/abs/2609.00965>`_; `Zenodo 22131748 <https://zenodo.org/records/22131748>`_)
+
+Headline result. The favored model uses three uniform-temperature circular
+hot spots fit to NICER-only data. The raw file (``J0614_NICER_rm.txt``)
+stores importance weights alongside mass and radius rather than equal-weight
+samples, so the extraction script importance-resamples it to an equal-weight
+posterior before saving:
+
+* ``J06143329_maryland_3circle_NICER_only_RM.npz``
 
 PSR J0740+6620
 ^^^^^^^^^^^^^^
