@@ -17,7 +17,9 @@ from jesterTOV.inference.samplers.blackjax.smc.ibis import (
 )
 
 
-def _conjugate_update(m: float, v: float, mu: float, sigma: float) -> tuple[float, float]:
+def _conjugate_update(
+    m: float, v: float, mu: float, sigma: float
+) -> tuple[float, float]:
     v_new = 1.0 / (1.0 / v + 1.0 / sigma**2)
     m_new = v_new * (m / v + mu / sigma**2)
     return m_new, v_new
@@ -25,8 +27,7 @@ def _conjugate_update(m: float, v: float, mu: float, sigma: float) -> tuple[floa
 
 def _conjugate_logZ_increment(m: float, v: float, mu: float, sigma: float) -> float:
     return float(
-        -0.5 * np.log(2 * np.pi * (v + sigma**2))
-        - 0.5 * (m - mu) ** 2 / (v + sigma**2)
+        -0.5 * np.log(2 * np.pi * (v + sigma**2)) - 0.5 * (m - mu) ** 2 / (v + sigma**2)
     )
 
 
@@ -129,8 +130,10 @@ def test_walk_stops_on_ess_drop():
 
     event_matrix = np.stack(
         [
-            -0.5 * np.log(2 * np.pi * sigma0**2) - 0.5 * (particles - mu0) ** 2 / sigma0**2,
-            -0.5 * np.log(2 * np.pi * sigma1**2) - 0.5 * (particles - mu1) ** 2 / sigma1**2,
+            -0.5 * np.log(2 * np.pi * sigma0**2)
+            - 0.5 * (particles - mu0) ** 2 / sigma0**2,
+            -0.5 * np.log(2 * np.pi * sigma1**2)
+            - 0.5 * (particles - mu1) ** 2 / sigma1**2,
         ],
         axis=1,
     )

@@ -865,7 +865,9 @@ class TestStackedGWLikelihood:
 
         per_event = stacked.evaluate_per_event(params)
         for i, lik in enumerate(individual):
-            assert jnp.allclose(per_event[i], lik.evaluate(params), rtol=1e-6, atol=1e-8)
+            assert jnp.allclose(
+                per_event[i], lik.evaluate(params), rtol=1e-6, atol=1e-8
+            )
 
     def test_event_batch_size_does_not_change_result(self, tmp_path):
         """Chunking the event axis differently must not change the answer, only
@@ -1036,6 +1038,114 @@ class TestStackedGWLikelihood:
         assert jnp.all(jnp.isfinite(result))
         assert result.dtype == jnp.float32
 
+    def test_use_float32_evaluate_single_event_matches_evaluate_per_event(
+        self, tmp_path
+    ):
+        """evaluate_single_event must agree with evaluate_per_event under
+        use_float32=True too, not just the float64 default covered by
+        test_evaluate_single_event_matches_evaluate_per_event -- the actual
+        production pp-SMC config (n1579_noise/time_order/pp_smc/config.yaml)
+        runs with use_float32=True."""
+        n_events = 3
+        model_dirs = [
+            _save_toy_flow(
+                tmp_path / f"event_{i}",
+                seed=i,
+                transformer_type="rational_quadratic_spline",
+            )
+            for i in range(n_events)
+        ]
+        event_names = [f"event_{i}" for i in range(n_events)]
+        stacked = StackedGWLikelihood(
+            event_names=event_names,
+            model_dirs=[str(d) for d in model_dirs],
+            N_masses_evaluation=20,
+            N_masses_batch_size=5,
+            event_batch_size=2,
+            seed=42,
+            use_float32=True,
+        )
+        masses_eos = jnp.linspace(1.0, 2.2, 100)
+        lambdas_eos = jnp.linspace(2000.0, 10.0, 100)
+        params = {"masses_EOS": masses_eos, "Lambdas_EOS": lambdas_eos}
+
+        per_event = stacked.evaluate_per_event(params)
+        assert per_event.dtype == jnp.float32
+        for j in range(n_events):
+            single = stacked.evaluate_single_event(params, j)
+            assert single.dtype == jnp.float32
+            assert jnp.allclose(single, per_event[j], rtol=1e-5)
+
+    def test_use_float32_evaluate_single_event_survives_outer_jit_map(self, tmp_path):
+        """evaluate_single_event, wrapped in an outer jax.jit(jax.lax.map(...))
+        over multiple particles with a dynamic event_index -- exactly the
+        shape BlackJAXIBISSampler._get_single_event_particle_fn (ibis.py)
+        actually uses in the sampler -- must stay genuinely float32. Mirrors
+        test_use_float32_survives_outer_jit_vmap (same underlying disable_x64
+        placement regression, see that test's docstring), for this method
+        specifically since it wasn't covered before this method existed."""
+        model_dirs = [
+            _save_toy_flow(
+                tmp_path / "event_0",
+                seed=0,
+                transformer_type="rational_quadratic_spline",
+            )
+        ]
+        likelihood = StackedGWLikelihood(
+            event_names=["event_0"],
+            model_dirs=[str(model_dirs[0])],
+            N_masses_evaluation=10,
+            use_float32=True,
+        )
+        n_particles = 3
+        masses_eos = jnp.tile(jnp.linspace(1.0, 2.2, 100)[None], (n_particles, 1))
+        lambdas_eos = jnp.tile(jnp.linspace(2000.0, 10.0, 100)[None], (n_particles, 1))
+
+        def evaluate_one(masses, lambdas, event_index):
+            return likelihood.evaluate_single_event(
+                {"masses_EOS": masses, "Lambdas_EOS": lambdas}, event_index
+            )
+
+        fn = jax.jit(
+            lambda m, lam, idx: jax.lax.map(
+                lambda carry: evaluate_one(carry[0], carry[1], idx), (m, lam)
+            )
+        )
+        result = fn(masses_eos, lambdas_eos, 0)
+        assert result.shape == (n_particles,)
+        assert jnp.all(jnp.isfinite(result))
+        assert result.dtype == jnp.float32
+
+    def test_subset_preserves_use_float32(self, tmp_path):
+        """subset() must carry use_float32 over to the new instance, and its
+        evaluate() output must still be genuinely float32 -- otherwise the
+        production pp-SMC batch closures (which now go through subset(),
+        see ibis.py) would silently upcast."""
+        model_dirs = [
+            _save_toy_flow(
+                tmp_path / f"event_{i}",
+                seed=i,
+                transformer_type="rational_quadratic_spline",
+            )
+            for i in range(2)
+        ]
+        event_names = ["event_0", "event_1"]
+        stacked = StackedGWLikelihood(
+            event_names=event_names,
+            model_dirs=[str(d) for d in model_dirs],
+            N_masses_evaluation=10,
+            use_float32=True,
+        )
+        subset = stacked.subset(["event_1"])
+        assert subset.use_float32 is True
+
+        masses_eos = jnp.linspace(1.0, 2.2, 100)
+        lambdas_eos = jnp.linspace(2000.0, 10.0, 100)
+        params = {"masses_EOS": masses_eos, "Lambdas_EOS": lambdas_eos}
+        result = subset.evaluate(params)
+        assert jnp.isfinite(result)
+        assert result.dtype == jnp.float32
+
     def test_use_float32_unsupported_architecture_raises_clear_error(self, tmp_path):
         """use_float32=True for an unvalidated architecture (the default
         affine transformer here) must raise a clear error, not silently
@@ -1088,6 +1198,201 @@ class TestStackedGWLikelihood:
                 event_names=["event_0", "event_1"],
                 model_dirs=["/some/dir"],
             )
+
+    def test_evaluate_single_event_matches_evaluate_per_event(self, tmp_path):
+        """evaluate_single_event(params, j) must equal
+        evaluate_per_event(params)[j] for every j -- it's the same
+        per-event computation, just dynamically indexed instead of mapped
+        over every event."""
+        n_events = 4
+        model_dirs = [
+            _save_toy_flow(tmp_path / f"event_{i}", seed=i) for i in range(n_events)
+        ]
+        event_names = [f"event_{i}" for i in range(n_events)]
+        stacked = StackedGWLikelihood(
+            event_names=event_names,
+            model_dirs=[str(d) for d in model_dirs],
+            N_masses_evaluation=20,
+            N_masses_batch_size=5,
+            event_batch_size=2,
+            seed=42,
+        )
+        masses_eos = jnp.linspace(1.0, 2.2, 100)
+        lambdas_eos = jnp.linspace(2000.0, 10.0, 100)
+        params = {"masses_EOS": masses_eos, "Lambdas_EOS": lambdas_eos}
+
+        per_event = stacked.evaluate_per_event(params)
+        for j in range(n_events):
+            single = stacked.evaluate_single_event(params, j)
+            assert jnp.isfinite(single)
+            assert jnp.allclose(single, per_event[j], rtol=1e-10)
+
+    def test_evaluate_single_event_compiles_once_across_indices(self, tmp_path):
+        """event_index must be an ordinary (traced) argument, not baked into
+        the function at trace time -- otherwise a jax.jit-wrapped call would
+        retrace per distinct index, defeating the whole point of this
+        method (flat, catalog-size-independent per-event cost; see its
+        docstring and debug/new_jester_pp_smc/slow_pp_smc/FINDINGS.md in the
+        parent project). Verified via a trace counter incremented as a
+        Python-level side effect of tracing (runs once per distinct XLA
+        compilation, not once per call)."""
+        n_events = 5
+        model_dirs = [
+            _save_toy_flow(tmp_path / f"event_{i}", seed=i) for i in range(n_events)
+        ]
+        event_names = [f"event_{i}" for i in range(n_events)]
+        stacked = StackedGWLikelihood(
+            event_names=event_names,
+            model_dirs=[str(d) for d in model_dirs],
+            N_masses_evaluation=20,
+            N_masses_batch_size=5,
+            seed=42,
+        )
+        masses_eos = jnp.linspace(1.0, 2.2, 100)
+        lambdas_eos = jnp.linspace(2000.0, 10.0, 100)
+        params = {"masses_EOS": masses_eos, "Lambdas_EOS": lambdas_eos}
+
+        trace_count = [0]
+
+        def fn(event_index):
+            trace_count[0] += 1
+            return stacked.evaluate_single_event(params, event_index)
+
+        jitted = jax.jit(fn)
+        # Deliberately not in ascending order, and each index reused once --
+        # a naive/static-index implementation would retrace on every new
+        # value, an even-more-naive one on every call.
+        results = {j: float(jitted(j)) for j in [3, 0, 4, 0, 1, 3]}
+
+        assert trace_count[0] == 1, (
+            f"expected exactly one trace across distinct event indices, got "
+            f"{trace_count[0]} -- event_index is being treated as static "
+            "somewhere, defeating the flat-cost design"
+        )
+
+        per_event = stacked.evaluate_per_event(params)
+        for j, value in results.items():
+            assert jnp.allclose(value, per_event[j], rtol=1e-10)
+
+    def test_subset_matches_slice_of_evaluate_per_event(self, tmp_path):
+        """subset(names).evaluate() must equal the sum of the corresponding
+        (possibly non-contiguous) entries of the full likelihood's
+        evaluate_per_event() -- a subset is just a smaller stacked
+        likelihood over the same underlying flow weights."""
+        n_events = 5
+        model_dirs = [
+            _save_toy_flow(tmp_path / f"event_{i}", seed=i) for i in range(n_events)
+        ]
+        event_names = [f"event_{i}" for i in range(n_events)]
+        stacked = StackedGWLikelihood(
+            event_names=event_names,
+            model_dirs=[str(d) for d in model_dirs],
+            N_masses_evaluation=20,
+            N_masses_batch_size=5,
+            event_batch_size=2,
+            seed=42,
+        )
+        masses_eos = jnp.linspace(1.0, 2.2, 100)
+        lambdas_eos = jnp.linspace(2000.0, 10.0, 100)
+        params = {"masses_EOS": masses_eos, "Lambdas_EOS": lambdas_eos}
+
+        per_event_full = stacked.evaluate_per_event(params)
+
+        subset_names = [event_names[3], event_names[1]]  # reordered, non-contiguous
+        subset = stacked.subset(subset_names)
+        assert subset.event_names == subset_names
+        assert subset._stacked_dynamic is not stacked._stacked_dynamic
+
+        subset_per_event = subset.evaluate_per_event(params)
+        expected = jnp.array([per_event_full[3], per_event_full[1]])
+        assert subset_per_event.shape == (2,)
+        assert jnp.allclose(subset_per_event, expected, rtol=1e-10)
+        assert jnp.allclose(subset.evaluate(params), jnp.sum(expected), rtol=1e-10)
+
+    def test_subset_matches_fresh_stacked_likelihood_over_same_events(self, tmp_path):
+        """subset() must be numerically indistinguishable from constructing a
+        fresh StackedGWLikelihood directly over the same (reordered) events
+        -- it's an array-gather optimization of an already-loaded pytree,
+        not a different computation."""
+        n_events = 4
+        model_dirs = [
+            _save_toy_flow(tmp_path / f"event_{i}", seed=i) for i in range(n_events)
+        ]
+        event_names = [f"event_{i}" for i in range(n_events)]
+        stacked = StackedGWLikelihood(
+            event_names=event_names,
+            model_dirs=[str(d) for d in model_dirs],
+            N_masses_evaluation=20,
+            N_masses_batch_size=5,
+            seed=42,
+        )
+        masses_eos = jnp.linspace(1.0, 2.2, 100)
+        lambdas_eos = jnp.linspace(2000.0, 10.0, 100)
+        params = {"masses_EOS": masses_eos, "Lambdas_EOS": lambdas_eos}
+
+        reordered_names = [event_names[2], event_names[0]]
+        reordered_dirs = [model_dirs[2], model_dirs[0]]
+        fresh = StackedGWLikelihood(
+            event_names=reordered_names,
+            model_dirs=[str(d) for d in reordered_dirs],
+            N_masses_evaluation=20,
+            N_masses_batch_size=5,
+            seed=42,
+        )
+        subset = stacked.subset(reordered_names)
+
+        assert jnp.allclose(
+            subset.evaluate(params), fresh.evaluate(params), rtol=1e-6, atol=1e-8
+        )
+
+    def test_subset_single_event_matches_plain_gw_likelihood(self, tmp_path):
+        """subset() down to one event must match a standalone GWLikelihood
+        for that event, same as evaluate_per_event's existing per-event
+        equivalence test -- confirms subset() doesn't shift/duplicate rows."""
+        n_events = 3
+        model_dirs = [
+            _save_toy_flow(tmp_path / f"event_{i}", seed=i) for i in range(n_events)
+        ]
+        event_names = [f"event_{i}" for i in range(n_events)]
+        stacked = StackedGWLikelihood(
+            event_names=event_names,
+            model_dirs=[str(d) for d in model_dirs],
+            N_masses_evaluation=20,
+            N_masses_batch_size=5,
+            seed=42,
+        )
+        masses_eos = jnp.linspace(1.0, 2.2, 100)
+        lambdas_eos = jnp.linspace(2000.0, 10.0, 100)
+        params = {"masses_EOS": masses_eos, "Lambdas_EOS": lambdas_eos}
+
+        target = 1
+        subset = stacked.subset([event_names[target]])
+        individual = GWLikelihood(
+            event_name=event_names[target],
+            model_dir=str(model_dirs[target]),
+            N_masses_evaluation=20,
+            N_masses_batch_size=5,
+            seed=42,
+        )
+        assert jnp.allclose(
+            subset.evaluate(params), individual.evaluate(params), rtol=1e-6, atol=1e-8
+        )
+
+    def test_subset_empty_list_raises(self, tmp_path):
+        model_dirs = [_save_toy_flow(tmp_path / "event_0", seed=0)]
+        stacked = StackedGWLikelihood(
+            event_names=["event_0"], model_dirs=[str(model_dirs[0])], seed=42
+        )
+        with pytest.raises(ValueError, match="at least one event name"):
+            stacked.subset([])
+
+    def test_subset_unknown_event_name_raises(self, tmp_path):
+        model_dirs = [_save_toy_flow(tmp_path / "event_0", seed=0)]
+        stacked = StackedGWLikelihood(
+            event_names=["event_0"], model_dirs=[str(model_dirs[0])], seed=42
+        )
+        with pytest.raises(ValueError, match="unknown event name"):
+            stacked.subset(["not_a_real_event"])
 
 
 class TestLikelihoodFactory:

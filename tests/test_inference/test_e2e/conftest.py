@@ -200,9 +200,7 @@ def mock_gw_events_model_dirs(e2e_temp_dir: Path) -> list[Path]:
     smoother, better-conditioned mock likelihood.
     """
     return [
-        _save_toy_flow(
-            e2e_temp_dir / f"mock_gw_event_{i}", seed=i, standardize=True
-        )
+        _save_toy_flow(e2e_temp_dir / f"mock_gw_event_{i}", seed=i, standardize=True)
         for i in range(2)
     ]
 

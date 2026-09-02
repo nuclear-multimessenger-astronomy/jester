@@ -854,7 +854,9 @@ class InferenceResult:
             lines.append("\nBlackJAX IBIS (partial posteriors) Configuration:")
             lines.append(f"  Particles: {self.metadata.get('n_particles', '?')}")
             lines.append(f"  Events assimilated: {self.metadata.get('n_events', '?')}")
-            lines.append(f"  SMC batches triggered: {self.metadata.get('n_batches', '?')}")
+            lines.append(
+                f"  SMC batches triggered: {self.metadata.get('n_batches', '?')}"
+            )
             lines.append(f"  ESS threshold: {self.metadata.get('ess_threshold', '?')}")
             if "logZ" in self.metadata:
                 lines.append(f"  Evidence: log(Z) = {self.metadata.get('logZ', 0):.2f}")

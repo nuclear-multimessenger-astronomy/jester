@@ -5,7 +5,9 @@ likelihood tempering -- informally "partial-posteriors SMC" (YAML
 GW events are assimilated one at a time into the posterior. From the current
 (unweighted, i.i.d.) particle set, each new event's log-likelihood is added
 to a running per-particle importance weight -- cheap, since it only needs
-that one event's likelihood (:meth:`~jesterTOV.inference.likelihoods.gw.StackedGWLikelihood.evaluate_per_event`).
+that one event's likelihood, evaluated at flat, catalog-size-independent
+cost via :meth:`~jesterTOV.inference.likelihoods.gw.StackedGWLikelihood.evaluate_single_event`
+(see :meth:`BlackJAXIBISSampler._cheap_reweight_walk_incremental`).
 As long as the resulting effective sample size stays at or above
 ``ess_threshold * n_particles``, this reweighting is accepted and the next
 event is queued the same way, with no resampling and no particle movement.
@@ -33,16 +35,31 @@ Scope (v1): random-walk inner kernel only (no NUTS). Only the batched
 source -- ``GWLikelihoodResampled`` (``type: "gw_resampled"``) is not
 supported and is rejected with a clear error (see
 :func:`split_event_and_background_likelihoods`); that likelihood resamples
-its mass grid fresh on every call, which is incompatible with precomputing
-a per-particle, per-event log-likelihood matrix once per particle set. No
+its mass grid fresh on every call, which is incompatible with the
+per-event, dynamically-indexed evaluation this module relies on
+(:meth:`~jesterTOV.inference.likelihoods.gw.StackedGWLikelihood.evaluate_single_event`,
+:meth:`~jesterTOV.inference.likelihoods.gw.StackedGWLikelihood.subset`). No
 warm-starting/checkpointing.
 
-Scaling note: :meth:`BlackJAXIBISSampler._evaluate_particles` computes the
-full ``n_particles x n_events`` per-event log-likelihood matrix up front
-every time the particle set changes, which assumes this comfortably fits in
-memory -- true for realistic present-day GW catalogs (tens of events).
-Revisit (e.g. capping the lookahead window) if this is ever pointed at
-O(1000)-event catalogs (ET/CE).
+Scaling note (resolved): earlier versions of this module (a) precomputed a
+full ``n_particles x n_events`` per-event log-likelihood matrix, over
+*every* configured event, every time the particle set changed, for cheap
+reweighting, and (b) built each real SMC batch's tempered target by
+evaluating *every* configured event's likelihood and only slicing out the
+needed span afterwards. Both meant cost scaled with the full catalog size
+regardless of how few events a given check/batch actually needed -- fine for
+tens of events, badly wrong for O(1000)-event catalogs (ET/CE), where it
+dominates runtime (see ``debug/new_jester_pp_smc/slow_pp_smc/FINDINGS.md`` in
+the parent project for the diagnosis). Fixed by scoping every likelihood
+evaluation to only the events actually needed:
+:meth:`BlackJAXIBISSampler._cheap_reweight_walk_incremental` evaluates one
+event at a time via ``evaluate_single_event`` (flat, O(1 event) cost, no
+retracing across events -- see that method's docstring), and
+:meth:`BlackJAXIBISSampler._make_batch_logprior_fn`/
+:meth:`~BlackJAXIBISSampler._make_batch_loglikelihood_fn` build their
+absorbed-events/new-batch-events sums via ``StackedGWLikelihood.subset()``,
+so a batch's cost scales with ``absorbed_upto`` and ``stop - start``, not
+with the total number of configured events.
 """
 
 from __future__ import annotations
@@ -65,7 +82,10 @@ from jesterTOV.inference.base import (
 )
 from jesterTOV.inference.config.schema import SMCPartialPosteriorsSamplerConfig
 from jesterTOV.inference.likelihoods.combined import CombinedLikelihood, ZeroLikelihood
-from jesterTOV.inference.likelihoods.gw import GWLikelihoodResampled, StackedGWLikelihood
+from jesterTOV.inference.likelihoods.gw import (
+    GWLikelihoodResampled,
+    StackedGWLikelihood,
+)
 from jesterTOV.inference.samplers.jester_sampler import SamplerOutput
 from jesterTOV.inference.samplers.blackjax.base import BlackjaxSampler
 from jesterTOV.inference.samplers.blackjax.smc.base import TemperingResult
@@ -163,6 +183,55 @@ def _np_logsumexp(x: np.ndarray) -> float:
     return float(x_max + np.log(np.sum(np.exp(x - x_max))))
 
 
+def _cheap_reweight_step(
+    log_w: np.ndarray, event_loglik: np.ndarray, alpha: float, n_particles: int
+) -> tuple[bool, float, np.ndarray, float | None]:
+    """One event of the cheap-reweight walk: given the current running
+    log-weights and one event's per-particle log-likelihood, compute the
+    candidate ESS and decide accept/stop.
+
+    Factored out of :func:`_cheap_reweight_walk` so that function (dense
+    matrix, unit-tested in isolation in ``test_ibis_bookkeeping.py`` against
+    analytic/brute-force ground truth) and
+    :meth:`BlackJAXIBISSampler._cheap_reweight_walk_incremental` (evaluates
+    one event's log-likelihood at a time, at flat cost, instead of a
+    precomputed matrix -- see that method's docstring) share the exact same
+    accept/stop rule rather than risking the two drifting apart.
+
+    Parameters
+    ----------
+    log_w : np.ndarray
+        Current running (un-normalized) log-weights, shape ``(n_particles,)``.
+    event_loglik : np.ndarray
+        This event's per-particle log-likelihood, shape ``(n_particles,)``.
+    alpha : float
+        ESS threshold fraction.
+    n_particles : int
+        Number of particles (``len(log_w)``, passed explicitly to avoid
+        recomputing it every call).
+
+    Returns
+    -------
+    accepted : bool
+        Whether ``ess_fraction >= alpha`` -- i.e. whether this event can be
+        cheaply absorbed.
+    ess_fraction : float
+        ESS fraction after tentatively adding this event.
+    log_w_candidate : np.ndarray
+        Running log-weights after tentatively adding this event (the caller
+        should only carry this forward as the new ``log_w`` if ``accepted``).
+    logZ_increment : float or None
+        Cheap-reweight log-evidence increment if accepted, else ``None``.
+    """
+    log_w_candidate = log_w + event_loglik
+    log_ess = 2 * _np_logsumexp(log_w_candidate) - _np_logsumexp(2 * log_w_candidate)
+    ess_fraction = float(np.exp(log_ess)) / n_particles
+    if ess_fraction < alpha:
+        return False, ess_fraction, log_w_candidate, None
+    logZ_increment = _np_logsumexp(log_w_candidate) - _np_logsumexp(log_w)
+    return True, ess_fraction, log_w_candidate, logZ_increment
+
+
 def _cheap_reweight_walk(
     event_matrix: np.ndarray, alpha: float
 ) -> tuple[int, np.ndarray, list[float], list[float]]:
@@ -229,17 +298,15 @@ def _cheap_reweight_walk(
     logZ_increment_trace: list[float] = []
 
     for j in range(n_remaining):
-        log_w_candidate = log_w + event_matrix[:, j]
-        log_ess = 2 * _np_logsumexp(log_w_candidate) - _np_logsumexp(
-            2 * log_w_candidate
+        accepted, ess_fraction, log_w_candidate, logZ_increment = _cheap_reweight_step(
+            log_w, event_matrix[:, j], alpha, n_particles
         )
-        ess_fraction = float(np.exp(log_ess)) / n_particles
         ess_trace.append(ess_fraction)
 
-        if ess_fraction < alpha:
+        if not accepted:
             return j + 1, log_w, ess_trace, logZ_increment_trace
 
-        logZ_increment = _np_logsumexp(log_w_candidate) - _np_logsumexp(log_w)
+        assert logZ_increment is not None  # accepted implies a real increment
         logZ_increment_trace.append(logZ_increment)
         log_w = log_w_candidate
 
@@ -324,7 +391,7 @@ class BlackJAXIBISSampler(BlackjaxSampler):
         self.final_state = None
         self._particles_flat = None
         self._weights = None
-        self._jitted_event_loglik_map: Any = None
+        self._jitted_single_event_particle_fn: Any = None
 
         logger.info(
             f"Initializing BlackJAX IBIS sampler: {len(self.event_names)} GW "
@@ -345,37 +412,118 @@ class BlackJAXIBISSampler(BlackjaxSampler):
             named_params = transform.forward(named_params)
         return named_params
 
-    def _evaluate_particles(
-        self, particles_flat: Float[Array, "n_particles n_dim"]
-    ) -> Float[Array, "n_particles n_events"]:
-        """Evaluate per-event GW log-likelihoods for every particle in one
-        batched pass.
+    def _get_single_event_particle_fn(self) -> Callable[[Array, Array | int], Array]:
+        """Jitted, particle-batched evaluator for ONE event's GW
+        log-likelihood, selected by a dynamic index.
 
-        Called once whenever the particle SET changes (real positions
-        moved): after the initial prior draw and after every SMC batch's
-        terminal resample -- NOT per cheap-reweight step, since those only
-        read columns of the matrix this returns (particle positions don't
-        move during cheap reweighting).
-
-        The jitted map is built once (lazily, on first call, once
-        ``self._unflatten_fn`` exists) and cached, so repeated calls within
-        one run reuse the same compiled executable rather than retracing.
+        Built once (lazily, on first call) and cached. Because
+        ``event_index`` is passed as an ordinary (traced) argument rather
+        than baked into the function at trace time, this compiles ONCE for
+        the whole run and can then be called with any event index -- early
+        in the catalog or late -- without retracing (see
+        ``StackedGWLikelihood.evaluate_single_event``'s docstring). Used by
+        :meth:`_cheap_reweight_walk_incremental` to check one event's ESS
+        impact at a time, at flat, catalog-size-independent cost -- this
+        replaces the previous ``_evaluate_particles`` approach, which
+        computed a dense ``(n_particles, n_events)`` matrix over *every*
+        stacked event via ``evaluate_per_event`` up front, even though the
+        cheap-reweight walk usually only needs to check a handful of events
+        before hitting the ESS threshold (see the module-level scaling note
+        above, now resolved by this method).
         """
-        if self._jitted_event_loglik_map is None:
+        if self._jitted_single_event_particle_fn is None:
 
-            def per_particle_event_loglik(x_flat: Array) -> Float[Array, " n_events"]:
+            def per_particle_single_event_loglik(
+                x_flat: Array, event_index: Array | int
+            ) -> Float:
                 named_params = self._unflatten_fn(x_flat)
                 transformed = self._transform_to_likelihood_space(named_params)
-                return self.stacked_gw.evaluate_per_event(transformed)
+                return self.stacked_gw.evaluate_single_event(transformed, event_index)
 
-            self._jitted_event_loglik_map = jax.jit(
-                lambda p: jax.lax.map(
-                    per_particle_event_loglik,
-                    p,
+            def fn(particles_flat: Array, event_index: Array | int) -> Array:
+                return jax.lax.map(
+                    lambda x_flat: per_particle_single_event_loglik(
+                        x_flat, event_index
+                    ),
+                    particles_flat,
                     batch_size=self.config.particle_batch_size,
                 )
+
+            self._jitted_single_event_particle_fn = jax.jit(fn)
+        return self._jitted_single_event_particle_fn
+
+    def _cheap_reweight_walk_incremental(
+        self,
+        particles_flat: Float[Array, "n_particles n_dim"],
+        start: int,
+        alpha: float,
+    ) -> tuple[int, list[float], list[float]]:
+        """Event-by-event version of :func:`_cheap_reweight_walk`.
+
+        Evaluates one event's per-particle log-likelihood at a time (via
+        :meth:`_get_single_event_particle_fn`, flat O(1 event) cost)
+        instead of precomputing a dense matrix over every remaining event,
+        so a walk that stops after a handful of events never pays for the
+        rest of the catalog -- and genuinely never computes an event past
+        the one that triggers the stop. Uses the exact same accept/stop
+        rule as :func:`_cheap_reweight_walk` (via the shared
+        :func:`_cheap_reweight_step` helper), so behaviour (which/how many
+        events get absorbed) is unchanged; only the cost profile is. Also
+        logs ESS and this single step's wall-clock runtime after each event,
+        via the jester logger, for live monitoring of long-running catalogs.
+
+        Parameters
+        ----------
+        particles_flat : Array
+            Current (unmoved) particle set, shape ``(n_particles, n_dim)``.
+        start : int
+            Index into ``self.event_names`` of the first not-yet-assimilated
+            event to check.
+        alpha : float
+            ESS threshold fraction (the ``ess_threshold`` config field).
+
+        Returns
+        -------
+        m : int
+            Number of events checked (relative to ``start``) -- same
+            semantics as :func:`_cheap_reweight_walk`'s ``m``.
+        ess_trace : list[float]
+            ESS fraction for each checked event, in order.
+        logZ_increment_trace : list[float]
+            Cheap-reweight log-evidence increment for each *accepted* event.
+        """
+        single_event_fn = self._get_single_event_particle_fn()
+        n_particles = particles_flat.shape[0]
+        n_total_events = len(self.event_names)
+        n_to_check = n_total_events - start
+        log_w = np.zeros(n_particles)
+        ess_trace: list[float] = []
+        logZ_increment_trace: list[float] = []
+
+        j = start
+        while j < n_total_events:
+            step_start = time.time()
+            event_loglik = np.asarray(single_event_fn(particles_flat, j))
+            accepted, ess_fraction, log_w_candidate, logZ_increment = (
+                _cheap_reweight_step(log_w, event_loglik, alpha, n_particles)
             )
-        return self._jitted_event_loglik_map(particles_flat)
+            step_time = time.time() - step_start
+            logger.info(
+                f"IBIS cheap-reweight event {j - start + 1}/{n_to_check} "
+                f"[{self.event_names[j]}]: ESS={ess_fraction * 100:5.1f}% | "
+                f"t={step_time:.3f}s"
+            )
+            ess_trace.append(ess_fraction)
+
+            if not accepted:
+                return j - start + 1, ess_trace, logZ_increment_trace
+
+            assert logZ_increment is not None  # accepted implies a real increment
+            logZ_increment_trace.append(logZ_increment)
+            log_w = log_w_candidate
+            j += 1
+
+        return j - start, ess_trace, logZ_increment_trace
 
     def _make_batch_logprior_fn(self, absorbed_upto: int) -> Callable[[Array], float]:
         """``prior(theta) + jacobian + L_always_on(theta) + sum_{j<absorbed_upto} log L_j(theta)``,
@@ -383,17 +531,30 @@ class BlackJAXIBISSampler(BlackjaxSampler):
         particles) -- required since ``_run_tempering``'s inner MCMC kernel
         proposes new theta during annealing and must evaluate this there
         too. ``absorbed_upto`` is a static Python int, safely closed over
-        per batch."""
+        per batch.
+
+        Builds ``self.stacked_gw.subset(event_names[:absorbed_upto])`` once
+        here (i.e. once per batch, not once per tempering step/MCMC step --
+        this closure itself is only constructed once per batch by
+        ``sample()``), so the returned ``flat_fn`` costs O(absorbed_upto)
+        events per call instead of O(len(self.event_names)): it never
+        evaluates the not-yet-absorbed events this batch doesn't need. See
+        ``StackedGWLikelihood.subset()`` and the module-level scaling note
+        above for why this matters."""
         logprior_dict = self._create_logprior_fn_from_dict()
+        absorbed_gw = (
+            self.stacked_gw.subset(self.event_names[:absorbed_upto])
+            if absorbed_upto > 0
+            else None
+        )
 
         def flat_fn(x_flat: Array) -> float:
             named_params = self._unflatten_fn(x_flat)
             prior_val = logprior_dict(named_params)
             transformed = self._transform_to_likelihood_space(named_params)
             background_val = self.background.evaluate(transformed)
-            if absorbed_upto > 0:
-                event_vals = self.stacked_gw.evaluate_per_event(transformed)
-                absorbed_val = jnp.sum(event_vals[:absorbed_upto])
+            if absorbed_gw is not None:
+                absorbed_val = absorbed_gw.evaluate(transformed)
             else:
                 absorbed_val = 0.0
             return prior_val + background_val + absorbed_val
@@ -405,13 +566,18 @@ class BlackJAXIBISSampler(BlackjaxSampler):
     ) -> Callable[[Array], float]:
         """``sum_{start <= j < stop} log L_j(theta)``, evaluated at arbitrary
         flat ``theta``. ``start``/``stop`` are static Python ints, safely
-        closed over per batch."""
+        closed over per batch.
+
+        Builds ``self.stacked_gw.subset(event_names[start:stop])`` once here
+        (once per batch -- same reasoning as ``_make_batch_logprior_fn``),
+        so the returned ``flat_fn`` costs O(stop - start) events per call
+        instead of O(len(self.event_names))."""
+        batch_gw = self.stacked_gw.subset(self.event_names[start:stop])
 
         def flat_fn(x_flat: Array) -> float:
             named_params = self._unflatten_fn(x_flat)
             transformed = self._transform_to_likelihood_space(named_params)
-            event_vals = self.stacked_gw.evaluate_per_event(transformed)
-            return jnp.sum(event_vals[start:stop])  # type: ignore[return-value]
+            return batch_gw.evaluate(transformed)  # type: ignore[return-value]
 
         return flat_fn
 
@@ -462,11 +628,8 @@ class BlackJAXIBISSampler(BlackjaxSampler):
         last_batch_result: TemperingResult | None = None
 
         while n < n_total_events:
-            event_matrix = self._evaluate_particles(particles_flat)
-            event_matrix_np = np.asarray(event_matrix[:, n:])
-
-            m_batch, _, ess_trace, logZ_increment_trace = _cheap_reweight_walk(
-                event_matrix_np, alpha
+            m_batch, ess_trace, logZ_increment_trace = (
+                self._cheap_reweight_walk_incremental(particles_flat, n, alpha)
             )
             per_event_ess_trace.extend(ess_trace)
             per_event_logZ_increment_trace.extend(logZ_increment_trace)
@@ -503,7 +666,9 @@ class BlackJAXIBISSampler(BlackjaxSampler):
             # anneals jointly). metadata["logZ"] stays exact.
             per_event_increment = batch_logZ / m_batch
             for k in range(1, m_batch + 1):
-                cumulative_logZ_history.append(base_cumulative + per_event_increment * k)
+                cumulative_logZ_history.append(
+                    base_cumulative + per_event_increment * k
+                )
 
             n_batches += 1
             batch_boundaries.append(n_next)
