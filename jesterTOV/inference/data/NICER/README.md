@@ -69,15 +69,23 @@ Files:
 
 ## PSR J0614−3329
 
-**Paper:** Mauviard et al. 2025, "A NICER View of the 1.4 Msun Edge-on Pulsar PSR J0614-3329" ([ApJ 995, 60](https://inspirehep.net/literature/2936527))
+### Amsterdam group — Mauviard et al. 2025, "A NICER View of the 1.4 Msun Edge-on Pulsar PSR J0614-3329" ([ApJ 995, 60](https://inspirehep.net/literature/2936527))
 **Zenodo:** https://zenodo.org/records/17380576
-**Group:** Amsterdam (X-PSI)
 **Data:** NICER-only
 **Hotspot model:** ST+PDT (headline result)
 **Source file:** `Headline_Contours_and_Samples.tar.gz` → equal-weight samples
 
 Files:
 - `J06143329_amsterdam_ST_PDT_NICER_only_Mauviard2025.npz`
+
+### Maryland group — Miller, Dittmann, Holt, et al. 2026, "The Radius of the Neutron Star PSR J0614-3329 from NICER Data" (arXiv:2609.00965)
+**Zenodo:** https://zenodo.org/records/22131748
+**Data:** NICER-only
+**Hotspot model:** three circular spots (headline result)
+**Source file:** `J0614_NICER_rm.txt` — raw file stores importance weights alongside mass and radius rather than equal-weight samples, so the extraction script importance-resamples it to an equal-weight posterior before saving.
+
+Files:
+- `J06143329_maryland_3circle_NICER_only_RM.npz`
 
 ---
 

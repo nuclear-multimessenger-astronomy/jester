@@ -22,6 +22,7 @@ likelihoods:
   pulsars:
   - name: J0614
     amsterdam_model_dir: ../../../../jesterTOV/inference/flows/models/nicer_maf/J06143329/amsterdam_st_pdt
+    maryland_model_dir: ../../../../jesterTOV/inference/flows/models/nicer_maf/J06143329/maryland_3circle
   N_masses_evaluation: 20
   N_masses_batch_size: 20
 sampler:

@@ -13,7 +13,8 @@ preferred/headline analysis is used for each group:
     Maryland 3-spot, full prior (Miller et al. 2019)
   - PSR J0437-4715  — Amsterdam CST+PDT (Choudhury et al. 2024);
     Maryland 3-spot+GPL (Miller, Dittmann, Holt et al. 2026)
-  - PSR J0614-3329  — Amsterdam ST+PDT (Mauviard et al. 2025); no Maryland analysis
+  - PSR J0614-3329  — Amsterdam ST+PDT (Mauviard et al. 2025);
+    Maryland 3-circle (Miller, Dittmann, Holt et al. 2026)
   - PSR J0740+6620  — Amsterdam gamma, NICER+XMM (Salmi et al. 2024);
     Maryland, NICER+XMM, full prior (Miller et al. 2021)
 
@@ -94,6 +95,11 @@ PSR_CONFIGS = [
                 "name": "Amsterdam",
                 "flow_dir": FLOWS_DIR / "J06143329" / "amsterdam_st_pdt",
                 "linestyle": "-",
+            },
+            {
+                "name": "Maryland",
+                "flow_dir": FLOWS_DIR / "J06143329" / "maryland_3circle",
+                "linestyle": "--",
             },
         ],
     },

@@ -7,8 +7,9 @@ Pipeline (all controlled by constants below):
   Step 1  Download Zenodo archives for Maryland and Amsterdam groups.
           (requires ``zenodo_get``: ``uv pip install zenodo-get``)
   Step 2  Extract Maryland text files → .npz with mass/radius/metadata.
-          J0437 (Miller, Dittmann, Holt et al. 2026) is importance-resampled
-          using its weight column to obtain an equal-weight posterior.
+          J0437 and J0614 (Miller, Dittmann, Holt et al. 2026) are
+          importance-resampled using their weight column to obtain an
+          equal-weight posterior.
   Step 3  Extract Amsterdam tar.gz archives → .npz.
   Step 4  Downsample all .npz files to MAX_SAMPLES.
 
@@ -59,8 +60,8 @@ def download_zenodo_data() -> None:
     """Download all required Zenodo archives.
 
     Most datasets use ``zenodo_get`` (downloads the full record).
-    J0614 is an exception: only one small file is needed, so it is fetched
-    directly from the Zenodo file URL instead.
+    J0614 (both groups) is an exception: only one small file is needed per
+    group, so those are fetched directly from the Zenodo file URL instead.
     """
     downloader = ZenodoDownloader(base_dir=ZENODO_DIR)
 
@@ -91,6 +92,11 @@ def download_zenodo_data() -> None:
             "J0437/maryland/original",
             "J0437_NICER_RM.txt",
             "https://zenodo.org/records/17833896/files/J0437_NICER_RM.txt",
+        ),
+        (
+            "J0614/maryland/original",
+            "J0614_NICER_rm.txt",
+            "https://zenodo.org/records/22131748/files/J0614_NICER_rm.txt",
         ),
     ]
     for rel_dir, filename, url in _direct_downloads:
@@ -286,6 +292,74 @@ def process_j0437_maryland_data() -> list[Path]:
         return [out_path]
 
     radius, mass, meta = parse_miller2026_j0437_txt(src)
+    np.savez(out_path, radius=radius, mass=mass, metadata=meta)  # type: ignore[arg-type]
+    print(
+        f"    Saved: {out_name} ({out_path.stat().st_size / 1024:.1f} KB, {len(radius):,} samples)"
+    )
+    return [out_path]
+
+
+def parse_miller2026_j0614_txt(filepath: Path) -> Tuple[np.ndarray, np.ndarray, Dict]:
+    """Parse Miller, Dittmann, Holt, et al. 2026 J0614-3329 NICER RM file.
+
+    Format: columns are radius [km], mass [Msun], weight — raw weighted
+    posterior samples (not equal-weight) from the headline three-circular-spot
+    model fit to NICER-only data. We importance-resample using the weight
+    column to obtain an equal-weight posterior, following the same treatment
+    as the J0437 Maryland file in ``parse_miller2026_j0437_txt``.
+    """
+    print(f"\n  Parsing: {filepath.name}")
+    data = np.loadtxt(filepath, comments="#")
+    radius_all = data[:, 0]
+    mass_all = data[:, 1]
+    weights = data[:, 2]
+
+    rng = np.random.default_rng(seed=42)
+    w_norm = weights / weights.sum()
+    n_resample = min(
+        MAX_SAMPLES if MAX_SAMPLES is not None else len(weights), len(weights)
+    )
+    idx = rng.choice(len(weights), size=n_resample, replace=True, p=w_norm)
+    radius = radius_all[idx]
+    mass = mass_all[idx]
+
+    metadata: Dict = {
+        "psr": "J0614-3329",
+        "group": "maryland",
+        "analysis": "Miller, Dittmann, Holt, et al. 2026",
+        "hotspot_model": "3circle",
+        "data_used": "NICER-only",
+        "model_variant": "RM",
+        "n_samples": len(radius),
+        "weighted": False,
+        "resampled_from_weights": True,
+        "source_file": filepath.name,
+        "zenodo_record": "https://zenodo.org/records/22131748",
+        "paper": "Miller, Dittmann, Holt, et al. 2026 (arXiv:2609.00965)",
+        "format": (
+            "equal-weight resampled from raw weighted posterior "
+            "(original format: radius, mass, weight)"
+        ),
+    }
+    print(f"    PSR J0614-3329, hotspot=3circle, data=NICER-only, n={len(radius):,}")
+    return radius, mass, metadata
+
+
+def process_j0614_maryland_data() -> list[Path]:
+    """Extract the Miller et al. 2026 J0614-3329 Maryland RM file to .npz."""
+    src = ZENODO_DIR / "J0614/maryland/original/J0614_NICER_rm.txt"
+    if not src.exists():
+        print(f"\n  Not found (download Zenodo first): {src.name}")
+        return []
+
+    out_name = "J06143329_maryland_3circle_NICER_only_RM.npz"
+    out_path = OUTPUT_DIR / out_name
+
+    if out_path.exists() and not IGNORE_CACHE:
+        print(f"    Cached: {out_name}")
+        return [out_path]
+
+    radius, mass, meta = parse_miller2026_j0614_txt(src)
     np.savez(out_path, radius=radius, mass=mass, metadata=meta)  # type: ignore[arg-type]
     print(
         f"    Saved: {out_name} ({out_path.stat().st_size / 1024:.1f} KB, {len(radius):,} samples)"
@@ -712,6 +786,7 @@ def main() -> None:
     print("=" * 70)
     process_maryland_data()
     process_j0437_maryland_data()
+    process_j0614_maryland_data()
 
     if EXTRACT_AMSTERDAM:
         print("\n" + "=" * 70)
