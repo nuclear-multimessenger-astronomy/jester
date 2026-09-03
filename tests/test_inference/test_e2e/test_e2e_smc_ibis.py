@@ -76,6 +76,49 @@ class TestSMCIBISE2E:
         assert jnp.all(output.samples["K_sat"] >= 150.0)
         assert jnp.all(output.samples["K_sat"] <= 300.0)
 
+    @pytest.mark.timeout(480)
+    def test_smc_pp_saves_intermediate_results_by_default(
+        self, smc_pp_config, e2e_temp_dir
+    ):
+        """``save_intermediate_results`` defaults to ``True``: once
+        ``configure_intermediate_saving`` is wired up (as ``run_inference.py``
+        does right after ``create_sampler``), ``sample()`` must write one
+        ``substep_results/results_batch_<NN>.h5`` per IBIS batch, each
+        independently loadable and carrying EOS-derived quantities."""
+        from jesterTOV.inference.result import InferenceResult
+
+        config = InferenceConfig(**smc_pp_config)
+        assert config.sampler.save_intermediate_results is True  # type: ignore[union-attr]
+
+        prior, fixed_params = setup_prior(config)
+        keep_names = determine_keep_names(config, prior)
+        transform = setup_transform(config, prior=prior, keep_names=keep_names)
+        likelihood = setup_likelihood(config, transform)
+        sampler = create_sampler(
+            config=config.sampler,
+            prior=prior,
+            likelihood=likelihood,
+            likelihood_transforms=[transform],
+            seed=config.seed,
+        )
+        sampler.configure_intermediate_saving(
+            full_config=config, outdir=e2e_temp_dir, fixed_params=fixed_params
+        )
+        sampler.sample(jax.random.PRNGKey(config.seed))
+
+        n_batches = sampler.metadata["n_batches"]
+        assert n_batches >= 1
+
+        saved_files = sorted((e2e_temp_dir / "substep_results").glob("results_batch_*.h5"))
+        assert len(saved_files) == n_batches
+
+        for i, path in enumerate(saved_files, start=1):
+            assert path.name == f"results_batch_{i:02d}.h5"
+            result = InferenceResult.load(path)
+            assert "K_sat" in result.posterior
+            assert "masses_EOS" in result.posterior
+            assert result.metadata["n_batches"] == i
+
     @pytest.mark.timeout(900)
     def test_smc_pp_matches_smc_rw_on_combined_likelihood(
         self, smc_pp_config, smc_rw_gw_config, e2e_temp_dir

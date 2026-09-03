@@ -440,6 +440,7 @@ class TestSMCPartialPosteriorsSamplerConfig:
         assert config.inner.n_particles == 10000
         assert config.n_final_rejuvenation_steps == 10
         assert config.particle_batch_size == 1000
+        assert config.save_intermediate_results is True
 
     def test_custom_inner_config(self):
         """inner.n_particles is authoritative -- no top-level n_particles field."""
@@ -475,6 +476,13 @@ class TestSMCPartialPosteriorsSamplerConfig:
     def test_particle_batch_size_not_positive_fails(self, value):
         with pytest.raises(ValidationError):
             schema.SMCPartialPosteriorsSamplerConfig(particle_batch_size=value)
+
+    def test_save_intermediate_results_can_be_disabled(self):
+        """save_intermediate_results defaults to True but can be turned off."""
+        config = schema.SMCPartialPosteriorsSamplerConfig(
+            save_intermediate_results=False
+        )
+        assert config.save_intermediate_results is False
 
     def test_discriminated_union_from_dict(self):
         """SamplerConfig union resolves type: 'smc-pp' to the right class."""

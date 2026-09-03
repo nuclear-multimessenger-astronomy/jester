@@ -39,7 +39,11 @@ its mass grid fresh on every call, which is incompatible with the
 per-event, dynamically-indexed evaluation this module relies on
 (:meth:`~jesterTOV.inference.likelihoods.gw.StackedGWLikelihood.evaluate_single_event`,
 :meth:`~jesterTOV.inference.likelihoods.gw.StackedGWLikelihood.subset`). No
-warm-starting/checkpointing.
+warm-starting/resuming a run from a saved state -- distinct from the
+per-batch ``InferenceResult`` snapshots written for inspection when
+``config.save_intermediate_results`` is ``True`` (the default; see
+:meth:`BlackJAXIBISSampler.configure_intermediate_saving`), which are not
+themselves resumable.
 
 Scaling note (resolved): earlier versions of this module (a) precomputed a
 full ``n_particles x n_events`` per-event log-likelihood matrix, over
@@ -80,7 +84,10 @@ from jesterTOV.inference.base import (
     BijectiveTransform,
     NtoMTransform,
 )
-from jesterTOV.inference.config.schema import SMCPartialPosteriorsSamplerConfig
+from jesterTOV.inference.config.schema import (
+    InferenceConfig,
+    SMCPartialPosteriorsSamplerConfig,
+)
 from jesterTOV.inference.likelihoods.combined import CombinedLikelihood, ZeroLikelihood
 from jesterTOV.inference.likelihoods.gw import (
     GWLikelihoodResampled,
@@ -393,6 +400,16 @@ class BlackJAXIBISSampler(BlackjaxSampler):
         self._weights = None
         self._jitted_single_event_particle_fn: Any = None
 
+        # Populated by configure_intermediate_saving(), called externally
+        # (run_inference.py) because this sampler doesn't otherwise have
+        # access to the full InferenceConfig (only its own sampler
+        # sub-config) or the output directory. Only consumed if
+        # config.save_intermediate_results is True -- see
+        # _save_intermediate_result.
+        self._intermediate_save_config: InferenceConfig | None = None
+        self._intermediate_save_outdir: Path | None = None
+        self._intermediate_save_fixed_params: dict[str, float] = {}
+
         logger.info(
             f"Initializing BlackJAX IBIS sampler: {len(self.event_names)} GW "
             f"events to assimilate, ess_threshold={config.ess_threshold}, "
@@ -581,6 +598,183 @@ class BlackJAXIBISSampler(BlackjaxSampler):
 
         return flat_fn
 
+    def configure_intermediate_saving(
+        self,
+        full_config: InferenceConfig,
+        outdir: str | Path,
+        fixed_params: dict[str, float] | None = None,
+    ) -> None:
+        """Wire up context needed to save per-batch intermediate results.
+
+        This sampler only receives its own sampler sub-config (``self.config``,
+        a ``SMCPartialPosteriorsSamplerConfig``), not the full
+        ``InferenceConfig`` or the run's output directory -- both are needed
+        to build and save an ``InferenceResult`` snapshot after each IBIS
+        batch (see ``_save_intermediate_result``). Call this (from
+        ``run_inference.py``, right after ``create_sampler``) before
+        ``sample()`` if ``config.sampler.save_intermediate_results`` is
+        ``True``; harmless no-op setup otherwise.
+
+        Parameters
+        ----------
+        full_config : InferenceConfig
+            The complete run configuration (serialized into each
+            intermediate result's metadata, exactly as for the final
+            ``results.h5``).
+        outdir : str or Path
+            Run output directory. Intermediate results are saved under
+            ``outdir/substep_results/``.
+        fixed_params : dict[str, float] | None, optional
+            Parameters pinned to constant values during inference, stored
+            in each intermediate result's metadata like the final result.
+        """
+        self._intermediate_save_config = full_config
+        self._intermediate_save_outdir = Path(outdir)
+        self._intermediate_save_fixed_params = fixed_params or {}
+
+    def _build_metadata(
+        self,
+        n_particles: int,
+        n_events_so_far: int,
+        n_batches_so_far: int,
+        batch_boundaries_so_far: list[int],
+        alpha: float,
+        logZ_so_far: float,
+        per_event_ess_trace_so_far: list[float],
+        per_event_logZ_increment_trace_so_far: list[float],
+        cumulative_logZ_history_so_far: list[float],
+        elapsed_seconds: float,
+    ) -> dict[str, Any]:
+        """Build the sampler metadata dict, for either an intermediate or the
+        final snapshot of the run.
+
+        Factored out of ``sample()`` so that ``_save_intermediate_result``
+        can build a metadata dict describing "the run as if it stopped after
+        this batch" using the exact same shape/keys as the real final
+        metadata -- required for it to be accepted by
+        ``InferenceResult.from_sampler`` (which reads several
+        ``blackjax_smc_ibis``-specific keys, see ``result.py``).
+        """
+        return {
+            "sampler": "blackjax_smc_ibis",
+            "n_particles": n_particles,
+            "n_events": n_events_so_far,
+            "n_batches": n_batches_so_far,
+            "batch_boundaries": list(batch_boundaries_so_far),
+            "ess_threshold": alpha,
+            "logZ": float(logZ_so_far),
+            "logZ_err": 0.0,
+            "cheap_reweight_ess_history": list(per_event_ess_trace_so_far),
+            "cheap_reweight_logZ_increment_history": list(
+                per_event_logZ_increment_trace_so_far
+            ),
+            "cumulative_logZ_history": list(cumulative_logZ_history_so_far),
+            "sampling_time_seconds": elapsed_seconds,
+        }
+
+    def _save_intermediate_result(
+        self,
+        particles_flat: Array,
+        n_particles: int,
+        batch_key: str,
+        event_names_so_far: list[str],
+        batch_result: TemperingResult,
+        metadata_so_far: dict[str, Any],
+        elapsed_seconds: float,
+    ) -> None:
+        """Save an ``InferenceResult`` snapshot of the posterior after an
+        IBIS batch, including derived EOS quantities from the TOV solver --
+        exactly mirroring what ``run_inference.py`` does for the final
+        result, just run mid-loop on the current particles instead of the
+        fully-assimilated ones.
+
+        Unlike the superseded fractional-mask partial-posteriors sampler,
+        no separate resampling step is needed here: ``particles_flat`` is
+        already ``batch_result.particles_flat``, i.e. uniformly weighted
+        (post terminal resample-to-uniform-weights) straight out of
+        ``_run_tempering`` -- see ``TemperingResult``'s docstring.
+
+        Requires ``configure_intermediate_saving()`` to have been called;
+        otherwise this logs a warning and does nothing (rather than
+        raising, since ``config.save_intermediate_results`` is read from
+        the sampler's own config and could be enabled without the caller
+        having wired up the extra context this needs).
+
+        Parameters
+        ----------
+        particles_flat : Array
+            This batch's final (moved, uniformly-weighted) particle set.
+        n_particles : int
+            Number of particles.
+        batch_key : str
+            This batch's sequential ``batch_<NN>`` key (see ``sample()``),
+            used as the intermediate result's filename
+            (``results_<batch_key>.h5``).
+        event_names_so_far : list[str]
+            GW events assimilated up to and including this batch.
+        batch_result : TemperingResult
+            This batch's ``_run_tempering`` output, reused as
+            ``self.final_state`` for the snapshot.
+        metadata_so_far : dict[str, Any]
+            Metadata dict from ``_build_metadata``, describing the run as if
+            it stopped after this batch.
+        elapsed_seconds : float
+            Wall-clock time elapsed since sampling started.
+        """
+        if self._intermediate_save_config is None:
+            logger.warning(
+                "config.save_intermediate_results is True but "
+                "configure_intermediate_saving() was never called on this "
+                "sampler -- skipping intermediate result saving. "
+                "(run_inference.py should call it automatically; this is "
+                "expected only if the sampler is being driven manually.)"
+            )
+            return
+
+        logger.info(
+            "Postprocessing and saving intermediate run results "
+            f"({batch_key}: events {event_names_so_far})..."
+        )
+
+        # Temporarily swap in this batch's particles/weights/metadata so
+        # get_samples()/get_log_prob()/get_sampler_output() -- and thus
+        # InferenceResult.from_sampler, which is driven entirely through
+        # those methods -- report this batch's state. Restored in `finally`
+        # so the real end-of-run assignment in sample() (and any other
+        # caller inspecting these attributes) is unaffected.
+        prev_particles_flat = self._particles_flat
+        prev_weights = self._weights
+        prev_final_state = self.final_state
+        prev_metadata = self.metadata
+        self._particles_flat = particles_flat
+        self._weights = jnp.ones(n_particles) / n_particles
+        self.final_state = batch_result
+        self.metadata = metadata_so_far
+        try:
+            from jesterTOV.inference.result import InferenceResult
+
+            result = InferenceResult.from_sampler(
+                sampler=self,
+                config=self._intermediate_save_config,
+                runtime=elapsed_seconds,
+                fixed_params=self._intermediate_save_fixed_params,
+            )
+            result.add_eos_from_transform(
+                transform=self.likelihood_transforms[0],
+                n_eos_samples=self.config.n_eos_samples,
+                batch_size=self.config.log_prob_batch_size,
+            )
+            assert self._intermediate_save_outdir is not None
+            substep_outdir = self._intermediate_save_outdir / "substep_results"
+            substep_outdir.mkdir(parents=True, exist_ok=True)
+            result_path = substep_outdir / f"results_{batch_key}.h5"
+            result.save(result_path)
+        finally:
+            self._particles_flat = prev_particles_flat
+            self._weights = prev_weights
+            self.final_state = prev_final_state
+            self.metadata = prev_metadata
+
     def sample(self, key: PRNGKeyArray) -> None:
         """Run the IBIS outer loop until all GW events are assimilated.
 
@@ -672,6 +866,31 @@ class BlackJAXIBISSampler(BlackjaxSampler):
 
             n_batches += 1
             batch_boundaries.append(n_next)
+
+            if self.config.save_intermediate_results:
+                batch_label = f"batch_{n_batches:02d}"
+                metadata_so_far = self._build_metadata(
+                    n_particles=n_particles,
+                    n_events_so_far=n_next,
+                    n_batches_so_far=n_batches,
+                    batch_boundaries_so_far=batch_boundaries,
+                    alpha=alpha,
+                    logZ_so_far=logZ_cumulative,
+                    per_event_ess_trace_so_far=per_event_ess_trace,
+                    per_event_logZ_increment_trace_so_far=per_event_logZ_increment_trace,
+                    cumulative_logZ_history_so_far=cumulative_logZ_history,
+                    elapsed_seconds=time.time() - start_time,
+                )
+                self._save_intermediate_result(
+                    particles_flat=particles_flat,
+                    n_particles=n_particles,
+                    batch_key=batch_label,
+                    event_names_so_far=self.event_names[:n_next],
+                    batch_result=batch_result,
+                    metadata_so_far=metadata_so_far,
+                    elapsed_seconds=time.time() - start_time,
+                )
+
             n = n_next
 
         # 2. Final rejuvenation pass: fixed-target MCMC on the
@@ -693,20 +912,18 @@ class BlackJAXIBISSampler(BlackjaxSampler):
         self._particles_flat = particles_flat
         self._weights = jnp.ones(n_particles) / n_particles
         self.final_state = last_batch_result
-        self.metadata = {
-            "sampler": "blackjax_smc_ibis",
-            "n_particles": n_particles,
-            "n_events": n_total_events,
-            "n_batches": n_batches,
-            "batch_boundaries": batch_boundaries,
-            "ess_threshold": alpha,
-            "logZ": float(logZ_cumulative),
-            "logZ_err": 0.0,
-            "cheap_reweight_ess_history": per_event_ess_trace,
-            "cheap_reweight_logZ_increment_history": per_event_logZ_increment_trace,
-            "cumulative_logZ_history": cumulative_logZ_history,
-            "sampling_time_seconds": time.time() - start_time,
-        }
+        self.metadata = self._build_metadata(
+            n_particles=n_particles,
+            n_events_so_far=n_total_events,
+            n_batches_so_far=n_batches,
+            batch_boundaries_so_far=batch_boundaries,
+            alpha=alpha,
+            logZ_so_far=logZ_cumulative,
+            per_event_ess_trace_so_far=per_event_ess_trace,
+            per_event_logZ_increment_trace_so_far=per_event_logZ_increment_trace,
+            cumulative_logZ_history_so_far=cumulative_logZ_history,
+            elapsed_seconds=time.time() - start_time,
+        )
 
     def plot_diagnostics(
         self, outdir: str | Path = ".", filename: str = "ibis_diagnostics.png"
