@@ -601,6 +601,206 @@ class StackedGWLikelihood(LikelihoodBase):
         log_det_jacobian = -jnp.sum(jnp.log(scale))
         return log_p + log_det_jacobian
 
+    def _event_loglik_from_carry(
+        self,
+        carry: tuple,
+        masses_EOS: Float[Array, " n_points"],
+        Lambdas_EOS: Float[Array, " n_points"],
+        mtov: Float,
+    ) -> Float:
+        """Log likelihood of ONE event given its already-selected
+        ``(dynamic_leaf, loc, scale, mass_samples)`` carry.
+
+        Factored out so ``evaluate_per_event`` (maps this over every stacked
+        event via ``jax.lax.map``) and ``evaluate_single_event`` (calls this
+        once, on a single dynamically-indexed carry) share one implementation
+        instead of duplicating the mass-sample loop.
+        """
+        dynamic_leaf, loc, scale, mass_samples = carry
+        n_masses_evaluation = self.N_masses_evaluation
+
+        def process_sample(sample: Float[Array, " 2"]) -> Float:
+            m1, m2 = sample[0], sample[1]
+            lambda_1 = jnp.interp(m1, masses_EOS, Lambdas_EOS, right=1.0)
+            lambda_2 = jnp.interp(m2, masses_EOS, Lambdas_EOS, right=1.0)
+            ml_sample = jnp.array([m1, m2, lambda_1, lambda_2])
+            logpdf = self._log_prob_one_event(dynamic_leaf, loc, scale, ml_sample)
+            penalty_m1 = jnp.where(m1 > mtov, self.penalty_value, 0.0)
+            penalty_m2 = jnp.where(m2 > mtov, self.penalty_value, 0.0)
+            return logpdf + penalty_m1 + penalty_m2
+
+        # For float32, disable_x64() must wrap the ENTIRE per-event mass-sample
+        # map, not just the innermost flow.log_prob call. Wrapping only the
+        # innermost call breaks once this is embedded under the sampler's own
+        # outer vmap over particles (which every SMC production run has).
+        if self.use_float32:
+            with disable_x64():
+                all_logprobs = jax.lax.map(
+                    process_sample,
+                    mass_samples,
+                    batch_size=self.N_masses_batch_size,
+                )
+        else:
+            all_logprobs = jax.lax.map(
+                process_sample, mass_samples, batch_size=self.N_masses_batch_size
+            )
+        return logsumexp(all_logprobs) - jnp.log(n_masses_evaluation)
+
+    def evaluate_per_event(
+        self, params: dict[str, Float | Array]
+    ) -> Float[Array, " n_events"]:
+        """
+        Evaluate the log likelihood of each event separately, without summing.
+
+        Used by ``BlackJAXIBISSampler`` (``samplers/blackjax/smc/ibis.py``)
+        to build the per-batch absorbed/new-event likelihood sums (via
+        ``subset()``, see that method) -- ``evaluate()`` only exposes their
+        sum. For genuinely one-event-at-a-time work (IBIS's cheap-reweight
+        walk), prefer ``evaluate_single_event()``, which evaluates exactly
+        one event at flat, catalog-size-independent cost instead of mapping
+        over (and discarding) every other stacked event.
+
+        Parameters
+        ----------
+        params : dict[str, Float | Array]
+            Must contain:
+            - 'masses_EOS': Array of neutron star masses from EOS
+            - 'Lambdas_EOS': Array of tidal deformabilities from EOS
+
+        Returns
+        -------
+        Float[Array, "n_events"]
+            Log likelihood of each event, in ``self.event_names`` order.
+        """
+        masses_EOS: Float[Array, " n_points"] = params["masses_EOS"]
+        Lambdas_EOS: Float[Array, " n_points"] = params["Lambdas_EOS"]
+        mtov: Float = jnp.max(masses_EOS)
+
+        per_event_loglike = jax.lax.map(
+            lambda carry: self._event_loglik_from_carry(
+                carry, masses_EOS, Lambdas_EOS, mtov
+            ),
+            (self._stacked_dynamic, self._loc, self._scale, self._fixed_mass_samples),
+            batch_size=self.event_batch_size,
+        )
+        return per_event_loglike
+
+    def evaluate_single_event(
+        self, params: dict[str, Float | Array], event_index: int | Array
+    ) -> Float:
+        """
+        Evaluate exactly one event's log likelihood, selected by index.
+
+        Unlike ``evaluate_per_event`` (which always maps over every stacked
+        event) this dynamically indexes ``event_index`` out of the stacked
+        pytree *inside* the traced computation, via plain JAX array indexing
+        (``x[event_index]``) rather than a static Python slice. Because
+        ``event_index`` is an ordinary (traced) argument rather than baked
+        into the function at trace time, a ``jax.jit``-wrapped call to this
+        method compiles ONCE and can then be called with any
+        ``event_index`` -- early in the catalog or late, in any order --
+        without retracing/recompiling. Cost is flat, O(1 event), independent
+        of both ``event_index`` and the total number of stacked events.
+
+        This is what makes ``BlackJAXIBISSampler``'s cheap-reweight walk
+        (``ibis.py``) cheap in practice: it checks one event's ESS impact at
+        a time, and with this method that per-event check never pays for
+        the catalog's other (already-checked or not-yet-reached) events.
+
+        Parameters
+        ----------
+        params : dict[str, Float | Array]
+            Must contain 'masses_EOS' and 'Lambdas_EOS' (see
+            ``evaluate_per_event``).
+        event_index : int or Array
+            Index into ``self.event_names`` (and the stacked event axis) of
+            the single event to evaluate. May be a traced scalar array.
+
+        Returns
+        -------
+        Float
+            Log likelihood of that one event for the given EOS parameters.
+        """
+        masses_EOS: Float[Array, " n_points"] = params["masses_EOS"]
+        Lambdas_EOS: Float[Array, " n_points"] = params["Lambdas_EOS"]
+        mtov: Float = jnp.max(masses_EOS)
+
+        carry = (
+            jax.tree_util.tree_map(lambda x: x[event_index], self._stacked_dynamic),
+            self._loc[event_index],
+            self._scale[event_index],
+            self._fixed_mass_samples[event_index],
+        )
+        return self._event_loglik_from_carry(carry, masses_EOS, Lambdas_EOS, mtov)
+
+    def subset(self, event_names: list[str]) -> "StackedGWLikelihood":
+        """
+        Return a new ``StackedGWLikelihood`` covering only ``event_names``.
+
+        A cheap array-gather from the already-loaded, already-stacked
+        per-event pytree (``_stacked_dynamic``/``_loc``/``_scale``/
+        ``_fixed_mass_samples``) -- no flow is reloaded from disk or
+        retrained. ``event_names`` may reorder and/or be a strict subset of
+        ``self.event_names``; duplicates are allowed (each occurrence
+        selects that event again).
+
+        Used by ``BlackJAXIBISSampler`` (``ibis.py``) to build, once per IBIS
+        batch, a likelihood scoped to exactly the events that batch's
+        tempering actually needs (the already-absorbed prefix, and the new
+        batch's own span) -- so a batch touching a handful of events pays for
+        a handful of events, not the full configured catalog.
+
+        Parameters
+        ----------
+        event_names : list[str]
+            Names of the events to keep, in the order they should appear in
+            the returned likelihood's ``event_names``/stacked arrays. Must
+            be non-empty and every name must be present in
+            ``self.event_names``.
+
+        Returns
+        -------
+        StackedGWLikelihood
+            A new instance whose stacked arrays have leading (event) axis
+            length ``len(event_names)``.
+
+        Raises
+        ------
+        ValueError
+            If ``event_names`` is empty, or contains a name not present in
+            ``self.event_names``.
+        """
+        if len(event_names) == 0:
+            raise ValueError("subset() requires at least one event name")
+        name_to_idx = {name: i for i, name in enumerate(self.event_names)}
+        unknown = [name for name in event_names if name not in name_to_idx]
+        if unknown:
+            raise ValueError(
+                f"subset(): unknown event name(s), not present in this "
+                f"likelihood's event_names: {unknown}"
+            )
+        indices = jnp.array([name_to_idx[name] for name in event_names])
+
+        new = object.__new__(StackedGWLikelihood)
+        new.event_names = list(event_names)
+        new.penalty_value = self.penalty_value
+        new.N_masses_evaluation = self.N_masses_evaluation
+        new.N_masses_batch_size = self.N_masses_batch_size
+        # Cap at the (possibly much smaller) subset size, mirroring how
+        # __init__ derives the default from len(event_names).
+        new.event_batch_size = min(self.event_batch_size, len(event_names))
+        new.seed = self.seed
+        new.standardization_method = self.standardization_method
+        new.use_float32 = self.use_float32
+        new._static = self._static
+        new._stacked_dynamic = jax.tree_util.tree_map(
+            lambda x: x[indices], self._stacked_dynamic
+        )
+        new._loc = self._loc[indices]
+        new._scale = self._scale[indices]
+        new._fixed_mass_samples = self._fixed_mass_samples[indices]
+        return new
+
     def evaluate(self, params: dict[str, Float | Array]) -> Float:
         """
         Evaluate summed log likelihood over all events for given EOS parameters.
@@ -618,44 +818,4 @@ class StackedGWLikelihood(LikelihoodBase):
             Sum of log likelihoods over all events (matches summing individual
             GWLikelihood.evaluate() calls through CombinedLikelihood).
         """
-        masses_EOS: Float[Array, " n_points"] = params["masses_EOS"]
-        Lambdas_EOS: Float[Array, " n_points"] = params["Lambdas_EOS"]
-        mtov: Float = jnp.max(masses_EOS)
-        n_masses_evaluation = self.N_masses_evaluation
-
-        def process_one_event(carry) -> Float:
-            dynamic_leaf, loc, scale, mass_samples = carry
-
-            def process_sample(sample: Float[Array, " 2"]) -> Float:
-                m1, m2 = sample[0], sample[1]
-                lambda_1 = jnp.interp(m1, masses_EOS, Lambdas_EOS, right=1.0)
-                lambda_2 = jnp.interp(m2, masses_EOS, Lambdas_EOS, right=1.0)
-                ml_sample = jnp.array([m1, m2, lambda_1, lambda_2])
-                logpdf = self._log_prob_one_event(dynamic_leaf, loc, scale, ml_sample)
-                penalty_m1 = jnp.where(m1 > mtov, self.penalty_value, 0.0)
-                penalty_m2 = jnp.where(m2 > mtov, self.penalty_value, 0.0)
-                return logpdf + penalty_m1 + penalty_m2
-
-            # For float32, disable_x64() must wrap the ENTIRE per-event mass-sample
-            # map, not just the innermost flow.log_prob call. Wrapping only the
-            # innermost call breaks once this is embedded under the sampler's own
-            # outer vmap over particles (which every SMC production run has).
-            if self.use_float32:
-                with disable_x64():
-                    all_logprobs = jax.lax.map(
-                        process_sample,
-                        mass_samples,
-                        batch_size=self.N_masses_batch_size,
-                    )
-            else:
-                all_logprobs = jax.lax.map(
-                    process_sample, mass_samples, batch_size=self.N_masses_batch_size
-                )
-            return logsumexp(all_logprobs) - jnp.log(n_masses_evaluation)
-
-        per_event_loglike = jax.lax.map(
-            process_one_event,
-            (self._stacked_dynamic, self._loc, self._scale, self._fixed_mass_samples),
-            batch_size=self.event_batch_size,
-        )
-        return jnp.sum(per_event_loglike)
+        return jnp.sum(self.evaluate_per_event(params))

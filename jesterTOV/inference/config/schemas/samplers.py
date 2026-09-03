@@ -284,6 +284,62 @@ class SMCNUTSSamplerConfig(BaseSamplerConfig):
         return v
 
 
+class SMCPartialPosteriorsSamplerConfig(BaseSamplerConfig):
+    """Configuration for the IBIS-hybridized-with-likelihood-tempering sampler
+    ("partial posteriors" / smc-pp), which assimilates GW events one at a time.
+
+    See ``samplers/blackjax/smc/ibis.py``'s module docstring for the full
+    algorithm. The user-facing "partial posteriors" naming here is
+    deliberately distinct from the internal "IBIS" class/module naming --
+    see that module's docstring for why.
+
+    Attributes
+    ----------
+    type : Literal["smc-pp"]
+        Sampler type identifier
+    ess_threshold : float
+        Alpha in "if ESS >= alpha * N, keep cheaply reweighting; else run a
+        full SMC batch" (default: 0.5). Distinct from ``inner.target_ess``,
+        which governs the *within-batch* adaptive-lambda annealing schedule
+        -- do not conflate the two knobs.
+    inner : SMCRandomWalkSamplerConfig
+        Full SMC-RW configuration for the batch-annealing fallback (RW
+        kernel only for now). ``inner.n_particles`` is authoritative for the
+        total particle count -- there is no separate top-level n_particles
+        field.
+    n_final_rejuvenation_steps : int
+        Number of fixed-target MCMC steps run on the terminal particles
+        after the last SMC batch's resample-to-uniform-weights step, to
+        de-duplicate the exact-duplicate particles that resampling produces
+        (see ``samplers/blackjax/smc/rejuvenation.py``). Default: 10.
+    particle_batch_size : int
+        Batch size for ``jax.lax.map`` when computing the per-particle,
+        per-event log-likelihood matrix used for cheap ESS-threshold
+        reweighting (default: 1000). Distinct from ``log_prob_batch_size``
+        (used only for the post-hoc ``get_log_prob()``/EOS-sample pass); the
+        two are often set equal in practice but govern different, separately
+        tunable computations.
+    save_intermediate_results : bool
+        When ``True`` (default), save a full ``InferenceResult`` HDF5
+        (posterior samples, derived EOS quantities via the TOV solver, and
+        metadata) after every data-tempering batch, to
+        ``outdir/substep_results/results_batch_<NN>.h5``, where ``<NN>`` is
+        the sequential (1-indexed) batch counter also used for logging
+        (``batch_01``, ``batch_02``, ...). Lets users inspect how the
+        posterior evolves batch-by-batch (e.g. which events are most
+        informative).
+    """
+
+    type: Literal["smc-pp"] = "smc-pp"
+    ess_threshold: float = Field(default=0.5, gt=0.0, le=1.0)
+    inner: SMCRandomWalkSamplerConfig = Field(
+        default_factory=SMCRandomWalkSamplerConfig
+    )
+    n_final_rejuvenation_steps: int = Field(default=10, ge=0)
+    particle_batch_size: int = Field(default=1000, gt=0)
+    save_intermediate_results: bool = True
+
+
 class EOSReweightingConfig(BaseSamplerConfig):
     r"""Configuration for EOS reweighting sampler.
 
@@ -362,6 +418,7 @@ SamplerConfig = Annotated[
         BlackJAXNSAWConfig,
         SMCRandomWalkSamplerConfig,
         SMCNUTSSamplerConfig,
+        SMCPartialPosteriorsSamplerConfig,
         EOSReweightingConfig,
     ],
     Discriminator("type"),

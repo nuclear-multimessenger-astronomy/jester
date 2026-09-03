@@ -501,15 +501,16 @@ def run_sampling(
         f"Sampling complete! Runtime: {int(runtime / 60)} min {int(runtime % 60)} sec"
     )
 
-    # Generate diagnostic plots for SMC samplers
-    from .samplers.blackjax.smc.base import BlackjaxSMCSampler
-
-    # TODO: plot_diagnostics should be in the base class, do not fail if not implemented but just pass
-    # Then, samplers can implement their own diagnostics as needed (e.g., FlowMC could have training diagnostics, acceptance rates, etc.) -- for now we only have this for SMC, but that is fine
-
-    if isinstance(sampler, BlackjaxSMCSampler):
-        logger.info("Generating SMC diagnostic plots...")
-        sampler.plot_diagnostics(outdir=outdir, filename="smc_diagnostics.png")
+    # Generate sampler-specific diagnostic plots. plot_diagnostics() is a
+    # no-op on JesterSampler by default; each backend that has meaningful
+    # diagnostics (SMC-RW/NUTS, IBIS, ...) overrides it and picks its own
+    # filename internally.
+    logger.info("Generating diagnostic plots...")
+    try:
+        sampler.plot_diagnostics(outdir=outdir)
+    except Exception as e:
+        logger.error(f"Failed to create diagnostic plot(s): {e}")
+        logger.warning("Continuing without diagnostic plots...")
 
     # Create InferenceResult from sampler output
     logger.info("Creating InferenceResult from sampler output...")
@@ -854,7 +855,9 @@ def main(config_path: str) -> None:
             exclude={"enabled"}
         )  # Exclude enabled since we already filtered
         logger.info(f"  - {lk.type.upper()}:")
-        logger.info(f"    {json.dumps(lk_dict, indent=6)}")
+        # Full config dump (e.g. every GW event's nf_model_dir) is verbose --
+        # keep it debug-only so it doesn't flood the default INFO-level log.
+        logger.debug(f"    {json.dumps(lk_dict, indent=6)}")
 
     logger.info(f"Setting up {config.sampler.type} sampler...")
     sampler = create_sampler(
@@ -864,6 +867,16 @@ def main(config_path: str) -> None:
         likelihood_transforms=[transform],
         seed=config.seed,
     )
+
+    # Wire up context needed for per-batch intermediate result saving
+    # (config.sampler.save_intermediate_results) -- IBIS doesn't otherwise
+    # have access to the full InferenceConfig or outdir.
+    from .samplers.blackjax.smc.ibis import BlackJAXIBISSampler
+
+    if isinstance(sampler, BlackJAXIBISSampler):
+        sampler.configure_intermediate_saving(
+            full_config=config, outdir=Path(outdir), fixed_params=fixed_params
+        )
 
     # Log detailed sampler configuration
     logger.info("=" * 60)

@@ -7,6 +7,11 @@ in a way that can be shared across different BlackJAX sampling algorithms (SMC, 
 from typing import Any, Callable
 
 import jax
+import jax.numpy as jnp
+from jax import flatten_util
+from jax.tree_util import tree_map
+from jaxtyping import Array
+
 from jesterTOV.inference.base import (
     LikelihoodBase,
     Prior,
@@ -53,6 +58,9 @@ class BlackjaxSampler(JesterSampler):
     - get_sampler_output(): Return standardized SamplerOutput
     """
 
+    _unflatten_fn: Any  # Callable[[Array], dict]
+    _flatten_fn: Any  # Callable[[dict], Array]
+
     def __init__(
         self,
         likelihood: LikelihoodBase,
@@ -62,6 +70,60 @@ class BlackjaxSampler(JesterSampler):
     ) -> None:
         """Initialize BlackJAX sampler base class."""
         super().__init__(likelihood, prior, sample_transforms, likelihood_transforms)
+        self._unflatten_fn = None
+        self._flatten_fn = None
+
+    def _create_flatten_unflatten_utilities(
+        self, initial_position_dict: dict[str, Array]
+    ) -> None:
+        """Create flatten/unflatten functions for a flat-array API (e.g. SMC).
+
+        Parameters
+        ----------
+        initial_position_dict : dict[str, Array]
+            Dictionary of initial particle positions (each value is array of shape (n_particles,))
+        """
+        # Extract single sample to determine structure
+        single_sample_dict = tree_map(lambda x: x[0], initial_position_dict)
+
+        # Create unflatten function using ravel_pytree (alphabetical ordering)
+        _, self._unflatten_fn = flatten_util.ravel_pytree(single_sample_dict)
+
+        # Create flatten function
+        self._flatten_fn = lambda x: flatten_util.ravel_pytree(x)[0]
+
+    def _wrap_dict_fn_for_flat_arrays(
+        self, dict_fn: Callable[[dict], float]
+    ) -> Callable[[Array], float]:
+        """Wrap a dict-based function to work with flat arrays.
+
+        This is the bridge between the dict functions above and a flat array
+        API (e.g. SMC).
+
+        Parameters
+        ----------
+        dict_fn : Callable[[dict], float]
+            Function that takes parameter dict and returns float
+
+        Returns
+        -------
+        Callable[[Array], float]
+            Function that takes flat array and returns float
+
+        Examples
+        --------
+        >>> logprior_dict = self._create_logprior_fn_from_dict()
+        >>> logprior_flat = self._wrap_dict_fn_for_flat_arrays(logprior_dict)
+        >>> # Now logprior_flat can be passed to BlackJAX SMC
+        """
+
+        def flat_fn(x_flat: Array) -> float:
+            """Convert flat array to dict, evaluate function."""
+            x_flat = jnp.atleast_1d(x_flat)
+            x_dict = self._unflatten_fn(x_flat)
+            return dict_fn(x_dict)
+
+        return flat_fn
 
     def _create_logprior_fn_from_dict(self) -> Callable[[dict[str, Any]], float]:
         """Create log prior function that works with parameter dicts.
