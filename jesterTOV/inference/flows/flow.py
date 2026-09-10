@@ -63,7 +63,7 @@ from flowjax.bijections import (
 
 try:
     # jax <= 0.9: context manager for locally overriding jax_enable_x64.
-    from jax.experimental import disable_x64
+    from jax.experimental import disable_x64  # type: ignore[attr-defined]
 except ImportError:
     # jax >= 0.11: disable_x64 was removed from jax.experimental; the
     # replacement is calling jax.enable_x64 itself as a context manager

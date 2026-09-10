@@ -7,7 +7,7 @@ from jaxtyping import Array, Float
 from jax.scipy.special import logsumexp
 
 from jesterTOV.inference.base.likelihood import LikelihoodBase
-from jesterTOV.inference.flows.flow import Flow, disable_x64
+from jesterTOV.inference.flows.flow import Flow, disable_x64  # type: ignore[attr-defined]
 from jesterTOV.logging_config import get_logger
 
 logger = get_logger("jester")
