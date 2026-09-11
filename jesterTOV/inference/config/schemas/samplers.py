@@ -37,72 +37,6 @@ class BaseSamplerConfig(JesterBaseModel):
         return v
 
 
-class FlowMCSamplerConfig(BaseSamplerConfig):
-    """Configuration for FlowMC sampler (normalizing flow-enhanced MCMC).
-
-    Attributes
-    ----------
-    type : Literal["flowmc"]
-        Sampler type identifier
-    n_chains : int
-        Number of parallel chains
-    n_loop_training : int
-        Number of training loops
-    n_loop_production : int
-        Number of production loops
-    n_local_steps : int
-        Number of local MCMC steps per loop
-    n_global_steps : int
-        Number of global steps per loop
-    n_epochs : int
-        Number of training epochs for normalizing flow
-    learning_rate : float
-        Learning rate for flow training
-    train_thinning : int
-        Thinning factor for training samples (default: 1)
-    output_thinning : int
-        Thinning factor for output samples (default: 5)
-    output_dir : str
-        Directory to save results
-    n_eos_samples : int
-        Number of EOS samples to generate after inference (default: 10000)
-    """
-
-    type: Literal["flowmc"] = "flowmc"
-    n_chains: int = 20
-    n_loop_training: int = 3
-    n_loop_production: int = 3
-    n_local_steps: int = 100
-    n_global_steps: int = 100
-    n_epochs: int = 30
-    learning_rate: float = 0.001
-    train_thinning: int = 1
-    output_thinning: int = 5
-
-    @field_validator(
-        "n_chains",
-        "n_loop_training",
-        "n_loop_production",
-        "n_local_steps",
-        "n_global_steps",
-        "n_epochs",
-        "train_thinning",
-        "output_thinning",
-    )
-    @classmethod
-    def _validate_positive(cls, v: int) -> int:
-        if v <= 0:
-            raise ValueError(f"Value must be positive, got: {v}")
-        return v
-
-    @field_validator("learning_rate")
-    @classmethod
-    def _validate_positive_float(cls, v: float) -> float:
-        if v <= 0:
-            raise ValueError(f"Value must be positive, got: {v}")
-        return v
-
-
 class BlackJAXNSAWConfig(BaseSamplerConfig):
     """Configuration for BlackJAX Nested Sampling with Acceptance Walk.
 
@@ -225,65 +159,6 @@ class SMCRandomWalkSamplerConfig(BaseSamplerConfig):
         return v
 
 
-class SMCNUTSSamplerConfig(BaseSamplerConfig):
-    """Configuration for Sequential Monte Carlo with NUTS kernel (EXPERIMENTAL).
-
-    WARNING: This sampler is experimental and should be used with caution.
-
-    Attributes
-    ----------
-    type : Literal["smc-nuts"]
-        Sampler type identifier
-    n_particles : int
-        Number of particles (default: 10000)
-    n_mcmc_steps : int
-        Number of MCMC steps per tempering level (default: 1)
-    target_ess : float
-        Target effective sample size for adaptive tempering (default: 0.9)
-    init_step_size : float
-        Initial NUTS step size (default: 1e-2)
-    mass_matrix_base : float
-        Base value for diagonal mass matrix (default: 2e-1)
-    mass_matrix_param_scales : dict[str, float]
-        Per-parameter scaling for mass matrix (default: {})
-    target_acceptance : float
-        Target acceptance rate (default: 0.7)
-    adaptation_rate : float
-        Adaptation rate for step size tuning (default: 0.3)
-    """
-
-    type: Literal["smc-nuts"] = "smc-nuts"
-    n_particles: int = 10000
-    n_mcmc_steps: int = 1
-    target_ess: float = 0.9
-    init_step_size: float = 1e-2
-    mass_matrix_base: float = 2e-1
-    mass_matrix_param_scales: dict[str, float] = Field(default_factory=dict)
-    target_acceptance: float = 0.7
-    adaptation_rate: float = 0.3
-
-    @field_validator("n_particles", "n_mcmc_steps")
-    @classmethod
-    def _validate_positive(cls, v: int) -> int:
-        if v <= 0:
-            raise ValueError(f"Value must be positive, got: {v}")
-        return v
-
-    @field_validator("target_ess", "target_acceptance", "adaptation_rate")
-    @classmethod
-    def _validate_fraction(cls, v: float) -> float:
-        if v <= 0 or v > 1:
-            raise ValueError(f"Value must be in (0, 1], got: {v}")
-        return v
-
-    @field_validator("init_step_size", "mass_matrix_base")
-    @classmethod
-    def _validate_positive_float(cls, v: float) -> float:
-        if v <= 0:
-            raise ValueError(f"Value must be positive, got: {v}")
-        return v
-
-
 class EOSReweightingConfig(BaseSamplerConfig):
     r"""Configuration for EOS reweighting sampler.
 
@@ -358,10 +233,8 @@ class EOSReweightingConfig(BaseSamplerConfig):
 # Discriminated union for sampler configurations
 SamplerConfig = Annotated[
     Union[
-        FlowMCSamplerConfig,
         BlackJAXNSAWConfig,
         SMCRandomWalkSamplerConfig,
-        SMCNUTSSamplerConfig,
         EOSReweightingConfig,
     ],
     Discriminator("type"),

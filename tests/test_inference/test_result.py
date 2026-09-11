@@ -19,27 +19,27 @@ class TestInferenceResultBasic:
             "log_prob": np.array([-10.0, -11.0, -12.0]),
         }
         metadata = {
-            "sampler": "flowmc",
+            "sampler": "blackjax_smc_rw",
             "sampling_time": 3600.0,
             "n_samples": 3,
             "seed": 42,
         }
         histories = {
-            "local_accs": np.array([0.3, 0.4, 0.5]),
+            "acceptance_history": np.array([0.3, 0.4, 0.5]),
         }
 
         result = InferenceResult(
-            sampler_type="flowmc",
+            sampler_type="blackjax_smc_rw",
             posterior=posterior,
             metadata=metadata,
             histories=histories,
         )
 
-        assert result.sampler_type == "flowmc"
+        assert result.sampler_type == "blackjax_smc_rw"
         assert "K_sat" in result.posterior
         assert result.metadata["n_samples"] == 3
         assert result.histories is not None
-        assert "local_accs" in result.histories
+        assert "acceptance_history" in result.histories
 
     def test_initialization_without_histories(self):
         """Test InferenceResult works without histories."""
@@ -58,59 +58,6 @@ class TestInferenceResultBasic:
 
 class TestInferenceResultSaveLoad:
     """Test save/load functionality for all sampler types."""
-
-    def test_save_load_flowmc_basic(self, temp_dir):
-        """Test save/load roundtrip for FlowMC results."""
-        # Create FlowMC-like result
-        posterior = {
-            "K_sat": np.array([220.0, 230.0, 240.0]),
-            "L_sym": np.array([90.0, 95.0, 100.0]),
-            "Q_sat": np.array([100.0, 150.0, 200.0]),
-            "log_prob": np.array([-10.0, -11.0, -12.0]),
-        }
-        metadata = {
-            "sampler": "flowmc",
-            "sampling_time": 3600.5,
-            "n_samples": 3,
-            "seed": 42,
-            "creation_timestamp": datetime.now().isoformat(),
-            "config_json": '{"seed": 42, "transform": {"type": "metamodel"}}',
-            "n_chains": 10,
-            "n_loop_training": 5,
-            "n_loop_production": 5,
-        }
-        histories = {
-            "local_accs": np.array([0.3, 0.4, 0.5, 0.6]),
-            "global_accs": np.array([0.7, 0.75, 0.8, 0.85]),
-            "loss_vals": np.array([1.5, 1.2, 1.0, 0.9]),
-        }
-
-        # Create and save
-        result = InferenceResult(
-            sampler_type="flowmc",
-            posterior=posterior,
-            metadata=metadata,
-            histories=histories,
-        )
-
-        filepath = temp_dir / "test_flowmc.h5"
-        result.save(filepath)
-
-        # Load and verify
-        loaded = InferenceResult.load(filepath)
-
-        assert loaded.sampler_type == "flowmc"
-        assert loaded.metadata["n_samples"] == 3
-        assert loaded.metadata["n_chains"] == 10
-        np.testing.assert_array_equal(loaded.posterior["K_sat"], posterior["K_sat"])
-        np.testing.assert_array_equal(loaded.posterior["L_sym"], posterior["L_sym"])
-        np.testing.assert_array_equal(
-            loaded.posterior["log_prob"], posterior["log_prob"]
-        )
-        assert loaded.histories is not None
-        np.testing.assert_array_equal(
-            loaded.histories["local_accs"], histories["local_accs"]
-        )
 
     def test_save_load_smc_basic(self, temp_dir):
         """Test save/load roundtrip for BlackJAX SMC results."""
@@ -131,7 +78,7 @@ class TestInferenceResultSaveLoad:
             "seed": 123,
             "creation_timestamp": datetime.now().isoformat(),
             "config_json": '{"seed": 123}',
-            "kernel_type": "nuts",
+            "kernel_type": "rw",
             "n_particles": 100,
             "n_mcmc_steps": 10,
             "target_ess": 0.9,
@@ -165,7 +112,7 @@ class TestInferenceResultSaveLoad:
         loaded = InferenceResult.load(filepath)
 
         assert loaded.sampler_type == "blackjax_smc_rw"
-        assert loaded.metadata["kernel_type"] == "nuts"
+        assert loaded.metadata["kernel_type"] == "rw"
         assert loaded.metadata["n_particles"] == 100
         assert loaded.metadata["logZ"] == pytest.approx(-1234.5)
         np.testing.assert_array_equal(loaded.posterior["K_sat"], posterior["K_sat"])
@@ -267,7 +214,7 @@ class TestInferenceResultSaveLoad:
             "cs2": np.random.rand(2, 50),
         }
         metadata = {
-            "sampler": "flowmc",
+            "sampler": "blackjax_smc_rw",
             "sampling_time": 100.0,
             "n_samples": 2,
             "seed": 1,
@@ -275,7 +222,7 @@ class TestInferenceResultSaveLoad:
         }
 
         result = InferenceResult(
-            sampler_type="flowmc",
+            sampler_type="blackjax_smc_rw",
             posterior=posterior,
             metadata=metadata,
         )
@@ -307,10 +254,10 @@ class TestInferenceResultAddDerivedEOS:
             "K_sat": np.array([220.0, 230.0]),
             "log_prob": np.array([-10.0, -11.0]),
         }
-        metadata = {"sampler": "flowmc"}
+        metadata = {"sampler": "blackjax_smc_rw"}
 
         result = InferenceResult(
-            sampler_type="flowmc",
+            sampler_type="blackjax_smc_rw",
             posterior=posterior,
             metadata=metadata,
         )
@@ -341,18 +288,18 @@ class TestInferenceResultConfigProperty:
         config_data = {
             "seed": 42,
             "transform": {"type": "metamodel", "nb_CSE": 0},
-            "sampler": {"type": "flowmc", "n_chains": 10},
+            "sampler": {"type": "smc-rw", "n_particles": 100},
         }
         config_json = json.dumps(config_data)
 
         metadata = {
-            "sampler": "flowmc",
+            "sampler": "blackjax_smc_rw",
             "config_json": config_json,
         }
         posterior = {"K_sat": np.array([220.0])}
 
         result = InferenceResult(
-            sampler_type="flowmc",
+            sampler_type="blackjax_smc_rw",
             posterior=posterior,
             metadata=metadata,
         )
@@ -361,15 +308,15 @@ class TestInferenceResultConfigProperty:
         config_dict = result.config_dict
         assert config_dict["seed"] == 42
         assert config_dict["transform"]["type"] == "metamodel"
-        assert config_dict["sampler"]["n_chains"] == 10
+        assert config_dict["sampler"]["n_particles"] == 100
 
     def test_config_dict_empty_if_missing(self):
         """Test config_dict returns empty dict if config_json missing."""
-        metadata = {"sampler": "flowmc"}
+        metadata = {"sampler": "blackjax_smc_rw"}
         posterior = {"K_sat": np.array([220.0])}
 
         result = InferenceResult(
-            sampler_type="flowmc",
+            sampler_type="blackjax_smc_rw",
             posterior=posterior,
             metadata=metadata,
         )
@@ -380,34 +327,6 @@ class TestInferenceResultConfigProperty:
 class TestInferenceResultSummary:
     """Test summary method."""
 
-    def test_summary_flowmc(self):
-        """Test summary for FlowMC results."""
-        posterior = {"K_sat": np.array([220.0])}
-        metadata = {
-            "sampler": "flowmc",
-            "sampling_time": 3600.5,
-            "n_samples": 1000,
-            "seed": 42,
-            "creation_timestamp": "2024-12-28T10:00:00",
-            "n_chains": 10,
-            "n_loop_training": 5,
-            "n_loop_production": 5,
-        }
-
-        result = InferenceResult(
-            sampler_type="flowmc",
-            posterior=posterior,
-            metadata=metadata,
-        )
-
-        summary = result.summary()
-
-        assert "FlowMC" in summary
-        assert "Chains: 10" in summary
-        assert "Training loops: 5" in summary
-        assert "3600.5 seconds" in summary
-        assert "seed: 42" in summary.lower()
-
     def test_summary_smc(self):
         """Test summary for SMC results."""
         posterior = {"K_sat": np.array([220.0])}
@@ -416,7 +335,7 @@ class TestInferenceResultSummary:
             "sampling_time": 1800.0,
             "n_samples": 500,
             "seed": 123,
-            "kernel_type": "nuts",
+            "kernel_type": "rw",
             "n_particles": 100,
             "annealing_steps": 50,
             "final_ess_percent": 85.5,
@@ -433,7 +352,7 @@ class TestInferenceResultSummary:
         summary = result.summary()
 
         assert "BlackJAX SMC" in summary
-        assert "Kernel type: nuts" in summary
+        assert "Kernel type: rw" in summary
         assert "Particles: 100" in summary
         assert "Final ESS: 85.5%" in summary
         assert "Mean acceptance: 0.650" in summary
@@ -472,10 +391,10 @@ class TestInferenceResultSummary:
             "K_sat": np.array([220.0]),
             "masses_EOS": np.array([[1.4, 1.6]]),
         }
-        metadata = {"sampler": "flowmc", "n_samples": 1}
+        metadata = {"sampler": "blackjax_ns_aw", "n_samples": 1}
 
         result = InferenceResult(
-            sampler_type="flowmc",
+            sampler_type="blackjax_ns_aw",
             posterior=posterior,
             metadata=metadata,
         )
@@ -490,10 +409,10 @@ class TestInferenceResultEdgeCases:
     def test_save_creates_directory(self, temp_dir):
         """Test that save creates parent directories if needed."""
         posterior = {"K_sat": np.array([220.0])}
-        metadata = {"sampler": "flowmc"}
+        metadata = {"sampler": "blackjax_smc_rw"}
 
         result = InferenceResult(
-            sampler_type="flowmc",
+            sampler_type="blackjax_smc_rw",
             posterior=posterior,
             metadata=metadata,
         )
@@ -514,11 +433,11 @@ class TestInferenceResultEdgeCases:
     def test_save_load_empty_histories(self, temp_dir):
         """Test save/load with empty histories dict."""
         posterior = {"K_sat": np.array([220.0])}
-        metadata = {"sampler": "flowmc"}
+        metadata = {"sampler": "blackjax_smc_rw"}
         histories = {}  # Empty dict
 
         result = InferenceResult(
-            sampler_type="flowmc",
+            sampler_type="blackjax_smc_rw",
             posterior=posterior,
             metadata=metadata,
             histories=histories,
@@ -535,10 +454,10 @@ class TestInferenceResultEdgeCases:
     def test_save_load_with_pathlib_path(self, temp_dir):
         """Test that save/load work with pathlib.Path objects."""
         posterior = {"K_sat": np.array([220.0])}
-        metadata = {"sampler": "flowmc"}
+        metadata = {"sampler": "blackjax_smc_rw"}
 
         result = InferenceResult(
-            sampler_type="flowmc",
+            sampler_type="blackjax_smc_rw",
             posterior=posterior,
             metadata=metadata,
         )
@@ -547,15 +466,15 @@ class TestInferenceResultEdgeCases:
         result.save(filepath)
 
         loaded = InferenceResult.load(filepath)
-        assert loaded.sampler_type == "flowmc"
+        assert loaded.sampler_type == "blackjax_smc_rw"
 
     def test_save_load_with_string_path(self, temp_dir):
         """Test that save/load work with string paths."""
         posterior = {"K_sat": np.array([220.0])}
-        metadata = {"sampler": "flowmc"}
+        metadata = {"sampler": "blackjax_smc_rw"}
 
         result = InferenceResult(
-            sampler_type="flowmc",
+            sampler_type="blackjax_smc_rw",
             posterior=posterior,
             metadata=metadata,
         )
@@ -564,7 +483,7 @@ class TestInferenceResultEdgeCases:
         result.save(filepath)
 
         loaded = InferenceResult.load(filepath)
-        assert loaded.sampler_type == "flowmc"
+        assert loaded.sampler_type == "blackjax_smc_rw"
 
     def test_scalar_vs_array_sampler_specific(self, temp_dir):
         """Test handling of scalar vs array datasets in sampler_specific."""
@@ -599,12 +518,12 @@ class TestInferenceResultEdgeCases:
         """Test that result works without timestamps in metadata."""
         posterior = {"K_sat": np.array([220.0])}
         metadata = {
-            "sampler": "flowmc",
+            "sampler": "blackjax_ns_aw",
             "n_samples": 1,
         }
 
         result = InferenceResult(
-            sampler_type="flowmc",
+            sampler_type="blackjax_ns_aw",
             posterior=posterior,
             metadata=metadata,
         )

@@ -36,17 +36,6 @@ LIGHTWEIGHT_TOV = {
     "nb_masses": 20,  # 100 -> 20
 }
 
-# FlowMC lightweight params
-FLOWMC_LIGHTWEIGHT = {
-    "n_chains": 50,  # 1000 -> 50
-    "n_loop_training": 3,  # 30 -> 3
-    "n_loop_production": 3,  # 20 -> 3
-    "n_local_steps": 10,  # 100 -> 10
-    "n_global_steps": 10,  # 100 -> 10
-    "n_epochs": 5,  # 30 -> 5
-    "learning_rate": 0.001,
-}
-
 # SMC-RW lightweight params
 SMC_RW_LIGHTWEIGHT = {
     "n_particles": 100,  # 2000 -> 100
@@ -258,20 +247,6 @@ def build_spectral_prior_only_config(
 
 
 @pytest.fixture
-def flowmc_prior_config(minimal_prior_file: Path, e2e_temp_dir: Path) -> dict[str, Any]:
-    """FlowMC config with prior-only likelihood."""
-    sampler_config = {"type": "flowmc", **FLOWMC_LIGHTWEIGHT}
-    return build_prior_only_config(sampler_config, minimal_prior_file, e2e_temp_dir)
-
-
-@pytest.fixture
-def flowmc_chieft_config(chieft_prior_file: Path, e2e_temp_dir: Path) -> dict[str, Any]:
-    """FlowMC config with chiEFT likelihood."""
-    sampler_config = {"type": "flowmc", **FLOWMC_LIGHTWEIGHT}
-    return build_chieft_config(sampler_config, chieft_prior_file, e2e_temp_dir)
-
-
-@pytest.fixture
 def smc_rw_prior_config(minimal_prior_file: Path, e2e_temp_dir: Path) -> dict[str, Any]:
     """SMC-RW config with prior-only likelihood."""
     sampler_config = {"type": "smc-rw", **SMC_RW_LIGHTWEIGHT}
@@ -321,17 +296,6 @@ def smc_rw_spectral_config(
 ) -> dict[str, Any]:
     """SMC-RW config with spectral EOS and prior-only likelihood."""
     sampler_config = {"type": "smc-rw", **SMC_RW_LIGHTWEIGHT}
-    return build_spectral_prior_only_config(
-        sampler_config, spectral_prior_file, e2e_temp_dir
-    )
-
-
-@pytest.fixture
-def flowmc_spectral_config(
-    spectral_prior_file: Path, e2e_temp_dir: Path
-) -> dict[str, Any]:
-    """FlowMC config with spectral EOS and prior-only likelihood."""
-    sampler_config = {"type": "flowmc", **FLOWMC_LIGHTWEIGHT}
     return build_spectral_prior_only_config(
         sampler_config, spectral_prior_file, e2e_temp_dir
     )

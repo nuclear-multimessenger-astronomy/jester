@@ -128,14 +128,9 @@ Z_sym = UniformPrior(-2000.0, 1500.0, parameter_names=["Z_sym"])
                 }
             ],
             "sampler": {
-                "type": "flowmc",
-                "n_chains": 2,
-                "n_loop_training": 1,
-                "n_loop_production": 1,
-                "n_local_steps": 5,
-                "n_global_steps": 5,
-                "n_epochs": 5,
-                "learning_rate": 0.001,
+                "type": "smc-rw",
+                "n_particles": 20,
+                "n_mcmc_steps": 2,
                 "output_dir": str(temp_dir / "output"),
             },
             "data_paths": {},
@@ -467,13 +462,13 @@ class TestEOSSampleGeneration:
             "log_prob": np.random.uniform(-100, -10, n_full_samples),
         }
         metadata = {
-            "sampler": "flowmc",
+            "sampler": "blackjax_smc_rw",
             "n_samples": n_full_samples,
             "seed": 42,
         }
 
         result = InferenceResult(
-            sampler_type="flowmc",
+            sampler_type="blackjax_smc_rw",
             posterior=posterior,
             metadata=metadata,
         )
@@ -486,14 +481,9 @@ class TestEOSSampleGeneration:
             "prior": {"specification_file": "dummy.prior"},
             "likelihoods": [{"type": "zero", "enabled": True}],
             "sampler": {
-                "type": "flowmc",
-                "n_chains": 10,
-                "n_loop_training": 2,
-                "n_loop_production": 2,
-                "n_local_steps": 50,
-                "n_global_steps": 50,
-                "n_epochs": 30,
-                "learning_rate": 0.01,
+                "type": "smc-rw",
+                "n_particles": 50,
+                "n_mcmc_steps": 2,
                 "output_dir": str(temp_dir),
                 "n_eos_samples": 50,  # Request only 50 EOS samples
                 "log_prob_batch_size": 10,
@@ -646,9 +636,13 @@ class TestEOSSampleGeneration:
             "log_prob": np.random.uniform(-100, -10, n_full_samples),
         }
         result = InferenceResult(
-            sampler_type="flowmc",
+            sampler_type="blackjax_smc_rw",
             posterior=posterior,
-            metadata={"sampler": "flowmc", "n_samples": n_full_samples, "seed": 42},
+            metadata={
+                "sampler": "blackjax_smc_rw",
+                "n_samples": n_full_samples,
+                "seed": 42,
+            },
         )
 
         config_dict = {
@@ -658,14 +652,9 @@ class TestEOSSampleGeneration:
             "prior": {"specification_file": "dummy.prior"},
             "likelihoods": [{"type": "zero", "enabled": True}],
             "sampler": {
-                "type": "flowmc",
-                "n_chains": 10,
-                "n_loop_training": 2,
-                "n_loop_production": 2,
-                "n_local_steps": 50,
-                "n_global_steps": 50,
-                "n_epochs": 30,
-                "learning_rate": 0.01,
+                "type": "smc-rw",
+                "n_particles": 50,
+                "n_mcmc_steps": 2,
                 "output_dir": str(temp_dir),
                 "n_eos_samples": 10,
                 "log_prob_batch_size": 1000,  # Larger than n_eos_samples

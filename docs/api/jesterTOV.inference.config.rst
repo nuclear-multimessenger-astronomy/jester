@@ -27,10 +27,8 @@ Schema Classes
    schemas.likelihoods.RadioLikelihoodConfig
    schemas.likelihoods.MockMassRadiusLikelihoodConfig
    schema.BaseSamplerConfig
-   schema.FlowMCSamplerConfig
    schema.BlackJAXNSAWConfig
    schema.SMCRandomWalkSamplerConfig
-   schema.SMCNUTSSamplerConfig
    schema.EOSReweightingConfig
    schema.EOSReweightingInferenceConfig
    schema.PostprocessingConfig

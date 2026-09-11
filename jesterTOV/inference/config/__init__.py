@@ -31,10 +31,8 @@ from .schema import (
     LikelihoodConfig,
     # Samplers
     BaseSamplerConfig,
-    FlowMCSamplerConfig,
     BlackJAXNSAWConfig,
     SMCRandomWalkSamplerConfig,
-    SMCNUTSSamplerConfig,
     SamplerConfig,
     # Other
     PriorConfig,
@@ -73,10 +71,8 @@ __all__ = [
     "LikelihoodConfig",
     # Samplers
     "BaseSamplerConfig",
-    "FlowMCSamplerConfig",
     "BlackJAXNSAWConfig",
     "SMCRandomWalkSamplerConfig",
-    "SMCNUTSSamplerConfig",
     "SamplerConfig",
     # Other
     "PriorConfig",

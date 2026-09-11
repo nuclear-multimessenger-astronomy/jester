@@ -388,43 +388,37 @@ class TestSamplerConfig:
 
     def test_valid_sampler_config(self):
         """Test valid sampler configuration."""
-        config = schema.FlowMCSamplerConfig(
-            n_chains=20,
-            n_loop_training=2,
-            n_loop_production=2,
-            n_local_steps=10,
-            n_global_steps=10,
-            n_epochs=20,
-            learning_rate=0.001,
+        config = schema.SMCRandomWalkSamplerConfig(
+            n_particles=100,
+            n_mcmc_steps=5,
+            target_ess=0.9,
             output_dir="./outdir/",
         )
-        assert config.n_chains == 20
-        assert config.learning_rate == 0.001
+        assert config.n_particles == 100
+        assert config.target_ess == 0.9
 
-    def test_negative_chains_fails(self):
-        """Test that negative number of chains fails validation."""
+    def test_negative_particles_fails(self):
+        """Test that negative number of particles fails validation."""
         with pytest.raises(ValidationError):
-            schema.FlowMCSamplerConfig(
-                n_chains=-1,  # Should fail
-                n_loop_training=2,
-                n_loop_production=2,
+            schema.SMCRandomWalkSamplerConfig(
+                n_particles=-1,  # Should fail
+                n_mcmc_steps=5,
             )
 
-    def test_zero_chains_fails(self):
-        """Test that zero chains fails validation."""
+    def test_zero_particles_fails(self):
+        """Test that zero particles fails validation."""
         with pytest.raises(ValidationError):
-            schema.FlowMCSamplerConfig(
-                n_chains=0,  # Should fail
-                n_loop_training=2,
-                n_loop_production=2,
+            schema.SMCRandomWalkSamplerConfig(
+                n_particles=0,  # Should fail
+                n_mcmc_steps=5,
             )
 
-    def test_negative_learning_rate_fails(self):
-        """Test that negative learning rate fails validation."""
+    def test_invalid_target_ess_fails(self):
+        """Test that an out-of-range target_ess fails validation."""
         with pytest.raises(ValidationError):
-            schema.FlowMCSamplerConfig(
-                n_chains=4,
-                learning_rate=-0.001,  # Should fail
+            schema.SMCRandomWalkSamplerConfig(
+                n_particles=100,
+                target_ess=1.5,  # Should fail
             )
 
 
@@ -438,7 +432,7 @@ class TestInferenceConfig:
         assert config.eos.type == "metamodel"
         assert config.tov.type == "gr"
         assert len(config.likelihoods) == 1
-        assert config.sampler.n_chains == 4
+        assert config.sampler.n_particles == 100
 
     def test_config_with_multiple_likelihoods(self, sample_config_dict):
         """Test configuration with multiple likelihoods."""
@@ -489,7 +483,7 @@ class TestInferenceConfig:
         with pytest.raises(ValidationError):
             schema.InferenceConfig(
                 # Missing eos, tov, prior, etc.
-                sampler={"type": "flowmc", "n_chains": 4},
+                sampler={"type": "smc-rw", "n_particles": 100},
             )
 
     def test_debug_nans_default_false(self, sample_config_dict):
@@ -606,13 +600,12 @@ class TestExtraFieldValidation:
             )
 
     def test_sampler_config_rejects_extra_fields(self):
-        """Test that FlowMCSamplerConfig rejects unknown fields."""
+        """Test that SMCRandomWalkSamplerConfig rejects unknown fields."""
         with pytest.raises(ValidationError, match="Unrecognized field"):
-            schema.FlowMCSamplerConfig(
-                type="flowmc",
-                n_chains=4,
-                n_loop_training=2,
-                n_loop_production=2,
+            schema.SMCRandomWalkSamplerConfig(
+                type="smc-rw",
+                n_particles=100,
+                n_mcmc_steps=5,
                 invalid_option=True,  # Should be rejected
             )
 
@@ -959,9 +952,9 @@ class TestConfigIntegration:
         assert config1.seed == config2.seed
         assert config1.eos.type == config2.eos.type
         assert config1.tov.type == config2.tov.type
-        # Type narrowing: we know from sample_config_dict that this is FlowMC
-        assert config1.sampler.type == "flowmc"  # type: ignore[attr-defined]
-        assert config2.sampler.type == "flowmc"  # type: ignore[attr-defined]
+        # Type narrowing: we know from sample_config_dict that this is SMC-RW
+        assert config1.sampler.type == "smc-rw"  # type: ignore[attr-defined]
+        assert config2.sampler.type == "smc-rw"  # type: ignore[attr-defined]
 
     def test_example_configs_are_valid(self):
         """Test that all example config files are valid.

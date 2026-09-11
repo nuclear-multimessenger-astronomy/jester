@@ -23,8 +23,6 @@ Sequential Monte Carlo (Recommended): Implemented with blackjax
 
 Nested sampling: Implemented in blackjax in this specific fork
 
-flowMC (GitHub): Normalizing flow-enhanced MCMC sampling
-
 **Equation of state (EOS) models**
    Overview of EOS parametrizations available in JESTER.
 

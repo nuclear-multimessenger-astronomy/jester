@@ -25,10 +25,7 @@ from jesterTOV.inference.base import (
     BijectiveTransform,
     NtoMTransform,
 )
-from jesterTOV.inference.config.schema import (
-    SMCRandomWalkSamplerConfig,
-    SMCNUTSSamplerConfig,
-)
+from jesterTOV.inference.config.schema import SMCRandomWalkSamplerConfig
 from jesterTOV.inference.samplers.jester_sampler import SamplerOutput
 from jesterTOV.inference.samplers.blackjax.base import BlackjaxSampler
 from jesterTOV.logging_config import get_logger
@@ -72,14 +69,14 @@ class BlackjaxSMCSampler(BlackjaxSampler):
         Should be empty for SMC (works in prior space)
     likelihood_transforms : list[NtoMTransform]
         N-to-M transforms applied before likelihood evaluation
-    config : SMCRandomWalkSamplerConfig | SMCNUTSSamplerConfig
+    config : SMCRandomWalkSamplerConfig
         SMC configuration
     seed : int, optional
         Random seed (default: 0)
 
     Attributes
     ----------
-    config : SMCRandomWalkSamplerConfig | SMCNUTSSamplerConfig
+    config : SMCRandomWalkSamplerConfig
         Sampler configuration
     final_state : Any | None
         Final SMC state (after sampling)
@@ -95,7 +92,7 @@ class BlackjaxSMCSampler(BlackjaxSampler):
         Final particle weights
     """
 
-    config: SMCRandomWalkSamplerConfig | SMCNUTSSamplerConfig
+    config: SMCRandomWalkSamplerConfig
     final_state: Any | None
     metadata: dict
     _unflatten_fn: Any  # Callable[[Array], dict]
@@ -109,7 +106,7 @@ class BlackjaxSMCSampler(BlackjaxSampler):
         prior: Prior,
         sample_transforms: list[BijectiveTransform],
         likelihood_transforms: list[NtoMTransform],
-        config: SMCRandomWalkSamplerConfig | SMCNUTSSamplerConfig,
+        config: SMCRandomWalkSamplerConfig,
         seed: int = 0,
     ) -> None:
         """Initialize BlackJAX SMC sampler."""
@@ -209,7 +206,7 @@ class BlackjaxSMCSampler(BlackjaxSampler):
         loglikelihood_fn : Callable
             Log likelihood function for single particle (flat array)
         logposterior_fn : Callable
-            Log posterior function for single particle (flat array, for NUTS Hessian)
+            Log posterior function for single particle (flat array)
         initial_particles : Array
             Initial particle positions (flat arrays, shape: (n_particles, n_dim))
 
@@ -299,7 +296,7 @@ class BlackjaxSMCSampler(BlackjaxSampler):
         logprior_fn = self._wrap_dict_fn_for_flat_arrays(logprior_dict)
         loglikelihood_fn = self._wrap_dict_fn_for_flat_arrays(loglikelihood_dict)
 
-        # Create posterior for kernel setup (e.g., NUTS Hessian)
+        # Create posterior for kernel setup
         logposterior_fn = lambda x: logprior_fn(x) + loglikelihood_fn(x)
 
         # Setup kernel-specific components

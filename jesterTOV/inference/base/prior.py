@@ -4,8 +4,7 @@ This module contains prior classes that were originally from Jim (jimgw v0.2.0).
 They are copied here to remove the dependency on jimgw.
 
 Note: These classes follow the Jim/jimgw architecture with a dict-based interface
-for named parameters. The flowMC Distribution inheritance was removed to avoid
-interface conflicts while maintaining compatibility with JESTER's sampling backends.
+for named parameters, independent of any specific sampling backend.
 """
 
 from dataclasses import field
@@ -33,9 +32,6 @@ class Prior:
 
     The rationale behind this is to have a class that can be used to keep track of
     the names of the parameters and the transforms that are applied to them.
-
-    This class was previously inherited from flowMC's Distribution, but that
-    dependency has been removed to avoid interface conflicts.
     """
 
     parameter_names: list[str]
@@ -217,7 +213,7 @@ class SequentialTransformPrior(Prior):
         """
         Evaluate the probability of the transformed variable z.
 
-        This is what flowMC should sample from.
+        This is what a sampler should sample from.
 
         Parameters
         ----------

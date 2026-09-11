@@ -14,4 +14,3 @@ SMC Samplers
 
    base.BlackjaxSMCSampler
    random_walk.BlackJAXSMCRandomWalkSampler
-   nuts.BlackJAXSMCNUTSSampler

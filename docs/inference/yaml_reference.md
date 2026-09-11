@@ -277,7 +277,7 @@ Constrain the EOS using gravitational wave observations of binary neutron star m
   - **From NPZ file**: set `from_npz_file` to an existing `.npz` file with posterior samples; jester will train a flow directly from it, skipping the bilby extraction step.
 - **`penalty_value`** (`float`, default: `0.0`) - Log-likelihood penalty for masses exceeding TOV maximum mass (default: 0.0, i.e. no penalty)
 - **`N_masses_evaluation`** (`int`, default: `500`) - Number of mass samples to pre-sample from the GW posterior (the size of the Monte Carlo sum this likelihood evaluates). Measured seed-to-seed noise at the default is already only ~0.3-0.4% of a typical likelihood value; raising this to 2000 (the previous default) roughly halves that noise for ~4x more `flow.log_prob` calls (this likelihood's dominant cost) - a real but marginal accuracy gain for most purposes. See {class}`~jesterTOV.inference.likelihoods.gw.GWLikelihood` for the full analysis.
-- **`N_masses_batch_size`** (`int`, default: `1`) - Batch size for jax.lax.map processing of the mass grid. The default (a plain scan) keeps memory flat as `N_masses_evaluation` and the number of combined GW events grow, which matters most once the likelihood sits inside an outer `vmap` over SMC/FlowMC particles. Raise it only for faster standalone (non-vmapped) evaluations. See {class}`~jesterTOV.inference.likelihoods.gw.GWLikelihood` for the full tradeoff.
+- **`N_masses_batch_size`** (`int`, default: `1`) - Batch size for jax.lax.map processing of the mass grid. The default (a plain scan) keeps memory flat as `N_masses_evaluation` and the number of combined GW events grow, which matters most once the likelihood sits inside an outer `vmap` over SMC particles. Raise it only for faster standalone (non-vmapped) evaluations. See {class}`~jesterTOV.inference.likelihoods.gw.GWLikelihood` for the full tradeoff.
 - **`event_batch_size`** (`int`, default: `1`) - Batch size for `jax.lax.map` processing of GW events. All events in this likelihood's `events` list are evaluated as one stacked/batched computation ({class}`~jesterTOV.inference.likelihoods.gw.StackedGWLikelihood`), not one likelihood per event. The default (a plain scan over events) keeps memory flat as the number of combined events grows, for the same reason `N_masses_batch_size` defaults to `1`. Raise it only for faster standalone (non-vmapped) evaluations. Requires every event to use a flow with the same architecture; see {class}`~jesterTOV.inference.likelihoods.gw.StackedGWLikelihood` for what happens otherwise.
 - **`seed`** (`int`, default: `42`) - Random seed for mass pre-sampling from GW posterior
 - **`use_float32`** (`bool`, default: `false`) - Evaluate the flows in float32 instead of the default float64. For now, this is only verified for flows using `flow_type="masked_autoregressive_flow"` with `transformer_type="rational_quadratic_spline"` - other architectures need verification and are not supported yet. Training is unaffected either way; this only changes how an already-trained flow is loaded and evaluated.
@@ -709,82 +709,6 @@ sampler:
 
 ::::
 
-### FlowMC (normalizing flow MCMC)
-
-Normalizing flow-enhanced MCMC combining local MCMC proposals with global normalizing flow proposals. For a detailed explanation of the algorithm, see {ref}`sampler-flowmc`. The Python class is {class}`~jesterTOV.inference.samplers.flowmc.FlowMCSampler`. The Pydantic config schema is {class}`~jesterTOV.inference.config.schema.FlowMCSamplerConfig`.
-
-::::{dropdown} **FlowMC (Normalizing Flow MCMC) Configuration**
-
-```yaml
-sampler:
-  type: "flowmc"             # Sampler type identifier
-  output_dir: "./outdir/"    # Output directory for results
-  n_eos_samples: 10000       # Number of final posterior samples
-  log_prob_batch_size: 1000  # Batch size for log-probability evaluation
-
-  n_chains: 20               # Number of parallel MCMC chains
-  n_loop_training: 3         # Number of training loops
-  n_local_steps: 100         # Local MCMC steps per training loop
-  n_epochs: 30               # NF training epochs per loop
-  learning_rate: 0.001       # NF optimizer learning rate
-  train_thinning: 1          # Thinning factor for training samples
-
-  n_loop_production: 3       # Number of production loops
-  n_global_steps: 100        # Global NF proposal steps per production loop
-  output_thinning: 5         # Thinning factor for output samples
-```
-
-**Sampling Phases:**
-
-1. **Training Phase** — `n_loop_training` loops of:
-   - `n_local_steps` MCMC steps using local proposals
-   - Train normalizing flow for `n_epochs` on collected samples
-2. **Production Phase** — `n_loop_production` loops of:
-   - `n_local_steps` MCMC steps using local proposals
-   - `n_global_steps` using normalizing flow proposals
-
-::::
-
-### Sequential Monte Carlo with NUTS
-
-BlackJAX SMC with adaptive tempering and No-U-Turn Sampler (NUTS) kernel. **EXPERIMENTAL — use with caution.** For a detailed explanation of the SMC framework, see {ref}`sampler-smc`. The Python class is {class}`~jesterTOV.inference.samplers.blackjax.smc.nuts.BlackJAXSMCNUTSSampler`. The Pydantic config schema is {class}`~jesterTOV.inference.config.schema.SMCNUTSSamplerConfig`.
-
-::::{dropdown} **Sequential Monte Carlo with NUTS Configuration**
-
-```{warning}
-This sampler is experimental and may produce unstable results, use at own risk. Use the SMC with a random walk sampler for stable production analyses.
-```
-
-```yaml
-sampler:
-  type: "smc-nuts"              # Sampler type identifier (EXPERIMENTAL)
-  output_dir: "./outdir/"       # Output directory for results
-  n_eos_samples: 10000          # Number of final posterior samples
-  log_prob_batch_size: 1000     # Batch size for log-probability evaluation
-
-  n_particles: 10000            # Number of SMC particles
-  n_mcmc_steps: 1               # NUTS steps per tempering stage
-  target_ess: 0.9               # Target effective sample size (ESS) fraction
-
-  init_step_size: 0.01          # Initial NUTS step size
-  mass_matrix_base: 0.2         # Base value for mass matrix diagonal
-  mass_matrix_param_scales: {}  # Per-parameter mass matrix scaling
-  target_acceptance: 0.7        # Target acceptance rate for step size adaptation
-  adaptation_rate: 0.3          # Rate of step size adaptation
-```
-
-**Field Details:**
-
-- **`init_step_size`** (`float`, default: `0.01`) - Initial step size for NUTS integrator
-- **`mass_matrix_base`** (`float`, default: `0.2`) - Base diagonal value for mass matrix
-- **`mass_matrix_param_scales`** (`dict`, default: `{}`) - Per-parameter scaling factors for mass matrix
-- **`target_acceptance`** (`float`, default: `0.7`) - Target acceptance probability for step size tuning
-- **`adaptation_rate`** (`float`, default: `0.3`) - Adaptation rate for step size controller
-
-**Warning:** This sampler is experimental. Use SMC Random Walk for production analyses.
-
-::::
-
 ### EOS reweighting
 
 Evaluates jester's GPU-accelerated likelihoods on a discrete set of tabulated EOS curves (M, $\Lambda$, R tables) rather than sampling a parametric EOS model. Returns the marginal log-likelihood per EOS and the Bayesian evidence $\log Z$. The Python class is {class}`~jesterTOV.inference.samplers.eos_reweighting.EOSReweightingSampler`. The Pydantic config schema is {class}`~jesterTOV.inference.config.schema.EOSReweightingConfig`.
@@ -962,7 +886,6 @@ sampler:
 Several full configurations are available in the `examples` directory in jester:
 * `examples/inference/anisotropy`: Using the metamodel+CSE equation of state and the anisotropy solver, with several of the likelihoods available.
 * `examples/inference/blackjax-ns-aw`: Examples of the nested sampler implemented in `blackjax`
-* `examples/inference/flowmc`: Examples of the flowMC sampler
 * `examples/inference/mm_peakcse`: Examples of the metamodel+CSE analysis
 * `examples/inference/reweighting`: Example of the EOS reweighting sampler applied to a set of tabulated EOS curves
 * `examples/inference/smc_random_walk`: Examples of the SMC sampler with random walk kernel

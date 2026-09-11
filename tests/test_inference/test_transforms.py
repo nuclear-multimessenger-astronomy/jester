@@ -547,9 +547,9 @@ class TestNTOV:
             "cs2": np.array([[0.1, 0.4]]),
             "n_TOV": np.array([n_TOV_val]),
         }
-        metadata = {"sampler": "flowmc", "n_samples": 1}
+        metadata = {"sampler": "blackjax_smc_rw", "n_samples": 1}
         inference_result = InferenceResult(
-            sampler_type="flowmc", posterior=posterior, metadata=metadata
+            sampler_type="blackjax_smc_rw", posterior=posterior, metadata=metadata
         )
 
         filepath = tmp_path / "results.h5"

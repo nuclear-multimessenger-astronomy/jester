@@ -5,10 +5,8 @@ All samplers inherit from JesterSampler base class.
 """
 
 from .jester_sampler import JesterSampler, SamplerOutput
-from .flowmc import FlowMCSampler
 from .blackjax.nested_sampling import BlackJAXNSAWSampler
 from .blackjax.smc.random_walk import BlackJAXSMCRandomWalkSampler
-from .blackjax.smc.nuts import BlackJAXSMCNUTSSampler
 from .eos_reweighting import EOSReweightingSampler, resample_eos_posterior
 
 from ..base import LikelihoodBase, Prior, NtoMTransform
@@ -17,10 +15,8 @@ from ..config.schema import SamplerConfig
 __all__ = [
     "JesterSampler",
     "SamplerOutput",
-    "FlowMCSampler",
     "BlackJAXNSAWSampler",
     "BlackJAXSMCRandomWalkSampler",
-    "BlackJAXSMCNUTSSampler",
     "EOSReweightingSampler",
     "resample_eos_posterior",
     "create_sampler",
@@ -28,10 +24,8 @@ __all__ = [
 
 # Sampler registry: maps config.type to sampler class
 SAMPLER_REGISTRY = {
-    "flowmc": FlowMCSampler,
     "blackjax-ns-aw": BlackJAXNSAWSampler,
     "smc-rw": BlackJAXSMCRandomWalkSampler,
-    "smc-nuts": BlackJAXSMCNUTSSampler,
     "eos-reweighting": EOSReweightingSampler,
 }
 
@@ -65,7 +59,7 @@ def create_sampler(
     Returns
     -------
     JesterSampler
-        Sampler instance (FlowMCSampler, BlackJAXNSAWSampler, or BlackJAXSMC*Sampler)
+        Sampler instance (BlackJAXNSAWSampler or BlackJAXSMCRandomWalkSampler)
 
     Raises
     ------
@@ -79,8 +73,8 @@ def create_sampler(
 
     Examples
     --------
-    >>> from jesterTOV.inference.config.schema import FlowMCSamplerConfig
-    >>> config = FlowMCSamplerConfig(type="flowmc", n_chains=20)
+    >>> from jesterTOV.inference.config.schema import SMCRandomWalkSamplerConfig
+    >>> config = SMCRandomWalkSamplerConfig(type="smc-rw", n_particles=10000)
     >>> sampler = create_sampler(config, prior, likelihood, [transform])
     >>> sampler.sample(jax.random.PRNGKey(42))
     """
@@ -97,7 +91,7 @@ def create_sampler(
 
     # Each sampler creates its own sample_transforms in __init__:
     # - NS-AW: creates unit cube [0,1] transforms if not provided
-    # - FlowMC/SMC: use empty list (no transforms needed)
+    # - SMC: uses empty list (no transforms needed)
     return sampler_class(
         likelihood=likelihood,
         prior=prior,

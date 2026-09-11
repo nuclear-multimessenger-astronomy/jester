@@ -35,19 +35,13 @@ K_sat = UniformPrior(150.0, 300.0, parameter_names=["K_sat"])
 L_sym = UniformPrior(10.0, 200.0, parameter_names=["L_sym"])
 ```
 
-**Samplers**: Four backends available
-- `type: "flowmc"` - Flow-enhanced MCMC (production ready)
-  - Normalizing flow guidance for efficient sampling
-  - Training + production phases
+**Samplers**: Two backends available
 - `type: "smc-rw"` - Sequential Monte Carlo with Random Walk kernel (production ready, **DEFAULT**)
   - Gaussian Random Walk with sigma adaptation
   - Target ESS: 0.9, ~10-30 MCMC steps per tempering level
   - Optional `adaptive_step_size` targets a literal acceptance rate (`target_acceptance_rate`,
     default 0.234) instead of the fixed `random_walk_sigma` throughout; see
     "Adaptive step size (SMC-RW)" below
-- `type: "smc-nuts"` - Sequential Monte Carlo with NUTS kernel (production ready)
-  - NUTS kernel with Hessian-based mass matrix adaptation
-  - More efficient for complex posteriors
 - `type: "blackjax-ns-aw"` - Nested Sampling with Acceptance Walk (experimental)
   - For model comparison and evidence estimation
   - Needs additional testing/fixes
@@ -100,7 +94,7 @@ the real shipped GW170817/GW190425 presets).
 
 **Both `N_masses_batch_size` and `event_batch_size` default to `1`** (a plain
 scan over mass samples / events respectively) — this is the safe default for
-production SMC/FlowMC runs with many particles and/or many events. Setting
+production SMC runs with many particles and/or many events. Setting
 either equal to its total (`N_masses_evaluation`, or the number of events)
 degenerates `jax.lax.map` to a plain `jax.vmap` with zero chunking benefit
 (see `jax/_src/lax/control_flow/loops.py::map`'s `batch_size` semantics) —
@@ -170,13 +164,11 @@ jesterTOV/inference/
 │   └── paths.py         # Path management and Zenodo caching
 ├── samplers/            # Sampler implementations
 │   ├── jester_sampler.py  # Base JesterSampler + SAMPLER_REGISTRY
-│   ├── flowmc.py        # FlowMC backend
 │   └── blackjax/        # BlackJAX backends
 │       ├── base.py      # BlackjaxSampler base class
 │       ├── smc/         # Sequential Monte Carlo framework
 │       │   ├── base.py  # BlackjaxSMCSampler
-│       │   ├── random_walk.py  # SMC-RW (production ready)
-│       │   └── nuts.py  # SMC-NUTS (production ready)
+│       │   └── random_walk.py  # SMC-RW (production ready)
 │       └── nested_sampling/
 │           └── ns_aw.py # NS with Acceptance Walk (experimental)
 ├── base/                # Base classes (copied from Jim v0.2.0)
@@ -219,9 +211,7 @@ create_likelihood() → CombinedLikelihood
   └─ Equal weighting (1/N_likelihoods per likelihood)
     ↓
 create_sampler() → Sampler from SAMPLER_REGISTRY
-  ├─ FlowMCSampler (flowmc)
   ├─ BlackJAXSMCRandomWalkSampler (smc-rw)
-  ├─ BlackJAXSMCNUTSSampler (smc-nuts)
   └─ BlackJAXNSAWSampler (blackjax-ns-aw)
     ↓
 sampler.sample(prng_key) → SamplerOutput
@@ -343,9 +333,7 @@ if unused_params:
 **Sampler Registry:**
 ```python
 SAMPLER_REGISTRY = {
-    "flowmc": FlowMCSampler,
     "smc-rw": BlackJAXSMCRandomWalkSampler,
-    "smc-nuts": BlackJAXSMCNUTSSampler,
     "blackjax-ns-aw": BlackJAXNSAWSampler,
 }
 ```
@@ -353,11 +341,9 @@ SAMPLER_REGISTRY = {
 **BlackJAX Sampler Hierarchy:**
 ```
 JesterSampler (base)
-    ├─ FlowMCSampler (flowmc.py)
     └─ BlackjaxSampler (blackjax/base.py) - Shared transform logic
         ├─ BlackjaxSMCSampler (blackjax/smc/base.py) - SMC framework
-        │   ├─ BlackJAXSMCRandomWalkSampler (blackjax/smc/random_walk.py)
-        │   └─ BlackJAXSMCNUTSSampler (blackjax/smc/nuts.py)
+        │   └─ BlackJAXSMCRandomWalkSampler (blackjax/smc/random_walk.py)
         └─ BlackJAXNSAWSampler (blackjax/nested_sampling/ns_aw.py)
 ```
 
@@ -371,7 +357,6 @@ class SamplerOutput:
 
 **Metadata Contents** (sampler-specific):
 - **SMC samplers**: ESS (effective sample size), acceptance rates, weights, tempering schedule
-- **FlowMC**: flow training history, MCMC acceptance rates
 - **Nested sampling**: evidence (log Z), evidence error, iteration counts
 
 **Key Design Features:**
@@ -397,12 +382,7 @@ through that API alone. `samplers/blackjax/smc/persistent_inner_kernel_tuning.py
 jester-owned drop-in replacement that forwards the previous `parameter_override` into
 `mcmc_parameter_update_fn` (new signature: `(key, previous_parameter_override, new_state, info)`),
 enabling genuine recursive adaptation. `BlackjaxSMCSampler.sample()` (`smc/base.py`) uses this
-wrapper for **all** SMC kernels (RW and NUTS), not just RW.
-
-**Bonus fix as a result:** `smc/nuts.py`'s Hessian/step-size adaptation previously tried to persist
-a running step size via a mutated Python closure (`current_step_size = {"value": ...}`) — a no-op
-under `jax.lax.while_loop` tracing, so NUTS's dual-averaging step-size adaptation was silently
-broken. It now reads `previous_params["step_size"]` instead, which actually persists.
+wrapper for the SMC kernel.
 
 **Implementation notes** (`smc/random_walk.py`):
 - `mcmc_step_fn` builds the proposal covariance as `(scale**2) * cov`, where `cov` is the usual
@@ -414,8 +394,7 @@ broken. It now reads `previous_params["step_size"]` instead, which actually pers
   shared/bound once, anything else ⇒ vmapped per particle) treats it as unshared and vmaps it
   automatically — no manual vmap needed in jester's own code. Because of this, `BlackjaxSMCSampler`
   no longer blanket-wraps `init_params` in `extend_params` itself; each `_setup_mcmc_kernel` is
-  responsible for shaping its own returned `init_params` (random_walk.py extends `cov` only; nuts.py
-  extends its whole dict, since none of its params vary per particle).
+  responsible for shaping its own returned `init_params` (random_walk.py extends `cov` only).
 - Before annealing starts, `n_pretune_steps` (default 20) pilot Metropolis steps run on the initial
   prior particles targeting `logprior_fn` (valid since the tempered posterior at λ=0 is the prior),
   self-correcting a poorly-chosen `random_walk_sigma` before real sampling begins. Set to `0` to
@@ -441,9 +420,7 @@ Configuration files use YAML with Pydantic validation. See `examples/inference/*
   - Available types: gw, gw_resampled, nicer, radio, chieft, rex, eos_constraints, tov_constraints, gamma_constraints, zero
   - Each likelihood has `enabled` flag and type-specific parameters
 - `sampler`: Sampler configuration (discriminated union by type)
-  - FlowMC: n_chains, n_loop_training, n_loop_production, learning_rate, etc.
   - SMC-RW: n_particles, n_mcmc_steps, target_ess, etc.
-  - SMC-NUTS: n_particles, n_mcmc_steps, target_ess, etc.
   - NS-AW: n_live_points, max_samples, etc.
 - `data_paths`: Override default data file locations (optional)
 - `outdir`: Output directory for results (default: "outdir")

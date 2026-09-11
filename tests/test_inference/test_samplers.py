@@ -1,11 +1,10 @@
-"""Tests for inference sampler system (base sampler, flowMC backend)."""
+"""Tests for inference sampler system (base sampler, BlackJAX SMC backend)."""
 
 import pytest
 import jax
 import jax.numpy as jnp
 
 from jesterTOV.inference.samplers.jester_sampler import JesterSampler
-from jesterTOV.inference.samplers.flowmc import FlowMCSampler
 from jesterTOV.inference.base import (
     UniformPrior,
     CombinePrior,
@@ -16,7 +15,6 @@ from jesterTOV.inference.base.transform import (
     NtoMTransform,
     ScaleTransform,
 )
-from jesterTOV.inference.config.schema import FlowMCSamplerConfig
 
 
 # Create a simple mock likelihood for testing
@@ -164,403 +162,22 @@ class TestJesterSamplerBase:
             sampler.get_samples()
 
 
-class TestFlowMCSampler:
-    """Test FlowMCSampler initialization and configuration."""
-
-    def test_flowmc_sampler_initialization_default(self):
-        """Test FlowMCSampler initializes with default settings."""
-        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
-        likelihood = MockLikelihood()
-
-        config = FlowMCSamplerConfig(
-            type="flowmc",
-            n_chains=2,
-            n_loop_training=1,
-            n_loop_production=1,
-            n_local_steps=5,
-            n_global_steps=5,
-            n_epochs=5,
-            learning_rate=0.001,
-            output_dir="./test_output/",
-        )
-
-        sampler = FlowMCSampler(
-            likelihood,
-            prior,
-            config,
-            local_sampler_arg={
-                "step_size": jnp.array([1e-3])
-            },  # Required for GaussianRandomWalk
-        )
-
-        # Should create flowMC sampler
-        assert sampler.sampler is not None
-        assert sampler.sampler.n_chains == 2
-
-    def test_flowmc_sampler_with_mala(self):
-        """Test FlowMCSampler with MALA local sampler."""
-        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
-        likelihood = MockLikelihood()
-
-        config = FlowMCSamplerConfig(
-            type="flowmc",
-            n_chains=2,
-            n_loop_training=1,
-            n_loop_production=1,
-            output_dir="./test_output/",
-        )
-
-        # Use MALA sampler
-        sampler = FlowMCSampler(
-            likelihood,
-            prior,
-            config,
-            local_sampler_name="MALA",
-            local_sampler_arg={"step_size": jnp.array([[1e-3]])},
-        )
-
-        assert sampler.sampler is not None
-
-    def test_flowmc_sampler_with_gaussian_random_walk(self):
-        """Test FlowMCSampler with GaussianRandomWalk local sampler."""
-        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
-        likelihood = MockLikelihood()
-
-        config = FlowMCSamplerConfig(
-            type="flowmc",
-            n_chains=2,
-            n_loop_training=1,
-            n_loop_production=1,
-            output_dir="./test_output/",
-        )
-
-        # Use GaussianRandomWalk sampler (default)
-        sampler = FlowMCSampler(
-            likelihood,
-            prior,
-            config,
-            local_sampler_name="GaussianRandomWalk",
-            local_sampler_arg={"step_size": jnp.array([1e-3])},
-        )
-
-        assert sampler.sampler is not None
-
-    def test_flowmc_sampler_diagonal_extraction_for_gaussian_random_walk(self):
-        """Test that FlowMCSampler extracts diagonal from matrix step_size for GaussianRandomWalk."""
-        prior = CombinePrior(
-            [
-                UniformPrior(0.0, 1.0, parameter_names=["x"]),
-                UniformPrior(0.0, 1.0, parameter_names=["y"]),
-            ]
-        )
-        likelihood = MockLikelihood()
-
-        config = FlowMCSamplerConfig(
-            type="flowmc",
-            n_chains=2,
-            n_loop_training=1,
-            n_loop_production=1,
-            output_dir="./test_output/",
-        )
-
-        # Provide 2x2 matrix step_size
-        step_size_matrix = jnp.array([[1e-3, 0.0], [0.0, 2e-3]])
-
-        # GaussianRandomWalk should extract diagonal
-        sampler = FlowMCSampler(
-            likelihood,
-            prior,
-            config,
-            local_sampler_name="GaussianRandomWalk",
-            local_sampler_arg={"step_size": step_size_matrix},
-        )
-
-        # Should succeed (diagonal extracted)
-        assert sampler.sampler is not None
-
-    def test_flowmc_sampler_invalid_local_sampler_raises_error(self):
-        """Test that invalid local_sampler_name raises ValueError."""
-        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
-        likelihood = MockLikelihood()
-
-        config = FlowMCSamplerConfig(
-            type="flowmc",
-            n_chains=2,
-            n_loop_training=1,
-            n_loop_production=1,
-            output_dir="./test_output/",
-        )
-
-        with pytest.raises(ValueError, match="Unknown local_sampler_name"):
-            FlowMCSampler(
-                likelihood,
-                prior,
-                config,
-                local_sampler_name="InvalidSampler",
-            )
-
-    def test_flowmc_sampler_with_custom_flow_architecture(self):
-        """Test FlowMCSampler with custom normalizing flow architecture."""
-        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
-        likelihood = MockLikelihood()
-
-        config = FlowMCSamplerConfig(
-            type="flowmc",
-            n_chains=2,
-            n_loop_training=1,
-            n_loop_production=1,
-            output_dir="./test_output/",
-        )
-
-        sampler = FlowMCSampler(
-            likelihood,
-            prior,
-            config,
-            local_sampler_arg={"step_size": jnp.array([1e-3])},
-            num_layers=5,
-            hidden_size=[64, 64],
-            num_bins=4,
-        )
-
-        assert sampler.sampler is not None
-
-    def test_flowmc_sampler_with_likelihood_transform(self):
-        """Test FlowMCSampler with likelihood transform (realistic use case)."""
-        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
-        likelihood = MockLikelihood()
-
-        config = FlowMCSamplerConfig(
-            type="flowmc",
-            n_chains=2,
-            n_loop_training=1,
-            n_loop_production=1,
-            output_dir="./test_output/",
-        )
-
-        # Create a simple N-to-M transform
-        class SquareTransform(NtoMTransform):
-            def __init__(self):
-                super().__init__((["x"], ["x_squared"]))
-                self.transform_func = lambda params: {"x_squared": params["x"] ** 2}
-
-        transform = SquareTransform()
-
-        sampler = FlowMCSampler(
-            likelihood,
-            prior,
-            config,
-            likelihood_transforms=[transform],
-            local_sampler_arg={"step_size": jnp.array([1e-3])},
-        )
-
-        assert sampler.sampler is not None
-        assert len(sampler.likelihood_transforms) == 1
-
-    def test_flowmc_sampler_thinning_exceeds_local_steps_raises_error(self):
-        """Test FlowMC raises error when train_thinning exceeds n_local_steps."""
-        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
-        likelihood = MockLikelihood()
-
-        config = FlowMCSamplerConfig(
-            type="flowmc",
-            n_chains=2,
-            n_loop_training=1,
-            n_loop_production=1,
-            n_local_steps=10,
-            n_global_steps=10,
-            train_thinning=20,  # Exceeds n_local_steps
-            output_thinning=5,
-            output_dir="./test_output/",
-        )
-
-        with pytest.raises(
-            ValueError,
-            match="train_thinning.*exceeds n_local_steps",
-        ):
-            FlowMCSampler(likelihood, prior, config)
-
-    def test_flowmc_sampler_thinning_exceeds_global_steps_raises_error(self):
-        """Test FlowMC raises error when train_thinning exceeds n_global_steps."""
-        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
-        likelihood = MockLikelihood()
-
-        config = FlowMCSamplerConfig(
-            type="flowmc",
-            n_chains=2,
-            n_loop_training=1,
-            n_loop_production=1,
-            n_local_steps=10,
-            n_global_steps=5,
-            train_thinning=10,  # Exceeds n_global_steps
-            output_thinning=5,
-            output_dir="./test_output/",
-        )
-
-        with pytest.raises(
-            ValueError,
-            match="train_thinning.*exceeds n_global_steps",
-        ):
-            FlowMCSampler(likelihood, prior, config)
-
-    def test_flowmc_sampler_output_thinning_exceeds_steps_raises_error(self):
-        """Test FlowMC raises error when output_thinning exceeds step counts."""
-        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
-        likelihood = MockLikelihood()
-
-        config = FlowMCSamplerConfig(
-            type="flowmc",
-            n_chains=2,
-            n_loop_training=1,
-            n_loop_production=1,
-            n_local_steps=10,
-            n_global_steps=10,
-            train_thinning=5,
-            output_thinning=20,  # Exceeds n_local_steps
-            output_dir="./test_output/",
-        )
-
-        with pytest.raises(
-            ValueError,
-            match="output_thinning.*exceeds n_local_steps",
-        ):
-            FlowMCSampler(likelihood, prior, config)
-
-    def test_flowmc_sampler_multiple_thinning_errors_reported(self):
-        """Test FlowMC reports multiple thinning validation errors together."""
-        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
-        likelihood = MockLikelihood()
-
-        config = FlowMCSamplerConfig(
-            type="flowmc",
-            n_chains=2,
-            n_loop_training=1,
-            n_loop_production=1,
-            n_local_steps=5,
-            n_global_steps=5,
-            train_thinning=10,  # Exceeds both local and global steps
-            output_thinning=10,  # Exceeds both local and global steps
-            output_dir="./test_output/",
-        )
-
-        # Should report all four errors
-        with pytest.raises(ValueError) as exc_info:
-            FlowMCSampler(likelihood, prior, config)
-
-        error_msg = str(exc_info.value)
-        assert "train_thinning" in error_msg
-        assert "n_local_steps" in error_msg
-        assert "n_global_steps" in error_msg
-        assert "output_thinning" in error_msg
-
-
-class TestFlowMCSamplerParameterOrdering:
-    """Test critical bug fix: parameter ordering preservation."""
-
-    def test_parameter_order_preserved_in_dict_to_array(self):
-        """Test that FlowMCSampler preserves parameter order when converting dict to array.
-
-        This tests the critical bug fix mentioned in the code comments.
-        The sampler MUST use list comprehension instead of jax.tree.leaves()
-        to preserve dictionary order.
-        """
-        # Create prior with multiple parameters (order matters!)
-        prior = CombinePrior(
-            [
-                UniformPrior(0.0, 1.0, parameter_names=["a"]),
-                UniformPrior(10.0, 20.0, parameter_names=["b"]),
-                UniformPrior(100.0, 200.0, parameter_names=["c"]),
-            ]
-        )
-        likelihood = MockLikelihood()
-
-        config = FlowMCSamplerConfig(
-            type="flowmc",
-            n_chains=2,
-            n_loop_training=1,
-            n_loop_production=1,
-            n_local_steps=1,
-            n_global_steps=1,
-            n_epochs=1,
-            train_thinning=1,  # Must not exceed n_local_steps/n_global_steps
-            output_thinning=1,  # Must not exceed n_local_steps/n_global_steps
-            output_dir="./test_output/",
-        )
-
-        sampler = FlowMCSampler(
-            likelihood,
-            prior,
-            config,
-            local_sampler_arg={"step_size": jnp.array([1e-3, 1e-3, 1e-3])},
-        )
-
-        # Check parameter names are in correct order
-        assert sampler.parameter_names == ["a", "b", "c"]
-
-        # Test add_name (array → dict)
-        test_array = jnp.array([0.5, 15.0, 150.0])
-        result = sampler.add_name(test_array)
-
-        # Should map correctly
-        assert result["a"] == 0.5
-        assert result["b"] == 15.0
-        assert result["c"] == 150.0
-
-
 class TestSamplerIntegration:
     """Integration tests for sampler system."""
-
-    @pytest.mark.slow
-    def test_flowmc_sampler_minimal_run(self):
-        """Test FlowMCSampler can run minimal sampling (slow test).
-
-        This is a minimal integration test to verify the sampler can actually run.
-        Uses very short chains to keep test time reasonable.
-        """
-        # Create simple setup
-        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
-        likelihood = MockLikelihood()
-
-        config = FlowMCSamplerConfig(
-            type="flowmc",
-            n_chains=2,
-            n_loop_training=1,
-            n_loop_production=1,
-            n_local_steps=2,
-            n_global_steps=2,
-            n_epochs=2,
-            learning_rate=0.001,
-            train_thinning=1,  # No thinning for minimal test
-            output_thinning=1,  # No thinning for minimal test
-            output_dir="./test_output/",
-        )
-
-        sampler = FlowMCSampler(
-            likelihood,
-            prior,
-            config,
-        )
-
-        # Run sampling
-        key = jax.random.PRNGKey(42)
-        sampler.sample(key)
-
-        # Should have samples
-        samples = sampler.get_samples()
-
-        assert "x" in samples
-        assert jnp.isfinite(samples["x"]).all()
 
     def test_sampler_with_constraint_likelihood(self):
         """Test sampler with constraint-based likelihood (realistic scenario)."""
         from jesterTOV.inference.likelihoods.constraints import ConstraintEOSLikelihood
+        from jesterTOV.inference.samplers.blackjax.smc.random_walk import (
+            BlackJAXSMCRandomWalkSampler,
+        )
+        from jesterTOV.inference.config.schema import SMCRandomWalkSamplerConfig
 
         prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
 
-        config = FlowMCSamplerConfig(
-            type="flowmc",
-            n_chains=2,
-            n_loop_training=1,
-            n_loop_production=1,
+        config = SMCRandomWalkSamplerConfig(
+            n_particles=10,
+            n_mcmc_steps=1,
             output_dir="./test_output/",
         )
 
@@ -570,15 +187,16 @@ class TestSamplerIntegration:
             penalty_stability=-1e5,
         )
 
-        sampler = FlowMCSampler(
-            likelihood,
-            prior,
-            config,
-            local_sampler_arg={"step_size": jnp.array([1e-3])},
+        sampler = BlackJAXSMCRandomWalkSampler(
+            likelihood=likelihood,
+            prior=prior,
+            sample_transforms=[],
+            likelihood_transforms=[],
+            config=config,
         )
 
         # Should initialize successfully
-        assert sampler.sampler is not None
+        assert sampler.config is config
 
 
 class TestBlackJAXSMCRandomWalkSampler:
@@ -628,98 +246,8 @@ class TestBlackJAXSMCRandomWalkSampler:
         )  # default (uses empirical covariance directly)
 
 
-class TestBlackJAXSMCNUTSSampler:
-    """Test BlackJAX SMC sampler with NUTS kernel."""
-
-    def test_smc_nuts_sampler_initialization(self):
-        """Test SMC NUTS sampler initializes correctly."""
-        from jesterTOV.inference.samplers.blackjax.smc.nuts import (
-            BlackJAXSMCNUTSSampler,
-        )
-        from jesterTOV.inference.config.schema import SMCNUTSSamplerConfig
-
-        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
-        likelihood = MockLikelihood()
-
-        config = SMCNUTSSamplerConfig(
-            n_particles=100,
-            n_mcmc_steps=1,
-            target_ess=0.9,
-            output_dir="./test_output/",
-        )
-
-        sampler = BlackJAXSMCNUTSSampler(
-            likelihood=likelihood,
-            prior=prior,
-            sample_transforms=[],
-            likelihood_transforms=[],
-            config=config,
-        )
-
-        assert sampler.config.type == "smc-nuts"
-        assert sampler.config.n_particles == 100
-        assert sampler.prior == prior
-        assert sampler.likelihood == likelihood
-
-    def test_smc_nuts_config_validation(self):
-        """Test SMC NUTS config validates correctly."""
-        from jesterTOV.inference.config.schema import SMCNUTSSamplerConfig
-
-        # Valid config
-        config = SMCNUTSSamplerConfig(output_dir="./test/")
-        assert config.type == "smc-nuts"
-        assert config.init_step_size == 1e-2  # default
-
-    def test_smc_nuts_mass_matrix_building(self):
-        """Test SMC NUTS sampler builds mass matrix correctly with custom scales."""
-        from jesterTOV.inference.samplers.blackjax.smc.nuts import (
-            BlackJAXSMCNUTSSampler,
-        )
-        from jesterTOV.inference.config.schema import SMCNUTSSamplerConfig
-
-        # Multi-dimensional prior
-        prior = CombinePrior(
-            [
-                UniformPrior(0.0, 1.0, parameter_names=["x"]),
-                UniformPrior(0.0, 1.0, parameter_names=["y"]),
-                UniformPrior(0.0, 1.0, parameter_names=["z"]),
-            ]
-        )
-        likelihood = MockLikelihood()
-
-        # Custom mass matrix scales
-        config = SMCNUTSSamplerConfig(
-            n_particles=100,
-            mass_matrix_base=2.0e-1,
-            mass_matrix_param_scales={"y": 2.0},  # Scale y parameter differently
-            output_dir="./test_output/",
-        )
-
-        sampler = BlackJAXSMCNUTSSampler(
-            likelihood=likelihood,
-            prior=prior,
-            sample_transforms=[],
-            likelihood_transforms=[],
-            config=config,
-        )
-
-        # Build mass matrix
-        mass_matrix = sampler._build_mass_matrix()
-
-        # Should be 3x3 diagonal matrix
-        assert mass_matrix.shape == (3, 3)
-
-        # Diagonal elements should be (base * scale)^2
-        expected_x = (0.2 * 1.0) ** 2
-        expected_y = (0.2 * 2.0) ** 2  # Custom scale
-        expected_z = (0.2 * 1.0) ** 2
-
-        assert jnp.allclose(mass_matrix[0, 0], expected_x)
-        assert jnp.allclose(mass_matrix[1, 1], expected_y)
-        assert jnp.allclose(mass_matrix[2, 2], expected_z)
-
-        # Off-diagonal should be zero
-        assert jnp.allclose(mass_matrix[0, 1], 0.0)
+class TestBlackJAXSMCSamplerMethods:
+    """Test BlackJAX SMC sampler shared behavior (errors, warnings, minimal run)."""
 
     def test_smc_sampler_methods_before_sampling_raise_errors(self):
         """Test SMC sampler methods raise errors when called before sampling."""
@@ -782,59 +310,6 @@ class TestBlackJAXSMCNUTSSampler:
         )
 
         assert len(sampler.sample_transforms) == 1
-
-    @pytest.mark.slow
-    def test_smc_sampler_minimal_run_nuts(self):
-        """Test SMC sampler can run minimal sampling with NUTS kernel (slow test)."""
-        from jesterTOV.inference.samplers.blackjax.smc.nuts import (
-            BlackJAXSMCNUTSSampler,
-        )
-        from jesterTOV.inference.config.schema import SMCNUTSSamplerConfig
-
-        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
-        likelihood = MockLikelihood()
-
-        config = SMCNUTSSamplerConfig(
-            n_particles=50,  # Small for quick test
-            n_mcmc_steps=2,
-            target_ess=0.8,
-            init_step_size=1e-2,
-            output_dir="./test_output/",
-        )
-
-        sampler = BlackJAXSMCNUTSSampler(
-            likelihood=likelihood,
-            prior=prior,
-            sample_transforms=[],
-            likelihood_transforms=[],
-            config=config,
-        )
-
-        # Run sampling
-        key = jax.random.PRNGKey(42)
-        sampler.sample(key)
-
-        # Should have samples
-        samples = sampler.get_samples()
-        assert "x" in samples
-        assert "weights" in samples
-        assert "ess" in samples
-
-        # Samples should be in valid range
-        assert jnp.all((samples["x"] >= 0.0) & (samples["x"] <= 1.0))
-
-        # Should have correct number of particles
-        assert sampler.get_n_samples() == 50
-
-        # Log probs should be finite
-        log_probs = sampler.get_log_prob()
-        assert jnp.isfinite(log_probs).all()
-
-        # Metadata should be populated
-        assert "final_ess" in sampler.metadata
-        assert "annealing_steps" in sampler.metadata
-        assert "kernel_type" in sampler.metadata
-        assert sampler.metadata["kernel_type"] == "nuts"
 
     @pytest.mark.slow
     def test_smc_sampler_minimal_run_random_walk(self):
@@ -1091,44 +566,6 @@ class TestBlackJAXNSAWSampler:
 class TestSamplerFactory:
     """Test sampler factory for multi-backend support."""
 
-    def test_create_flowmc_sampler_from_config(self):
-        """Test factory creates FlowMC sampler from config."""
-        from jesterTOV.inference.samplers import create_sampler
-        from jesterTOV.inference.samplers.flowmc import FlowMCSampler
-        from jesterTOV.inference.config.schema import (
-            InferenceConfig,
-            FlowMCSamplerConfig,
-        )
-
-        # Create full inference config
-        config = InferenceConfig(
-            seed=42,
-            eos={"type": "metamodel", "nb_CSE": 0},
-            tov={"type": "gr"},
-            prior={"specification_file": "test.prior"},
-            likelihoods=[{"type": "zero", "enabled": True}],
-            sampler=FlowMCSamplerConfig(
-                type="flowmc",
-                n_chains=2,
-                n_loop_training=1,
-                n_loop_production=1,
-                output_dir="./test/",
-            ),
-        )
-
-        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
-        likelihood = MockLikelihood()
-
-        sampler = create_sampler(
-            config.sampler,
-            prior,
-            likelihood,
-            likelihood_transforms=[],
-            seed=42,
-        )
-
-        assert isinstance(sampler, FlowMCSampler)
-
     def test_create_smc_sampler_from_config(self):
         """Test factory creates SMC sampler from config."""
         from jesterTOV.inference.samplers import create_sampler
@@ -1156,34 +593,6 @@ class TestSamplerFactory:
 
         assert isinstance(sampler, BlackJAXSMCRandomWalkSampler)
         assert sampler.config.type == "smc-rw"
-
-    def test_create_smc_nuts_sampler_from_config(self):
-        """Test factory creates SMC NUTS sampler from config."""
-        from jesterTOV.inference.samplers import create_sampler
-        from jesterTOV.inference.samplers.blackjax.smc.nuts import (
-            BlackJAXSMCNUTSSampler,
-        )
-        from jesterTOV.inference.config.schema import SMCNUTSSamplerConfig
-
-        config = SMCNUTSSamplerConfig(
-            type="smc-nuts",
-            n_particles=100,
-            output_dir="./test/",
-        )
-
-        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
-        likelihood = MockLikelihood()
-
-        sampler = create_sampler(
-            config,
-            prior,
-            likelihood,
-            likelihood_transforms=[],
-            seed=42,
-        )
-
-        assert isinstance(sampler, BlackJAXSMCNUTSSampler)
-        assert sampler.config.type == "smc-nuts"
 
     def test_create_ns_aw_sampler_from_config(self):
         """Test factory creates NS-AW sampler from config."""
@@ -1268,56 +677,6 @@ class TestSamplerOutputInterface:
         )
 
         assert output.metadata == {}
-
-    @pytest.mark.slow
-    def test_flowmc_sampler_output_interface(self):
-        """Test FlowMC implements get_sampler_output() correctly."""
-        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
-        likelihood = MockLikelihood()
-
-        config = FlowMCSamplerConfig(
-            type="flowmc",
-            n_chains=2,
-            n_loop_training=1,
-            n_loop_production=1,
-            n_local_steps=2,
-            n_global_steps=2,
-            n_epochs=2,
-            train_thinning=1,  # No thinning for minimal test
-            output_thinning=1,  # No thinning for minimal test
-            output_dir="./test_output/",
-        )
-
-        sampler = FlowMCSampler(likelihood, prior, config)
-        sampler.sample(jax.random.PRNGKey(42))
-
-        # Get output via new interface (production samples)
-        output = sampler.get_sampler_output()
-
-        # Verify structure
-        assert "x" in output.samples
-        assert output.log_prob.shape[0] == output.samples["x"].shape[0]
-        assert output.metadata == {}  # FlowMC has no metadata
-
-        # Verify consistency with old interface
-        old_samples = sampler.get_samples()
-        old_log_prob = sampler.get_log_prob()
-
-        assert jnp.array_equal(output.samples["x"], old_samples["x"])
-        assert jnp.array_equal(output.log_prob, old_log_prob)
-
-        # Test FlowMC-specific training sample access
-        training_output = sampler.get_training_sampler_output()
-        assert "x" in training_output.samples
-        assert (
-            training_output.log_prob.shape[0] == training_output.samples["x"].shape[0]
-        )
-        assert training_output.metadata == {}
-
-        # Test training sample count
-        n_training = sampler.get_n_training_samples()
-        assert n_training > 0
-        assert n_training == len(training_output.log_prob)
 
     @pytest.mark.slow
     def test_smc_sampler_output_interface(self):

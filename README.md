@@ -31,7 +31,7 @@ Try `jester` right away in your browser and infer the neutron star equation of s
 | **EOS models** | Metamodel, Metamodel + CSE, Spectral expansion |
 | **TOV solvers** | General Relativity, Pressure anisotropy, Modified gravity (scalar-tensor) |
 | **Likelihoods** | Nuclear experiments (chiEFT), Radio timing, NICER mass-radius, Gravitational waves |
-| **Samplers** | Sequential Monte Carlo, Nested Sampling, FlowMC (normalizing flows) |
+| **Samplers** | Sequential Monte Carlo, Nested Sampling |
 
 ## Installation
 

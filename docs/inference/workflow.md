@@ -44,7 +44,7 @@ All enabled likelihoods are instantiated and wrapped in a {class}`~jesterTOV.inf
 
 ## 6. Sampler setup
 
-The sampler is created from the `sampler` block in the config via the sampler registry. All four backends (FlowMC, SMC-RW, SMC-NUTS, NS-AW) share the same {class}`~jesterTOV.inference.samplers.jester_sampler.JesterSampler` interface. The sampler holds references to the prior, the likelihood, and the transform; it applies the transform internally before likelihood evaluation.
+The sampler is created from the `sampler` block in the config via the sampler registry. All backends (SMC-RW, NS-AW) share the same {class}`~jesterTOV.inference.samplers.jester_sampler.JesterSampler` interface. The sampler holds references to the prior, the likelihood, and the transform; it applies the transform internally before likelihood evaluation.
 
 Before sampling begins, `jester` runs a quick sanity check: it draws three prior samples, pushes them through the transform, and evaluates the likelihood. The resulting log-probabilities are printed to the log. A row of `-inf` values at this stage usually indicates a misconfigured likelihood or EOS parameters outside the valid physical range.
 

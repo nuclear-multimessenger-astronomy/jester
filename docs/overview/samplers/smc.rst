@@ -5,7 +5,7 @@ Sequential Monte Carlo (SMC)
 
 SMC is the recommended default sampler for EOS inference. It anneals a particle population from the prior (:math:`\lambda = 0`) to the posterior (:math:`\lambda = 1`) through a sequence of tempered distributions :math:`\pi_\lambda(\theta) \propto p(\theta)\, \mathcal{L}(\theta)^\lambda`, with :math:`\lambda = 1/T` the so-called inverse temperature.
 
-**How it works.** At each annealing step, the next temperature :math:`\lambda` is chosen adaptively so that the effective sample size (ESS) after importance reweighting stays at ``target_ess`` x N. Particles are resampled with systematic resampling, then refreshed by running ``n_mcmc_steps`` MCMC transitions with one of two kernels: Gaussian Random Walk (SMC-RW) or NUTS (SMC-NUTS). The loop terminates when :math:`\lambda = 1`.
+**How it works.** At each annealing step, the next temperature :math:`\lambda` is chosen adaptively so that the effective sample size (ESS) after importance reweighting stays at ``target_ess`` x N. Particles are resampled with systematic resampling, then refreshed by running ``n_mcmc_steps`` MCMC transitions with a Gaussian Random Walk kernel (SMC-RW). The loop terminates when :math:`\lambda = 1`.
 
 Evidence is accumulated as :math:`\log Z = \sum_t \Delta \log Z_t`, where each increment is computed from the importance weights at step *t*.
 
@@ -53,28 +53,6 @@ In this mode, ``random_walk_sigma`` is treated only as a *starting value*. Howev
      target_acceptance_rate: 0.234   # Roberts-Rosenthal optimal value
      n_pretune_steps: 20             # pilot steps on prior particles; 0 disables pretuning
 
-NUTS kernel (``smc-nuts``) — experimental
--------------------------------------------
-
-.. warning::
-   SMC-NUTS has not been thoroughly validated. Cross-check results with SMC-RW.
-
-Uses the No-U-Turn Sampler as the refreshment kernel, which exploits gradient information via JAX automatic differentiation. The inverse mass matrix is adapted each annealing step using an eigen-decomposition of the Hessian evaluated at the highest-log-posterior particle, with SoftAbs regularisation. The step size is adapted with a simple dual-averaging update targeting ``target_acceptance``.
-
-.. code-block:: yaml
-
-   sampler:
-     type: smc-nuts
-     n_particles: 10000
-     n_mcmc_steps: 5
-     target_ess: 0.9
-     init_step_size: 0.01       # initial leapfrog step size
-     mass_matrix_base: 0.2      # diagonal mass matrix baseline
-     mass_matrix_param_scales:  # optional per-parameter overrides
-       K_sat: 0.5
-     target_acceptance: 0.7
-     adaptation_rate: 0.3
-
 Diagnostics
 -----------
 
@@ -84,5 +62,4 @@ API reference
 -------------
 
 * :class:`jesterTOV.inference.samplers.blackjax.smc.random_walk.BlackJAXSMCRandomWalkSampler`
-* :class:`jesterTOV.inference.samplers.blackjax.smc.nuts.BlackJAXSMCNUTSSampler`
 * :class:`jesterTOV.inference.samplers.blackjax.smc.base.BlackjaxSMCSampler` (base class)
