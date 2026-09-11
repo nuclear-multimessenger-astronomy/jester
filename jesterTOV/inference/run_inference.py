@@ -475,7 +475,7 @@ def run_sampling(
     Parameters
     ----------
     sampler : JesterSampler
-        JesterSampler instance (FlowMC, BlackJAX NS, or BlackJAX SMC)
+        JesterSampler instance (BlackJAX NS or BlackJAX SMC)
     seed : int
         Random seed for sampling
     config : InferenceConfig
@@ -505,7 +505,7 @@ def run_sampling(
     from .samplers.blackjax.smc.base import BlackjaxSMCSampler
 
     # TODO: plot_diagnostics should be in the base class, do not fail if not implemented but just pass
-    # Then, samplers can implement their own diagnostics as needed (e.g., FlowMC could have training diagnostics, acceptance rates, etc.) -- for now we only have this for SMC, but that is fine
+    # Then, other samplers can implement their own diagnostics as needed -- for now we only have this for SMC, but that is fine
 
     if isinstance(sampler, BlackjaxSMCSampler):
         logger.info("Generating SMC diagnostic plots...")
@@ -876,25 +876,15 @@ def main(config_path: str) -> None:
     logger.info("Sampler Configuration:")
 
     # Log sampler-specific config fields
-    if config.sampler.type == "flowmc":
-        logger.info(f"  Chains: {config.sampler.n_chains}")
-        logger.info(f"  Training loops: {config.sampler.n_loop_training}")
-        logger.info(f"  Production loops: {config.sampler.n_loop_production}")
-        logger.info(f"  Local steps per loop: {config.sampler.n_local_steps}")
-        logger.info(f"  Global steps per loop: {config.sampler.n_global_steps}")
-        logger.info(f"  Training epochs: {config.sampler.n_epochs}")
-        logger.info(f"  Learning rate: {config.sampler.learning_rate}")
-        logger.info(f"  Training thinning: {config.sampler.train_thinning}")
-        logger.info(f"  Output thinning: {config.sampler.output_thinning}")
-    elif config.sampler.type == "blackjax-ns-aw":
+    if config.sampler.type == "blackjax-ns-aw":
         logger.info(f"  Live points: {config.sampler.n_live}")
         logger.info(f"  Delete fraction: {config.sampler.n_delete_frac}")
         logger.info(f"  Target MCMC steps: {config.sampler.n_target}")
         logger.info(f"  Termination dlogZ: {config.sampler.termination_dlogz}")
-    elif config.sampler.type in ["smc-rw", "smc-nuts"]:
-        logger.info(f"  Particles: {config.sampler.n_particles}")  # type: ignore[union-attr]
-        logger.info(f"  MCMC steps: {config.sampler.n_mcmc_steps}")  # type: ignore[union-attr]
-        logger.info(f"  Target ESS: {config.sampler.target_ess}")  # type: ignore[union-attr]
+    elif config.sampler.type == "smc-rw":
+        logger.info(f"  Particles: {config.sampler.n_particles}")
+        logger.info(f"  MCMC steps: {config.sampler.n_mcmc_steps}")
+        logger.info(f"  Target ESS: {config.sampler.target_ess}")
 
     # Log shared sampler config fields
     logger.info(f"  EOS samples to generate: {config.sampler.n_eos_samples}")

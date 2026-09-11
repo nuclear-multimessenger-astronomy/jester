@@ -1,7 +1,7 @@
 """Unified HDF5 storage for JESTER inference results.
 
 This module provides the InferenceResult class for storing and loading
-inference results from all sampler types (FlowMC, BlackJAX SMC, BlackJAX NS-AW).
+inference results from all sampler types (BlackJAX SMC, BlackJAX NS-AW).
 """
 
 import json
@@ -20,9 +20,7 @@ from jesterTOV.logging_config import get_logger
 logger = get_logger("jester")
 
 SamplerType = Literal[
-    "flowmc",
     "blackjax_smc_rw",
-    "blackjax_smc_nuts",
     "blackjax_ns_aw",
     "eos_reweighting",
 ]
@@ -40,7 +38,7 @@ class InferenceResult:
     Attributes
     ----------
     sampler_type : SamplerType
-        Sampler backend type ("flowmc", "blackjax_smc_rw", "blackjax_smc_nuts", or "blackjax_ns_aw")
+        Sampler backend type ("blackjax_smc_rw" or "blackjax_ns_aw")
     posterior : Dict[str, np.ndarray]
         All posterior samples including parameters, derived quantities, and sampler-specific data
     metadata : Dict[str, Any]
@@ -126,12 +124,8 @@ class InferenceResult:
         """
         # Detect sampler type
         sampler_class_name = sampler.__class__.__name__
-        if "FlowMC" in sampler_class_name:
-            sampler_type = "flowmc"
-        elif "SMCRandomWalk" in sampler_class_name:
+        if "SMCRandomWalk" in sampler_class_name:
             sampler_type = "blackjax_smc_rw"
-        elif "SMCNUTS" in sampler_class_name:
-            sampler_type = "blackjax_smc_nuts"
         elif "NS" in sampler_class_name or "NestedSampling" in sampler_class_name:
             sampler_type = "blackjax_ns_aw"
         else:
@@ -176,47 +170,7 @@ class InferenceResult:
         # Extract sampler-specific metadata and histories
         histories: Dict[str, np.ndarray] | None = None
 
-        if sampler_type == "flowmc":
-            # TODO: need to make diagnosis plots from training and production separately for sampler performance
-            # still need to decide where to do this, and if to save in metadata the history/final summary for training and production
-
-            # Add FlowMC-specific metadata (from config; get_sampler_state removed in flowMC 0.4.5)
-            flowmc_config = config.sampler  # type: ignore[attr-defined]
-            metadata.update(
-                {
-                    "n_chains": int(flowmc_config.n_chains),  # type: ignore[attr-defined]
-                    "n_loop_training": int(flowmc_config.n_loop_training),  # type: ignore[attr-defined]
-                    "n_loop_production": int(flowmc_config.n_loop_production),  # type: ignore[attr-defined]
-                    "n_local_steps": int(flowmc_config.n_local_steps),  # type: ignore[attr-defined]
-                    "n_global_steps": int(flowmc_config.n_global_steps),  # type: ignore[attr-defined]
-                    "n_epochs": int(flowmc_config.n_epochs),  # type: ignore[attr-defined]
-                    "learning_rate": float(flowmc_config.learning_rate),  # type: ignore[attr-defined]
-                    "train_thinning": int(flowmc_config.train_thinning),  # type: ignore[attr-defined]
-                    "output_thinning": int(flowmc_config.output_thinning),  # type: ignore[attr-defined]
-                }
-            )
-
-            # Extract acceptance histories from production buffers.
-            # flowMC 0.4.5: Buffer is initialized with -inf; acceptance buffers are
-            # only half-filled (local and global steppers share current_position but
-            # write to separate buffers). Filter out -inf to get only filled slots.
-            from flowMC.resource.buffers import Buffer
-
-            resources = sampler.sampler.resources  # type: ignore[union-attr]
-            local_accs_buf = resources.get("local_accs_production")
-            global_accs_buf = resources.get("global_accs_production")
-            if isinstance(local_accs_buf, Buffer) and isinstance(
-                global_accs_buf, Buffer
-            ):
-                local_data = np.array(local_accs_buf.data)
-                global_data = np.array(global_accs_buf.data)
-                # Filter out -inf (uninitialized buffer slots)
-                histories = {
-                    "local_accs": local_data[local_data > -np.inf],
-                    "global_accs": global_data[global_data > -np.inf],
-                }
-
-        elif sampler_type in ["blackjax_smc_rw", "blackjax_smc_nuts"]:
+        if sampler_type == "blackjax_smc_rw":
             # SMC: Get metadata from sampler.metadata dict
             smc_metadata = sampler.metadata  # type: ignore[attr-defined]
 
@@ -791,17 +745,7 @@ class InferenceResult:
             lines.append(f"Fixed parameters: {self.fixed_params}")
 
         # Sampler-specific info
-        if self.sampler_type == "flowmc":
-            lines.append("\nFlowMC Configuration:")
-            lines.append(f"  Chains: {self.metadata.get('n_chains', '?')}")
-            lines.append(
-                f"  Training loops: {self.metadata.get('n_loop_training', '?')}"
-            )
-            lines.append(
-                f"  Production loops: {self.metadata.get('n_loop_production', '?')}"
-            )
-
-        elif self.sampler_type in ["blackjax_smc_rw", "blackjax_smc_nuts"]:
+        if self.sampler_type == "blackjax_smc_rw":
             lines.append("\nBlackJAX SMC Configuration:")
             lines.append(f"  Kernel type: {self.metadata.get('kernel_type', '?')}")
             lines.append(f"  Particles: {self.metadata.get('n_particles', '?')}")

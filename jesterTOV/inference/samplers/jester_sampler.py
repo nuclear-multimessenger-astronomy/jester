@@ -2,7 +2,7 @@ r"""
 Base sampler implementation for jesterTOV.
 
 This module provides a lightweight, modular base class for sampling.
-Backend-specific implementations (e.g., flowMC, Jim, NumPyro) should
+Backend-specific implementations (e.g., BlackJAX SMC, nested sampling) should
 inherit from JesterSampler and implement the sampler initialization.
 """
 
@@ -29,7 +29,7 @@ class SamplerOutput:
 
     This dataclass provides a uniform interface for accessing samples,
     log probabilities, and sampler-specific metadata across different
-    sampling backends (FlowMC, SMC, NS-AW).
+    sampling backends (SMC, NS-AW).
 
     Attributes
     ----------
@@ -39,19 +39,18 @@ class SamplerOutput:
         Only contains actual parameters, not metadata fields.
     log_prob : Array
         Log probability for each sample. Interpretation depends on sampler:
-        - FlowMC/SMC: log posterior probability
+        - SMC: log posterior probability
         - NS-AW: log likelihood (nested sampling uses likelihood)
         Shape: (n_samples,)
     metadata : dict[str, Any]
         Sampler-specific metadata. Common fields:
-        - FlowMC: {} (empty, MCMC has equal weights)
         - SMC: {"weights": Array, "ess": float}
         - NS-AW: {"weights": Array, "logL": Array, "logL_birth": Array}
 
     Notes
     -----
     The log_prob field has different semantics for NS-AW (log likelihood)
-    versus FlowMC/SMC (log posterior). Consumers should check the sampler
+    versus SMC (log posterior). Consumers should check the sampler
     type when interpreting this field.
     """
 
@@ -65,7 +64,7 @@ class JesterSampler:
     Lightweight base class for JESTER samplers.
 
     This class provides a modular interface for Bayesian inference with different
-    sampling backends (flowMC, Jim, NumPyro, etc.). It handles:
+    sampling backends (BlackJAX SMC, nested sampling, etc.). It handles:
     - Parameter transforms (sample and likelihood transforms)
     - Posterior evaluation with Jacobian corrections
     - Parameter name propagation
@@ -298,9 +297,8 @@ class JesterSampler:
 
         Notes
         -----
-        - FlowMC: Returns log posterior from production sampler state
-        - Nested Sampling: Returns log likelihood (use weights separately)
         - SMC: Returns log posterior (uniform weights at λ=1)
+        - Nested Sampling: Returns log likelihood (use weights separately)
         """
         raise NotImplementedError(
             "get_log_prob() must be implemented by backend-specific subclass"
@@ -322,12 +320,6 @@ class JesterSampler:
         ------
         NotImplementedError
             This is an abstract method that must be implemented by subclasses
-
-        Notes
-        -----
-        For samplers with train/production splits (e.g., FlowMC), this returns
-        only production sample count. Training sample count should be accessed
-        via sampler-specific methods if needed.
         """
         raise NotImplementedError(
             "get_n_samples() must be implemented by backend-specific subclass"
@@ -365,10 +357,6 @@ class JesterSampler:
 
         For NS-AW, log_prob contains log likelihood (not log posterior),
         as nested sampling works in likelihood space.
-
-        For samplers with train/production splits (e.g., FlowMC), this returns
-        only production samples. Training samples should be accessed via
-        sampler-specific methods if needed for diagnostics.
         """
         raise NotImplementedError(
             "get_sampler_output() must be implemented by backend-specific subclass"

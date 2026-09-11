@@ -159,8 +159,7 @@ So, what's next?
    For a complete list of all configuration options, see the {ref}`YAML Configuration Reference <yaml-reference>`.
 
 2. **Try other samplers**: Example config and prior files can be found at:
-   - ``jester/examples/inference/flowMC`` for the ``flowMC`` sampler
-   - ``jester/examples/inference/blackjax_ns_aw`` for ``blackjax``'s nested sampler
+   - ``jester/examples/inference/blackjax-ns-aw`` for ``blackjax``'s nested sampler
 
 3. **Try other EOS parametrizations**:
    - ``jester/examples/inference/spectral`` shows how to run inference with the spectral expansion using SMC

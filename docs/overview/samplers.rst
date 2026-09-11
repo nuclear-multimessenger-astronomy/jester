@@ -8,7 +8,7 @@ JESTER provides modern Bayesian sampling algorithms optimized for EOS inference 
 Sequential Monte Carlo (SMC)
 -----------------------------
 
-Adaptive tempering with Random Walk or NUTS kernels. Recommended default.
+Adaptive tempering with a Gaussian Random Walk kernel. Recommended default.
 
 :doc:`samplers/smc`
 
@@ -18,13 +18,6 @@ Nested Sampling (NS-AW)
 Acceptance Walk variant for evidence computation and parameter estimation.
 
 :doc:`samplers/nested_sampling`
-
-FlowMC
-------
-
-Normalizing flow-enhanced MCMC for efficient exploration of complex posteriors.
-
-:doc:`samplers/flowmc`
 
 EOS Reweighting
 ----------------
@@ -38,5 +31,4 @@ Evaluates jester's likelihoods on a fixed, tabulated set of EOS curves via impor
 
    samplers/smc
    samplers/nested_sampling
-   samplers/flowmc
    samplers/eos_reweighting

@@ -118,10 +118,8 @@ Enabled in `conf.py`:
 
 ### Mocked Imports
 
-Optional dependencies mocked during docs build (see `autodoc_mock_imports` in conf.py):
-- `flowMC.*` - FlowMC sampler (optional dependency)
-
-Add to this list if optional dependencies cause import errors during docs build.
+Optional dependencies can be mocked during docs build via `autodoc_mock_imports` in conf.py
+if they cause import errors. None are currently needed.
 
 ## Formatting Standards
 

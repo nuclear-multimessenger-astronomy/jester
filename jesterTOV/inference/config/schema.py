@@ -65,10 +65,8 @@ from .schemas.likelihoods import (
 # Sampler schemas
 from .schemas.samplers import (
     BaseSamplerConfig,
-    FlowMCSamplerConfig,
     BlackJAXNSAWConfig,
     SMCRandomWalkSamplerConfig,
-    SMCNUTSSamplerConfig,
     EOSReweightingConfig,
     SamplerConfig,
 )
@@ -266,10 +264,8 @@ __all__ = [
     "LikelihoodConfig",
     # Samplers
     "BaseSamplerConfig",
-    "FlowMCSamplerConfig",
     "BlackJAXNSAWConfig",
     "SMCRandomWalkSamplerConfig",
-    "SMCNUTSSamplerConfig",
     "EOSReweightingConfig",
     "SamplerConfig",
     # Other

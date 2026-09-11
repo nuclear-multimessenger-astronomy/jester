@@ -60,7 +60,6 @@ See the :doc:`overview/` guide for detailed explanations about what is implement
 
        - :doc:`Sequential Monte Carlo <overview/samplers/smc>`
        - :doc:`Nested Sampling <overview/samplers/nested_sampling>`
-       - :doc:`FlowMC (normalizing flows) <overview/samplers/flowmc>`
        - :doc:`EOS Reweighting <overview/samplers/eos_reweighting>`
 
 

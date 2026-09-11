@@ -45,15 +45,10 @@ These guides ensure all integration points are covered (configuration schema, tr
 
 ### Multi-Sampler Architecture
 
-Four sampler backends available for Bayesian inference:
+Two sampler backends available for Bayesian inference:
 
 **Production Ready:**
-1. **FlowMC** (`type: "flowmc"`) - Normalizing flow-enhanced MCMC
-   - Efficient for high-dimensional posteriors
-   - Uses learned density model to guide sampling
-   - Requires training + production phases
-
-2. **BlackJAX SMC-RW** (`type: "smc-rw"`) - Sequential Monte Carlo with Random Walk kernel
+1. **BlackJAX SMC-RW** (`type: "smc-rw"`) - Sequential Monte Carlo with Random Walk kernel
    - **DEFAULT SAMPLER** for testing and lightweight runs
    - Gaussian Random Walk kernel with sigma adaptation
    - Target ESS: 0.9, requires ~10-30 MCMC steps per tempering level
@@ -64,13 +59,8 @@ Four sampler backends available for Bayesian inference:
      collapse as the posterior narrows quickly during tempering. See
      `jesterTOV/inference/CLAUDE.md` for the implementation details.
 
-3. **BlackJAX SMC-NUTS** (`type: "smc-nuts"`) - Sequential Monte Carlo with NUTS kernel
-   - Production ready, well-tested
-   - NUTS kernel with Hessian-based mass matrix adaptation
-   - More efficient than RW for complex posteriors
-
 **Experimental:**
-4. **BlackJAX NS-AW** (`type: "blackjax-ns-aw"`) - Nested Sampling with Acceptance Walk
+2. **BlackJAX NS-AW** (`type: "blackjax-ns-aw"`) - Nested Sampling with Acceptance Walk
    - For model comparison and evidence estimation
    - Mimics bilby nested sampling setup
    - Needs additional type checking/fixes
@@ -81,7 +71,6 @@ Four sampler backends available for Bayesian inference:
 examples/inference/smc_random_walk/chiEFT/config.yaml
 
 # Other examples organized by sampler type:
-examples/inference/flowmc/           # FlowMC examples
 examples/inference/smc_random_walk/  # SMC-RW examples
 examples/inference/ns/               # Nested sampling examples
 examples/inference/spectral/         # Spectral decomposition examples
@@ -90,9 +79,7 @@ examples/inference/spectral/         # Spectral decomposition examples
 **Sampler Registry** (`jesterTOV/inference/samplers/jester_sampler.py`):
 ```python
 SAMPLER_REGISTRY = {
-    "flowmc": FlowMCSampler,
     "smc-rw": BlackJAXSMCRandomWalkSampler,
-    "smc-nuts": BlackJAXSMCNUTSSampler,
     "blackjax-ns-aw": BlackJAXNSAWSampler,
 }
 ```
@@ -207,7 +194,7 @@ value = array.item()  # type: ignore[union-attr]
   - `likelihoods/` - Observational constraints (GW, NICER, Radio, ChiEFT, REX, etc.)
   - `flows/` - Normalizing flow utilities for GW likelihoods; includes `bilby_extract.py` for extracting posteriors from bilby HDF5 results
   - `data/` - Data loading and caching
-  - `samplers/` - FlowMC, SMC (RW/NUTS), Nested Sampling backends
+  - `samplers/` - SMC (Random Walk), Nested Sampling backends
   - `run_inference.py` - Main orchestration
   - `result.py` - HDF5 result storage
 
@@ -308,7 +295,7 @@ uv run pytest tests/
 **End-to-End Tests** (`tests/test_inference/test_e2e/`):
 - Tests the full inference pipeline: config → sampler.sample() → SamplerOutput
 - Uses lightweight hyperparameters for fast execution (<2 min per test)
-- Covers all samplers: SMC-RW, FlowMC, BlackJAX NS-AW
+- Covers all samplers: SMC-RW, BlackJAX NS-AW
 - Catches integration bugs that unit tests miss
 
 **CI/CD Configuration**:
@@ -402,13 +389,11 @@ jesterTOV/inference/
 │   └── paths.py                 # Path management
 ├── samplers/                    # Sampler implementations
 │   ├── jester_sampler.py        # Base JesterSampler + SAMPLER_REGISTRY
-│   ├── flowmc.py                # FlowMC backend
 │   └── blackjax/                # BlackJAX backends
 │       ├── base.py              # BlackjaxSampler base class
 │       ├── smc/                 # Sequential Monte Carlo framework
 │       │   ├── base.py          # BlackjaxSMCSampler
-│       │   ├── random_walk.py   # SMC-RW (production ready)
-│       │   └── nuts.py          # SMC-NUTS (production ready)
+│       │   └── random_walk.py   # SMC-RW (production ready)
 │       └── nested_sampling/     # Nested sampling
 │           └── ns_aw.py         # NS with Acceptance Walk (experimental)
 ├── base/                        # Base classes (from Jim v0.2.0)

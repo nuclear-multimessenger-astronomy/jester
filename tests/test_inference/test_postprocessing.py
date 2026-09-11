@@ -68,12 +68,12 @@ class TestLoadEOSData:
             "n_TOV": np.array([1e45, 2e45]),  # geometric units
         }
         metadata = {
-            "sampler": "flowmc",
+            "sampler": "blackjax_smc_rw",
             "n_samples": 2,
         }
 
         result = InferenceResult(
-            sampler_type="flowmc",
+            sampler_type="blackjax_smc_rw",
             posterior=posterior,
             metadata=metadata,
         )
@@ -112,10 +112,10 @@ class TestLoadEOSData:
             "K_sat": np.array([220.0]),
             "log_prob": np.array([-10.0]),
         }
-        metadata = {"sampler": "flowmc"}
+        metadata = {"sampler": "blackjax_smc_rw"}
 
         result = InferenceResult(
-            sampler_type="flowmc",
+            sampler_type="blackjax_smc_rw",
             posterior=posterior,
             metadata=metadata,
         )
@@ -238,10 +238,10 @@ class TestLoadPriorData:
             "e": np.random.rand(3, 50),
             "cs2": np.random.rand(3, 50),
         }
-        metadata = {"sampler": "flowmc"}
+        metadata = {"sampler": "blackjax_smc_rw"}
 
         result = InferenceResult(
-            sampler_type="flowmc",
+            sampler_type="blackjax_smc_rw",
             posterior=posterior,
             metadata=metadata,
         )
@@ -551,9 +551,9 @@ class TestPlotErrorHandling:
 class TestIntegrationWithInferenceResult:
     """Integration tests with InferenceResult class."""
 
-    def test_full_workflow_flowmc(self, temp_dir):
+    def test_full_workflow_smc_rw(self, temp_dir):
         """Test complete workflow: create result → save → load → plot."""
-        # Create realistic FlowMC result
+        # Create realistic SMC-RW result
         n_samples = 100
         n_eos = 200
 
@@ -574,7 +574,7 @@ class TestIntegrationWithInferenceResult:
         }
 
         metadata = {
-            "sampler": "flowmc",
+            "sampler": "blackjax_smc_rw",
             "n_samples": n_samples,
             "sampling_time": 3600.0,
             # Include parameter_names so load_eos_data can populate prior_params
@@ -582,7 +582,7 @@ class TestIntegrationWithInferenceResult:
         }
 
         result = InferenceResult(
-            sampler_type="flowmc",
+            sampler_type="blackjax_smc_rw",
             posterior=posterior,
             metadata=metadata,
         )
