@@ -19,9 +19,7 @@ from jesterTOV.inference.config.schemas.likelihoods import (
     ZeroLikelihoodConfig,
     GWLikelihoodConfig,
     GWEventConfig,
-    GWResampledLikelihoodConfig,
     NICERLikelihoodConfig,
-    NICERKDELikelihoodConfig,
     RadioLikelihoodConfig,
     ChiEFTLikelihoodConfig,
     EOSConstraintsLikelihoodConfig,
@@ -350,16 +348,6 @@ class TestEOSReweightingLikelihoodValidation:
     @pytest.mark.parametrize(
         "likelihood",
         [
-            GWResampledLikelihoodConfig(events=[{"name": "GW170817"}]),
-            NICERKDELikelihoodConfig(
-                pulsars=[
-                    {
-                        "name": "J0030",
-                        "amsterdam_samples_file": "a.npz",
-                        "maryland_samples_file": "m.npz",
-                    }
-                ]
-            ),
             ChiEFTLikelihoodConfig(),
             EOSConstraintsLikelihoodConfig(),
             TOVConstraintsLikelihoodConfig(),
@@ -367,8 +355,6 @@ class TestEOSReweightingLikelihoodValidation:
             GammaConstraintsLikelihoodConfig(),
         ],
         ids=[
-            "gw_resampled",
-            "nicer_kde",
             "chieft",
             "constraints_eos",
             "constraints_tov",

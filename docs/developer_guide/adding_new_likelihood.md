@@ -559,7 +559,7 @@ if not config.enabled:
 
 ## Advanced: resampling during likelihood call
 
-Some likelihoods (like GW posteriors) require resampling during MCMC. See `GWLikelihoodResampled` for an example:
+Some likelihoods require resampling during MCMC, e.g.:
 
 ```python
 class ResamplingLikelihood(LikelihoodBase):

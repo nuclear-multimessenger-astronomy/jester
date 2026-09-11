@@ -322,34 +322,6 @@ events:
 
 ::::
 
-#### Resampled GW likelihood (legacy)
-
-::::{dropdown} **Resampled GW likelihood (legacy)**
-
-```yaml
-- type: "gw_resampled"
-  enabled: true
-  events:                       # List of GW events
-    - name: "GW170817"
-      nf_model_dir: "./NFs/GW170817"
-  penalty_value: 0.0            # Log-likelihood penalty for M > M_TOV (default: 0.0)
-  N_masses_evaluation: 20       # Number of masses per evaluation (optional, default: 20)
-  N_masses_batch_size: 1        # Batch size for sampling (optional, default: 1)
-```
-
-**Field Details:**
-
-- **`events`** (`list[dict]`) - List of GW events with `name` and optional `nf_model_dir` keys
-- **`penalty_value`** (`float`, default: `0.0`) - Log-likelihood penalty for masses exceeding TOV maximum mass (default: 0.0, i.e. no penalty)
-- **`N_masses_evaluation`** (`int`, default: `20`) - Number of mass samples to draw on-the-fly per likelihood evaluation
-- **`N_masses_batch_size`** (`int`, default: `1`) - Batch size for mass sampling and processing (see the presampled `GWLikelihoodConfig` entry above for the memory/speed tradeoff this controls)
-
-**Description:**
-
-**Legacy GW likelihood**: resamples masses from the GW posterior on-the-fly during each likelihood evaluation. Slower than the presampled version. See {class}`~jesterTOV.inference.likelihoods.gw.GWLikelihoodResampled` for the full API.
-
-::::
-
 ### NICER observations
 
 Constrain the mass–radius relation using NICER X-ray timing observations of millisecond pulsars. For the physics and methodology, see {ref}`likelihood-nicer`.
@@ -380,33 +352,6 @@ Constrain the mass–radius relation using NICER X-ray timing observations of mi
 **Description:**
 
 **Default NICER likelihood** using pre-trained normalizing flows on M-R posteriors. Pre-samples masses once at initialization for efficient, deterministic evaluation. Recommended for production use. See {class}`~jesterTOV.inference.likelihoods.nicer.NICERLikelihood` for the full API. For information on training custom flows from NICER posterior samples, see {doc}`training_flows`.
-
-::::
-
-#### NICER KDE likelihood (legacy)
-
-::::{dropdown} **NICER KDE Likelihood (legacy)**
-
-```yaml
-- type: "nicer_kde"
-  enabled: true
-  pulsars:                      # List of pulsars with sample files
-    - name: "J0030"
-      amsterdam_samples_file: "./data/NICER/J0030/amsterdam.npz"
-      maryland_samples_file: "./data/NICER/J0030/maryland.npz"
-  N_masses_evaluation: 100      # Number of masses per evaluation (optional, default: 100)
-  N_masses_batch_size: 20       # Batch size for sampling (optional, default: 20)
-```
-
-**Field Details:**
-
-- **`pulsars`** (`list[dict]`) - List of pulsars with `name`, `amsterdam_samples_file`, and `maryland_samples_file` keys pointing to M-R posterior samples (npz format).
-- **`N_masses_evaluation`** (`int`, default: `100`) - Number of mass samples to draw on-the-fly from posterior samples per evaluation
-- **`N_masses_batch_size`** (`int`, default: `20`) - Batch size for mass sampling and KDE evaluation
-
-**Description:**
-
-**Legacy NICER likelihood** using kernel density estimation on M-R posterior samples. Resamples masses during each evaluation (slower, non-deterministic). For backward compatibility only — use the flow-based version for new analyses. See {ref}`likelihood-nicer` for a comparison of the two approaches.
 
 ::::
 
@@ -767,7 +712,7 @@ postprocessing:
 - `metadata/log_Z`, `metadata/log_Z_std`, `metadata/N_eff`, `metadata/N_eff_fraction` — evidence scalars
 - `metadata/n_eos`, `metadata/n_resampled` — number of input curves and resampled posterior draws
 
-**Supported likelihoods.** Because the EOS is only known through its tabulated $(M, \Lambda, R)$ curve, `likelihoods` may only contain types that depend purely on these neutron-star observables: `gw`, `nicer`, `radio`, and `zero`. Likelihoods that need EOS-level structure (density, pressure, sound speed, ...) — `gw_resampled`, `nicer_kde`, `chieft`, `constraints_eos`, `constraints_tov`, `constraints_esym`, `constraints_gamma`, `rex` — are rejected at config-validation time with a clear error, since they need information not available from tabulated curves or require additional sampling.
+**Supported likelihoods.** Because the EOS is only known through its tabulated $(M, \Lambda, R)$ curve, `likelihoods` may only contain types that depend purely on these neutron-star observables: `gw`, `nicer`, `radio`, and `zero`. Likelihoods that need EOS-level structure (density, pressure, sound speed, ...) — `chieft`, `constraints_eos`, `constraints_tov`, `constraints_esym`, `constraints_gamma`, `rex` — are rejected at config-validation time with a clear error, since they need information not available from tabulated curves.
 
 **Postprocessing.** Because the resampled posterior only contains $(M, \Lambda, R)$ curves, postprocessing for this sampler produces only the mass-radius and mass-Lambda plots — there is no NEP/CSE parameter posterior, density/pressure/cs2 profile, or TOV central-density diagnostic available to build a cornerplot, pressure-density plot, cs2 plot, histograms, or contours from. The top-level `postprocessing` block uses the lighter {class}`~jesterTOV.inference.config.schemas.eos_reweighting.EOSReweightingPostprocessingConfig` schema (`enabled`, `injection_eos_path`, `plot_format` only) rather than the full {class}`~jesterTOV.inference.config.schema.PostprocessingConfig` used by the parametric samplers. `injection_eos_path` follows the same NPZ format as for the other samplers (see the "Postprocessing" section above) and is typically one of the tabulated EOS files under `jesterTOV/tabulated_eos/lalsuite/` when validating against a known injected EOS. Postprocessing runs automatically after `run_jester_inference config.yaml` (unless `postprocessing.enabled: false`), and can also be triggered standalone with `run_jester_postprocessing config.yaml`.
 

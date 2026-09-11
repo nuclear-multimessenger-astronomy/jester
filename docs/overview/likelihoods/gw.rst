@@ -50,8 +50,7 @@ Mass pairs where either component exceeds :math:`M_\mathrm{TOV}` receive a large
 Fixing the mass grid at initialization ensures deterministic and smooth likelihood evaluations across all EOS candidates, which is important for sampler convergence.
 Because JAX parallelises the evaluation over all :math:`N` pairs efficiently on GPU, large :math:`N` (the default is 2000) can be used at little extra cost, making the estimator close to a proper Monte Carlo integral over the GW posterior.
 
-The default implementation is :class:`~jesterTOV.inference.likelihoods.gw.GWLikelihood`.
-A stochastic variant, :class:`~jesterTOV.inference.likelihoods.gw.GWLikelihoodResampled`, which draws fresh mass pairs at every likelihood call, is also available but not recommended for production runs.
+This is implemented in :class:`~jesterTOV.inference.likelihoods.gw.GWLikelihood`.
 
 ----
 

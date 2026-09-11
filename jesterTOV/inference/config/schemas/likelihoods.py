@@ -279,64 +279,12 @@ class GWLikelihoodConfig(BaseLikelihoodConfig):
     )
 
 
-class GWResampledLikelihoodConfig(BaseLikelihoodConfig):
-    """Gravitational wave likelihood configuration (legacy resampled version).
-
-    Legacy version that resamples masses from GW posterior on-the-fly
-    during each likelihood evaluation. Slower than presampled version.
-
-    Examples
-    --------
-    .. code-block:: yaml
-
-        - type: "gw_resampled"
-          enabled: true
-          events:
-            - name: "GW170817"
-          N_masses_evaluation: 20
-    """
-
-    type: Literal["gw_resampled"] = Field(
-        default="gw_resampled", description="Likelihood type identifier"
-    )
-
-    events: list[dict[str, str]] = Field(
-        description="List of GW events (see GWLikelihoodConfig for format)",
-        min_length=1,
-    )
-
-    penalty_value: float = Field(default=0.0)
-    N_masses_evaluation: int = Field(default=20, gt=0)
-    N_masses_batch_size: int = Field(default=1, gt=0)
-
-    @field_validator("events")
-    @classmethod
-    def _validate_events(cls, v: list[dict[str, str]]) -> list[dict[str, str]]:
-        seen: set[str] = set()
-        duplicates: list[str] = []
-        for i, event in enumerate(v):
-            if "name" not in event:
-                raise ValueError(f"Event {i} missing required 'name' field")
-            name = event["name"]
-            if name in seen:
-                duplicates.append(name)
-            seen.add(name)
-        if duplicates:
-            raise ValueError(
-                f"Duplicate GW event names found: {sorted(set(duplicates))}. "
-                "Each event must have a unique name."
-            )
-        return v
-
-
 class NICERLikelihoodConfig(BaseLikelihoodConfig):
-    """NICER X-ray timing likelihood configuration using normalizing flows (DEFAULT).
+    """NICER X-ray timing likelihood configuration using normalizing flows.
 
     Constrains mass-radius relation using NICER observations of
     millisecond pulsars. Uses pre-trained normalizing flows on M-R
     posteriors for efficient likelihood evaluation.
-
-    For the legacy KDE-based version, use type: "nicer_kde".
 
     Examples
     --------
@@ -418,86 +366,6 @@ class NICERLikelihoodConfig(BaseLikelihoodConfig):
                     f"Pulsar {i} ({name}) missing 'maryland_model_dir'. "
                     "NICERLikelihood.__init__ will raise ValueError at runtime. "
                     "Preset model paths are not yet implemented."
-                )
-        if duplicates:
-            raise ValueError(
-                f"Duplicate NICER pulsar names found: {sorted(set(duplicates))}. "
-                "Each pulsar must have a unique name."
-            )
-        return v
-
-
-class NICERKDELikelihoodConfig(BaseLikelihoodConfig):
-    """NICER X-ray timing likelihood configuration using KDE (LEGACY).
-
-    This is the legacy KDE-based NICER likelihood. For the recommended
-    flow-based version, use type: "nicer".
-
-    Constrains mass-radius relation using NICER observations of
-    millisecond pulsars. Uses kernel density estimation on M-R
-    posterior samples from analysis teams.
-
-    Examples
-    --------
-    .. code-block:: yaml
-
-        - type: "nicer_kde"
-          enabled: true
-          pulsars:
-            - name: "J0030"
-              amsterdam_samples_file: "./data/J0030_amsterdam.npz"
-              maryland_samples_file: "./data/J0030_maryland.npz"
-            - name: "J0740"
-              amsterdam_samples_file: "./data/J0740_amsterdam.npz"
-              maryland_samples_file: "./data/J0740_maryland.npz"
-          N_masses_evaluation: 100
-    """
-
-    type: Literal["nicer_kde"] = Field(
-        default="nicer_kde", description="Likelihood type identifier"
-    )
-
-    pulsars: list[dict[str, str]] = Field(
-        description=(
-            "List of pulsars to include. Each pulsar must have 'name' key. "
-            "'amsterdam_samples_file' and 'maryland_samples_file' keys "
-            "specify paths to M-R posterior samples (.npz files)."
-        ),
-        min_length=1,
-    )
-
-    N_masses_evaluation: int = Field(
-        default=100,
-        gt=0,
-        description="Number of mass grid points for marginalization over pulsar mass",
-    )
-
-    N_masses_batch_size: int = Field(
-        default=20,
-        gt=0,
-        description="Batch size for processing mass grid points",
-    )
-
-    @field_validator("pulsars")
-    @classmethod
-    def _validate_pulsars(cls, v: list[dict[str, str]]) -> list[dict[str, str]]:
-        seen: set[str] = set()
-        duplicates: list[str] = []
-        for i, pulsar in enumerate(v):
-            if "name" not in pulsar:
-                raise ValueError(f"Pulsar {i} missing required 'name' field")
-            name = pulsar["name"]
-            if name in seen:
-                duplicates.append(name)
-            seen.add(name)
-            # Both sample files are required for KDE approach
-            if "amsterdam_samples_file" not in pulsar:
-                raise ValueError(
-                    f"Pulsar {i} missing required 'amsterdam_samples_file' field"
-                )
-            if "maryland_samples_file" not in pulsar:
-                raise ValueError(
-                    f"Pulsar {i} missing required 'maryland_samples_file' field"
                 )
         if duplicates:
             raise ValueError(
@@ -904,9 +772,7 @@ class MockMassRadiusLikelihoodConfig(BaseLikelihoodConfig):
 LikelihoodConfig = Annotated[
     Union[
         GWLikelihoodConfig,
-        GWResampledLikelihoodConfig,
         NICERLikelihoodConfig,
-        NICERKDELikelihoodConfig,
         RadioLikelihoodConfig,
         ChiEFTLikelihoodConfig,
         EOSConstraintsLikelihoodConfig,

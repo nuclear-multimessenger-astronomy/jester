@@ -255,36 +255,6 @@ class TestLikelihoodConfig:
         assert config.type == "nicer"
         assert len(config.pulsars) == 1
 
-    def test_nicer_kde_likelihood_config(self):
-        """Test NICER KDE-based likelihood configuration."""
-        config = schema.NICERKDELikelihoodConfig(
-            enabled=True,
-            pulsars=[
-                {
-                    "name": "J0030",
-                    "amsterdam_samples_file": "/path/to/amsterdam.txt",
-                    "maryland_samples_file": "/path/to/maryland.txt",
-                }
-            ],
-            N_masses_evaluation=100,
-        )
-        assert config.type == "nicer_kde"
-        assert len(config.pulsars) == 1
-
-    def test_nicer_kde_likelihood_missing_files_fails(self):
-        """Test that NICER KDE likelihood without sample files fails."""
-        with pytest.raises(
-            ValidationError, match="missing required 'amsterdam_samples_file' field"
-        ):
-            schema.NICERKDELikelihoodConfig(
-                pulsars=[
-                    {
-                        "name": "J0030",
-                        # Missing sample files
-                    }
-                ],
-            )
-
     def test_radio_likelihood_config(self):
         """Test radio timing likelihood configuration."""
         config = schema.RadioLikelihoodConfig(
@@ -828,26 +798,6 @@ class TestGWEventConfig:
         )
         assert len(config.events) == 2
 
-    def test_gw_resampled_duplicate_event_names_fail(self):
-        """GWResampledLikelihoodConfig raises ValidationError for duplicate event names."""
-        with pytest.raises(ValidationError, match="Duplicate GW event names"):
-            schema.GWResampledLikelihoodConfig(
-                events=[
-                    {"name": "GW170817"},
-                    {"name": "GW170817"},
-                ]
-            )
-
-    def test_gw_resampled_unique_event_names_ok(self):
-        """GWResampledLikelihoodConfig accepts multiple events with unique names."""
-        config = schema.GWResampledLikelihoodConfig(
-            events=[
-                {"name": "GW170817"},
-                {"name": "GW190425"},
-            ]
-        )
-        assert len(config.events) == 2
-
 
 class TestNICERDuplicateNames:
     """Tests for duplicate name validation in NICER likelihood configs."""
@@ -883,42 +833,6 @@ class TestNICERDuplicateNames:
                     "name": "J0740",
                     "amsterdam_model_dir": "./am2",
                     "maryland_model_dir": "./md2",
-                },
-            ]
-        )
-        assert len(config.pulsars) == 2
-
-    def test_nicer_kde_duplicate_pulsar_names_fail(self):
-        """NICERKDELikelihoodConfig raises ValidationError for duplicate pulsar names."""
-        with pytest.raises(ValidationError, match="Duplicate NICER pulsar names"):
-            schema.NICERKDELikelihoodConfig(
-                pulsars=[
-                    {
-                        "name": "J0030",
-                        "amsterdam_samples_file": "./am.npz",
-                        "maryland_samples_file": "./md.npz",
-                    },
-                    {
-                        "name": "J0030",
-                        "amsterdam_samples_file": "./am2.npz",
-                        "maryland_samples_file": "./md2.npz",
-                    },
-                ]
-            )
-
-    def test_nicer_kde_unique_pulsar_names_ok(self):
-        """NICERKDELikelihoodConfig accepts multiple pulsars with unique names."""
-        config = schema.NICERKDELikelihoodConfig(
-            pulsars=[
-                {
-                    "name": "J0030",
-                    "amsterdam_samples_file": "./am.npz",
-                    "maryland_samples_file": "./md.npz",
-                },
-                {
-                    "name": "J0740",
-                    "amsterdam_samples_file": "./am2.npz",
-                    "maryland_samples_file": "./md2.npz",
                 },
             ]
         )

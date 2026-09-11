@@ -53,8 +53,7 @@ Mass samples that exceed :math:`M_\mathrm{TOV}` receive a large negative penalty
 
 The pre-sampling at initialization fixes the mass grid for the entire run, which ensures deterministic and smooth likelihood evaluations — important for sampler convergence.
 
-The default implementation is :class:`~jesterTOV.inference.likelihoods.nicer.NICERLikelihood` (flow-based).
-A legacy :class:`~jesterTOV.inference.likelihoods.nicer.NICERKDELikelihood` based on kernel density estimation of the raw posterior samples is also available for comparison.
+This is implemented in :class:`~jesterTOV.inference.likelihoods.nicer.NICERLikelihood`.
 
 ----
 

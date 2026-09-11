@@ -22,8 +22,6 @@ See the {ref}`YAML Configuration Reference <yaml-reference>` for a full descript
 
 The prior specification file (`.prior`) is parsed into a {class}`~jesterTOV.inference.base.prior.CombinePrior` object. Any parameter declared with `Fixed(...)` is extracted into a separate `fixed_params` dictionary and excluded from the sampling space. Fixed parameters are still passed through the transform as constants.
 
-If a likelihood that requires per-sample random keys is enabled (currently `gw_resampled` or `nicer_kde`), a `_random_key` parameter is added to the prior automatically.
-
 For the `metamodel_cse` EOS, the CSE grid parameters (`p_0`, ..., `p_N`) are generated programmatically based on the `nb_CSE` field in the config; they do not need to appear in the `.prior` file. The full expanded prior is printed to the log at startup.
 
 ## 3. Transform setup
