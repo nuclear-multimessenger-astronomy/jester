@@ -16,9 +16,7 @@ from .schema import (
     # Likelihoods
     BaseLikelihoodConfig,
     GWLikelihoodConfig,
-    GWResampledLikelihoodConfig,
     NICERLikelihoodConfig,
-    NICERKDELikelihoodConfig,
     RadioLikelihoodConfig,
     ChiEFTLikelihoodConfig,
     EOSConstraintsLikelihoodConfig,
@@ -56,9 +54,7 @@ __all__ = [
     # Likelihoods
     "BaseLikelihoodConfig",
     "GWLikelihoodConfig",
-    "GWResampledLikelihoodConfig",
     "NICERLikelihoodConfig",
-    "NICERKDELikelihoodConfig",
     "RadioLikelihoodConfig",
     "ChiEFTLikelihoodConfig",
     "EOSConstraintsLikelihoodConfig",

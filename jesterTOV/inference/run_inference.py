@@ -118,21 +118,10 @@ def setup_prior(config: InferenceConfig) -> tuple[CombinePrior, dict[str, float]
         Parameters pinned to constant values via ``Fixed(...)`` in the prior
         file.  These are excluded from the sampling space.
     """
-    from .base.prior import UniformPrior, CombinePrior
-
     # Determine conditional parameters
     nb_CSE = config.eos.nb_CSE if isinstance(config.eos, MetamodelCSEEOSConfig) else 0
     # peakCSE uses nbreak as a core parameter (not gated by nb_CSE)
     include_nbreak = isinstance(config.eos, MetamodelPeakCSEEOSConfig)
-
-    # Check if GW or NICER likelihoods are enabled (both need _random_key)
-    # Note: the default `gw` and `nicer` likelihoods do NOT need
-    # _random_key as they pre-generate masses on which to evaluate
-    needs_random_key = False
-    for lk in config.likelihoods:
-        if lk.enabled and lk.type in ["gw_resampled", "nicer_kde"]:
-            needs_random_key = True
-            break
 
     # Parse prior file
     parsed = parse_prior_file(
@@ -145,15 +134,6 @@ def setup_prior(config: InferenceConfig) -> tuple[CombinePrior, dict[str, float]
 
     if fixed_params:
         logger.info(f"Fixed parameters found in prior file: {fixed_params}")
-
-    # Add _random_key prior if GW or NICER likelihoods are enabled
-    if needs_random_key:
-        logger.info("Adding _random_key prior for likelihood sampling")
-        random_key_prior = UniformPrior(
-            float(0), float(2**32 - 1), parameter_names=["_random_key"]
-        )
-        # Flatten the prior structure to avoid nested CombinePrior
-        prior = CombinePrior(prior.base_prior + [random_key_prior])
 
     return prior, fixed_params
 

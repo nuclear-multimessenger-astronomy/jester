@@ -417,7 +417,7 @@ Configuration files use YAML with Pydantic validation. See `examples/inference/*
   - Grid parameters: ndat, min_nsat, etc.
 - `prior`: Path to `.prior` specification file (bilby-style Python)
 - `likelihoods`: List of observational constraints (discriminated union)
-  - Available types: gw, gw_resampled, nicer, radio, chieft, rex, eos_constraints, tov_constraints, gamma_constraints, zero
+  - Available types: gw, nicer, radio, chieft, rex, eos_constraints, tov_constraints, gamma_constraints, zero
   - Each likelihood has `enabled` flag and type-specific parameters
 - `sampler`: Sampler configuration (discriminated union by type)
   - SMC-RW: n_particles, n_mcmc_steps, target_ess, etc.
@@ -432,18 +432,17 @@ Configuration files use YAML with Pydantic validation. See `examples/inference/*
      - **From bilby result**: set `from_bilby_result` to a bilby HDF5 path; jester extracts posterior samples and trains a flow automatically via `prepare_gw_flows()` in `run_inference.py`
    - `GWEventConfig` fields: `name` (required), `nf_model_dir`, `from_bilby_result`, `flow_config`, `retrain_flow`
    - `from_bilby_result` and `nf_model_dir` are mutually exclusive; `flow_config`/`retrain_flow` only valid with `from_bilby_result`
-2. `GWResampledLikelihoodConfig` - GW with resampling during MCMC
-3. `NICERLikelihoodConfig` - X-ray timing
+2. `NICERLikelihoodConfig` - X-ray timing
    - sources: list of sources (e.g., ["J0030", "J0740"])
-4. `RadioLikelihoodConfig` - Radio pulsar timing
+3. `RadioLikelihoodConfig` - Radio pulsar timing
    - database: "FIDUCEO" or "FIDUCEO2"
-5. `ChiEFTLikelihoodConfig` - Chiral EFT constraints
+4. `ChiEFTLikelihoodConfig` - Chiral EFT constraints
    - nb_n: number of density points
-6. `REXLikelihoodConfig` - PREX/CREX neutron skin
-7. `EOSConstraintsLikelihoodConfig` - EOS physical validity (causality, stability)
-8. `TOVConstraintsLikelihoodConfig` - TOV solver success
-9. `GammaConstraintsLikelihoodConfig` - Spectral gamma bounds
-10. `ZeroLikelihoodConfig` - Prior-only sampling (no data)
+5. `REXLikelihoodConfig` - PREX/CREX neutron skin
+6. `EOSConstraintsLikelihoodConfig` - EOS physical validity (causality, stability)
+7. `TOVConstraintsLikelihoodConfig` - TOV solver success
+8. `GammaConstraintsLikelihoodConfig` - Spectral gamma bounds
+9. `ZeroLikelihoodConfig` - Prior-only sampling (no data)
 
 **IMPORTANT**: When modifying any file under `config/schemas/`, update `docs/inference/yaml_reference.md` by hand to keep the user documentation in sync.
 

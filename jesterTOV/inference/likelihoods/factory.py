@@ -7,9 +7,7 @@ from ..config.schema import (
     LikelihoodConfig,
     GWEventConfig,
     GWLikelihoodConfig,
-    GWResampledLikelihoodConfig,
     NICERLikelihoodConfig,
-    NICERKDELikelihoodConfig,
     RadioLikelihoodConfig,
     ChiEFTLikelihoodConfig,
     EOSConstraintsLikelihoodConfig,
@@ -22,8 +20,8 @@ from ..config.schema import (
     MockMassRadiusLikelihoodConfig,
 )
 from .combined import CombinedLikelihood, ZeroLikelihood
-from .gw import GWLikelihoodResampled, StackedGWLikelihood
-from .nicer import NICERLikelihood, NICERKDELikelihood
+from .gw import StackedGWLikelihood
+from .nicer import NICERLikelihood
 from .radio import RadioTimingLikelihood
 from .chieft import ChiEFTLikelihood
 from .constraints import (
@@ -115,7 +113,7 @@ def create_likelihood(
 
     # Type narrowing with match statement
     match config:
-        case GWLikelihoodConfig() | GWResampledLikelihoodConfig():
+        case GWLikelihoodConfig():
             # GW likelihoods are handled specially in create_combined_likelihood
             # This function should not be called directly for GW type
             raise RuntimeError(
@@ -123,7 +121,7 @@ def create_likelihood(
                 "not create_likelihood directly"
             )
 
-        case NICERLikelihoodConfig() | NICERKDELikelihoodConfig():
+        case NICERLikelihoodConfig():
             # NICER likelihoods are handled specially in create_combined_likelihood
             # This function should not be called directly for NICER types
             raise RuntimeError(
@@ -259,28 +257,6 @@ def create_combined_likelihood(
                 )
                 likelihoods.append(gw_likelihood)
 
-            # Special handling for GW likelihoods with resampling: create one likelihood per event
-            case GWResampledLikelihoodConfig():
-                # Create one GWLikelihoodResampled per event
-                for event in config.events:
-                    # Get model directory (use preset if not provided)
-                    # GWResampledLikelihoodConfig still uses dict[str, str] events
-                    model_dir = get_gw_model_dir(
-                        GWEventConfig(
-                            name=event["name"],
-                            nf_model_dir=event.get("model_dir"),
-                        )
-                    )
-
-                    gw_likelihood = GWLikelihoodResampled(
-                        event_name=event["name"],
-                        model_dir=model_dir,
-                        penalty_value=config.penalty_value,
-                        N_masses_evaluation=config.N_masses_evaluation,
-                        N_masses_batch_size=config.N_masses_batch_size,
-                    )
-                    likelihoods.append(gw_likelihood)
-
             # Special handling for NICER likelihoods (flow-based): create one likelihood per pulsar
             case NICERLikelihoodConfig():
                 # Create one NICERLikelihood (flow-based) per pulsar
@@ -294,19 +270,6 @@ def create_combined_likelihood(
                         seed=config.seed,
                     )
                     likelihoods.append(nicer_likelihood)
-
-            # Special handling for NICER KDE likelihoods (legacy): create one likelihood per pulsar
-            case NICERKDELikelihoodConfig():
-                # Create one NICERKDELikelihood (KDE-based) per pulsar
-                for pulsar in config.pulsars:
-                    nicer_kde_likelihood = NICERKDELikelihood(
-                        psr_name=pulsar["name"],
-                        amsterdam_samples_file=pulsar["amsterdam_samples_file"],
-                        maryland_samples_file=pulsar["maryland_samples_file"],
-                        N_masses_evaluation=config.N_masses_evaluation,
-                        N_masses_batch_size=config.N_masses_batch_size,
-                    )
-                    likelihoods.append(nicer_kde_likelihood)
 
             # Special handling for radio timing likelihoods: create one likelihood per pulsar
             case RadioLikelihoodConfig():

@@ -1,15 +1,7 @@
-r"""
-NICER X-ray timing likelihood implementations
-
-This module provides two implementations:
-1. NICERLikelihood - Flow-based (NEW DEFAULT, more efficient)
-2. NICERKDELikelihood - KDE-based (legacy, for backward compatibility)
-"""
+r"""NICER X-ray timing likelihood implementation"""
 
 import jax
 import jax.numpy as jnp
-import numpy as np
-from jax.scipy.stats import gaussian_kde
 from jaxtyping import Array, Float
 from jax.scipy.special import logsumexp
 
@@ -23,13 +15,10 @@ logger = get_logger("jester")
 
 class NICERLikelihood(LikelihoodBase):
     """
-    NICER likelihood using normalizing flows (NEW DEFAULT).
+    NICER likelihood using normalizing flows.
 
-    This is the recommended NICER likelihood implementation that uses
-    pre-trained normalizing flows on M-R posteriors for efficient and
-    deterministic likelihood evaluation.
-
-    For the legacy KDE-based version, see NICERKDELikelihood.
+    This likelihood implementation uses pre-trained normalizing flows on
+    M-R posteriors for efficient and deterministic likelihood evaluation.
 
     The likelihood loads pre-trained flow models for one or both of the Amsterdam
     and Maryland analysis groups, and evaluates the likelihood by:
@@ -251,189 +240,3 @@ class NICERLikelihood(LikelihoodBase):
             [compute_group_logL(flow, samples) for flow, samples in self.active_groups]
         )
         return logsumexp(group_logLs) - jnp.log(float(group_logLs.shape[0]))
-
-
-class NICERKDELikelihood(LikelihoodBase):
-    """
-    NICER likelihood using KDE (Kernel Density Estimation) approach.
-
-    This is the original NICER likelihood implementation that uses KDE
-    on M-R posterior samples. For the flow-based version, see NICERLikelihood.
-
-    TODO: Generalize to e.g. only one group, weights between different hotspot models,...
-
-    This likelihood loads posterior samples from Amsterdam and Maryland groups,
-    constructs KDEs, and evaluates the likelihood by:
-    1. Sampling masses from the NICER posterior samples
-    2. Interpolating radius from the EOS for those masses
-    3. Evaluating the KDE log probability at (mass, radius)
-    4. Averaging over all samples
-
-    Parameters
-    ----------
-    psr_name : str
-        Pulsar name (e.g., "J0030", "J0740")
-    amsterdam_samples_file : str
-        Path to npz file with Amsterdam group posterior samples
-        Expected to contain 'mass' (Msun) and 'radius' (km) arrays
-    maryland_samples_file : str
-        Path to npz file with Maryland group posterior samples
-        Expected to contain 'mass' (Msun) and 'radius' (km) arrays
-    penalty_value : float, optional
-        Penalty value for samples where mass exceeds Mtov (default: -99999.0)
-    N_masses_evaluation : int, optional
-        Number of mass samples per likelihood evaluation (default: 20)
-    N_masses_batch_size : int, optional
-        Batch size for processing mass samples (default: 10)
-
-    Attributes
-    ----------
-    psr_name : str
-        Pulsar name
-    penalty_value : float
-        Penalty value for samples where mass exceeds Mtov
-    N_masses_evaluation : int
-        Number of mass samples per likelihood evaluation
-    N_masses_batch_size : int
-        Batch size for processing mass samples
-    amsterdam_masses : Float[Array, " n_amsterdam"]
-        Mass samples from Amsterdam group
-    maryland_masses : Float[Array, " n_maryland"]
-        Mass samples from Maryland group
-    amsterdam_posterior : gaussian_kde
-        KDE of Amsterdam (mass, radius) posterior
-    maryland_posterior : gaussian_kde
-        KDE of Maryland (mass, radius) posterior
-    """
-
-    psr_name: str
-    penalty_value: float
-    N_masses_evaluation: int
-    N_masses_batch_size: int
-    amsterdam_masses: Float[Array, " n_amsterdam"]
-    maryland_masses: Float[Array, " n_maryland"]
-    amsterdam_posterior: gaussian_kde
-    maryland_posterior: gaussian_kde
-
-    def __init__(
-        self,
-        psr_name: str,
-        amsterdam_samples_file: str,
-        maryland_samples_file: str,
-        penalty_value: float = -99999.0,
-        N_masses_evaluation: int = 20,
-        N_masses_batch_size: int = 10,
-    ) -> None:
-        super().__init__()
-        self.psr_name = psr_name
-        self.penalty_value = penalty_value
-        self.N_masses_evaluation = N_masses_evaluation
-        self.N_masses_batch_size = N_masses_batch_size
-
-        # Load samples from npz files
-        logger.info(
-            f"Loading Amsterdam samples for {psr_name} from {amsterdam_samples_file}"
-        )
-        amsterdam_data = np.load(amsterdam_samples_file, allow_pickle=True)
-
-        logger.info(
-            f"Loading Maryland samples for {psr_name} from {maryland_samples_file}"
-        )
-        maryland_data = np.load(maryland_samples_file, allow_pickle=True)
-
-        # Extract mass and radius samples
-        # File format: mass (Msun), radius (km)
-        amsterdam_mass = amsterdam_data["mass"]
-        amsterdam_radius = amsterdam_data["radius"]
-        maryland_mass = maryland_data["mass"]
-        maryland_radius = maryland_data["radius"]
-
-        # Store mass samples as JAX arrays for random sampling
-        self.amsterdam_masses = jnp.array(amsterdam_mass)
-        self.maryland_masses = jnp.array(maryland_mass)
-
-        # Stack into [mass, radius] arrays for KDE
-        # Convert to JAX arrays for JAX KDE
-        amsterdam_mr = jnp.vstack([amsterdam_mass, amsterdam_radius])
-        maryland_mr = jnp.vstack([maryland_mass, maryland_radius])
-
-        # Construct KDEs using JAX implementation
-        logger.info(f"Constructing JAX KDEs for {psr_name}")
-        self.amsterdam_posterior = gaussian_kde(amsterdam_mr)
-        self.maryland_posterior = gaussian_kde(maryland_mr)
-        logger.info(f"Loaded JAX KDEs for {psr_name}")
-
-    def evaluate(self, params: dict[str, Float | Array]) -> Float:
-        """
-        Evaluate log likelihood for given EOS parameters
-
-        Parameters
-        ----------
-        params : dict[str, Float | Array]
-            Must contain:
-            - '_random_key': Random seed for mass sampling (cast to int64)
-            - 'masses_EOS': Array of neutron star masses from EOS
-            - 'radii_EOS': Array of neutron star radii from EOS
-
-        Returns
-        -------
-        Float
-            Log likelihood value for this NICER observation
-        """
-        # Extract parameters
-        sampled_key = params["_random_key"].astype("int64")
-        key = jax.random.key(sampled_key)
-        masses_EOS: Float[Array, " n_points"] = params["masses_EOS"]
-        radii_EOS: Float[Array, " n_points"] = params["radii_EOS"]
-        mtov: Float = jnp.max(masses_EOS)
-
-        # Split key for Amsterdam and Maryland sampling
-        key_amsterdam, key_maryland = jax.random.split(key)
-
-        # Sample masses from the NICER posterior samples
-        # Each group gets half of N_masses_evaluation samples
-        n_samples_per_group: int = self.N_masses_evaluation // 2
-
-        # Sample indices and get mass samples
-        amsterdam_indices = jax.random.choice(
-            key_amsterdam,
-            len(self.amsterdam_masses),
-            shape=(n_samples_per_group,),
-            replace=True,
-        )
-        maryland_indices = jax.random.choice(
-            key_maryland,
-            len(self.maryland_masses),
-            shape=(n_samples_per_group,),
-            replace=True,
-        )
-
-        amsterdam_mass_samples: Float[Array, " n_amsterdam_samples"] = (
-            self.amsterdam_masses[amsterdam_indices]
-        )
-        maryland_mass_samples: Float[Array, " n_maryland_samples"] = (
-            self.maryland_masses[maryland_indices]
-        )
-
-        def compute_group_logL(
-            posterior_kde: gaussian_kde, mass_samples: Float[Array, "n_samples"]
-        ) -> Float:
-            def process_sample(mass: Float) -> Float:
-                radius = jnp.interp(mass, masses_EOS, radii_EOS, right=0.0)
-                mr_point = jnp.array([[mass], [radius]])  # Shape: (2, 1)
-                logpdf = posterior_kde.logpdf(mr_point)
-                return logpdf + jnp.where(mass > mtov, self.penalty_value, 0.0)
-
-            logprobs = jax.lax.map(
-                process_sample, mass_samples, batch_size=self.N_masses_batch_size
-            )
-            return logsumexp(logprobs) - jnp.log(logprobs.shape[0])
-
-        logL_amsterdam = compute_group_logL(
-            self.amsterdam_posterior, amsterdam_mass_samples
-        )
-        logL_maryland = compute_group_logL(
-            self.maryland_posterior, maryland_mass_samples
-        )
-
-        return logsumexp(jnp.array([logL_amsterdam, logL_maryland])) - jnp.log(2.0)

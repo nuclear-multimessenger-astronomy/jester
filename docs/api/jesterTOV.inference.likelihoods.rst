@@ -12,7 +12,6 @@ Gravitational Wave Likelihoods
    :toctree: _autosummary
 
    gw.GWLikelihood
-   gw.GWLikelihoodResampled
    gw.StackedGWLikelihood
 
 X-ray Timing Likelihoods
@@ -22,7 +21,6 @@ X-ray Timing Likelihoods
    :toctree: _autosummary
 
    nicer.NICERLikelihood
-   nicer.NICERKDELikelihood
 
 Radio Pulsar Likelihoods
 -------------------------

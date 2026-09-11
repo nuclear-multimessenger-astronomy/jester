@@ -18,7 +18,7 @@ from .samplers import EOSReweightingConfig
 #: Likelihood types that only require the tabulated M-Λ-R family curves
 #: (via "masses_EOS", "Lambdas_EOS", "radii_EOS") produced by the
 #: reweighting sampler. Every other likelihood type reads EOS-level
-#: structure (e.g. "n", "p", "nbreak", "_random_key") that only exists when
+#: structure (e.g. "n", "p", "nbreak") that only exists when
 #: the EOS is built from a parametric model, and would raise a KeyError here.
 _EOS_REWEIGHTING_ALLOWED_LIKELIHOOD_TYPES = {
     "gw",
@@ -113,10 +113,9 @@ class EOSReweightingInferenceConfig(JesterBaseModel):
     def _validate_likelihoods(cls, v: list[LikelihoodConfig]) -> list[LikelihoodConfig]:
         if not any(lk.enabled for lk in v):
             raise ValueError("At least one likelihood must be enabled")
-        # TODO: EOS-based likelihoods (gw_resampled, nicer_kde, chieft,
-        # constraints_eos, constraints_tov, constraints_esym,
-        # constraints_gamma, rex) require EOS-level structure
-        # (n, p, nbreak, _random_key, ...) that is not available from
+        # TODO: EOS-based likelihoods (chieft, constraints_eos,
+        # constraints_tov, constraints_esym, constraints_gamma, rex) require
+        # EOS-level structure (n, p, nbreak, ...) that is not available from
         # tabulated M-Λ-R curves. Check if we can include these likelihoods
         # in the future, e.g. by also tabulating the underlying EOS
         # quantities.
@@ -129,7 +128,7 @@ class EOSReweightingInferenceConfig(JesterBaseModel):
             bad_types = sorted({lk.type for lk in invalid})
             raise ValueError(
                 f"Likelihood types {bad_types} are not supported by EOS reweighting: "
-                "they require EOS-level structure (n, p, nbreak, _random_key, ...) "
+                "they require EOS-level structure (n, p, nbreak, ...) "
                 "that is not available from tabulated M-Λ-R curves. "
                 f"Supported types are: {sorted(_EOS_REWEIGHTING_ALLOWED_LIKELIHOOD_TYPES)}."
             )
