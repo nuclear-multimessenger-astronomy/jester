@@ -21,7 +21,7 @@ likelihoods:
   enabled: true
   pulsars:
   - name: J0030
-    amsterdam_model_dir: ../../../../jesterTOV/inference/flows/models/nicer_maf/J00300451/amsterdam_st_pst
+    amsterdam_model_dir: ../../../../jesterTOV/inference/flows/models/nicer_maf/J00300451/amsterdam_pdtu
     maryland_model_dir: ../../../../jesterTOV/inference/flows/models/nicer_maf/J00300451/maryland_2spot_rm
   N_masses_evaluation: 20
   N_masses_batch_size: 20

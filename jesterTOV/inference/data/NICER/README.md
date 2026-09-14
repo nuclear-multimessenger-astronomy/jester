@@ -91,7 +91,18 @@ Files:
 
 ## PSR J0030+0451
 
-First millisecond pulsar observed by NICER with sufficient quality for mass-radius inference, analyzed independently by Maryland and Amsterdam groups.
+First millisecond pulsar observed by NICER with sufficient quality for mass-radius inference, analyzed independently by Maryland and Amsterdam groups, with the Amsterdam group having since updated its analysis as more NICER exposure accumulated.
+
+### Amsterdam group — Kini, Mauviard, Salmi, et al. 2026 ("A NICER View of PSR J0030+0451: Updated Constraints from Six Years of NICER Observations", arXiv:2602.23743)
+**Zenodo:** https://zenodo.org/records/18741942
+**Data:** NICER+XMM (2017 Jul - 2023 Jan NICER exposure, ~50% more counts than the 2017-2018 dataset)
+**Hotspot model:** PDT-U (Bayes-preferred over ST+PDT; only model released on Zenodo)
+**Source file:** `equal_weight_samples_PDTU.txt` — already an equal-weight posterior (a separate `weighted_samples_PDTU.txt` with raw MultiNest weights is also on Zenodo but not used here)
+
+Files:
+- `J00300451_amsterdam_PDTU_NICERXMM_Kini2026.npz`
+
+This is the **recommended/default Amsterdam dataset** for J0030+0451, used by the pretrained `amsterdam_pdtu` flow (see `jesterTOV/inference/flows/models/nicer_maf/J00300451/amsterdam_pdtu/`).
 
 ### Maryland group — Miller et al. 2019 ([ApJL 887, L24](https://inspirehep.net/literature/1770430))
 **Zenodo:** https://zenodo.org/records/3473466
@@ -114,7 +125,7 @@ Five hotspot models, NICER-only:
 - `J00300451_amsterdam_ST_EST_NICER_only_Riley2019.npz`
 - `J00300451_amsterdam_ST_PST_NICER_only_Riley2019.npz`
 
-Recommended model: ST+PST. "ST" = symmetric spot; "U/S" = unrestricted/shared geometry; "CDT/EST/PST" = compound spot topologies.
+"ST" = symmetric spot; "U/S" = unrestricted/shared geometry; "CDT/EST/PST" = compound spot topologies. Superseded by the Kini et al. 2026 dataset above, which uses six years of NICER data instead of two.
 
 ---
 

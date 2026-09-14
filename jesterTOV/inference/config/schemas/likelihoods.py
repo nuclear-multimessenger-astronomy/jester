@@ -317,7 +317,7 @@ class NICERLikelihoodConfig(BaseLikelihoodConfig):
           enabled: true
           pulsars:
             - name: "J0030"
-              amsterdam_model_dir: "./flows/models/nicer_maf/J00300451/amsterdam_st_pst"
+              amsterdam_model_dir: "./flows/models/nicer_maf/J00300451/amsterdam_pdtu"
               maryland_model_dir: "./flows/models/nicer_maf/J00300451/maryland_2spot_rm"
             - name: "J0740"
               amsterdam_model_dir: "./flows/models/nicer_maf/J07406620/amsterdam_gamma_nicerxmm"

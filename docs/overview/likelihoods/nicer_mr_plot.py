@@ -9,8 +9,8 @@ Each pulsar is assigned a single colour.  Where both the Amsterdam (X-PSI) and
 Maryland groups have published an independent analysis, both are shown for
 that pulsar: Amsterdam as a solid contour, Maryland as a dashed contour. The
 preferred/headline analysis is used for each group:
-  - PSR J0030+0451  — Amsterdam ST+PST (Riley et al. 2019);
-    Maryland 3-spot, full prior (Miller et al. 2019)
+  - PSR J0030+0451  — Amsterdam PDT-U, NICER+XMM (Kini, Mauviard, Salmi,
+    et al. 2026); Maryland 3-spot, full prior (Miller et al. 2019)
   - PSR J0437-4715  — Amsterdam CST+PDT (Choudhury et al. 2024);
     Maryland 3-spot+GPL (Miller, Dittmann, Holt et al. 2026)
   - PSR J0614-3329  — Amsterdam ST+PDT (Mauviard et al. 2025);
@@ -61,7 +61,7 @@ PSR_CONFIGS = [
         "groups": [
             {
                 "name": "Amsterdam",
-                "flow_dir": FLOWS_DIR / "J00300451" / "amsterdam_st_pst",
+                "flow_dir": FLOWS_DIR / "J00300451" / "amsterdam_pdtu",
                 "linestyle": "-",
             },
             {
