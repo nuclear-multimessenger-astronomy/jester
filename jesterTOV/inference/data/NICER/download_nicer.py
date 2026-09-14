@@ -10,7 +10,8 @@ Pipeline (all controlled by constants below):
           J0437 and J0614 (Miller, Dittmann, Holt et al. 2026) are
           importance-resampled using their weight column to obtain an
           equal-weight posterior.
-  Step 3  Extract Amsterdam tar.gz archives → .npz.
+  Step 3  Extract Amsterdam tar.gz archives → .npz, plus the direct-download
+          Kini, Mauviard, Salmi et al. 2026 J0030 (PDT-U) equal-weight file.
   Step 4  Downsample all .npz files to MAX_SAMPLES.
 
 Outputs are written to the same directory as this script (NICER/).
@@ -97,6 +98,11 @@ def download_zenodo_data() -> None:
             "J0614/maryland/original",
             "J0614_NICER_rm.txt",
             "https://zenodo.org/records/22131748/files/J0614_NICER_rm.txt",
+        ),
+        (
+            "J0030/amsterdam/recent",
+            "equal_weight_samples_PDTU.txt",
+            "https://zenodo.org/records/18741942/files/equal_weight_samples_PDTU.txt",
         ),
     ]
     for rel_dir, filename, url in _direct_downloads:
@@ -450,6 +456,66 @@ def parse_salmi_recent_mr_file(filepath: Path) -> Tuple[np.ndarray, np.ndarray, 
     return radius, mass, metadata
 
 
+def parse_kini2026_j0030_txt(filepath: Path) -> Tuple[np.ndarray, np.ndarray, Dict]:
+    """Parse Kini, Mauviard, Salmi, et al. 2026 J0030 equal-weight M-R file.
+
+    Format: columns are mass (Msun), radius (km) — already an equal-weight
+    posterior (no importance resampling needed), unlike the raw weighted
+    ``weighted_samples_PDTU.txt`` file also available on the same Zenodo
+    record.
+    """
+    print(f"\n  Parsing: {filepath.name}")
+    data = np.loadtxt(filepath, comments="#")
+    mass = data[:, 0]
+    radius = data[:, 1]
+
+    metadata: Dict = {
+        "psr": "J0030+0451",
+        "group": "amsterdam",
+        "analysis": "Kini, Mauviard, Salmi, et al. 2026",
+        "hotspot_model": "PDT-U",
+        "data_used": "NICER+XMM",
+        "n_samples": len(mass),
+        "weighted": False,
+        "source_file": filepath.name,
+        "zenodo_record": "https://zenodo.org/records/18741942",
+        "paper": (
+            "Kini, Mauviard, Salmi, et al. 2026 (A NICER View of PSR J0030+0451: "
+            "Updated Constraints from Six Years of NICER Observations, arXiv:2602.23743)"
+        ),
+        "notes": (
+            "Bayes-preferred hotspot model (PDT-U over ST+PDT) from six years of "
+            "NICER data (2017 Jul - 2023 Jan) jointly analyzed with archival XMM-Newton "
+            "data. Recommended Amsterdam model for J0030+0451, superseding the "
+            "Riley et al. 2019 ST+PST result."
+        ),
+    }
+    print(f"    PSR J0030+0451, hotspot=PDT-U, data=NICER+XMM, n={len(mass):,}")
+    return radius, mass, metadata
+
+
+def process_j0030_amsterdam_recent_data() -> list[Path]:
+    """Extract the Kini et al. 2026 J0030 Amsterdam equal-weight file to .npz."""
+    src = ZENODO_DIR / "J0030/amsterdam/recent/equal_weight_samples_PDTU.txt"
+    if not src.exists():
+        print(f"\n  Not found (download Zenodo first): {src.name}")
+        return []
+
+    out_name = "J00300451_amsterdam_PDTU_NICERXMM_Kini2026.npz"
+    out_path = OUTPUT_DIR / out_name
+
+    if out_path.exists() and not IGNORE_CACHE:
+        print(f"    Cached: {out_name}")
+        return [out_path]
+
+    radius, mass, meta = parse_kini2026_j0030_txt(src)
+    np.savez(out_path, radius=radius, mass=mass, metadata=meta)  # type: ignore[arg-type]
+    print(
+        f"    Saved: {out_name} ({out_path.stat().st_size / 1024:.1f} KB, {len(radius):,} samples)"
+    )
+    return [out_path]
+
+
 def extract_amsterdam_data() -> list[Path]:
     """Extract Amsterdam M-R samples from tar.gz archives."""
     print("\n" + "=" * 70)
@@ -677,6 +743,10 @@ def extract_amsterdam_data() -> list[Path]:
                 print(f"  Error: {e}")
     else:
         print(f"\nArchive not found (download Zenodo first): {j0614_archive.name}")
+
+    # 5. Kini, Mauviard, Salmi, et al. 2026 (J0030, recent — PDT-U)
+    print("\nKini et al. 2026 — equal_weight_samples_PDTU.txt")
+    results.extend(process_j0030_amsterdam_recent_data())
 
     return results
 

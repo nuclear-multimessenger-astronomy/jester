@@ -35,6 +35,16 @@ ZENODO_DATASETS: dict = {
     },
     "J0030": {
         "amsterdam": {
+            "recent": {
+                "name": "Kini, Mauviard, Salmi, et al. 2026",
+                "zenodo_id": "18741942",
+                "url": "https://zenodo.org/records/18741942",
+                "description": (
+                    "Most recent Amsterdam analysis of PSR J0030+0451, using six "
+                    "years of NICER data (2017-2023) jointly with archival XMM-Newton "
+                    "data; PDT-U hotspot model (Bayes-preferred over ST+PDT)"
+                ),
+            },
             "intermediate": {
                 "name": "Vinciguerra et al. 2023",
                 "zenodo_id": "8239000",

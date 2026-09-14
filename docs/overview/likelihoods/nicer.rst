@@ -91,17 +91,23 @@ Zenodo record identifiers and paper metadata are maintained in
 PSR J0030+0451
 ^^^^^^^^^^^^^^
 
-First millisecond pulsar observed by NICER with sufficient quality for mass-radius inference, analyzed independently by the Amsterdam (X-PSI) and Maryland groups from the same 2017-2018 NICER data.
+First millisecond pulsar observed by NICER with sufficient quality for mass-radius inference. It has since been analyzed independently by the Amsterdam (X-PSI) and Maryland groups multiple times as more NICER exposure accumulated.
+
+**Amsterdam group — Kini, Mauviard, Salmi, et al. 2026** (`arXiv:2602.23743 <https://arxiv.org/abs/2602.23743>`_; `Zenodo 18741942 <https://zenodo.org/records/18741942>`_)
+
+Most recent Amsterdam analysis, using six years of NICER data:
+
+* ``J00300451_amsterdam_PDTU_NICERXMM_Kini2026.npz`` — PDT-U, NICER+XMM (recommended as default Amsterdam flow for J0030+0451)
 
 **Amsterdam group — Riley et al. 2019** (`ApJL 887, L21 <https://inspirehep.net/literature/1770425>`_; `Zenodo 7096789 <https://zenodo.org/records/7096789>`_)
 
-Five hotspot geometries are available:
+Original Amsterdam analysis, using the 2017-2018 NICER-only dataset. Five hotspot geometries are available:
 
 * ``J00300451_amsterdam_ST_S_NICER_only_Riley2019.npz`` — ST symmetric
 * ``J00300451_amsterdam_ST_U_NICER_only_Riley2019.npz`` — ST unrestricted
 * ``J00300451_amsterdam_CDT_U_NICER_only_Riley2019.npz`` — CDT unrestricted
 * ``J00300451_amsterdam_ST_EST_NICER_only_Riley2019.npz`` — ST+EST
-* ``J00300451_amsterdam_ST_PST_NICER_only_Riley2019.npz`` — ST+PST (recommended)
+* ``J00300451_amsterdam_ST_PST_NICER_only_Riley2019.npz`` — ST+PST
 
 **Maryland group — Miller et al. 2019** (`ApJL 887, L24 <https://inspirehep.net/literature/1770430>`_; `Zenodo 3473466 <https://zenodo.org/records/3473466>`_)
 
