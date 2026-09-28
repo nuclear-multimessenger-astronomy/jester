@@ -1640,6 +1640,49 @@ class TestConditionalGWLikelihood:
                 N_masses_evaluation=10,
             )
 
+    def test_use_float32_loads_and_evaluates(self, tmp_path):
+        """use_float32=True should load/evaluate without error and give a
+        finite result, for an architecture the float32 recipe supports
+        (rational_quadratic_spline -- see Flow's _validate_float32_architecture)."""
+        posterior_file = _save_toy_posterior_npz(tmp_path / "posterior.npz", seed=0)
+        cond_dir = _save_toy_conditional_flow(
+            tmp_path / "conditional",
+            seed=0,
+            standardize=True,
+            transformer_type="rational_quadratic_spline",
+        )
+        likelihood = ConditionalGWLikelihood(
+            event_name="toy_event",
+            posterior_file=str(posterior_file),
+            conditional_model_dir=str(cond_dir),
+            N_masses_evaluation=30,
+            seed=0,
+            use_float32=True,
+        )
+        assert likelihood.use_float32 is True
+        masses_eos = jnp.linspace(1.0, 2.2, 100)
+        lambdas_eos = jnp.linspace(2000.0, 10.0, 100)
+        result = likelihood.evaluate(
+            {"masses_EOS": masses_eos, "Lambdas_EOS": lambdas_eos}
+        )
+        assert result.shape == ()
+        assert jnp.isfinite(result)
+
+    def test_use_float32_unsupported_architecture_raises_clear_error(self, tmp_path):
+        """use_float32=True with the (default) affine transformer -- not
+        validated for float32 -- must raise a clear error, not silently
+        evaluate an unverified recipe."""
+        posterior_file = _save_toy_posterior_npz(tmp_path / "posterior.npz", seed=0)
+        cond_dir = _save_toy_conditional_flow(tmp_path / "conditional", seed=0)
+        with pytest.raises(ValueError, match="float32"):
+            ConditionalGWLikelihood(
+                event_name="toy_event",
+                posterior_file=str(posterior_file),
+                conditional_model_dir=str(cond_dir),
+                N_masses_evaluation=10,
+                use_float32=True,
+            )
+
     @pytest.mark.slow
     def test_responds_to_lambda_in_vs_out_of_training_range(self, tmp_path):
         """Self-consistency sanity check with genuinely *trained* flows

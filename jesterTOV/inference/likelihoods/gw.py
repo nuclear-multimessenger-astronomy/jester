@@ -437,6 +437,14 @@ class ConditionalGWLikelihood(LikelihoodBase):
         ``GWLikelihood.N_masses_batch_size`` -- identical role here.
     seed : int, optional
         Random seed for bootstrap mass resampling (default: 42).
+    use_float32 : bool, optional
+        Evaluate the conditional flow in float32 instead of the default
+        float64 (default: False). Training is unaffected either way: this
+        only changes how the already-trained flow is loaded and evaluated.
+        See ``StackedGWLikelihood``'s ``use_float32`` for the same option on
+        the joint-flow side; raises a clear error at construction time (via
+        ``Flow.from_directory``) if the conditional flow's architecture
+        hasn't been validated for float32.
 
     Attributes
     ----------
@@ -454,6 +462,8 @@ class ConditionalGWLikelihood(LikelihoodBase):
         Batch size passed to jax.lax.map for processing the mass grid
     seed : int
         Random seed used for bootstrap resampling
+    use_float32 : bool
+        Whether the conditional flow is evaluated in float32
     conditional_flow : Flow
         Conditional flow modelling p(lambda_1, lambda_2 | m1, m2)
     fixed_mass_samples : Float[Array, "n_samples 2"]
@@ -500,6 +510,7 @@ class ConditionalGWLikelihood(LikelihoodBase):
     N_masses_evaluation: int
     N_masses_batch_size: int
     seed: int
+    use_float32: bool
     conditional_flow: Flow
     fixed_mass_samples: Float[Array, "n_samples 2"]
 
@@ -512,6 +523,7 @@ class ConditionalGWLikelihood(LikelihoodBase):
         N_masses_evaluation: int = 500,
         N_masses_batch_size: int = 1,
         seed: int = 42,
+        use_float32: bool = False,
     ) -> None:
         super().__init__()
         self.event_name = event_name
@@ -521,11 +533,14 @@ class ConditionalGWLikelihood(LikelihoodBase):
         self.N_masses_evaluation = N_masses_evaluation
         self.N_masses_batch_size = N_masses_batch_size
         self.seed = seed
+        self.use_float32 = use_float32
 
         logger.info(
-            f"Loading conditional NF model for {event_name} from {conditional_model_dir}"
+            f"Loading conditional NF model for {event_name} from {conditional_model_dir} "
+            f"(use_float32={use_float32})"
         )
-        self.conditional_flow = Flow.from_directory(conditional_model_dir)
+        _dtype = "float32" if use_float32 else "float64"
+        self.conditional_flow = Flow.from_directory(conditional_model_dir, dtype=_dtype)
         if self.conditional_flow.cond_shape != (2,):
             raise ValueError(
                 "ConditionalGWLikelihood's conditional flow "
@@ -590,9 +605,23 @@ class ConditionalGWLikelihood(LikelihoodBase):
             penalty_m2 = jnp.where(m2 > mtov, self.penalty_value, 0.0)
             return logpdf + penalty_m1 + penalty_m2
 
-        all_logprobs = jax.lax.map(
-            process_sample, self.fixed_mass_samples, batch_size=self.N_masses_batch_size
-        )
+        # For float32, disable_x64() must wrap the ENTIRE mass-sample map, not
+        # just the innermost flow.log_prob call -- see StackedGWLikelihood's
+        # _event_loglik_from_carry for why (breaks once embedded under the
+        # sampler's own outer vmap over particles otherwise).
+        if self.use_float32:
+            with disable_x64():
+                all_logprobs = jax.lax.map(
+                    process_sample,
+                    self.fixed_mass_samples,
+                    batch_size=self.N_masses_batch_size,
+                )
+        else:
+            all_logprobs = jax.lax.map(
+                process_sample,
+                self.fixed_mass_samples,
+                batch_size=self.N_masses_batch_size,
+            )
         log_likelihood = logsumexp(all_logprobs) - jnp.log(self.N_masses_evaluation)
         return log_likelihood
 
