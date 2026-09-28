@@ -107,22 +107,33 @@ def load_posterior(
     filepath: str,
     parameter_names: list[str],
     max_samples: int = 20_000,
-) -> Tuple[np.ndarray, Dict[str, Any]]:
+    condition_names: list[str] | None = None,
+) -> Tuple[np.ndarray, np.ndarray | None, Dict[str, Any]]:
     """
     Load posterior samples from npz file with flexible parameter selection.
 
+    Optionally also extracts a separate set of conditioning columns from the same
+    file (e.g. source-frame masses), for training a conditional flow
+    p(parameter_names | condition_names) such as p(lambda_1, lambda_2 |
+    mass_1_source, mass_2_source). Target and condition columns are downsampled
+    together (same rows kept for both), so samples stay paired.
+
     Args:
         filepath: Path to .npz file
-        parameter_names: List of parameter names to extract from file
+        parameter_names: List of target parameter names to extract from file
         max_samples: Maximum number of samples to use (downsampling if needed)
+        condition_names: List of conditioning variable names to extract from the
+            same file. Defaults to None (unconditional).
 
     Returns:
-        data: Array of shape (n_samples, n_params) with selected parameters
+        data: Array of shape (n_samples, n_params) with selected target parameters
+        condition_data: Array of shape (n_samples, n_condition_params) with the
+            selected conditioning variables, or None if condition_names is None
         metadata: Dictionary with loading information
 
     Raises:
         FileNotFoundError: If file doesn't exist
-        KeyError: If required parameter names are missing from file
+        KeyError: If required parameter or condition names are missing from file
     """
     if not os.path.exists(filepath):
         raise FileNotFoundError(f"Posterior file not found: {filepath}")
@@ -140,6 +151,16 @@ def load_posterior(
             f"Requested parameters: {parameter_names}"
         )
 
+    if condition_names is not None:
+        missing_cond_keys = [key for key in condition_names if key not in posterior]
+        if missing_cond_keys:
+            available_keys = list(posterior.keys())
+            raise KeyError(
+                f"Missing required condition names: {missing_cond_keys}\n"
+                f"Available keys in file: {available_keys}\n"
+                f"Requested condition names: {condition_names}"
+            )
+
     # Extract samples for each parameter
     columns = [posterior[param].flatten() for param in parameter_names]
 
@@ -147,10 +168,23 @@ def load_posterior(
     data = np.column_stack(columns)
     n_samples_total = data.shape[0]
 
-    # Downsample if needed
+    condition_data = None
+    if condition_names is not None:
+        condition_columns = [posterior[name].flatten() for name in condition_names]
+        condition_data = np.column_stack(condition_columns)
+        if condition_data.shape[0] != n_samples_total:
+            raise ValueError(
+                f"condition_names columns have {condition_data.shape[0]} samples, "
+                f"but parameter_names columns have {n_samples_total} samples. "
+                "Target and condition must be paired, equal-length columns."
+            )
+
+    # Downsample if needed (target and condition together, to keep pairing)
     if n_samples_total > max_samples:
         downsample_factor = int(np.ceil(n_samples_total / max_samples))
         data = data[::downsample_factor]
+        if condition_data is not None:
+            condition_data = condition_data[::downsample_factor]
         logger.info(
             f"Downsampled from {n_samples_total} to {data.shape[0]} samples "
             f"(factor: {downsample_factor})"
@@ -164,8 +198,10 @@ def load_posterior(
         "parameter_names": parameter_names,
         "filepath": filepath,
     }
+    if condition_names is not None:
+        metadata["condition_names"] = condition_names
 
-    return data, metadata
+    return data, condition_data, metadata
 
 
 def standardize_data_zscore(
@@ -275,6 +311,7 @@ def train_flow(
     max_patience: int = 50,
     val_prop: float = 0.2,
     batch_size: int = 128,
+    condition: np.ndarray | None = None,
 ) -> Tuple[Any, Dict[str, list]]:
     """
     Train the normalizing flow on data.
@@ -288,6 +325,10 @@ def train_flow(
         max_patience: Early stopping patience
         val_prop: Proportion of data to use for validation
         batch_size: Batch size for training
+        condition: Conditioning variable of shape (n_samples, n_cond_dims), paired
+            row-for-row with ``data``. Required if ``flow`` is conditional
+            (``flow.cond_shape is not None``), and must be omitted otherwise.
+            Defaults to None (unconditional training).
 
     Returns:
         trained_flow: Trained flow model
@@ -296,10 +337,14 @@ def train_flow(
     logger.info(f"Training flow for up to {max_epochs} epochs...")
     logger.info(f"Using {val_prop:.1%} of data for validation")
     logger.info(f"Batch size: {batch_size}")
+    # fit_to_data treats `data` as the positional arguments forwarded to the loss
+    # function: a single array for p(x), or a (target, condition) tuple for
+    # p(x | condition). See flowjax.train.losses.MaximumLikelihoodLoss.
+    fit_data = data if condition is None else (data, condition)
     trained_flow, losses = fit_to_data(
         key=key,
         dist=flow,
-        data=data,
+        data=fit_data,
         learning_rate=learning_rate,
         max_epochs=max_epochs,
         max_patience=max_patience,
@@ -454,7 +499,8 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
     logger.info(f"NN width: {config.nn_width}")
     logger.info(f"Flow layers: {config.flow_layers}")
     logger.info(f"Invert: {config.invert}")
-    logger.info(f"Cond dim: {config.cond_dim}")
+    logger.info(f"Condition names: {config.condition_names}")
+    logger.info(f"Cond dim: {config.effective_cond_dim}")
     logger.info(f"Transformer: {config.transformer}")
     logger.info(f"Transformer knots: {config.transformer_knots}")
     logger.info(f"Transformer interval: {config.transformer_interval}")
@@ -472,48 +518,63 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
 
     # Load data
     logger.info("[1/5] Loading posterior samples...")
-    data, load_metadata = load_posterior(
+    data, condition_data, load_metadata = load_posterior(
         config.posterior_file,
         parameter_names=config.parameter_names,
         max_samples=config.max_samples,
+        condition_names=config.condition_names,
     )
     parameter_names = load_metadata["parameter_names"]
+    is_conditional = condition_data is not None
     logger.info(f"Data shape: {data.shape}")
     logger.info(f"Parameters: {parameter_names}")
     logger.info("Original data ranges:")
     for i, name in enumerate(parameter_names):
         logger.info(f"  {name}: [{data[:, i].min():.3f}, {data[:, i].max():.3f}]")
+    if is_conditional:
+        assert condition_data is not None  # for type checkers; guarded by is_conditional
+        logger.info(f"Condition shape: {condition_data.shape}")
+        logger.info(f"Condition names: {config.condition_names}")
+        logger.info("Original condition ranges:")
+        for i, name in enumerate(config.condition_names or []):
+            logger.info(
+                f"  {name}: [{condition_data[:, i].min():.3f}, "
+                f"{condition_data[:, i].max():.3f}]"
+            )
 
-    # Keep copy of original data for corner plot
+    # Keep a copy of original (target) data for the corner plot
     original_data = data.copy()
 
-    # Standardize data if requested
+    # Standardize data (and condition, if any) if requested. The condition is
+    # standardized the same way as the target, but independently -- it generally
+    # lives on a different scale (e.g. masses vs. tidal deformabilities).
     data_statistics = None
+    condition_statistics = None
     if config.standardize:
-        if config.standardization_method == "zscore":
-            logger.info("Standardizing data using z-score (mean=0, std=1)...")
-            data, data_statistics = standardize_data_zscore(data)
-            logger.info("Standardized data statistics:")
-            for i, name in enumerate(parameter_names):
-                logger.info(
-                    f"  {name}: mean={data[:, i].mean():.3f}, std={data[:, i].std():.3f}"
-                )
-            logger.info("Data mean and std saved for inverse transformation")
-        else:  # minmax
-            logger.info("Standardizing data using min-max [0, 1] scaling...")
-            data, data_statistics = standardize_data_minmax(data)
-            logger.info("Standardized data ranges:")
-            for i, name in enumerate(parameter_names):
-                logger.info(
-                    f"  {name}: [{data[:, i].min():.3f}, {data[:, i].max():.3f}]"
-                )
-            logger.info("Data bounds saved for inverse transformation")
+        standardize_fn = (
+            standardize_data_zscore
+            if config.standardization_method == "zscore"
+            else standardize_data_minmax
+        )
+        method_desc = (
+            "z-score (mean=0, std=1)"
+            if config.standardization_method == "zscore"
+            else "min-max [0, 1] scaling"
+        )
+        logger.info(f"Standardizing data using {method_desc}...")
+        data, data_statistics = standardize_fn(data)
+        if is_conditional:
+            assert condition_data is not None
+            logger.info(f"Standardizing condition using {method_desc}...")
+            condition_data, condition_statistics = standardize_fn(condition_data)
+        logger.info("Data statistics saved for inverse transformation")
 
     # Create flow
     logger.info("[2/5] Creating flow architecture...")
     flow_key, train_key, sample_key = jax.random.split(jax.random.key(config.seed), 3)
-    dim = data.shape[1]  # Infer dimensionality from data
-    logger.info(f"Flow dimensionality: {dim}D")
+    dim = data.shape[1]  # Infer dimensionality from target data
+    cond_dim = config.effective_cond_dim
+    logger.info(f"Flow dimensionality: {dim}D (cond_dim={cond_dim})")
     flow = create_flow(
         key=flow_key,
         dim=dim,
@@ -523,7 +584,7 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
         nn_width=config.nn_width,
         flow_layers=config.flow_layers,
         invert=config.invert,
-        cond_dim=config.cond_dim,
+        cond_dim=cond_dim,
         transformer_type=config.transformer,
         transformer_knots=config.transformer_knots,
         transformer_interval=config.transformer_interval,
@@ -541,6 +602,7 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
         max_patience=config.max_patience,
         val_prop=config.val_prop,
         batch_size=config.batch_size,
+        condition=condition_data,
     )
     logger.info(f"Final train loss: {losses['train'][-1]:.4f}")
     logger.info(f"Final val loss: {losses['val'][-1]:.4f}")
@@ -554,7 +616,7 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
         "nn_width": config.nn_width,
         "flow_layers": config.flow_layers,
         "invert": config.invert,
-        "cond_dim": config.cond_dim,
+        "cond_dim": cond_dim,
         "seed": config.seed,
         "standardize": config.standardize,
         "standardization_method": config.standardization_method,
@@ -572,7 +634,7 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
             flow_kwargs["data_bounds_min"] = data_statistics["min"].tolist()
             flow_kwargs["data_bounds_max"] = data_statistics["max"].tolist()
 
-    metadata = {
+    metadata: Dict[str, Any] = {
         **load_metadata,
         "flow_type": config.flow_type,
         "num_epochs": len(losses["train"]),
@@ -592,6 +654,18 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
             metadata["data_bounds_min"] = data_statistics["min"].tolist()
             metadata["data_bounds_max"] = data_statistics["max"].tolist()
 
+    # Add condition statistics to metadata (Flow reads condition_* from metadata
+    # only -- unlike the target's data_*, they don't need to be in flow_kwargs,
+    # since flow_kwargs only determines the flow *architecture*, and cond_dim
+    # already covers that).
+    if config.standardize and condition_statistics is not None:
+        if config.standardization_method == "zscore":
+            metadata["condition_mean"] = condition_statistics["mean"].tolist()
+            metadata["condition_std"] = condition_statistics["std"].tolist()
+        else:  # minmax
+            metadata["condition_bounds_min"] = condition_statistics["min"].tolist()
+            metadata["condition_bounds_max"] = condition_statistics["max"].tolist()
+
     save_model(trained_flow, config.output_dir, flow_kwargs, metadata)
 
     # Generate plots
@@ -607,9 +681,21 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
 
     if config.plot_corner:
         try:
-            # Sample from trained flow
+            # Sample from trained flow. For a conditional flow there is no
+            # unconditional p(x) to sample from -- instead we sample p(x |
+            # condition) at the (already-standardized) training conditions, paired
+            # row-for-row with the same rows of `original_data`, as a posterior
+            # predictive check: the aggregate marginal of these conditional draws
+            # should match the aggregate marginal of the real target data.
             n_plot_samples = min(10_000, data.shape[0])
-            flow_samples = trained_flow.sample(sample_key, (n_plot_samples,))
+            if is_conditional:
+                assert condition_data is not None
+                condition_for_plot = condition_data[:n_plot_samples]
+                flow_samples = trained_flow.sample(
+                    sample_key, (), condition=condition_for_plot
+                )
+            else:
+                flow_samples = trained_flow.sample(sample_key, (n_plot_samples,))
             flow_samples_np = np.array(flow_samples)
 
             # Inverse transform samples if data was standardized
@@ -624,10 +710,14 @@ def train_flow_from_config(config: FlowTrainingConfig) -> None:
                     )
 
             corner_path = os.path.join(figures_dir, "corner.png")
-            # Use original_data for corner plot comparison
+            # Use original_data for corner plot comparison (paired with the same
+            # rows' conditions, for the conditional case, per the note above)
             # Update labels based on parameter names
+            comparison_data = (
+                original_data[:n_plot_samples] if is_conditional else original_data
+            )
             plot_corner(
-                original_data, flow_samples_np, corner_path, labels=parameter_names
+                comparison_data, flow_samples_np, corner_path, labels=parameter_names
             )
         except Exception as e:
             logger.warning(

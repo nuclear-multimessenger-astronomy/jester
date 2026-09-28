@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 
 class FlowTrainingConfig(BaseModel):
@@ -39,8 +39,17 @@ class FlowTrainingConfig(BaseModel):
         Number of flow layers (default: 1)
     invert : bool
         Whether to invert the flow (default: True)
+    condition_names : list[str] | None
+        Names of conditioning variables to extract from the posterior file,
+        e.g. ["mass_1_source", "mass_2_source"] to train a conditional flow
+        p(parameter_names | condition_names), such as p(lambda_1, lambda_2 |
+        mass_1_source, mass_2_source). Must be disjoint from parameter_names.
+        Defaults to None (unconditional flow).
     cond_dim : int | None
-        Conditional dimension for conditional flows (default: None)
+        Conditional dimension for conditional flows. When condition_names is
+        set, this is derived automatically as len(condition_names) and does not
+        need to be set explicitly; if both are set they must agree.
+        Defaults to None (unconditional flow).
     max_samples : int
         Maximum number of samples to use for training (default: 50,000)
     seed : int
@@ -83,6 +92,7 @@ class FlowTrainingConfig(BaseModel):
     nn_block_dim: int = 8
     flow_layers: int = 1
     invert: bool = True
+    condition_names: list[str] | None = None
     cond_dim: int | None = None
     max_samples: int = 50_000
     seed: int = 0
@@ -145,6 +155,54 @@ class FlowTrainingConfig(BaseModel):
         if len(v) == 0:
             raise ValueError("parameter_names cannot be an empty list.")
         return v
+
+    @field_validator("condition_names")
+    @classmethod
+    def validate_condition_names(cls, v: list[str] | None) -> list[str] | None:
+        """Validate that condition_names, if given, is a non-empty list."""
+        if v is not None and len(v) == 0:
+            raise ValueError(
+                "condition_names cannot be an empty list; use None for an "
+                "unconditional flow."
+            )
+        return v
+
+    @model_validator(mode="after")
+    def validate_condition_dim_consistency(self) -> "FlowTrainingConfig":
+        """Cross-check condition_names, cond_dim, and parameter_names.
+
+        - condition_names and parameter_names must be disjoint (a variable can't
+          be both modelled and conditioned on).
+        - If both condition_names and cond_dim are given, they must agree; this
+          catches stale/inconsistent configs early rather than at flow-build time.
+        """
+        if self.condition_names is not None:
+            overlap = set(self.condition_names) & set(self.parameter_names)
+            if overlap:
+                raise ValueError(
+                    "condition_names and parameter_names must be disjoint; "
+                    f"found overlap: {sorted(overlap)}"
+                )
+            if self.cond_dim is not None and self.cond_dim != len(self.condition_names):
+                raise ValueError(
+                    f"cond_dim ({self.cond_dim}) does not match "
+                    f"len(condition_names) ({len(self.condition_names)}). "
+                    "Leave cond_dim unset to derive it automatically."
+                )
+        return self
+
+    @property
+    def effective_cond_dim(self) -> int | None:
+        """The conditioning dimension actually used to build the flow.
+
+        Derived from ``len(condition_names)`` when set (the usual path for a
+        conditional flow), otherwise falls back to the explicit ``cond_dim``
+        (or None, for an unconditional flow). Consistency between the two, when
+        both are given, is already enforced by ``validate_condition_dim_consistency``.
+        """
+        if self.condition_names is not None:
+            return len(self.condition_names)
+        return self.cond_dim
 
     @classmethod
     def from_yaml(cls, filepath: str | Path) -> "FlowTrainingConfig":

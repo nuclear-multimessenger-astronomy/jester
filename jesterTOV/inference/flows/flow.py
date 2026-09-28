@@ -10,9 +10,17 @@ Normalizing flows trained on gravitational wave posterior samples can be used
 for importance sampling in EOS inference, providing efficient proposals that
 capture the correlations between binary component masses and tidal deformabilities.
 
+The same :class:`Flow` class also supports *conditional* flows, i.e. models of
+p(target | condition) such as p(λ1, λ2 | m1, m2). This is enabled simply by
+training with ``cond_dim`` set (see :class:`~jesterTOV.inference.flows.config.FlowTrainingConfig`);
+the resulting :class:`Flow` then requires a ``condition`` argument to
+``sample``/``log_prob``, and standardizes it the same way it standardizes the
+target variable, using statistics saved alongside the model.
+
 Key Features
 ------------
-- Automatic min-max standardization and inverse transformation
+- Automatic min-max/z-score standardization and inverse transformation
+- Optional conditioning variable, standardized the same way as the target
 - Simple save/load interface compatible with flowjax models
 - JAX-accelerated sampling and probability evaluation
 
@@ -40,6 +48,14 @@ Evaluate log-probability of data points:
 
 >>> data = jnp.array([[1.4, 1.3, 100, 200]])
 >>> log_prob = flow.log_prob(data)
+
+For a conditional flow trained on p(λ1, λ2 | m1, m2), pass ``condition``:
+
+>>> cflow = Flow.from_directory("./models/gw170817_conditional/")
+>>> condition = jnp.array([1.4, 1.3])  # (m1, m2)
+>>> samples = cflow.sample(jax.random.key(0), (1000,), condition=condition)
+>>> print(samples.shape)  # (1000, 2) for (λ1, λ2)
+>>> log_prob = cflow.log_prob(jnp.array([[100.0, 200.0]]), condition=condition)
 """
 
 import json
@@ -115,12 +131,22 @@ class Flow:
     transparently. When sampling, it automatically converts samples back to the original
     scale if standardization was used during training.
 
+    If the wrapped flow is conditional (i.e. it was built with ``cond_dim`` set, see
+    :func:`create_flow`), a ``condition`` array must be passed to :meth:`sample` and
+    :meth:`log_prob`. The condition is standardized the same way as the target
+    variable, using statistics computed at training time and saved to
+    ``metadata.json`` under the ``condition_*`` keys (mirroring the ``data_*`` keys
+    used for the target). Standardizing the condition is purely an input
+    transformation -- it does not require a Jacobian correction, unlike standardizing
+    the target variable ``x`` (which is being modelled as a random variable).
+
     Attributes:
         flow: The underlying flowjax flow model
         metadata: Training metadata dictionary
         flow_kwargs: Flow architecture kwargs
         standardize: Whether standardization was used during training
         data_bounds: Min/max bounds for each feature (if standardization was used)
+        cond_shape: Shape of the conditioning variable, or None for unconditional flows
 
     Example:
         >>> # Load a trained flow
@@ -132,6 +158,11 @@ class Flow:
         >>> # Access metadata
         >>> print(f"Flow type: {flow.metadata['flow_type']}")
         >>> print(f"Standardized: {flow.standardize}")
+
+        >>> # Conditional flow, e.g. p(lambda_1, lambda_2 | mass_1_source, mass_2_source)
+        >>> cflow = Flow.from_directory("./models/gw170817_conditional/")
+        >>> condition = jnp.array([1.4, 1.3])
+        >>> samples = cflow.sample(jax.random.key(0), (1000,), condition=condition)
     """
 
     def __init__(
@@ -196,6 +227,63 @@ class Flow:
             self.data_max = jnp.ones(n_features, dtype=_dtype)
             self.data_range = jnp.ones(n_features, dtype=_dtype)
 
+        # Conditional flow support: the conditioning variable is standardized the
+        # same way as the target, using its own statistics (it generally lives on a
+        # different scale, e.g. masses vs. tidal deformabilities). Unlike the target,
+        # standardizing the condition is just an input transform -- no Jacobian
+        # correction is needed since we are not modelling a density over it.
+        self.cond_shape = self.flow.cond_shape
+        self.condition_names = metadata.get("condition_names")
+
+        if self.cond_shape is not None:
+            n_cond = self.cond_shape[0]
+            has_cond_mean_std = (
+                "condition_mean" in metadata and "condition_std" in metadata
+            )
+            has_cond_bounds = (
+                "condition_bounds_min" in metadata
+                and "condition_bounds_max" in metadata
+            )
+
+            if self.standardize:
+                if has_cond_mean_std:
+                    self.condition_standardization_method = "zscore"
+                    self.condition_mean = jnp.array(
+                        metadata["condition_mean"], dtype=_dtype
+                    )
+                    self.condition_std = jnp.array(
+                        metadata["condition_std"], dtype=_dtype
+                    )
+                    self.condition_std = jnp.where(
+                        self.condition_std == 0, 1.0, self.condition_std
+                    )
+                elif has_cond_bounds:
+                    self.condition_standardization_method = "minmax"
+                    self.condition_min = jnp.array(
+                        metadata["condition_bounds_min"], dtype=_dtype
+                    )
+                    self.condition_max = jnp.array(
+                        metadata["condition_bounds_max"], dtype=_dtype
+                    )
+                    self.condition_range = self.condition_max - self.condition_min
+                    self.condition_range = jnp.where(
+                        self.condition_range == 0, 1.0, self.condition_range
+                    )
+                else:
+                    raise ValueError(
+                        "This flow is conditional (cond_shape="
+                        f"{self.cond_shape}) and standardize=True, but metadata "
+                        "is missing both (condition_mean, condition_std) and "
+                        "(condition_bounds_min, condition_bounds_max)."
+                    )
+            else:
+                self.condition_standardization_method = "none"
+                self.condition_min = jnp.zeros(n_cond, dtype=_dtype)
+                self.condition_max = jnp.ones(n_cond, dtype=_dtype)
+                self.condition_range = jnp.ones(n_cond, dtype=_dtype)
+        else:
+            self.condition_standardization_method = None
+
     @classmethod
     def from_directory(
         cls, output_dir: str, dtype: Literal["float32", "float64"] = "float64"
@@ -229,7 +317,52 @@ class Flow:
 
         return cls(flow_model, metadata, flow_kwargs, dtype=dtype)
 
-    def sample(self, key: Array, shape: Tuple[int, ...]) -> Array:
+    def _prepare_condition(self, condition: Array | None) -> Array | None:
+        """Validate and standardize a `condition` argument, or check it is absent.
+
+        Raises a clear error if a conditional flow is called without a `condition`,
+        or an unconditional flow is called with one, rather than letting flowjax
+        raise a more cryptic shape error downstream.
+        """
+        if self.cond_shape is not None:
+            if condition is None:
+                raise ValueError(
+                    "This flow is conditional (cond_shape="
+                    f"{self.cond_shape}), but no `condition` was provided."
+                )
+            return self.standardize_condition(condition)
+        if condition is not None:
+            raise ValueError(
+                "This flow is unconditional (cond_shape=None), but a `condition` "
+                "was provided."
+            )
+        return None
+
+    def standardize_condition(self, condition: Array) -> Array:
+        """
+        Standardize a conditioning variable using the method from training.
+
+        Mirrors :meth:`standardize_input`, but for the conditioning variable of a
+        conditional flow, using the ``condition_*`` statistics saved alongside the
+        model. This is a plain input transformation -- no Jacobian correction is
+        needed (unlike for the target variable), since the condition is not a random
+        variable being modelled.
+
+        Args:
+            condition: Conditioning variable in original scale.
+
+        Returns:
+            Standardized conditioning variable.
+        """
+        if self.condition_standardization_method == "zscore":
+            return (condition - self.condition_mean) / self.condition_std
+        else:
+            # Min-max or none: (x - min) / range
+            return (condition - self.condition_min) / self.condition_range
+
+    def sample(
+        self, key: Array, shape: Tuple[int, ...], condition: Array | None = None
+    ) -> Array:
         """
         Sample from the flow and return in original scale.
 
@@ -240,6 +373,11 @@ class Flow:
         Args:
             key: JAX random key (jax.Array)
             shape: Shape of samples to generate (e.g., (1000,) for 1000 samples)
+            condition: Conditioning variable, required if this is a conditional
+                flow (``self.cond_shape is not None``), and disallowed otherwise.
+                Standardized automatically, like the target variable. May include
+                leading batch dimensions, in which case they broadcast against
+                ``shape`` (see :meth:`flowjax.distributions.AbstractDistribution.sample`).
 
         Returns:
             Samples in original scale as JAX array of shape (``*shape``, n_features)
@@ -247,9 +385,14 @@ class Flow:
         Example:
             >>> samples = flow.sample(jax.random.key(0), (1000,))
             >>> print(samples.shape)  # (1000, 4) for 4D flow
+
+            >>> # Conditional flow
+            >>> samples = cflow.sample(jax.random.key(0), (1000,), condition=jnp.array([1.4, 1.3]))
         """
+        condition_std = self._prepare_condition(condition)
+
         # Sample in standardized space
-        samples = self.flow.sample(key, shape)
+        samples = self.flow.sample(key, shape, condition=condition_std)
 
         # Inverse transformation to original scale (method-dependent)
         samples = self.destandardize_output(samples)
@@ -310,7 +453,7 @@ class Flow:
             # If standardization disabled, this is identity (min=0, range=1)
             return data * self.data_range + self.data_min
 
-    def log_prob(self, x: Array) -> Array:
+    def log_prob(self, x: Array, condition: Array | None = None) -> Array:
         """
         Evaluate log probability of data under the flow.
 
@@ -323,9 +466,15 @@ class Flow:
         - Min-max: log p(x) = log p(x_std) - sum(log(max - min))
         - None: log p(x) = log p(x_std) (no correction)
 
+        No Jacobian correction is applied for standardizing `condition` -- it is an
+        input transformation, not a change of variables of the modelled density.
+
         Args:
             x: Data in original scale, shape (n_samples, n_features).
                JAX array.
+            condition: Conditioning variable, required if this is a conditional
+                flow (``self.cond_shape is not None``), and disallowed otherwise.
+                Standardized automatically, like ``x``.
 
         Returns:
             Log probabilities as JAX array, shape (n_samples,)
@@ -333,12 +482,16 @@ class Flow:
         Example:
             >>> data = jnp.array([[1.4, 1.3, 100, 200]])
             >>> log_prob = flow.log_prob(data)
+
+            >>> # Conditional flow, e.g. p(lambda_1, lambda_2 | m1, m2)
+            >>> log_prob = cflow.log_prob(jnp.array([[100.0, 200.0]]), condition=jnp.array([1.4, 1.3]))
         """
         # Standardize input (method-dependent or identity)
         x_std = self.standardize_input(x)
+        condition_std = self._prepare_condition(condition)
 
         # Evaluate log probability in standardized space
-        log_p = self.flow.log_prob(x_std)
+        log_p = self.flow.log_prob(x_std, condition_std)
 
         # Account for Jacobian of inverse transformation
         if self.standardization_method == "zscore":
@@ -505,14 +658,21 @@ def load_model(
     if dtype == "float32":
         _validate_float32_architecture(flow_kwargs)
 
-    # Infer dimensionality from metadata
-    # Try data_mean first (new format), then data_bounds_min (legacy)
-    if "data_mean" in metadata:
+    # Infer dimensionality from metadata. Prefer parameter_names -- it is always
+    # present (written by load_posterior regardless of standardize) and its length
+    # is the target dimensionality even when standardize=False, unlike data_mean /
+    # data_bounds_min which are only written when standardization was used (and
+    # previously left dim-inference falling back to a hardcoded 4 in that case,
+    # silently wrong for any non-4D unconditional/conditional flow).
+    if "parameter_names" in metadata:
+        dim = len(metadata["parameter_names"])
+    elif "data_mean" in metadata:
         dim = len(metadata["data_mean"])
     elif "data_bounds_min" in metadata:
         dim = len(metadata["data_bounds_min"])
     else:
-        # Default to 4 for backward compatibility with old models without standardization
+        # Default to 4 for backward compatibility with old models without
+        # standardization or parameter_names metadata.
         dim = 4
 
     def _build_and_deserialize():

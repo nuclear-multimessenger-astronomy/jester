@@ -51,14 +51,35 @@ standardization_method: zscore
 # Plotting
 plot_corner: true
 plot_losses: true
-
-# Conditional flow settings
-cond_dim: null
 ```
 
-```{note}
-For the moment, `jester` does not yet support the use of conditional flows.
+## Conditional flows
+
+`Flow` also supports conditional flows, i.e. models of p(target | condition) rather than a joint density over all parameters. This is useful, for example, to learn p(lambda_1, lambda_2 | mass_1_source, mass_2_source) instead of the joint p(mass_1_source, mass_2_source, lambda_1, lambda_2): the masses are then treated as a conditioning variable rather than as part of the modelled density.
+
+To train a conditional flow, set `condition_names` to the list of conditioning variable names (extracted from the same `posterior_file` as `parameter_names`), leaving `parameter_names` to just the variables that are actually modelled:
+
+```bash
+# Parameter selection: model p(lambda_1, lambda_2 | mass_1_source, mass_2_source)
+parameter_names: ["lambda_1", "lambda_2"]
+condition_names: ["mass_1_source", "mass_2_source"]
 ```
+
+The conditioning dimension (`cond_dim`, used to build the flow architecture) is derived automatically as `len(condition_names)` and does not need to be set explicitly. If standardization is enabled, the conditioning variable is standardized the same way as the target, using its own statistics (saved to `metadata.json` under `condition_mean`/`condition_std` or `condition_bounds_min`/`condition_bounds_max`, alongside the existing `data_*` keys used for the target).
+
+Once trained, a conditional `Flow` requires a `condition` argument when sampling or evaluating log-probabilities:
+
+```python
+from jesterTOV.inference.flows.flow import Flow
+import jax.numpy as jnp
+
+flow = Flow.from_directory("./models/gw170817_conditional/")
+condition = jnp.array([1.4, 1.3])  # (mass_1_source, mass_2_source), in Msun
+samples = flow.sample(jax.random.key(0), (1000,), condition=condition)  # (1000, 2), (lambda_1, lambda_2)
+log_prob = flow.log_prob(samples, condition=jnp.broadcast_to(condition, samples.shape))
+```
+
+An unconditional flow (`condition_names` left unset, the default) rejects a `condition` argument, and a conditional flow requires one -- both raise a clear `ValueError` rather than failing downstream.
 
 ## Starting the training
 

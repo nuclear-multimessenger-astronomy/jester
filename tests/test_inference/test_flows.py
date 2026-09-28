@@ -1,5 +1,7 @@
 """Tests for normalizing flows module - configuration and data operations."""
 
+import json
+
 import pytest
 import numpy as np
 import yaml
@@ -14,6 +16,7 @@ from jesterTOV.inference.flows.train_flow import (
     inverse_standardize_data_zscore,
     standardize_data_minmax,
     inverse_standardize_data_minmax,
+    train_flow_from_config,
 )
 from jesterTOV.inference.flows.flow import create_flow, Flow
 
@@ -219,6 +222,64 @@ class TestFlowTrainingConfig:
             FlowTrainingConfig(**sample_flow_config_dict)
 
 
+class TestFlowTrainingConfigConditional:
+    """Test FlowTrainingConfig validation for conditional flows (condition_names)."""
+
+    def test_condition_names_unconditional_by_default(self, sample_flow_config_dict):
+        """condition_names defaults to None (unconditional flow)."""
+        config = FlowTrainingConfig(**sample_flow_config_dict)
+        assert config.condition_names is None
+        assert config.effective_cond_dim is None
+
+    def test_condition_names_sets_effective_cond_dim(self, sample_flow_config_dict):
+        """Setting condition_names derives effective_cond_dim automatically."""
+        sample_flow_config_dict["parameter_names"] = ["lambda_1", "lambda_2"]
+        sample_flow_config_dict["condition_names"] = [
+            "mass_1_source",
+            "mass_2_source",
+        ]
+        config = FlowTrainingConfig(**sample_flow_config_dict)
+        assert config.effective_cond_dim == 2
+        assert config.cond_dim is None  # not set explicitly
+
+    def test_empty_condition_names_fails(self, sample_flow_config_dict):
+        """An empty condition_names list should fail (use None instead)."""
+        sample_flow_config_dict["condition_names"] = []
+        with pytest.raises(ValidationError, match="cannot be an empty list"):
+            FlowTrainingConfig(**sample_flow_config_dict)
+
+    def test_overlapping_condition_and_parameter_names_fails(
+        self, sample_flow_config_dict
+    ):
+        """condition_names must be disjoint from parameter_names."""
+        sample_flow_config_dict["parameter_names"] = ["mass_1_source", "lambda_1"]
+        sample_flow_config_dict["condition_names"] = ["mass_1_source"]
+        with pytest.raises(ValidationError, match="must be disjoint"):
+            FlowTrainingConfig(**sample_flow_config_dict)
+
+    def test_inconsistent_cond_dim_fails(self, sample_flow_config_dict):
+        """An explicit cond_dim that disagrees with len(condition_names) fails."""
+        sample_flow_config_dict["parameter_names"] = ["lambda_1", "lambda_2"]
+        sample_flow_config_dict["condition_names"] = [
+            "mass_1_source",
+            "mass_2_source",
+        ]
+        sample_flow_config_dict["cond_dim"] = 3
+        with pytest.raises(ValidationError, match="does not match"):
+            FlowTrainingConfig(**sample_flow_config_dict)
+
+    def test_consistent_cond_dim_passes(self, sample_flow_config_dict):
+        """An explicit cond_dim matching len(condition_names) is fine."""
+        sample_flow_config_dict["parameter_names"] = ["lambda_1", "lambda_2"]
+        sample_flow_config_dict["condition_names"] = [
+            "mass_1_source",
+            "mass_2_source",
+        ]
+        sample_flow_config_dict["cond_dim"] = 2
+        config = FlowTrainingConfig(**sample_flow_config_dict)
+        assert config.effective_cond_dim == 2
+
+
 # ======================
 # Data Loading Tests
 # ======================
@@ -229,7 +290,7 @@ class TestDataLoading:
 
     def test_load_posterior_basic(self, synthetic_gw_posterior):
         """Test loading posterior from npz file with GW parameters."""
-        data, metadata = load_posterior(
+        data, condition_data, metadata = load_posterior(
             str(synthetic_gw_posterior),
             parameter_names=["mass_1_source", "mass_2_source", "lambda_1", "lambda_2"],
             max_samples=50000,
@@ -249,7 +310,7 @@ class TestDataLoading:
 
     def test_load_posterior_with_downsampling(self, synthetic_gw_posterior):
         """Test downsampling when n_samples > max_samples."""
-        data, metadata = load_posterior(
+        data, condition_data, metadata = load_posterior(
             str(synthetic_gw_posterior),
             parameter_names=["mass_1_source", "mass_2_source", "lambda_1", "lambda_2"],
             max_samples=500,
@@ -273,7 +334,7 @@ class TestDataLoading:
             radius=np.random.uniform(10.0, 14.0, n_samples),
         )
 
-        data, metadata = load_posterior(
+        data, condition_data, metadata = load_posterior(
             str(nicer_file), parameter_names=["mass", "radius"]
         )
 
@@ -318,11 +379,69 @@ class TestDataLoading:
             lambda_2=np.random.randn(n_samples, 1),
         )
 
-        data, metadata = load_posterior(
+        data, condition_data, metadata = load_posterior(
             str(posterior_file),
             parameter_names=["mass_1_source", "mass_2_source", "lambda_1", "lambda_2"],
         )
         assert data.shape == (n_samples, 4)
+
+    def test_load_posterior_with_condition(self, synthetic_gw_posterior):
+        """Test loading target + condition columns for a conditional flow,
+        e.g. p(lambda_1, lambda_2 | mass_1_source, mass_2_source)."""
+        data, condition_data, metadata = load_posterior(
+            str(synthetic_gw_posterior),
+            parameter_names=["lambda_1", "lambda_2"],
+            condition_names=["mass_1_source", "mass_2_source"],
+            max_samples=50000,
+        )
+
+        assert data.shape == (1000, 2)
+        assert condition_data is not None
+        assert condition_data.shape == (1000, 2)
+        assert metadata["parameter_names"] == ["lambda_1", "lambda_2"]
+        assert metadata["condition_names"] == ["mass_1_source", "mass_2_source"]
+
+    def test_load_posterior_without_condition_names_returns_none(
+        self, synthetic_gw_posterior
+    ):
+        """condition_data should be None, and no condition_names key added to
+        metadata, when condition_names is not passed."""
+        data, condition_data, metadata = load_posterior(
+            str(synthetic_gw_posterior),
+            parameter_names=["mass_1_source", "mass_2_source", "lambda_1", "lambda_2"],
+        )
+        assert condition_data is None
+        assert "condition_names" not in metadata
+
+    def test_load_posterior_condition_paired_with_downsampling(
+        self, synthetic_gw_posterior
+    ):
+        """Target and condition rows must stay paired (same length) after
+        downsampling."""
+        data, condition_data, metadata = load_posterior(
+            str(synthetic_gw_posterior),
+            parameter_names=["lambda_1", "lambda_2"],
+            condition_names=["mass_1_source", "mass_2_source"],
+            max_samples=250,
+        )
+        assert condition_data is not None
+        assert data.shape[0] == condition_data.shape[0]
+        assert data.shape[0] <= 250
+
+    def test_load_posterior_missing_condition_name_fails(self, tmp_path):
+        """Missing a requested condition column should raise KeyError."""
+        posterior_file = tmp_path / "no_condition.npz"
+        np.savez(
+            posterior_file,
+            lambda_1=np.random.uniform(0, 1000, 100),
+            lambda_2=np.random.uniform(0, 1000, 100),
+        )
+        with pytest.raises(KeyError, match="Missing required condition names"):
+            load_posterior(
+                str(posterior_file),
+                parameter_names=["lambda_1", "lambda_2"],
+                condition_names=["mass_1_source", "mass_2_source"],
+            )
 
 
 # ======================
@@ -624,3 +743,114 @@ class TestFlowStandardizationMethods:
 
         np.testing.assert_allclose(original, standardized, rtol=1e-6)
         np.testing.assert_allclose(original, recovered, rtol=1e-6)
+
+
+# ======================
+# End-to-end conditional flow training (dummy dataset)
+# ======================
+
+
+class TestConditionalFlowTrainingEndToEnd:
+    """Train a small conditional flow p(lambda_1, lambda_2 | m1, m2) on a dummy
+    dataset end-to-end (config -> train_flow_from_config -> Flow.from_directory),
+    mirroring the eos_inference_3g use case of conditioning tidal deformabilities
+    on source-frame masses instead of using a joint flow over all four parameters.
+    """
+
+    def test_train_and_load_conditional_flow(self, synthetic_gw_posterior, tmp_path):
+        output_dir = tmp_path / "conditional_output"
+        config = FlowTrainingConfig(
+            posterior_file=str(synthetic_gw_posterior),
+            output_dir=str(output_dir),
+            parameter_names=["lambda_1", "lambda_2"],
+            condition_names=["mass_1_source", "mass_2_source"],
+            num_epochs=5,
+            max_patience=5,
+            nn_depth=2,
+            nn_width=8,
+            flow_layers=1,
+            batch_size=64,
+            seed=0,
+            plot_corner=True,
+            plot_losses=True,
+            flow_type="masked_autoregressive_flow",
+            standardize=True,
+            standardization_method="zscore",
+        )
+
+        train_flow_from_config(config)
+
+        # Files were written
+        assert (output_dir / "flow_weights.eqx").exists()
+        assert (output_dir / "flow_kwargs.json").exists()
+        assert (output_dir / "metadata.json").exists()
+        assert (output_dir / "figures" / "losses.png").exists()
+        assert (output_dir / "figures" / "corner.png").exists()
+
+        with open(output_dir / "flow_kwargs.json") as f:
+            saved_flow_kwargs = json.load(f)
+        assert saved_flow_kwargs["cond_dim"] == 2
+
+        with open(output_dir / "metadata.json") as f:
+            saved_metadata = json.load(f)
+        assert saved_metadata["condition_names"] == ["mass_1_source", "mass_2_source"]
+        assert "condition_mean" in saved_metadata
+        assert "condition_std" in saved_metadata
+
+        # Load it back through the Flow wrapper and use it
+        flow = Flow.from_directory(str(output_dir))
+        assert flow.cond_shape == (2,)
+
+        condition = jnp.array([1.4, 1.3])  # (m1, m2) in source frame, in Msun
+        key = jax.random.key(123)
+        samples = flow.sample(key, (200,), condition=condition)
+        assert samples.shape == (200, 2)  # (lambda_1, lambda_2)
+        assert not jnp.isnan(samples).any()
+        assert not jnp.isinf(samples).any()
+
+        log_prob = flow.log_prob(
+            samples, condition=jnp.broadcast_to(condition, samples.shape)
+        )
+        assert log_prob.shape == (200,)
+        assert not jnp.isnan(log_prob).any()
+        assert not jnp.isinf(log_prob).any()
+
+        # Different conditions should generally give different sample distributions
+        # (a smoke check that conditioning has *some* effect, not a strict fit
+        # quality check given the tiny number of epochs used here).
+        samples_other = flow.sample(
+            key, (200,), condition=jnp.array([2.0, 1.9])
+        )
+        assert not jnp.allclose(samples.mean(axis=0), samples_other.mean(axis=0))
+
+    def test_conditional_flow_without_standardization(
+        self, synthetic_gw_posterior, tmp_path
+    ):
+        """Conditional training/loading should also work with standardize=False."""
+        output_dir = tmp_path / "conditional_output_no_std"
+        config = FlowTrainingConfig(
+            posterior_file=str(synthetic_gw_posterior),
+            output_dir=str(output_dir),
+            parameter_names=["lambda_1", "lambda_2"],
+            condition_names=["mass_1_source", "mass_2_source"],
+            num_epochs=3,
+            max_patience=5,
+            nn_depth=2,
+            nn_width=8,
+            flow_layers=1,
+            batch_size=64,
+            seed=0,
+            plot_corner=False,
+            plot_losses=False,
+            standardize=False,
+        )
+
+        train_flow_from_config(config)
+
+        flow = Flow.from_directory(str(output_dir))
+        assert flow.condition_standardization_method == "none"
+
+        condition = jnp.array([1.4, 1.3])
+        samples = flow.sample(jax.random.key(0), (50,), condition=condition)
+        assert samples.shape == (50, 2)
+        assert not jnp.isnan(samples).any()
