@@ -19,6 +19,7 @@
       ~BlackJAXNSAWSampler.get_n_samples
       ~BlackJAXNSAWSampler.get_sampler_output
       ~BlackJAXNSAWSampler.get_samples
+      ~BlackJAXNSAWSampler.plot_diagnostics
       ~BlackJAXNSAWSampler.posterior
       ~BlackJAXNSAWSampler.posterior_from_dict
       ~BlackJAXNSAWSampler.print_summary

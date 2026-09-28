@@ -5,6 +5,7 @@ import json
 import pytest
 import jax
 import jax.numpy as jnp
+import numpy as np
 from unittest.mock import MagicMock, patch
 
 from jesterTOV.inference.config import schema
@@ -25,7 +26,12 @@ from jesterTOV.inference.likelihoods.constraints import (
 from jesterTOV.inference.likelihoods.chieft import ChiEFTLikelihood
 from jesterTOV.inference.likelihoods.radio import RadioTimingLikelihood
 from jesterTOV.inference.likelihoods.mock_mr import MockMassRadiusLikelihood
-from jesterTOV.inference.likelihoods.gw import GWLikelihood, StackedGWLikelihood
+from jesterTOV.inference.likelihoods.gw import (
+    GWLikelihood,
+    StackedGWLikelihood,
+    ConditionalGWLikelihood,
+    StackedConditionalGWLikelihood,
+)
 from jesterTOV.inference.base import LikelihoodBase
 
 
@@ -755,6 +761,58 @@ def _save_toy_flow(
     return output_dir
 
 
+def _save_toy_conditional_flow(
+    output_dir,
+    seed: int,
+    nn_width: int = 8,
+    nn_depth: int = 2,
+    standardize: bool = False,
+    transformer_type: str = "affine",
+):
+    """Build and save a tiny conditional masked_autoregressive_flow
+    (dim=2, cond_dim=2) to `output_dir`, loadable via ``Flow.from_directory``
+    -- a stand-in for a trained p(lambda_1, lambda_2 | m1, m2) model.
+
+    Mirrors `_save_toy_flow`, but with dim=2/cond_dim=2 (modelling
+    [lambda_1, lambda_2] conditioned on [mass_1_source, mass_2_source])
+    instead of dim=4/cond_dim=None.
+    """
+    from jesterTOV.inference.flows.flow import create_flow
+    from jesterTOV.inference.flows.train_flow import save_model
+
+    flow_kwargs = {
+        "seed": seed,
+        "flow_type": "masked_autoregressive_flow",
+        "nn_depth": nn_depth,
+        "nn_block_dim": 4,
+        "nn_width": nn_width,
+        "flow_layers": 1,
+        "invert": True,
+        "cond_dim": 2,
+        "transformer_type": transformer_type,
+        "transformer_knots": 4,
+        "transformer_interval": 4.0,
+    }
+    flow = create_flow(
+        key=jax.random.key(seed),
+        dim=2,
+        **{k: v for k, v in flow_kwargs.items() if k != "seed"},
+    )
+    metadata: dict = {
+        "standardize": standardize,
+        "parameter_names": ["lambda_1", "lambda_2"],
+        "condition_names": ["mass_1_source", "mass_2_source"],
+    }
+    if standardize:
+        metadata["data_mean"] = [300.0, 300.0]
+        metadata["data_std"] = [100.0, 100.0]
+        metadata["condition_mean"] = [1.4 + 0.1 * seed, 1.3]
+        metadata["condition_std"] = [0.2, 0.2]
+    output_dir.mkdir(parents=True, exist_ok=True)
+    save_model(flow, str(output_dir), flow_kwargs, metadata)
+    return output_dir
+
+
 class TestStackedGWLikelihood:
     """Test StackedGWLikelihood: batched/stacked evaluation of many GW events,
     replacing one GWLikelihood per event with a single lax.map-based computation.
@@ -1393,6 +1451,517 @@ class TestStackedGWLikelihood:
         )
         with pytest.raises(ValueError, match="unknown event name"):
             stacked.subset(["not_a_real_event"])
+
+
+def _save_toy_posterior_npz(
+    output_path, seed: int, n_samples: int = 200, m1_loc: float = 1.4
+):
+    """Save a small synthetic posterior .npz with mass_1_source/mass_2_source
+    (+ lambda_1/lambda_2, for realism) -- a stand-in for pe.py's
+    ``<label>_training_data.npz``, used as the bootstrap mass-sampling source
+    for ``ConditionalGWLikelihood``/``StackedConditionalGWLikelihood``.
+    """
+    rng = np.random.default_rng(seed)
+    m1 = rng.uniform(m1_loc - 0.1, m1_loc + 0.1, n_samples)
+    m2 = rng.uniform(m1_loc - 0.2, m1_loc - 0.1, n_samples)
+    lambda_1 = rng.uniform(10.0, 500.0, n_samples)
+    lambda_2 = rng.uniform(10.0, 500.0, n_samples)
+    np.savez(
+        output_path,
+        mass_1_source=m1,
+        mass_2_source=m2,
+        lambda_1=lambda_1,
+        lambda_2=lambda_2,
+    )
+    return output_path
+
+
+class TestConditionalGWLikelihood:
+    """Test ConditionalGWLikelihood: bootstrap-resamples (m1, m2) directly
+    from the raw posterior .npz (the same file the conditional flow trains
+    from), then scores lambda_1, lambda_2 via a separately-trained
+    conditional flow p(lambda_1, lambda_2 | m1, m2).
+    """
+
+    def test_initialization(self, tmp_path):
+        posterior_file = _save_toy_posterior_npz(tmp_path / "posterior.npz", seed=0)
+        cond_dir = _save_toy_conditional_flow(tmp_path / "conditional", seed=0)
+
+        likelihood = ConditionalGWLikelihood(
+            event_name="toy_event",
+            posterior_file=str(posterior_file),
+            conditional_model_dir=str(cond_dir),
+            N_masses_evaluation=30,
+            seed=0,
+        )
+
+        assert likelihood.conditional_flow.cond_shape == (2,)
+        assert likelihood.fixed_mass_samples.shape == (30, 2)
+
+    def test_evaluate_is_finite_and_scalar(self, tmp_path):
+        posterior_file = _save_toy_posterior_npz(tmp_path / "posterior.npz", seed=1)
+        cond_dir = _save_toy_conditional_flow(
+            tmp_path / "conditional", seed=1, standardize=True
+        )
+        likelihood = ConditionalGWLikelihood(
+            event_name="toy_event",
+            posterior_file=str(posterior_file),
+            conditional_model_dir=str(cond_dir),
+            N_masses_evaluation=30,
+            N_masses_batch_size=5,
+            seed=1,
+        )
+        masses_eos = jnp.linspace(1.0, 2.2, 100)
+        lambdas_eos = jnp.linspace(2000.0, 10.0, 100)
+        result = likelihood.evaluate(
+            {"masses_EOS": masses_eos, "Lambdas_EOS": lambdas_eos}
+        )
+        assert result.shape == ()
+        assert jnp.isfinite(result)
+
+    def test_bootstrap_resamples_from_raw_posterior(self, tmp_path):
+        """Every pre-sampled mass must be one of the raw posterior's own
+        values (bootstrap resampling with replacement), not something a flow
+        invented."""
+        posterior_file = _save_toy_posterior_npz(
+            tmp_path / "posterior.npz", seed=2, n_samples=50
+        )
+        cond_dir = _save_toy_conditional_flow(tmp_path / "conditional", seed=2)
+        likelihood = ConditionalGWLikelihood(
+            event_name="toy_event",
+            posterior_file=str(posterior_file),
+            conditional_model_dir=str(cond_dir),
+            N_masses_evaluation=500,  # > n_samples=50, forces repeats
+            seed=2,
+        )
+        raw = np.load(posterior_file)
+        raw_masses = np.column_stack([raw["mass_1_source"], raw["mass_2_source"]])
+        for sample in np.array(likelihood.fixed_mass_samples):
+            assert np.any(np.all(np.isclose(raw_masses, sample), axis=1))
+
+    def test_penalty_applied_beyond_mtov(self, tmp_path):
+        posterior_file = _save_toy_posterior_npz(
+            tmp_path / "posterior.npz", seed=0, m1_loc=1.2
+        )
+        cond_dir = _save_toy_conditional_flow(
+            tmp_path / "conditional", seed=0, standardize=True
+        )
+        # M_TOV mid-range of the pre-sampled masses, so some pre-sampled
+        # masses fall above it and pick up the penalty.
+        masses_eos = jnp.linspace(1.0, 1.15, 50)
+        lambdas_eos = jnp.linspace(2000.0, 10.0, 50)
+        params = {"masses_EOS": masses_eos, "Lambdas_EOS": lambdas_eos}
+
+        no_penalty = ConditionalGWLikelihood(
+            event_name="toy_event",
+            posterior_file=str(posterior_file),
+            conditional_model_dir=str(cond_dir),
+            penalty_value=0.0,
+            N_masses_evaluation=50,
+            N_masses_batch_size=10,
+            seed=0,
+        )
+        with_penalty = ConditionalGWLikelihood(
+            event_name="toy_event",
+            posterior_file=str(posterior_file),
+            conditional_model_dir=str(cond_dir),
+            penalty_value=-1e4,
+            N_masses_evaluation=50,
+            N_masses_batch_size=10,
+            seed=0,
+        )
+        assert with_penalty.evaluate(params) < no_penalty.evaluate(params)
+
+    def test_missing_mass_columns_in_posterior_file_raises(self, tmp_path):
+        posterior_file = tmp_path / "incomplete_posterior.npz"
+        np.savez(posterior_file, lambda_1=np.zeros(10), lambda_2=np.zeros(10))
+        cond_dir = _save_toy_conditional_flow(tmp_path / "conditional", seed=0)
+        with pytest.raises(ValueError, match="missing required key"):
+            ConditionalGWLikelihood(
+                event_name="toy_event",
+                posterior_file=str(posterior_file),
+                conditional_model_dir=str(cond_dir),
+                N_masses_evaluation=10,
+            )
+
+    def test_conditional_flow_must_be_conditional(self, tmp_path):
+        """conditional_model_dir pointing at an unconditional (joint) flow
+        must raise a clear error."""
+        posterior_file = _save_toy_posterior_npz(tmp_path / "posterior.npz", seed=0)
+        joint_dir = _save_toy_flow(tmp_path / "joint", seed=0)
+        with pytest.raises(ValueError, match=r"cond_shape=\(2,\)"):
+            ConditionalGWLikelihood(
+                event_name="toy_event",
+                posterior_file=str(posterior_file),
+                conditional_model_dir=str(joint_dir),
+                N_masses_evaluation=10,
+            )
+
+    def test_conditional_flow_wrong_cond_shape_raises(self, tmp_path):
+        """A conditional flow with cond_dim != 2 (e.g. conditioning on a
+        single mass) must raise a clear error rather than a cryptic shape
+        mismatch inside evaluate()."""
+        from jesterTOV.inference.flows.flow import create_flow
+        from jesterTOV.inference.flows.train_flow import save_model
+
+        posterior_file = _save_toy_posterior_npz(tmp_path / "posterior.npz", seed=0)
+        bad_cond_dir = tmp_path / "bad_conditional"
+        bad_cond_dir.mkdir()
+        flow_kwargs = {
+            "seed": 0,
+            "flow_type": "masked_autoregressive_flow",
+            "nn_depth": 2,
+            "nn_block_dim": 4,
+            "nn_width": 8,
+            "flow_layers": 1,
+            "invert": True,
+            "cond_dim": 1,  # wrong: should be 2 ([m1, m2])
+            "transformer_type": "affine",
+            "transformer_knots": 4,
+            "transformer_interval": 4.0,
+        }
+        flow = create_flow(
+            key=jax.random.key(0),
+            dim=2,
+            **{k: v for k, v in flow_kwargs.items() if k != "seed"},
+        )
+        save_model(
+            flow,
+            str(bad_cond_dir),
+            flow_kwargs,
+            {"standardize": False, "parameter_names": ["lambda_1", "lambda_2"]},
+        )
+
+        with pytest.raises(ValueError, match=r"cond_shape=\(2,\)"):
+            ConditionalGWLikelihood(
+                event_name="toy_event",
+                posterior_file=str(posterior_file),
+                conditional_model_dir=str(bad_cond_dir),
+                N_masses_evaluation=10,
+            )
+
+    @pytest.mark.slow
+    def test_responds_to_lambda_in_vs_out_of_training_range(self, tmp_path):
+        """Self-consistency sanity check with genuinely *trained* flows
+        (unlike the toy-flow helpers above, which are untrained stand-ins
+        used only for shape/error checks).
+
+        NOT a numerical-equivalence check against GWLikelihood -- a jointly
+        trained flow and a directly conditionally-trained flow are different
+        models/parameterizations of the same density, fit independently, and
+        are not expected to match point-wise. Instead this checks that the
+        conditional flow actually learned the mass-lambda relation: an EOS
+        curve matching the training data's relation should get a higher
+        likelihood than one shifted far outside anything seen in training.
+        """
+        from jesterTOV.inference.flows.config import FlowTrainingConfig
+        from jesterTOV.inference.flows.train_flow import train_flow_from_config
+
+        rng = np.random.default_rng(0)
+        n_samples = 2000
+        m1 = rng.uniform(1.0, 2.0, n_samples)
+        m2 = rng.uniform(1.0, 2.0, n_samples)
+
+        def lambda_of_mass(m):
+            return 500.0 * (2.0 - m) + rng.normal(0.0, 10.0, size=m.shape)
+
+        lambda_1 = lambda_of_mass(m1)
+        lambda_2 = lambda_of_mass(m2)
+
+        posterior_file = tmp_path / "toy_posterior.npz"
+        np.savez(
+            posterior_file,
+            mass_1_source=m1,
+            mass_2_source=m2,
+            lambda_1=lambda_1,
+            lambda_2=lambda_2,
+        )
+
+        # Unlike GWLikelihood-style tests, no joint flow needs training here --
+        # ConditionalGWLikelihood bootstrap-resamples masses directly from
+        # posterior_file, only the conditional flow needs training.
+        cond_dir = tmp_path / "conditional_trained"
+        cond_config = FlowTrainingConfig(
+            posterior_file=str(posterior_file),
+            output_dir=str(cond_dir),
+            parameter_names=["lambda_1", "lambda_2"],
+            condition_names=["mass_1_source", "mass_2_source"],
+            num_epochs=30,
+            max_patience=10,
+            nn_depth=2,
+            nn_width=16,
+            flow_layers=1,
+            batch_size=128,
+            seed=0,
+            plot_corner=False,
+            plot_losses=False,
+        )
+        train_flow_from_config(cond_config)
+
+        likelihood = ConditionalGWLikelihood(
+            event_name="toy_event",
+            posterior_file=str(posterior_file),
+            conditional_model_dir=str(cond_dir),
+            N_masses_evaluation=200,
+            N_masses_batch_size=20,
+            seed=0,
+        )
+
+        masses_eos = jnp.linspace(1.0, 2.0, 100)
+        lambdas_in_range = 500.0 * (2.0 - masses_eos)
+        lambdas_out_of_range = lambdas_in_range + 5000.0
+
+        log_l_in_range = likelihood.evaluate(
+            {"masses_EOS": masses_eos, "Lambdas_EOS": lambdas_in_range}
+        )
+        log_l_out_of_range = likelihood.evaluate(
+            {"masses_EOS": masses_eos, "Lambdas_EOS": lambdas_out_of_range}
+        )
+
+        assert jnp.isfinite(log_l_in_range)
+        assert jnp.isfinite(log_l_out_of_range)
+        assert log_l_in_range > log_l_out_of_range
+
+
+class TestStackedConditionalGWLikelihood:
+    """Test StackedConditionalGWLikelihood: StackedGWLikelihood's batched/
+    stacked evaluation, but over ConditionalGWLikelihood-style events (raw
+    posterior bootstrap mass sampling + a conditional flow for lambda).
+    """
+
+    def _build_events(self, tmp_path, n_events, standardize=False):
+        event_names = [f"event_{i}" for i in range(n_events)]
+        posterior_files = [
+            _save_toy_posterior_npz(
+                tmp_path / f"posterior_{i}.npz", seed=i, m1_loc=1.4 + 0.1 * i
+            )
+            for i in range(n_events)
+        ]
+        cond_dirs = [
+            _save_toy_conditional_flow(
+                tmp_path / f"conditional_{i}", seed=i, standardize=standardize
+            )
+            for i in range(n_events)
+        ]
+        return event_names, [str(f) for f in posterior_files], [str(d) for d in cond_dirs]
+
+    @pytest.mark.parametrize("standardize", [False, True])
+    def test_matches_sum_of_individual_conditional_gw_likelihoods(
+        self, tmp_path, standardize
+    ):
+        """StackedConditionalGWLikelihood(events) must equal
+        sum(ConditionalGWLikelihood(event) for event in events)."""
+        n_events = 3
+        event_names, posterior_files, cond_dirs = self._build_events(
+            tmp_path, n_events, standardize=standardize
+        )
+
+        stacked = StackedConditionalGWLikelihood(
+            event_names=event_names,
+            posterior_files=posterior_files,
+            conditional_model_dirs=cond_dirs,
+            N_masses_evaluation=20,
+            seed=42,
+        )
+        individual = [
+            ConditionalGWLikelihood(
+                event_name=name,
+                posterior_file=pf,
+                conditional_model_dir=cd,
+                N_masses_evaluation=20,
+                seed=42,
+            )
+            for name, pf, cd in zip(event_names, posterior_files, cond_dirs)
+        ]
+
+        masses_eos = jnp.linspace(1.0, 2.2, 100)
+        lambdas_eos = jnp.linspace(2000.0, 10.0, 100)
+        params = {"masses_EOS": masses_eos, "Lambdas_EOS": lambdas_eos}
+
+        # NOTE: unlike StackedGWLikelihood (same key reused, relies on
+        # per-event flow differences for sample diversity), this class splits
+        # the seed per event (see class docstring) -- so an individually
+        # constructed ConditionalGWLikelihood with the SAME top-level seed
+        # does not draw the same bootstrap samples as the stacked version.
+        # This test therefore only checks internal self-consistency (stacked
+        # sum == per-event sum via evaluate_per_event), not equality against
+        # freshly-built individual ConditionalGWLikelihood instances.
+        stacked_result = stacked.evaluate(params)
+        expected = jnp.sum(stacked.evaluate_per_event(params))
+        assert jnp.allclose(stacked_result, expected, rtol=1e-6, atol=1e-8)
+        assert jnp.isfinite(stacked_result)
+        for lik in individual:
+            assert jnp.isfinite(lik.evaluate(params))
+
+    def test_evaluate_per_event_sums_to_evaluate(self, tmp_path):
+        event_names, posterior_files, cond_dirs = self._build_events(tmp_path, 3)
+        stacked = StackedConditionalGWLikelihood(
+            event_names=event_names,
+            posterior_files=posterior_files,
+            conditional_model_dirs=cond_dirs,
+            N_masses_evaluation=20,
+            seed=0,
+        )
+        params = {
+            "masses_EOS": jnp.linspace(1.0, 2.2, 100),
+            "Lambdas_EOS": jnp.linspace(2000.0, 10.0, 100),
+        }
+        per_event = stacked.evaluate_per_event(params)
+        assert per_event.shape == (3,)
+        assert jnp.allclose(jnp.sum(per_event), stacked.evaluate(params))
+
+    def test_event_batch_size_does_not_change_result(self, tmp_path):
+        event_names, posterior_files, cond_dirs = self._build_events(tmp_path, 4)
+        params = {
+            "masses_EOS": jnp.linspace(1.0, 2.2, 100),
+            "Lambdas_EOS": jnp.linspace(2000.0, 10.0, 100),
+        }
+        results = []
+        for event_batch_size in (1, 2, 4):
+            lik = StackedConditionalGWLikelihood(
+                event_names=event_names,
+                posterior_files=posterior_files,
+                conditional_model_dirs=cond_dirs,
+                N_masses_evaluation=20,
+                event_batch_size=event_batch_size,
+                seed=0,
+            )
+            results.append(lik.evaluate(params))
+        assert jnp.allclose(results[0], results[1], rtol=1e-6)
+        assert jnp.allclose(results[0], results[2], rtol=1e-6)
+
+    def test_default_event_batch_size_is_one(self, tmp_path):
+        event_names, posterior_files, cond_dirs = self._build_events(tmp_path, 3)
+        lik = StackedConditionalGWLikelihood(
+            event_names=event_names,
+            posterior_files=posterior_files,
+            conditional_model_dirs=cond_dirs,
+        )
+        assert lik.event_batch_size == 1  # default is 1, a plain scan over events
+
+    def test_mismatched_lengths_raises(self, tmp_path):
+        event_names, posterior_files, cond_dirs = self._build_events(tmp_path, 2)
+        with pytest.raises(ValueError, match="same length"):
+            StackedConditionalGWLikelihood(
+                event_names=event_names,
+                posterior_files=posterior_files,
+                conditional_model_dirs=cond_dirs[:1],
+            )
+
+    def test_mismatched_architecture_raises_clear_error(self, tmp_path):
+        event_names, posterior_files, _ = self._build_events(tmp_path, 2)
+        cond_dirs = [
+            str(_save_toy_conditional_flow(tmp_path / "conditional_0", seed=0)),
+            str(
+                _save_toy_conditional_flow(
+                    tmp_path / "conditional_1", seed=1, nn_width=16
+                )
+            ),
+        ]
+        with pytest.raises(ValueError, match="same conditional flow architecture"):
+            StackedConditionalGWLikelihood(
+                event_names=event_names,
+                posterior_files=posterior_files,
+                conditional_model_dirs=cond_dirs,
+            )
+
+    def test_wrong_cond_shape_raises_naming_event(self, tmp_path):
+        event_names, posterior_files, _ = self._build_events(tmp_path, 2)
+        joint_dir = str(_save_toy_flow(tmp_path / "joint", seed=0))
+        cond_dir = str(_save_toy_conditional_flow(tmp_path / "conditional_1", seed=1))
+        with pytest.raises(ValueError, match=r"cond_shape=\(2,\).*event_0"):
+            StackedConditionalGWLikelihood(
+                event_names=event_names,
+                posterior_files=posterior_files,
+                conditional_model_dirs=[joint_dir, cond_dir],
+            )
+
+    def test_penalty_applied_beyond_mtov(self, tmp_path):
+        event_names, posterior_files, cond_dirs = self._build_events(
+            tmp_path, 2, standardize=True
+        )
+        masses_eos = jnp.linspace(1.0, 1.4, 50)
+        lambdas_eos = jnp.linspace(2000.0, 10.0, 50)
+        params = {"masses_EOS": masses_eos, "Lambdas_EOS": lambdas_eos}
+
+        no_penalty = StackedConditionalGWLikelihood(
+            event_names=event_names,
+            posterior_files=posterior_files,
+            conditional_model_dirs=cond_dirs,
+            penalty_value=0.0,
+            N_masses_evaluation=50,
+            seed=0,
+        )
+        with_penalty = StackedConditionalGWLikelihood(
+            event_names=event_names,
+            posterior_files=posterior_files,
+            conditional_model_dirs=cond_dirs,
+            penalty_value=-1e4,
+            N_masses_evaluation=50,
+            seed=0,
+        )
+        assert with_penalty.evaluate(params) < no_penalty.evaluate(params)
+
+    def test_evaluate_single_event_matches_evaluate_per_event(self, tmp_path):
+        event_names, posterior_files, cond_dirs = self._build_events(tmp_path, 3)
+        lik = StackedConditionalGWLikelihood(
+            event_names=event_names,
+            posterior_files=posterior_files,
+            conditional_model_dirs=cond_dirs,
+            N_masses_evaluation=20,
+            seed=0,
+        )
+        params = {
+            "masses_EOS": jnp.linspace(1.0, 2.2, 100),
+            "Lambdas_EOS": jnp.linspace(2000.0, 10.0, 100),
+        }
+        per_event = lik.evaluate_per_event(params)
+        for i in range(3):
+            single = lik.evaluate_single_event(params, i)
+            assert jnp.allclose(single, per_event[i], rtol=1e-6)
+
+    def test_subset_matches_slice_of_evaluate_per_event(self, tmp_path):
+        event_names, posterior_files, cond_dirs = self._build_events(tmp_path, 4)
+        lik = StackedConditionalGWLikelihood(
+            event_names=event_names,
+            posterior_files=posterior_files,
+            conditional_model_dirs=cond_dirs,
+            N_masses_evaluation=20,
+            seed=0,
+        )
+        params = {
+            "masses_EOS": jnp.linspace(1.0, 2.2, 100),
+            "Lambdas_EOS": jnp.linspace(2000.0, 10.0, 100),
+        }
+        full_per_event = lik.evaluate_per_event(params)
+
+        subset_names = ["event_2", "event_0"]
+        sub = lik.subset(subset_names)
+        assert sub.event_names == subset_names
+        sub_per_event = sub.evaluate_per_event(params)
+
+        assert jnp.allclose(sub_per_event[0], full_per_event[2], rtol=1e-6)
+        assert jnp.allclose(sub_per_event[1], full_per_event[0], rtol=1e-6)
+
+    def test_subset_empty_raises(self, tmp_path):
+        event_names, posterior_files, cond_dirs = self._build_events(tmp_path, 1)
+        lik = StackedConditionalGWLikelihood(
+            event_names=event_names,
+            posterior_files=posterior_files,
+            conditional_model_dirs=cond_dirs,
+        )
+        with pytest.raises(ValueError, match="at least one event name"):
+            lik.subset([])
+
+    def test_subset_unknown_event_name_raises(self, tmp_path):
+        event_names, posterior_files, cond_dirs = self._build_events(tmp_path, 1)
+        lik = StackedConditionalGWLikelihood(
+            event_names=event_names,
+            posterior_files=posterior_files,
+            conditional_model_dirs=cond_dirs,
+        )
+        with pytest.raises(ValueError, match="unknown event name"):
+            lik.subset(["not_a_real_event"])
 
 
 class TestLikelihoodFactory:

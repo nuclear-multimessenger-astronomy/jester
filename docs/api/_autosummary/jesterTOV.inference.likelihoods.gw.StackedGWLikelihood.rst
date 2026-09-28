@@ -15,6 +15,9 @@
    
       ~StackedGWLikelihood.__init__
       ~StackedGWLikelihood.evaluate
+      ~StackedGWLikelihood.evaluate_per_event
+      ~StackedGWLikelihood.evaluate_single_event
+      ~StackedGWLikelihood.subset
    
    
 
@@ -33,5 +36,6 @@
       ~StackedGWLikelihood.event_batch_size
       ~StackedGWLikelihood.seed
       ~StackedGWLikelihood.standardization_method
+      ~StackedGWLikelihood.use_float32
    
    

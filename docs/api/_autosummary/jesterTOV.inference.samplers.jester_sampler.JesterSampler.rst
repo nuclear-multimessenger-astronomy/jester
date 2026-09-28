@@ -19,6 +19,7 @@
       ~JesterSampler.get_n_samples
       ~JesterSampler.get_sampler_output
       ~JesterSampler.get_samples
+      ~JesterSampler.plot_diagnostics
       ~JesterSampler.posterior
       ~JesterSampler.posterior_from_dict
       ~JesterSampler.print_summary

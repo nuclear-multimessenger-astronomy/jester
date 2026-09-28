@@ -21,6 +21,7 @@
       ~FlowMCSampler.get_sampler_output
       ~FlowMCSampler.get_samples
       ~FlowMCSampler.get_training_sampler_output
+      ~FlowMCSampler.plot_diagnostics
       ~FlowMCSampler.posterior
       ~FlowMCSampler.posterior_from_dict
       ~FlowMCSampler.print_summary

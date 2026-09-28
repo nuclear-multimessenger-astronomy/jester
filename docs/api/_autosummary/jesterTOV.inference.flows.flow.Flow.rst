@@ -18,6 +18,7 @@
       ~Flow.from_directory
       ~Flow.log_prob
       ~Flow.sample
+      ~Flow.standardize_condition
       ~Flow.standardize_input
    
    

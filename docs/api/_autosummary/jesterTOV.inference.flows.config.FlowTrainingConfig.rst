@@ -38,6 +38,8 @@
       ~FlowTrainingConfig.schema_json
       ~FlowTrainingConfig.update_forward_refs
       ~FlowTrainingConfig.validate
+      ~FlowTrainingConfig.validate_condition_dim_consistency
+      ~FlowTrainingConfig.validate_condition_names
       ~FlowTrainingConfig.validate_parameter_names
       ~FlowTrainingConfig.validate_positive_float
       ~FlowTrainingConfig.validate_positive_int
@@ -51,6 +53,7 @@
 
    .. autosummary::
    
+      ~FlowTrainingConfig.effective_cond_dim
       ~FlowTrainingConfig.model_computed_fields
       ~FlowTrainingConfig.model_config
       ~FlowTrainingConfig.model_extra
@@ -66,6 +69,7 @@
       ~FlowTrainingConfig.nn_block_dim
       ~FlowTrainingConfig.flow_layers
       ~FlowTrainingConfig.invert
+      ~FlowTrainingConfig.condition_names
       ~FlowTrainingConfig.cond_dim
       ~FlowTrainingConfig.max_samples
       ~FlowTrainingConfig.seed

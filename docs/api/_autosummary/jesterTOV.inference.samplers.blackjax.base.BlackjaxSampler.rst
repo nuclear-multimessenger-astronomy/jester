@@ -19,6 +19,7 @@
       ~BlackjaxSampler.get_n_samples
       ~BlackjaxSampler.get_sampler_output
       ~BlackjaxSampler.get_samples
+      ~BlackjaxSampler.plot_diagnostics
       ~BlackjaxSampler.posterior
       ~BlackjaxSampler.posterior_from_dict
       ~BlackjaxSampler.print_summary

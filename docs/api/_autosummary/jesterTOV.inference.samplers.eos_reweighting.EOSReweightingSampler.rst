@@ -23,6 +23,7 @@
       ~EOSReweightingSampler.get_samples
       ~EOSReweightingSampler.load_and_grid
       ~EOSReweightingSampler.make_eos_fn
+      ~EOSReweightingSampler.plot_diagnostics
       ~EOSReweightingSampler.posterior
       ~EOSReweightingSampler.posterior_from_dict
       ~EOSReweightingSampler.print_summary
