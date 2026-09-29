@@ -1786,7 +1786,11 @@ class TestStackedConditionalGWLikelihood:
             )
             for i in range(n_events)
         ]
-        return event_names, [str(f) for f in posterior_files], [str(d) for d in cond_dirs]
+        return (
+            event_names,
+            [str(f) for f in posterior_files],
+            [str(d) for d in cond_dirs],
+        )
 
     @pytest.mark.parametrize("standardize", [False, True])
     def test_matches_sum_of_individual_conditional_gw_likelihoods(
@@ -2188,6 +2192,53 @@ class TestCombinedLikelihoodFactory:
         expected = sum(lik.evaluate(params) for lik in individual)
 
         assert jnp.allclose(likelihood.evaluate(params), expected, rtol=1e-6)
+
+    def test_create_gw_likelihood_with_posterior_file_builds_conditional(
+        self, tmp_path
+    ):
+        """A type: gw block whose events set posterior_file must build a
+        StackedConditionalGWLikelihood, numerically identical to constructing
+        it directly with the same arguments."""
+        names = ["toy_a", "toy_b"]
+        posts = [
+            str(_save_toy_posterior_npz(tmp_path / f"post_{i}.npz", seed=i))
+            for i in range(2)
+        ]
+        flows = [
+            str(
+                _save_toy_conditional_flow(
+                    tmp_path / f"cond_{i}", seed=i, standardize=True
+                )
+            )
+            for i in range(2)
+        ]
+        config = schema.GWLikelihoodConfig(
+            events=[
+                schema.GWEventConfig(name=n, nf_model_dir=f, posterior_file=p)
+                for n, f, p in zip(names, flows, posts)
+            ],
+            N_masses_evaluation=30,
+            N_masses_batch_size=5,
+            seed=3,
+        )
+
+        likelihood = factory.create_combined_likelihood([config])
+        assert isinstance(likelihood, StackedConditionalGWLikelihood)
+        assert likelihood.event_names == names
+
+        expected = StackedConditionalGWLikelihood(
+            event_names=names,
+            posterior_files=posts,
+            conditional_model_dirs=flows,
+            N_masses_evaluation=30,
+            N_masses_batch_size=5,
+            seed=3,
+        )
+        masses_eos = jnp.linspace(1.0, 2.2, 100)
+        lambdas_eos = jnp.linspace(2000.0, 10.0, 100)
+        params = {"masses_EOS": masses_eos, "Lambdas_EOS": lambdas_eos}
+        assert jnp.isfinite(likelihood.evaluate(params))
+        assert jnp.allclose(likelihood.evaluate(params), expected.evaluate(params))
 
     def test_create_combined_likelihood_single(self):
         """Test that single enabled likelihood is returned directly (not wrapped)."""

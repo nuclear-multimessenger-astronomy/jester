@@ -27,13 +27,13 @@
       ~ConditionalGWLikelihood.data
       ~ConditionalGWLikelihood.model
       ~ConditionalGWLikelihood.event_name
-      ~ConditionalGWLikelihood.model_dir
+      ~ConditionalGWLikelihood.posterior_file
       ~ConditionalGWLikelihood.conditional_model_dir
       ~ConditionalGWLikelihood.penalty_value
       ~ConditionalGWLikelihood.N_masses_evaluation
       ~ConditionalGWLikelihood.N_masses_batch_size
       ~ConditionalGWLikelihood.seed
-      ~ConditionalGWLikelihood.flow
+      ~ConditionalGWLikelihood.use_float32
       ~ConditionalGWLikelihood.conditional_flow
       ~ConditionalGWLikelihood.fixed_mass_samples
    

@@ -453,7 +453,8 @@ Configuration files use YAML with Pydantic validation. See `examples/inference/*
    - `events`: list of `GWEventConfig` objects — two modes per event:
      - **Pre-trained flow** (default): set `nf_model_dir` to a trained flow directory, or omit to use a built-in preset
      - **From bilby result**: set `from_bilby_result` to a bilby HDF5 path; jester extracts posterior samples and trains a flow automatically via `prepare_gw_flows()` in `run_inference.py`
-   - `GWEventConfig` fields: `name` (required), `nf_model_dir`, `from_bilby_result`, `flow_config`, `retrain_flow`
+   - **Conditional flow**: set `posterior_file` (raw posterior NPZ) together with `nf_model_dir` (a flow trained with `condition_names`, p(lambda|m1,m2)); the factory then builds `StackedConditionalGWLikelihood` (masses bootstrap-resampled from `posterior_file`). All events in one `gw` block must be of the same kind (`GWLikelihoodConfig.is_conditional`). Works with smc-pp (`ibis.py` accepts both stacked classes).
+   - `GWEventConfig` fields: `name` (required), `nf_model_dir`, `posterior_file`, `from_bilby_result`, `from_npz_file`, `flow_config`, `retrain_flow`
    - `from_bilby_result` and `nf_model_dir` are mutually exclusive; `flow_config`/`retrain_flow` only valid with `from_bilby_result`
 2. `GWResampledLikelihoodConfig` - GW with resampling during MCMC
 3. `NICERLikelihoodConfig` - X-ray timing

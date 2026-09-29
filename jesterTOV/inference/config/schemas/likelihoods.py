@@ -45,6 +45,13 @@ class GWEventConfig(JesterBaseModel):
       NPZ file (e.g. one previously produced by the ``jester_extract_gw_posterior_bilby``
       CLI tool), skipping the bilby extraction step.
 
+    **Mode 4 — pre-trained conditional flow**:
+      Provide both ``nf_model_dir`` (pointing at a flow trained for
+      :math:`p(\lambda_1, \lambda_2 | m_1, m_2)`, see
+      :class:`~jesterTOV.inference.flows.config.FlowTrainingConfig`
+      ``condition_names``) and ``posterior_file``, the raw posterior NPZ from
+      which the masses are bootstrap-resampled. No joint flow is needed.
+
     ``nf_model_dir`` is mutually exclusive with both ``from_bilby_result`` and
     ``from_npz_file``.  ``from_bilby_result`` and ``from_npz_file`` are also
     mutually exclusive with each other.  ``flow_config`` and ``retrain_flow``
@@ -58,6 +65,15 @@ class GWEventConfig(JesterBaseModel):
 
         events:
           - name: GW170817
+
+    Pre-trained conditional flow:
+
+    .. code-block:: yaml
+
+        events:
+          - name: source_1
+            nf_model_dir: ./source_1_conditional_flow
+            posterior_file: ./source_1_training_data.npz
 
     Pre-trained flow (custom path):
 
@@ -96,6 +112,15 @@ class GWEventConfig(JesterBaseModel):
         description=(
             "Path to a pre-trained normalizing flow model directory. "
             "If omitted, uses a built-in preset for known events."
+        ),
+    )
+    posterior_file: str | None = Field(
+        default=None,
+        description=(
+            "Path to the event's raw posterior NPZ (mass_1_source, mass_2_source, ...). "
+            "When set, 'nf_model_dir' is interpreted as a conditional flow "
+            "p(lambda_1, lambda_2 | m1, m2) and masses are bootstrap-resampled "
+            "from this file instead of from a joint flow. Requires 'nf_model_dir'."
         ),
     )
     from_bilby_result: str | None = Field(
@@ -156,6 +181,18 @@ class GWEventConfig(JesterBaseModel):
                 "or 'from_npz_file' to start directly from an existing NPZ file."
             )
 
+        if self.posterior_file is not None:
+            if has_bilby or has_npz:
+                raise ValueError(
+                    "'posterior_file' selects a pre-trained conditional flow and "
+                    "cannot be combined with 'from_bilby_result' or 'from_npz_file'."
+                )
+            if not has_pretrained:
+                raise ValueError(
+                    "'posterior_file' requires 'nf_model_dir' to point at the "
+                    "event's trained conditional flow (there is no conditional preset)."
+                )
+
         # flow_config and retrain_flow only make sense when training a flow
         needs_training = has_bilby or has_npz
         if not needs_training:
@@ -186,6 +223,12 @@ class GWLikelihoodConfig(BaseLikelihoodConfig):
     modes: using a pre-trained normalizing flow (default), automatically
     extracting samples from a bilby result file and training the flow, or
     training the flow directly from an existing NPZ file.
+
+    If every event sets ``posterior_file``, the events' flows are interpreted
+    as conditional flows :math:`p(\lambda_1, \lambda_2 | m_1, m_2)` and the
+    block is evaluated by ``StackedConditionalGWLikelihood``, bootstrap
+    resampling masses from each ``posterior_file``. A block cannot mix the two
+    kinds of events.
 
     Examples
     --------
@@ -229,6 +272,24 @@ class GWLikelihoodConfig(BaseLikelihoodConfig):
                 "Each event must have a unique name."
             )
         return v
+
+    @model_validator(mode="after")
+    def _validate_no_mixed_flow_kinds(self) -> "GWLikelihoodConfig":
+        n_conditional = sum(e.posterior_file is not None for e in self.events)
+        if 0 < n_conditional < len(self.events):
+            raise ValueError(
+                "A 'gw' likelihood cannot mix conditional-flow events (with "
+                "'posterior_file') and joint-flow events: "
+                f"{n_conditional} of {len(self.events)} events set 'posterior_file'. "
+                "Give all events a 'posterior_file' (conditional flows) or none "
+                "(joint flows)."
+            )
+        return self
+
+    @property
+    def is_conditional(self) -> bool:
+        """Whether this block's events use conditional flows (``posterior_file`` set)."""
+        return self.events[0].posterior_file is not None
 
     penalty_value: float = Field(
         default=0.0,

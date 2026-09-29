@@ -22,7 +22,11 @@ from ..config.schema import (
     MockMassRadiusLikelihoodConfig,
 )
 from .combined import CombinedLikelihood, ZeroLikelihood
-from .gw import GWLikelihoodResampled, StackedGWLikelihood
+from .gw import (
+    GWLikelihoodResampled,
+    StackedConditionalGWLikelihood,
+    StackedGWLikelihood,
+)
 from .nicer import NICERLikelihood, NICERKDELikelihood
 from .radio import RadioTimingLikelihood
 from .chieft import ChiEFTLikelihood
@@ -247,17 +251,36 @@ def create_combined_likelihood(
                 event_names = [event.name for event in config.events]
                 model_dirs = [get_gw_model_dir(event) for event in config.events]
 
-                gw_likelihood = StackedGWLikelihood(
-                    event_names=event_names,
-                    model_dirs=model_dirs,
-                    penalty_value=config.penalty_value,
-                    N_masses_evaluation=config.N_masses_evaluation,
-                    N_masses_batch_size=config.N_masses_batch_size,
-                    event_batch_size=config.event_batch_size,
-                    seed=config.seed,
-                    use_float32=config.use_float32,
-                )
-                likelihoods.append(gw_likelihood)
+                stacked_gw: StackedGWLikelihood | StackedConditionalGWLikelihood
+                if config.is_conditional:
+                    # Conditional flows p(lambda | m1, m2); masses are bootstrap-
+                    # resampled from each event's raw posterior file.
+                    stacked_gw = StackedConditionalGWLikelihood(
+                        event_names=event_names,
+                        posterior_files=[
+                            str(Path(event.posterior_file).resolve())  # type: ignore[arg-type]
+                            for event in config.events
+                        ],
+                        conditional_model_dirs=model_dirs,
+                        penalty_value=config.penalty_value,
+                        N_masses_evaluation=config.N_masses_evaluation,
+                        N_masses_batch_size=config.N_masses_batch_size,
+                        event_batch_size=config.event_batch_size,
+                        seed=config.seed,
+                        use_float32=config.use_float32,
+                    )
+                else:
+                    stacked_gw = StackedGWLikelihood(
+                        event_names=event_names,
+                        model_dirs=model_dirs,
+                        penalty_value=config.penalty_value,
+                        N_masses_evaluation=config.N_masses_evaluation,
+                        N_masses_batch_size=config.N_masses_batch_size,
+                        event_batch_size=config.event_batch_size,
+                        seed=config.seed,
+                        use_float32=config.use_float32,
+                    )
+                likelihoods.append(stacked_gw)
 
             # Special handling for GW likelihoods with resampling: create one likelihood per event
             case GWResampledLikelihoodConfig():
@@ -316,13 +339,13 @@ def create_combined_likelihood(
                     psr_name = pulsar["name"]
                     assert isinstance(psr_name, str), "name must be a string"
                     mass_mean = pulsar["mass_mean"]
-                    assert isinstance(
-                        mass_mean, (int, float)
-                    ), "mass_mean must be a number"
+                    assert isinstance(mass_mean, (int, float)), (
+                        "mass_mean must be a number"
+                    )
                     mass_std = pulsar["mass_std"]
-                    assert isinstance(
-                        mass_std, (int, float)
-                    ), "mass_std must be a number"
+                    assert isinstance(mass_std, (int, float)), (
+                        "mass_std must be a number"
+                    )
 
                     radio_likelihood = RadioTimingLikelihood(
                         psr_name=psr_name,

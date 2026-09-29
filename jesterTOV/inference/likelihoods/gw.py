@@ -487,10 +487,9 @@ class ConditionalGWLikelihood(LikelihoodBase):
     parameterizations of the same posterior, fit independently. Don't use
     this interchangeably with ``GWLikelihood`` expecting matching numbers.
 
-    This class is not currently wired into the YAML config / factory system
-    (``GWEventConfig``, ``likelihoods/factory.py``) -- construct it directly
-    in Python for now. See ``StackedConditionalGWLikelihood`` for the
-    batched/multi-event variant, mirroring ``StackedGWLikelihood``.
+    This single-event class is constructed directly in Python. The YAML
+    ``type: gw`` config (events with ``posterior_file``) builds the batched
+    ``StackedConditionalGWLikelihood`` instead, mirroring ``StackedGWLikelihood``.
 
     Examples
     --------

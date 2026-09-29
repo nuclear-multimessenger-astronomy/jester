@@ -292,6 +292,7 @@ Constrain the EOS using gravitational wave observations of binary neutron star m
 |-------|------|---------|-------------|
 | `name` | str | required | Event name, e.g. `GW170817` |
 | `nf_model_dir` | str\|null | null | Path to a pre-trained normalizing flow directory. Mutually exclusive with `from_bilby_result` and `from_npz_file`. |
+| `posterior_file` | str\|null | null | Path to the event's raw posterior `.npz` (`mass_1_source`, `mass_2_source`, ...). Selects the **conditional-flow** mode: `nf_model_dir` must then point to a flow trained for p(lambda_1, lambda_2 \| m1, m2) (`condition_names` in {class}`~jesterTOV.inference.flows.config.FlowTrainingConfig`), and masses are bootstrap-resampled from this file (no joint flow needed). Requires `nf_model_dir`; all events of one `gw` block must either set it or not. |
 | `from_bilby_result` | str\|null | null | Path to a bilby result `.hdf5` file. jester will extract posterior samples and train a flow automatically. Mutually exclusive with `nf_model_dir` and `from_npz_file`. |
 | `from_npz_file` | str\|null | null | Path to an existing `.npz` file with posterior samples (`mass_1_source`, `mass_2_source`, `lambda_1`, `lambda_2`). jester will train a flow directly from this file, skipping bilby extraction. Mutually exclusive with `nf_model_dir` and `from_bilby_result`. |
 | `flow_config` | str\|null | null | Path to a {class}`~jesterTOV.inference.flows.config.FlowTrainingConfig` YAML file for custom flow training (only valid with `from_bilby_result` or `from_npz_file`). |

@@ -91,6 +91,7 @@ from jesterTOV.inference.config.schema import (
 from jesterTOV.inference.likelihoods.combined import CombinedLikelihood, ZeroLikelihood
 from jesterTOV.inference.likelihoods.gw import (
     GWLikelihoodResampled,
+    StackedConditionalGWLikelihood,
     StackedGWLikelihood,
 )
 from jesterTOV.inference.samplers.jester_sampler import SamplerOutput
@@ -112,7 +113,7 @@ __all__ = [
 
 def split_event_and_background_likelihoods(
     likelihood: LikelihoodBase,
-) -> tuple[LikelihoodBase, StackedGWLikelihood]:
+) -> tuple[LikelihoodBase, StackedGWLikelihood | StackedConditionalGWLikelihood]:
     """Split a (possibly Combined) likelihood into its non-GW "always-on"
     background piece and its single ``StackedGWLikelihood`` piece.
 
@@ -130,7 +131,7 @@ def split_event_and_background_likelihoods(
     background : LikelihoodBase
         ``CombinedLikelihood`` over every non-GW constituent (``ZeroLikelihood``
         if none), i.e. everything except the ``StackedGWLikelihood``.
-    stacked_gw : StackedGWLikelihood
+    stacked_gw : StackedGWLikelihood or StackedConditionalGWLikelihood
         The single GW likelihood, exposing ``evaluate_per_event`` and
         ``event_names`` (assimilation order, fixed at construction time to
         config order).
@@ -158,7 +159,11 @@ def split_event_and_background_likelihoods(
             "for all GW events, or use a different sampler."
         )
 
-    stacked = [c for c in constituents if isinstance(c, StackedGWLikelihood)]
+    stacked = [
+        c
+        for c in constituents
+        if isinstance(c, (StackedGWLikelihood, StackedConditionalGWLikelihood))
+    ]
     if len(stacked) == 0:
         raise ValueError(
             "smc-pp (IBIS) requires exactly one GW likelihood block "
@@ -354,7 +359,7 @@ class BlackJAXIBISSampler(BlackjaxSampler):
 
     config: SMCPartialPosteriorsSamplerConfig
     background: LikelihoodBase
-    stacked_gw: StackedGWLikelihood
+    stacked_gw: StackedGWLikelihood | StackedConditionalGWLikelihood
     event_names: list[str]
     metadata: dict
     final_state: Any | None

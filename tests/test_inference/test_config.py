@@ -919,6 +919,72 @@ class TestGWEventConfig:
         )
         assert len(config.events) == 2
 
+    def test_gw_event_posterior_file_with_nf_model_dir_valid(self):
+        """posterior_file + nf_model_dir selects the conditional-flow mode."""
+        event = schema.GWEventConfig(
+            name="source_1",
+            nf_model_dir="./source_1_conditional_flow",
+            posterior_file="./source_1_training_data.npz",
+        )
+        assert event.posterior_file == "./source_1_training_data.npz"
+
+    def test_gw_event_posterior_file_defaults_none(self):
+        """Joint-flow events do not set posterior_file."""
+        assert schema.GWEventConfig(name="GW170817").posterior_file is None
+
+    def test_gw_event_posterior_file_requires_nf_model_dir(self):
+        """posterior_file without an explicit flow dir must fail (no preset is conditional)."""
+        with pytest.raises(ValidationError, match="posterior_file"):
+            schema.GWEventConfig(name="GW170817", posterior_file="./post.npz")
+
+    def test_gw_event_posterior_file_incompatible_with_training_modes(self):
+        """posterior_file is for pre-trained conditional flows only."""
+        with pytest.raises(ValidationError, match="posterior_file"):
+            schema.GWEventConfig(
+                name="GW170817",
+                from_npz_file="./post.npz",
+                posterior_file="./post.npz",
+            )
+        with pytest.raises(ValidationError, match="posterior_file"):
+            schema.GWEventConfig(
+                name="GW170817",
+                from_bilby_result="./result.hdf5",
+                posterior_file="./post.npz",
+            )
+
+    def test_gw_likelihood_config_mixed_flow_modes_fail(self):
+        """One gw block cannot mix joint-flow and conditional-flow events."""
+        with pytest.raises(ValidationError, match="conditional"):
+            schema.GWLikelihoodConfig(
+                events=[
+                    schema.GWEventConfig(name="GW170817"),
+                    schema.GWEventConfig(
+                        name="source_1",
+                        nf_model_dir="./cond",
+                        posterior_file="./post.npz",
+                    ),
+                ]
+            )
+
+    def test_gw_likelihood_config_all_conditional_ok(self):
+        config = schema.GWLikelihoodConfig(
+            events=[
+                schema.GWEventConfig(
+                    name=f"source_{i}",
+                    nf_model_dir=f"./cond_{i}",
+                    posterior_file=f"./post_{i}.npz",
+                )
+                for i in range(3)
+            ]
+        )
+        assert config.is_conditional
+
+    def test_gw_likelihood_config_joint_is_not_conditional(self):
+        config = schema.GWLikelihoodConfig(
+            events=[schema.GWEventConfig(name="GW170817")]
+        )
+        assert not config.is_conditional
+
     def test_gw_resampled_duplicate_event_names_fail(self):
         """GWResampledLikelihoodConfig raises ValidationError for duplicate event names."""
         with pytest.raises(ValidationError, match="Duplicate GW event names"):
