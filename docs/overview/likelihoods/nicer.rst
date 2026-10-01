@@ -6,19 +6,20 @@ NICER constraints
 NICER (Neutron star Interior Composition Explorer) is a NASA X-ray telescope on the International Space Station that measures X-ray pulse profiles from millisecond pulsars.
 By modelling the X-ray emission from hot spots on the neutron star surface, NICER constrains the stellar mass and radius simultaneously, providing direct input for equation-of-state inference.
 
-JESTER currently supports four pulsars observed by NICER:
+JESTER currently supports five pulsars observed by NICER:
 
 * **PSR J0030+0451**
 * **PSR J0437-4715**
 * **PSR J0614-3329**
 * **PSR J0740+6620**
+* **PSR J1614-2230**
 
-The figure below shows the mass-radius posteriors for the four supported pulsars, with filled contours at the 68% and 90% credible intervals. Where both the Amsterdam and Maryland groups have published an independent analysis for a pulsar, both are overlaid using each group's preferred/headline dataset.
+The figure below shows the mass-radius posteriors for the five supported pulsars, with filled contours at the 68% and 90% credible intervals. Where both the Amsterdam and Maryland groups have published an independent analysis for a pulsar, both are overlaid using each group's preferred/headline dataset.
 Below, we provide more details on the datasets that are available for each pulsar, and how to use them in ``jester``.
 
 .. plot:: overview/likelihoods/nicer_mr_plot.py
 
-   Mass-radius posteriors from NICER for the four supported pulsars.
+   Mass-radius posteriors from NICER for the five supported pulsars.
    Filled contours show the 68% (darker) and 90% (lighter) credible intervals
    from kernel density estimation of the published posterior samples.
    Each pulsar is shown in a single colour (filled squares in the legend);
@@ -118,6 +119,15 @@ Two hotspot geometries x two prior choices:
 * ``J00300451_maryland_3spot_NICER_only_RM.npz`` — 3-spot, restricted-model prior
 * ``J00300451_maryland_3spot_NICER_only_full.npz`` — 3-spot, full prior
 
+**Amsterdam group — Vinciguerra et al. 2023** (`ApJ 961, 62 <https://inspirehep.net/literature/2689277>`_; `Zenodo 8239000 <https://zenodo.org/records/8239000>`_)
+
+Intermediate Amsterdam analysis (between Riley et al. 2019 and Kini et al. 2026):
+
+* ``J00300451_amsterdam_ST_U_NICER_only_Vinciguerra2023.npz`` — ST-U
+* ``J00300451_amsterdam_ST_PST_NICER_only_Vinciguerra2023.npz`` — ST+PST
+* ``J00300451_amsterdam_ST_PDT_NICER_only_Vinciguerra2023.npz`` — ST+PDT
+* ``J00300451_amsterdam_PDT_U_NICER_only_Vinciguerra2023.npz`` — PDT-U
+
 PSR J0437-4715
 ^^^^^^^^^^^^^^
 
@@ -171,6 +181,14 @@ Most recent analysis using gamma hotspot model with NICER+XMM-Newton data:
 
 * ``J07406620_amsterdam_gamma_NICERXMM_equal_weights_recent.npz``
 
+**Amsterdam group — Riley et al. 2021** (`ApJL 918, L27 <https://inspirehep.net/literature/1863307>`_; `Zenodo 7096886 <https://zenodo.org/records/7096886>`_)
+
+Original Amsterdam analysis using the ST-U hotspot model with NICER+XMM-Newton data:
+
+* ``J07406620_amsterdam_STU_NICERXMM_Riley2021.npz``
+
+Note: superseded by the Salmi et al. 2024 dataset above.
+
 **Maryland group — Miller et al. 2021** (`ApJL 918, L28 <https://inspirehep.net/literature/1863305>`_; `Zenodo 4670689 <https://zenodo.org/records/4670689>`_)
 
 Three dataset combinations x two prior choices:
@@ -184,6 +202,25 @@ Three dataset combinations x two prior choices:
 
 "NICER+XMM" indicates joint analysis; "relative" includes relative calibration
 between instruments; "RM" uses a restricted-model prior.
+
+PSR J1614-2230
+^^^^^^^^^^^^^^
+
+A massive (:math:`\sim 1.94\,M_\odot`) and compact millisecond pulsar, observed with NICER, XMM-Newton and Chandra.
+
+**Amsterdam group — Mauviard et al. 2026** (`arXiv:2609.00172 <https://arxiv.org/abs/2609.00172>`_; `Zenodo 22163155 <https://zenodo.org/records/22163155>`_)
+
+Headline result using the ST-U hotspot model (two circular hot spots), with :math:`M = 1.937^{+0.012}_{-0.013}\,M_\odot` and :math:`R_\mathrm{eq} = 10.06^{+1.25}_{-0.87}` km:
+
+* ``J16142230_amsterdam_STU_NICER_only_Mauviard2026.npz``
+
+Pulsars without samples
+^^^^^^^^^^^^^^^^^^^^^^^
+
+The following NICER analyses are deliberately not included:
+
+* **PSR J2124-3358** (González-Caniulef et al. 2026, `arXiv:2607.03721 <https://arxiv.org/abs/2607.03721>`_; `Zenodo 20640366 <https://zenodo.org/records/20640366>`_): at the time of writing, the posterior samples for this pulsar are not yet public.
+* **PSR J1231-1411** (Salmi et al. 2024, `ApJ 976, 58 <https://inspirehep.net/literature/2831873>`_; `Zenodo 13358349 <https://zenodo.org/records/13358349>`_): samples are public, but we know from private communication that they are probably not suitable for equation-of-state inference, so they are not used here.
 
 Loading the data
 ^^^^^^^^^^^^^^^^
