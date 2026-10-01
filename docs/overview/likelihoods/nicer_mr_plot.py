@@ -17,6 +17,8 @@ preferred/headline analysis is used for each group:
     Maryland 3-circle (Miller, Dittmann, Holt et al. 2026)
   - PSR J0740+6620  — Amsterdam gamma, NICER+XMM (Salmi et al. 2024);
     Maryland, NICER+XMM, full prior (Miller et al. 2021)
+  - PSR J1614-2230  — Amsterdam ST-U (Mauviard et al. 2026); no Maryland
+    analysis available
 
 .. developer note::
    Use LaTeX rendering (``text.usetex = True``) in all docs plot scripts for
@@ -116,6 +118,17 @@ PSR_CONFIGS = [
                 "name": "Maryland",
                 "flow_dir": FLOWS_DIR / "J07406620" / "maryland_unknown_nicerxmm_full",
                 "linestyle": "--",
+            },
+        ],
+    },
+    {
+        "label": "PSR J1614-2230",
+        "color": "#2ca02c",
+        "groups": [
+            {
+                "name": "Amsterdam",
+                "flow_dir": FLOWS_DIR / "J16142230" / "amsterdam_stu",
+                "linestyle": "-",
             },
         ],
     },

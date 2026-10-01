@@ -33,6 +33,30 @@ ZENODO_DATASETS: dict = {
             },
         },
     },
+    "J1614": {
+        "amsterdam": {
+            "original": {
+                "name": "Mauviard et al. 2026",
+                "zenodo_id": "22163155",
+                "url": "https://zenodo.org/records/22163155",
+                "description": "Amsterdam analysis of PSR J1614-2230 (massive and compact MSP), ST-U headline run",
+            },
+        },
+    },
+    "J2124": {
+        "amsterdam": {
+            "original": {
+                "name": "Gonzalez-Caniulef et al. 2026",
+                "zenodo_id": "20640366",
+                "url": "https://zenodo.org/records/20640366",
+                "description": (
+                    "Amsterdam analysis of PSR J2124-3358 (helium atmosphere). "
+                    "Only credible-region contours and plots are public; "
+                    "no posterior samples yet"
+                ),
+            },
+        },
+    },
     "J0030": {
         "amsterdam": {
             "recent": {
