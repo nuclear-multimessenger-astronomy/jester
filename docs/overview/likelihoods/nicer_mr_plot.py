@@ -9,13 +9,16 @@ Each pulsar is assigned a single colour.  Where both the Amsterdam (X-PSI) and
 Maryland groups have published an independent analysis, both are shown for
 that pulsar: Amsterdam as a solid contour, Maryland as a dashed contour. The
 preferred/headline analysis is used for each group:
-  - PSR J0030+0451  — Amsterdam ST+PST (Riley et al. 2019);
-    Maryland 3-spot, full prior (Miller et al. 2019)
+  - PSR J0030+0451  — Amsterdam PDT-U, NICER+XMM (Kini, Mauviard, Salmi,
+    et al. 2026); Maryland 3-spot, full prior (Miller et al. 2019)
   - PSR J0437-4715  — Amsterdam CST+PDT (Choudhury et al. 2024);
     Maryland 3-spot+GPL (Miller, Dittmann, Holt et al. 2026)
-  - PSR J0614-3329  — Amsterdam ST+PDT (Mauviard et al. 2025); no Maryland analysis
+  - PSR J0614-3329  — Amsterdam ST+PDT (Mauviard et al. 2025);
+    Maryland 3-circle (Miller, Dittmann, Holt et al. 2026)
   - PSR J0740+6620  — Amsterdam gamma, NICER+XMM (Salmi et al. 2024);
-    Maryland, NICER+XMM, full prior (Miller et al. 2021)
+    Maryland, NICER+XMM, H_full atmosphere (Dittmann et al. 2024)
+  - PSR J1614-2230  — Amsterdam ST-U (Mauviard et al. 2026); no Maryland
+    analysis available
 
 .. developer note::
    Use LaTeX rendering (``text.usetex = True``) in all docs plot scripts for
@@ -60,7 +63,7 @@ PSR_CONFIGS = [
         "groups": [
             {
                 "name": "Amsterdam",
-                "flow_dir": FLOWS_DIR / "J00300451" / "amsterdam_st_pst",
+                "flow_dir": FLOWS_DIR / "J00300451" / "amsterdam_pdtu",
                 "linestyle": "-",
             },
             {
@@ -95,6 +98,11 @@ PSR_CONFIGS = [
                 "flow_dir": FLOWS_DIR / "J06143329" / "amsterdam_st_pdt",
                 "linestyle": "-",
             },
+            {
+                "name": "Maryland",
+                "flow_dir": FLOWS_DIR / "J06143329" / "maryland_3circle",
+                "linestyle": "--",
+            },
         ],
     },
     {
@@ -108,8 +116,21 @@ PSR_CONFIGS = [
             },
             {
                 "name": "Maryland",
-                "flow_dir": FLOWS_DIR / "J07406620" / "maryland_unknown_nicerxmm_full",
+                "flow_dir": FLOWS_DIR
+                / "J07406620"
+                / "maryland_dittmann2024_nicerxmm_full",
                 "linestyle": "--",
+            },
+        ],
+    },
+    {
+        "label": "PSR J1614-2230",
+        "color": "#2ca02c",
+        "groups": [
+            {
+                "name": "Amsterdam",
+                "flow_dir": FLOWS_DIR / "J16142230" / "amsterdam_stu",
+                "linestyle": "-",
             },
         ],
     },

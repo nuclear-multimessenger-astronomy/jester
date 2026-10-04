@@ -102,7 +102,7 @@ jesterTOV/inference/
 │   └── __init__.py      # Exports JesterTransform
 ├── likelihoods/         # Observational constraints
 │   ├── gw.py            # Gravitational wave events (GW170817, GW190425)
-│   ├── nicer.py         # X-ray timing (J0030, J0740, B0437)
+│   ├── nicer.py         # X-ray timing (J0030, J0437, J0614, J0740, J1614)
 │   ├── radio.py         # Radio pulsar timing (FIDUCEO/FIDUCEO2)
 │   ├── chieft.py        # Chiral EFT low-density constraints
 │   ├── rex.py           # PREX/CREX neutron skin experiments

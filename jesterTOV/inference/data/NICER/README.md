@@ -69,9 +69,8 @@ Files:
 
 ## PSR J0614−3329
 
-**Paper:** Mauviard et al. 2025, "A NICER View of the 1.4 Msun Edge-on Pulsar PSR J0614-3329" ([ApJ 995, 60](https://inspirehep.net/literature/2936527))
+### Amsterdam group — Mauviard et al. 2025, "A NICER View of the 1.4 Msun Edge-on Pulsar PSR J0614-3329" ([ApJ 995, 60](https://inspirehep.net/literature/2936527))
 **Zenodo:** https://zenodo.org/records/17380576
-**Group:** Amsterdam (X-PSI)
 **Data:** NICER-only
 **Hotspot model:** ST+PDT (headline result)
 **Source file:** `Headline_Contours_and_Samples.tar.gz` → equal-weight samples
@@ -79,11 +78,31 @@ Files:
 Files:
 - `J06143329_amsterdam_ST_PDT_NICER_only_Mauviard2025.npz`
 
+### Maryland group — Miller, Dittmann, Holt, et al. 2026, "The Radius of the Neutron Star PSR J0614-3329 from NICER Data" (arXiv:2609.00965)
+**Zenodo:** https://zenodo.org/records/22131748
+**Data:** NICER-only
+**Hotspot model:** three circular spots (headline result)
+**Source file:** `J0614_NICER_rm.txt` — raw file stores importance weights alongside mass and radius rather than equal-weight samples, so the extraction script importance-resamples it to an equal-weight posterior before saving.
+
+Files:
+- `J06143329_maryland_3circle_NICER_only_RM.npz`
+
 ---
 
 ## PSR J0030+0451
 
-First millisecond pulsar observed by NICER with sufficient quality for mass-radius inference, analyzed independently by Maryland and Amsterdam groups.
+First millisecond pulsar observed by NICER with sufficient quality for mass-radius inference, analyzed independently by Maryland and Amsterdam groups, with the Amsterdam group having since updated its analysis as more NICER exposure accumulated.
+
+### Amsterdam group — Kini, Mauviard, Salmi, et al. 2026 ("A NICER View of PSR J0030+0451: Updated Constraints from Six Years of NICER Observations", arXiv:2602.23743)
+**Zenodo:** https://zenodo.org/records/18741942
+**Data:** NICER+XMM (2017 Jul - 2023 Jan NICER exposure, ~50% more counts than the 2017-2018 dataset)
+**Hotspot model:** PDT-U (Bayes-preferred over ST+PDT; only model released on Zenodo)
+**Source file:** `equal_weight_samples_PDTU.txt` — already an equal-weight posterior (a separate `weighted_samples_PDTU.txt` with raw MultiNest weights is also on Zenodo but not used here)
+
+Files:
+- `J00300451_amsterdam_PDTU_NICERXMM_Kini2026.npz`
+
+This is the **recommended/default Amsterdam dataset** for J0030+0451, used by the pretrained `amsterdam_pdtu` flow (see `jesterTOV/inference/flows/models/nicer_maf/J00300451/amsterdam_pdtu/`).
 
 ### Maryland group — Miller et al. 2019 ([ApJL 887, L24](https://inspirehep.net/literature/1770430))
 **Zenodo:** https://zenodo.org/records/3473466
@@ -96,6 +115,19 @@ Two hotspot geometries × two prior variants:
 
 "RM" = restricted-model prior; "full" = broader prior allowing more geometric freedom.
 
+### Amsterdam group — Vinciguerra et al. 2023 ([ApJ 961, 62](https://inspirehep.net/literature/2689277))
+**Zenodo:** https://zenodo.org/records/8239000
+**Data:** NICER-only, four hotspot models — the paper's designated "reference run" for each (settings: SE 0.3/0.8, ET 0.1, LP 1e4, MM on)
+**Source:** `updated_analyses_PSRJ0030_up_to_2018_NICER_data.tar.gz` (~7 GB full reproduction package) → `post_equal_weights.dat` for each model's reference run
+
+Files:
+- `J00300451_amsterdam_ST_U_NICER_only_Vinciguerra2023.npz`
+- `J00300451_amsterdam_ST_PST_NICER_only_Vinciguerra2023.npz`
+- `J00300451_amsterdam_ST_PDT_NICER_only_Vinciguerra2023.npz`
+- `J00300451_amsterdam_PDT_U_NICER_only_Vinciguerra2023.npz`
+
+The mass/radius column assignment and specific run/resume directory for each model were verified by matching the median and 68% credible interval of the extracted samples against the paper's Table `tab:compare_models` NICER-only row (all four matched to within Monte Carlo noise). Superseded for J0030 headline purposes by the Kini et al. 2026 dataset above (six years of NICER data instead of two), but useful for cross-checking the ST-U/ST+PST/ST+PDT/PDT-U model comparison discussed in the paper.
+
 ### Amsterdam group — Riley et al. 2019 ([ApJL 887, L21](https://inspirehep.net/literature/1770425))
 **Zenodo:** https://zenodo.org/records/7096789
 
@@ -106,13 +138,23 @@ Five hotspot models, NICER-only:
 - `J00300451_amsterdam_ST_EST_NICER_only_Riley2019.npz`
 - `J00300451_amsterdam_ST_PST_NICER_only_Riley2019.npz`
 
-Recommended model: ST+PST. "ST" = symmetric spot; "U/S" = unrestricted/shared geometry; "CDT/EST/PST" = compound spot topologies.
+"ST" = symmetric spot; "U/S" = unrestricted/shared geometry; "CDT/EST/PST" = compound spot topologies. Superseded by the Kini et al. 2026 dataset above, which uses six years of NICER data instead of two.
 
 ---
 
 ## PSR J0740+6620
 
 Massive millisecond pulsar providing high-density EOS constraints, analyzed by both groups.
+
+### Maryland group — Dittmann et al. 2024 ([ApJ 974, 295](https://inspirehep.net/literature/2800538), arXiv:2406.14467)
+**Zenodo:** https://zenodo.org/records/10215109
+**Data:** NICER+XMM, fully ionized hydrogen atmosphere (headline result, R = 12.92 +2.09/−1.13 km)
+**Source file:** `J0740_NICERXMM_full_mr.txt` — raw file stores importance weights alongside mass and radius, so the extraction script importance-resamples it to an equal-weight posterior before saving.
+
+Files:
+- `J07406620_maryland_NICERXMM_full_Dittmann2024.npz`
+
+Supersedes the Miller et al. 2021 dataset below.
 
 ### Maryland group — Miller et al. 2021 ([ApJL 918, L28](https://inspirehep.net/literature/1863305))
 **Zenodo:** https://zenodo.org/records/4670689
@@ -132,3 +174,32 @@ Three dataset combinations × two prior variants:
 
 Equal-weight samples from NICER+XMM analysis, gamma hotspot model:
 - `J07406620_amsterdam_gamma_NICERXMM_equal_weights_recent.npz`
+
+### Amsterdam group — Riley et al. 2021 ([ApJL 918, L27](https://inspirehep.net/literature/1863307))
+**Zenodo:** https://zenodo.org/records/7096886
+**Data:** NICER+XMM, ST-U hotspot model
+**Source:** `STU_NICERxXMM_FIH_run11.tar.gz` (MultiNest run archive, ~97 MB) → `post_equal_weights.dat`, already equal-weight
+
+Files:
+- `J07406620_amsterdam_STU_NICERXMM_Riley2021.npz`
+
+Only this small run archive is fetched directly (not the full ~8 GB record, which also contains raw event lists, calibration products, and notebooks not needed for the M-R posterior). Mass/radius column assignment was verified against the paper's headline result (M = 2.072+0.067-0.066 Msun, R = 12.39+1.30-0.98 km). Superseded by the Salmi et al. 2024 dataset above.
+
+## PSR J1614−2230
+
+### Amsterdam group — Mauviard et al. 2026, "A NICER view of PSR J1614−2230: a massive and compact millisecond pulsar"
+**Paper:** [arXiv:2609.00172](https://arxiv.org/abs/2609.00172)
+**Zenodo:** https://zenodo.org/records/22163155
+**Data:** NICER + XMM-Newton + Chandra
+**Hotspot model:** ST-U (headline result)
+**Source file:** `MR_samples_and_contours_J1614.tar.gz` (~9 MB) → `J1614_STU_40kLP_0p03SE_0p1ET_mrsamples_post_equal_weights`, already equal-weight (mass in Msun, then radius in km)
+
+Files:
+- `J16142230_amsterdam_STU_NICER_only_Mauviard2026.npz`
+
+Column order was checked against the paper's headline result (M = 1.937 Msun, R_eq = 10.06 +1.25/−0.87 km).
+
+## Pulsars without samples
+
+- **PSR J2124−3358** (González-Caniulef et al. 2026, [arXiv:2607.03721](https://arxiv.org/abs/2607.03721)): at the time of writing the posterior samples are **not yet public**. The Zenodo record (https://zenodo.org/records/20640366) only contains plots and credible-region contours; the full reproduction files are to be released upon acceptance of the paper.
+- **PSR J1231−1411** (Salmi et al. 2024, [ApJ 976, 58](https://inspirehep.net/literature/2831873), Zenodo https://zenodo.org/records/13358349): samples are public, but we know from private communication that they are probably not suitable for equation-of-state inference, so they are deliberately not used.

@@ -33,8 +33,42 @@ ZENODO_DATASETS: dict = {
             },
         },
     },
+    "J1614": {
+        "amsterdam": {
+            "original": {
+                "name": "Mauviard et al. 2026",
+                "zenodo_id": "22163155",
+                "url": "https://zenodo.org/records/22163155",
+                "description": "Amsterdam analysis of PSR J1614-2230 (massive and compact MSP), ST-U headline run",
+            },
+        },
+    },
+    "J2124": {
+        "amsterdam": {
+            "original": {
+                "name": "Gonzalez-Caniulef et al. 2026",
+                "zenodo_id": "20640366",
+                "url": "https://zenodo.org/records/20640366",
+                "description": (
+                    "Amsterdam analysis of PSR J2124-3358 (helium atmosphere). "
+                    "Only credible-region contours and plots are public; "
+                    "no posterior samples yet"
+                ),
+            },
+        },
+    },
     "J0030": {
         "amsterdam": {
+            "recent": {
+                "name": "Kini, Mauviard, Salmi, et al. 2026",
+                "zenodo_id": "18741942",
+                "url": "https://zenodo.org/records/18741942",
+                "description": (
+                    "Most recent Amsterdam analysis of PSR J0030+0451, using six "
+                    "years of NICER data (2017-2023) jointly with archival XMM-Newton "
+                    "data; PDT-U hotspot model (Bayes-preferred over ST+PDT)"
+                ),
+            },
             "intermediate": {
                 "name": "Vinciguerra et al. 2023",
                 "zenodo_id": "8239000",
@@ -79,6 +113,16 @@ ZENODO_DATASETS: dict = {
             },
         },
         "maryland": {
+            "recent": {
+                "name": "Dittmann et al. 2024",
+                "zenodo_id": "10215109",
+                "url": "https://zenodo.org/records/10215109",
+                "description": (
+                    "Most recent Maryland analysis of PSR J0740+6620, using NICER data "
+                    "up to 2022 April plus XMM-Newton. The record is ~3.5 GB, so "
+                    "download_nicer.py fetches only J0740_NICERXMM_full_mr.txt directly"
+                ),
+            },
             "original": {
                 "name": "Miller et al. 2021",
                 "zenodo_id": "4670689",

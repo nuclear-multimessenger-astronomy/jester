@@ -385,7 +385,7 @@ jesterTOV/inference/
 │   └── __init__.py              # Exports
 ├── likelihoods/                 # Observational constraints
 │   ├── gw.py                    # Gravitational wave (GW170817, GW190425)
-│   ├── nicer.py                 # X-ray timing (J0030, J0740, B0437)
+│   ├── nicer.py                 # X-ray timing (J0030, J0437, J0614, J0740, J1614)
 │   ├── radio.py                 # Radio pulsar timing
 │   ├── chieft.py                # Chiral EFT low-density constraints
 │   ├── rex.py                   # PREX/CREX neutron skin experiments
@@ -497,4 +497,7 @@ git push origin v0.x.x
 # 6. PyPI publishing is NOT possible - jester depends on a specific fork of blackjax
 # (https://github.com/handley-lab/blackjax) which cannot be published to PyPI.
 # Users install directly from the GitHub repository via git clone.
+```
+
+**If `uv build` hangs or produces a multi-GB artifact**: hatchling only reads the *root* `.gitignore` and silently ignores nested per-directory `.gitignore` files (see [pypa/hatch#1273](https://github.com/pypa/hatch/issues/1273), [#1203](https://github.com/pypa/hatch/issues/1203)). Data caches excluded only by a nested `.gitignore` (e.g. `jesterTOV/inference/data/NICER/.gitignore` for `zenodo_data/`) get walked and bundled anyway, which is what caused a 20-minute hang and a 19GB `dist/jestertov-0.2.0.tar.gz` in the past. `exclude` patterns for such paths must be listed explicitly in `pyproject.toml`, and should live under the top-level `[tool.hatch.build]` table (not just `[tool.hatch.build.targets.sdist]`) so they also apply to the wheel target — otherwise the installable wheel bundles the same large files. If a build ever hangs again, check `du -sh jesterTOV/* dist/*` for oversized directories/artifacts before assuming it's just slow.
 ```
