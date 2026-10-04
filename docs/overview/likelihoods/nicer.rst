@@ -189,6 +189,12 @@ Original Amsterdam analysis using the ST-U hotspot model with NICER+XMM-Newton d
 
 Note: superseded by the Salmi et al. 2024 dataset above.
 
+**Maryland group — Dittmann et al. 2024** (`ApJ 974, 295 <https://inspirehep.net/literature/2800538>`_; `Zenodo 10215109 <https://zenodo.org/records/10215109>`_)
+
+Headline result (NICER+XMM, fully ionized hydrogen atmosphere). The raw file stores importance weights alongside mass and radius, so the extraction script importance-resamples it to an equal-weight posterior before saving:
+
+* ``J07406620_maryland_NICERXMM_full_Dittmann2024.npz``
+
 **Maryland group — Miller et al. 2021** (`ApJL 918, L28 <https://inspirehep.net/literature/1863305>`_; `Zenodo 4670689 <https://zenodo.org/records/4670689>`_)
 
 Three dataset combinations x two prior choices:

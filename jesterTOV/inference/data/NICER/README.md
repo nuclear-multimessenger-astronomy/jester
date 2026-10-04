@@ -146,6 +146,16 @@ Five hotspot models, NICER-only:
 
 Massive millisecond pulsar providing high-density EOS constraints, analyzed by both groups.
 
+### Maryland group — Dittmann et al. 2024 ([ApJ 974, 295](https://inspirehep.net/literature/2800538), arXiv:2406.14467)
+**Zenodo:** https://zenodo.org/records/10215109
+**Data:** NICER+XMM, fully ionized hydrogen atmosphere (headline result, R = 12.92 +2.09/−1.13 km)
+**Source file:** `J0740_NICERXMM_full_mr.txt` — raw file stores importance weights alongside mass and radius, so the extraction script importance-resamples it to an equal-weight posterior before saving.
+
+Files:
+- `J07406620_maryland_NICERXMM_full_Dittmann2024.npz`
+
+Supersedes the Miller et al. 2021 dataset below.
+
 ### Maryland group — Miller et al. 2021 ([ApJL 918, L28](https://inspirehep.net/literature/1863305))
 **Zenodo:** https://zenodo.org/records/4670689
 
