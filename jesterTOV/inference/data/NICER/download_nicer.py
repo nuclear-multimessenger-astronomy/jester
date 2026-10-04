@@ -7,9 +7,9 @@ Pipeline (all controlled by constants below):
   Step 1  Download Zenodo archives for Maryland and Amsterdam groups.
           (requires ``zenodo_get``: ``uv pip install zenodo-get``)
   Step 2  Extract Maryland text files → .npz with mass/radius/metadata.
-          J0437 and J0614 (Miller, Dittmann, Holt et al. 2026) are
-          importance-resampled using their weight column to obtain an
-          equal-weight posterior.
+          J0437 and J0614 (Miller, Dittmann, Holt et al. 2026) and J0740
+          (Dittmann et al. 2024) are importance-resampled using their weight
+          column to obtain an equal-weight posterior.
   Step 3  Extract Amsterdam tar.gz archives → .npz, plus the direct-download
           Kini, Mauviard, Salmi et al. 2026 J0030 (PDT-U) equal-weight file,
           the Riley et al. 2021 J0740 (ST-U) MultiNest run archive, and the
@@ -54,7 +54,6 @@ EXTRACT_AMSTERDAM: bool = True
 #   - PSR J2124-3358 (Gonzalez-Caniulef et al. 2026, Zenodo 20640366): only
 #     credible-region contours are public so far; the posterior samples are to
 #     be released upon acceptance of the paper.
-#   - PSR J0740+6620 (Dittmann et al. 2024, Maryland): no public samples found.
 
 # Downsample each .npz to at most this many samples (None = no limit)
 MAX_SAMPLES: int | None = 100_000
@@ -128,6 +127,12 @@ def download_zenodo_data() -> None:
             "J0740/amsterdam/original",
             "STU_NICERxXMM_FIH_run11.tar.gz",
             "https://zenodo.org/records/7096886/files/STU_NICERxXMM_FIH_run11.tar.gz",
+        ),
+        # Only the headline M-R file (~70 MB) of the ~3.5 GB Dittmann et al. record
+        (
+            "J0740/maryland/recent",
+            "J0740_NICERXMM_full_mr.txt",
+            "https://zenodo.org/records/10215109/files/J0740_NICERXMM_full_mr.txt",
         ),
     ]
     for rel_dir, filename, url in _direct_downloads:
@@ -260,6 +265,89 @@ def process_maryland_data() -> list[Path]:
         results.append(out_path)
 
     return results
+
+
+def parse_dittmann2024_j0740_txt(filepath: Path) -> Tuple[np.ndarray, np.ndarray, Dict]:
+    """Parse Dittmann et al. 2024 J0740+6620 NICER+XMM full-atmosphere M-R file.
+
+    Format: columns are radius [km], mass [Msun], weight. The rows are raw
+    ``emcee`` MCMC output with a (discrete) multiplicity weight, so the file is
+    not equal-weight: the unweighted median radius is 12.70 km, while the
+    weighted one is 12.92 km as in the paper. We importance-resample using the
+    weight column, as for the Miller et al. 2026 files. The weighted 2-sigma
+    to +2-sigma radius percentiles (10.99, 11.79, 12.92, 15.01, 18.57 km)
+    reproduce the paper's summary table of equatorial radii (``tab:radii``),
+    NICER+XMM with the fully ionized hydrogen atmosphere (``H_full``) -- do not
+    drop the weights without re-verifying.
+    """
+    print(f"\n  Parsing: {filepath.name}")
+    data = np.loadtxt(filepath, comments="#")
+    radius_all = data[:, 0]
+    mass_all = data[:, 1]
+    weights = data[:, 2]
+
+    rng = np.random.default_rng(seed=42)
+    w_norm = weights / weights.sum()
+    n_resample = min(
+        MAX_SAMPLES if MAX_SAMPLES is not None else len(weights), len(weights)
+    )
+    idx = rng.choice(len(weights), size=n_resample, replace=True, p=w_norm)
+    radius = radius_all[idx]
+    mass = mass_all[idx]
+
+    metadata: Dict = {
+        "psr": "J0740+6620",
+        "group": "maryland",
+        "analysis": "Dittmann et al. 2024",
+        "hotspot_model": "unknown",
+        "data_used": "NICER+XMM",
+        "model_variant": "full",
+        "n_samples": len(radius),
+        "weighted": False,
+        "resampled_from_weights": True,
+        "source_file": filepath.name,
+        "zenodo_record": "https://zenodo.org/records/10215109",
+        "paper": (
+            "Dittmann et al. 2024 (A More Precise Measurement of the Radius of "
+            "PSR J0740+6620 Using Updated NICER Data, ApJ 974, 295, arXiv:2406.14467)"
+        ),
+        "format": (
+            "equal-weight resampled from raw weighted emcee posterior "
+            "(original format: radius, mass, weight)"
+        ),
+        "notes": (
+            "Fully ionized hydrogen atmosphere (H_full), NICER data through 2022 April "
+            "plus XMM-Newton; the paper's headline result, R = 12.92 +2.09/-1.13 km. "
+            "No R < 16 km cut is applied."
+        ),
+    }
+    print(
+        f"    PSR J0740+6620, data=NICER+XMM (H_full), n={len(radius):,} "
+        f"(resampled from {len(weights):,} weighted samples)"
+    )
+    return radius, mass, metadata
+
+
+def process_j0740_maryland_recent_data() -> list[Path]:
+    """Extract the Dittmann et al. 2024 J0740 Maryland NICER+XMM file to .npz."""
+    src = ZENODO_DIR / "J0740/maryland/recent/J0740_NICERXMM_full_mr.txt"
+    if not src.exists():
+        print(f"\n  Not found (download Zenodo first): {src.name}")
+        return []
+
+    out_name = "J07406620_maryland_NICERXMM_full_Dittmann2024.npz"
+    out_path = OUTPUT_DIR / out_name
+
+    if out_path.exists() and not IGNORE_CACHE:
+        print(f"    Cached: {out_name}")
+        return [out_path]
+
+    radius, mass, meta = parse_dittmann2024_j0740_txt(src)
+    np.savez(out_path, radius=radius, mass=mass, metadata=meta)  # type: ignore[arg-type]
+    print(
+        f"    Saved: {out_name} ({out_path.stat().st_size / 1024:.1f} KB, {len(radius):,} samples)"
+    )
+    return [out_path]
 
 
 def parse_miller2026_j0437_txt(filepath: Path) -> Tuple[np.ndarray, np.ndarray, Dict]:
@@ -1174,6 +1262,7 @@ def main() -> None:
     process_maryland_data()
     process_j0437_maryland_data()
     process_j0614_maryland_data()
+    process_j0740_maryland_recent_data()
 
     if EXTRACT_AMSTERDAM:
         print("\n" + "=" * 70)

@@ -113,6 +113,16 @@ ZENODO_DATASETS: dict = {
             },
         },
         "maryland": {
+            "recent": {
+                "name": "Dittmann et al. 2024",
+                "zenodo_id": "10215109",
+                "url": "https://zenodo.org/records/10215109",
+                "description": (
+                    "Most recent Maryland analysis of PSR J0740+6620, using NICER data "
+                    "up to 2022 April plus XMM-Newton. The record is ~3.5 GB, so "
+                    "download_nicer.py fetches only J0740_NICERXMM_full_mr.txt directly"
+                ),
+            },
             "original": {
                 "name": "Miller et al. 2021",
                 "zenodo_id": "4670689",
