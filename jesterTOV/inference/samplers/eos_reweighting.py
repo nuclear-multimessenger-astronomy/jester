@@ -1,8 +1,10 @@
 r"""EOS reweighting sampler for jesterTOV.
 
-Evaluates jester's GPU-accelerated likelihoods on a discrete set of
+Evaluate jester's likelihoods on a discrete set of
 tabulated EOS curves (M, :math:`\Lambda`, R tables) rather than sampling a
-parametric EOS model.  Returns the marginal log-likelihood per EOS and the
+parametric EOS model. 
+
+Returns the marginal log-likelihood per EOS and the
 Bayesian evidence :math:`\log Z`.
 """
 
@@ -129,7 +131,7 @@ class EOSReweightingSampler(JesterSampler):
 
     #: Absolute cap (:math:`M_\odot`) applied to the common mass grid upper
     #: bound in :meth:`load_and_grid` when ``m_max`` is not given explicitly.
-    DEFAULT_M_MAX_CAP: float = 3.0
+    DEFAULT_M_MAX_CAP: float = 4.0
 
     @staticmethod
     def _regrid(
@@ -156,13 +158,8 @@ class EOSReweightingSampler(JesterSampler):
             above = mass_grid > m_tov_i
             lam_g[above] = 0.0
             rad_g[above] = 0.0
-            # Clamp the per-curve mass grid at this curve's own M_TOV above
-            # that point, instead of leaving the shared grid's (identical
-            # across curves) values in place. All likelihoods derive M_TOV
-            # via `jnp.max(masses_EOS)`; if every curve carried the same
-            # broadcast grid, jnp.max would return the same (grid-capped)
-            # value for every EOS regardless of its true M_TOV, making the
-            # likelihoods blind to M_TOV differences between EOS curves.
+
+            # Repeat MTOV values, so it is passed through to likelihoods correctly
             mass_g = mass_grid.copy()
             mass_g[above] = m_tov_i
             lam_interp_list.append(lam_g)
@@ -318,8 +315,7 @@ class EOSReweightingSampler(JesterSampler):
                     f"which exceeds {m_cap:.1f} M_sun. Capping the *likelihood* mass "
                     f"grid at {m_cap:.1f} M_sun instead. {n_above}/{len(m_tov_arr)} EOS "
                     f"curves have M_TOV above {m_cap:.1f} M_sun; likelihoods will not "
-                    "be evaluated above it. The posterior curves used for plotting "
-                    "are not affected by this cap."
+                    "be evaluated above it."
                 )
                 m_max_likelihood = m_cap
             else:
@@ -372,12 +368,11 @@ class EOSReweightingSampler(JesterSampler):
     ) -> Float[Array, " N"]:
         r"""Evaluate *f* on all N EOS curves using :func:`jax.lax.map`.
 
-        Splits the work into batches of ``config.batch_size`` curves and logs
-        throughput/ETA after each batch is processed. The per-batch
-        ``jax.lax.map`` call is wrapped in :func:`jax.jit` so that batches
-        sharing the same shape (all but typically the last one) reuse a
-        single compiled executable instead of retracing on every iteration
-        of the Python loop.
+        The curves are processed in Python-level batches of
+        ``config.batch_size`` so that progress and ETA can be logged. Each
+        batch is evaluated with a jitted :func:`jax.lax.map`. This double
+        batching is somewhat awkward, but it is needed for the logging and
+        the runtime is about the same as a single ``lax.map`` call.
 
         Parameters
         ----------
@@ -445,6 +440,8 @@ class EOSReweightingSampler(JesterSampler):
 
     def compute_evidence(self, log_likelihoods: Float[Array, " N"]) -> dict[str, Any]:
         r"""Compute Bayesian evidence and effective sample size from log-likelihoods.
+
+        This is inspired by the lwp code: https://git.ligo.org/reed.essick/lwp/
 
         Same computation as ``lwp.utils.utils.estimate_evidence`` (with its
         default uniform ``prior``), just carried out in log space for
