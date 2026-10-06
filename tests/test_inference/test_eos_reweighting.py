@@ -25,6 +25,7 @@ from jesterTOV.inference.config.schemas.likelihoods import (
     RadioLikelihoodConfig,
     ChiEFTLikelihoodConfig,
     EOSConstraintsLikelihoodConfig,
+    MockMassRadiusLikelihoodConfig,
     TOVConstraintsLikelihoodConfig,
     EsymConstraintsLikelihoodConfig,
     GammaConstraintsLikelihoodConfig,
@@ -322,7 +323,7 @@ class TestEOSReweightingConfig:
 
 class TestEOSReweightingLikelihoodValidation:
     """Only likelihoods that depend purely on tabulated M-Lambda-R curves
-    (gw, nicer, radio, zero) are accepted in eos-reweighting mode; others
+    (gw, nicer, radio, mock_mr, zero) are accepted in eos-reweighting mode; others
     require EOS-level structure that tabulated curves don't provide."""
 
     @staticmethod
@@ -338,8 +339,9 @@ class TestEOSReweightingLikelihoodValidation:
             RadioLikelihoodConfig(
                 pulsars=[{"name": "J0740+6620", "mass_mean": 2.08, "mass_std": 0.07}]
             ),
+            MockMassRadiusLikelihoodConfig(json_file="mock.json"),
         ],
-        ids=["zero", "gw", "nicer", "radio"],
+        ids=["zero", "gw", "nicer", "radio", "mock_mr"],
     )
     def test_accepted_likelihoods(self, likelihood):
         cfg = EOSReweightingInferenceConfig(
@@ -428,3 +430,31 @@ class TestEOSReweightingHDF5:
         assert loaded.metadata["N_eff"] > 0, "N_eff must be saved and positive"
         assert np.isfinite(loaded.metadata["log_Z_std"])
         assert np.isfinite(loaded.metadata["N_eff_fraction"])
+
+
+class TestEOSReweightingMockMR:
+    """The mock M-R likelihood only needs masses_EOS/radii_EOS, so it must
+    work on tabulated curves and favour curves close to the mock observation."""
+
+    def test_weights_favour_curves_matching_observation(self, tmp_path):
+        from jesterTOV.inference.likelihoods.mock_mr import MockMassRadiusLikelihood
+
+        n_pts = 50
+        masses = np.tile(np.linspace(0.5, 2.5, n_pts), (3, 1))
+        radii = np.stack([np.full(n_pts, r) for r in (10.0, 12.0, 14.0)])
+        lambdas = np.full_like(masses, 500.0)
+        path = str(tmp_path / "mock_eos.npz")
+        np.savez(path, masses=masses, lambdas=lambdas, radii=radii)
+
+        likelihood = MockMassRadiusLikelihood(
+            psr_name="PSR0",
+            mean_mass=1.4,
+            mean_radius=12.0,
+            std_mass=0.1,
+            std_radius=0.3,
+            correlation=0.0,
+        )
+        out = _make_sampler(path, likelihood).sample(jax.random.key(0))
+        w = np.asarray(out.metadata["evidence"]["posterior_weights"])
+        assert w.argmax() == 1
+        assert w[1] > 0.99
