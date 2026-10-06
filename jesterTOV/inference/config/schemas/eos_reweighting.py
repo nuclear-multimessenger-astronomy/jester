@@ -24,6 +24,7 @@ _EOS_REWEIGHTING_ALLOWED_LIKELIHOOD_TYPES = {
     "gw",
     "nicer",
     "radio",
+    "mock_mr",
     "zero",
 }
 
