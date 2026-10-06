@@ -1,5 +1,4 @@
 seed: 42
-debug_nans: false
 
 likelihoods:
   - type: gw

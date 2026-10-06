@@ -1,14 +1,15 @@
 r"""EOS reweighting sampler for jesterTOV.
 
-Evaluates jester's GPU-accelerated likelihoods on a discrete set of
+Evaluate jester's likelihoods on a discrete set of
 tabulated EOS curves (M, :math:`\Lambda`, R tables) rather than sampling a
-parametric EOS model.  Returns the marginal log-likelihood per EOS and the
+parametric EOS model. 
+
+Returns the marginal log-likelihood per EOS and the
 Bayesian evidence :math:`\log Z`.
 """
 
 from __future__ import annotations
 
-import time
 from typing import Any, Callable
 
 import numpy as np
@@ -129,7 +130,7 @@ class EOSReweightingSampler(JesterSampler):
 
     #: Absolute cap (:math:`M_\odot`) applied to the common mass grid upper
     #: bound in :meth:`load_and_grid` when ``m_max`` is not given explicitly.
-    DEFAULT_M_MAX_CAP: float = 3.0
+    DEFAULT_M_MAX_CAP: float = 4.0
 
     @staticmethod
     def _regrid(
@@ -156,13 +157,8 @@ class EOSReweightingSampler(JesterSampler):
             above = mass_grid > m_tov_i
             lam_g[above] = 0.0
             rad_g[above] = 0.0
-            # Clamp the per-curve mass grid at this curve's own M_TOV above
-            # that point, instead of leaving the shared grid's (identical
-            # across curves) values in place. All likelihoods derive M_TOV
-            # via `jnp.max(masses_EOS)`; if every curve carried the same
-            # broadcast grid, jnp.max would return the same (grid-capped)
-            # value for every EOS regardless of its true M_TOV, making the
-            # likelihoods blind to M_TOV differences between EOS curves.
+
+            # Repeat MTOV values, so it is passed through to likelihoods correctly
             mass_g = mass_grid.copy()
             mass_g[above] = m_tov_i
             lam_interp_list.append(lam_g)
@@ -318,8 +314,7 @@ class EOSReweightingSampler(JesterSampler):
                     f"which exceeds {m_cap:.1f} M_sun. Capping the *likelihood* mass "
                     f"grid at {m_cap:.1f} M_sun instead. {n_above}/{len(m_tov_arr)} EOS "
                     f"curves have M_TOV above {m_cap:.1f} M_sun; likelihoods will not "
-                    "be evaluated above it. The posterior curves used for plotting "
-                    "are not affected by this cap."
+                    "be evaluated above it."
                 )
                 m_max_likelihood = m_cap
             else:
@@ -372,13 +367,6 @@ class EOSReweightingSampler(JesterSampler):
     ) -> Float[Array, " N"]:
         r"""Evaluate *f* on all N EOS curves using :func:`jax.lax.map`.
 
-        Splits the work into batches of ``config.batch_size`` curves and logs
-        throughput/ETA after each batch is processed. The per-batch
-        ``jax.lax.map`` call is wrapped in :func:`jax.jit` so that batches
-        sharing the same shape (all but typically the last one) reuse a
-        single compiled executable instead of retracing on every iteration
-        of the Python loop.
-
         Parameters
         ----------
         f :
@@ -391,60 +379,14 @@ class EOSReweightingSampler(JesterSampler):
         Float[Array, " N"]
             Log-likelihoods per EOS.
         """
-        all_batches_time_start = time.monotonic()
-
-        N = all_masses.shape[0]  # number of EOSs to process
         batch_size = self.config.batch_size
-
-        # NOTE: it is a bit awkward that it seems batching is done twice
-        # (Python loop + lax.map's own batch_size). However, using jax.vmap
-        # here turned out to be a bit slower, so we keep this implementation.
-        # `bs` is static since jax.lax.map requires a concrete Python int.
-        jitted_map = jax.jit(
-            lambda stacked, bs: jax.lax.map(f, stacked, batch_size=bs),
-            static_argnums=1,
-        )
-
-        # Initialize everything for storing the results of the inference
-        results: list[Array] = []
-        start_time = time.monotonic()
-        processed = 0
-
-        # Loop over the batches
-        for start in range(0, N, batch_size):
-            end = min(start + batch_size, N)
-            stacked = (
-                all_masses[start:end],
-                all_lambdas[start:end],
-                all_radii[start:end],
-            )
-            current_bs = min(batch_size, end - start)
-
-            batch_result: Float[Array, " _"] = jitted_map(stacked, current_bs)
-
-            results.append(batch_result)
-            processed = end
-
-            elapsed = time.monotonic() - start_time
-            fraction = processed / N
-            eta = elapsed / fraction * (1.0 - fraction) if fraction > 0 else 0.0
-            logger.info(
-                f"EOS reweighting: {processed}/{N} EOS "
-                f"({fraction * 100:.0f}%) | "
-                f"elapsed {elapsed:.1f}s | ETA {eta:.1f}s"
-            )
-
-        log_likelihoods: Float[Array, " N"] = jnp.concatenate(results)
-
-        all_batches_time_end = time.monotonic()
-        logger.info(
-            f"EOS reweighting: all EOS processed in {all_batches_time_end - all_batches_time_start:.1f}s"
-        )
-
-        return log_likelihoods
+        mapped = jax.jit(lambda xs: jax.lax.map(f, xs, batch_size=batch_size))
+        return mapped((all_masses, all_lambdas, all_radii))
 
     def compute_evidence(self, log_likelihoods: Float[Array, " N"]) -> dict[str, Any]:
         r"""Compute Bayesian evidence and effective sample size from log-likelihoods.
+
+        This is inspired by the lwp code: https://git.ligo.org/reed.essick/lwp/
 
         Same computation as ``lwp.utils.utils.estimate_evidence`` (with its
         default uniform ``prior``), just carried out in log space for
