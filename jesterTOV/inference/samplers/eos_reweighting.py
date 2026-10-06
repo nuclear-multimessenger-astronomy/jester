@@ -10,6 +10,7 @@ Bayesian evidence :math:`\log Z`.
 
 from __future__ import annotations
 
+import time
 from typing import Any, Callable
 
 import numpy as np
@@ -367,6 +368,12 @@ class EOSReweightingSampler(JesterSampler):
     ) -> Float[Array, " N"]:
         r"""Evaluate *f* on all N EOS curves using :func:`jax.lax.map`.
 
+        The curves are processed in Python-level batches of
+        ``config.batch_size`` so that progress and ETA can be logged. Each
+        batch is evaluated with a jitted :func:`jax.lax.map`. This double
+        batching is somewhat awkward, but it is needed for the logging and
+        the runtime is about the same as a single ``lax.map`` call.
+
         Parameters
         ----------
         f :
@@ -379,9 +386,57 @@ class EOSReweightingSampler(JesterSampler):
         Float[Array, " N"]
             Log-likelihoods per EOS.
         """
+        all_batches_time_start = time.monotonic()
+
+        N = all_masses.shape[0]  # number of EOSs to process
         batch_size = self.config.batch_size
-        mapped = jax.jit(lambda xs: jax.lax.map(f, xs, batch_size=batch_size))
-        return mapped((all_masses, all_lambdas, all_radii))
+
+        # NOTE: it is a bit awkward that it seems batching is done twice
+        # (Python loop + lax.map's own batch_size). However, using jax.vmap
+        # here turned out to be a bit slower, so we keep this implementation.
+        # `bs` is static since jax.lax.map requires a concrete Python int.
+        jitted_map = jax.jit(
+            lambda stacked, bs: jax.lax.map(f, stacked, batch_size=bs),
+            static_argnums=1,
+        )
+
+        # Initialize everything for storing the results of the inference
+        results: list[Array] = []
+        start_time = time.monotonic()
+        processed = 0
+
+        # Loop over the batches
+        for start in range(0, N, batch_size):
+            end = min(start + batch_size, N)
+            stacked = (
+                all_masses[start:end],
+                all_lambdas[start:end],
+                all_radii[start:end],
+            )
+            current_bs = min(batch_size, end - start)
+
+            batch_result: Float[Array, " _"] = jitted_map(stacked, current_bs)
+
+            results.append(batch_result)
+            processed = end
+
+            elapsed = time.monotonic() - start_time
+            fraction = processed / N
+            eta = elapsed / fraction * (1.0 - fraction) if fraction > 0 else 0.0
+            logger.info(
+                f"EOS reweighting: {processed}/{N} EOS "
+                f"({fraction * 100:.0f}%) | "
+                f"elapsed {elapsed:.1f}s | ETA {eta:.1f}s"
+            )
+
+        log_likelihoods: Float[Array, " N"] = jnp.concatenate(results)
+
+        all_batches_time_end = time.monotonic()
+        logger.info(
+            f"EOS reweighting: all EOS processed in {all_batches_time_end - all_batches_time_start:.1f}s"
+        )
+
+        return log_likelihoods
 
     def compute_evidence(self, log_likelihoods: Float[Array, " N"]) -> dict[str, Any]:
         r"""Compute Bayesian evidence and effective sample size from log-likelihoods.
