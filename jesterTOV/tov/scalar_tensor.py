@@ -11,13 +11,14 @@ where the gravitational interaction includes both a metric tensor and a scalar f
 # FIXME: Need to fully integrate the TOV solver: see docs/developer_guide/adding_new_tov.md
 """
 
+import jax
 import jax.numpy as jnp
 from jax import lax
 from diffrax import diffeqsolve, ODETerm, Dopri8, SaveAt, PIDController, Event
-
+from jaxtyping import Float, Array
 from jesterTOV import utils
 from jesterTOV.tov.base import TOVSolverBase
-from jesterTOV.tov.data_classes import EOSData, TOVSolution
+from jesterTOV.tov.data_classes import EOSData, TOVSolution, FamilyData
 from jesterTOV.tov.scalar_tensor_utils import (
     build_exterior_basis,
     build_exterior_basis_autodiff,
@@ -747,8 +748,17 @@ class ScalarTensorTOVSolver(TOVSolverBase):
             * lambda_ST2
             * jnp.power(M_inf, -5.0)
         )  # or lambda_ST1, must be same
+
+
+        extra = {
+            "lambda_S": Lambda_S_J,
+            "lambda_ST1": Lambda_ST1_J,
+            "lambda_ST2": Lambda_ST2_J,
+            "q": q
+        }
+        
         # @TODO: add function to return other tidal deformabilities or quantities
-        return TOVSolution(M=M_inf_jordan, R=R_jordan, k2=3 / 2 * lambda_T / jnp.power(R_jordan, 5))  # type: ignore[arg-type]
+        return TOVSolution(M=M_inf_jordan, R=R_jordan, k2=3 / 2 * lambda_T / jnp.power(R_jordan, 5), extra=extra,)  # type: ignore[arg-type]
 
     def get_required_parameters(self) -> list[str]:
         r"""
@@ -767,3 +777,137 @@ class ScalarTensorTOVSolver(TOVSolverBase):
         - ``phi_c``: Central scalar field value.
         """
         return ["beta_ST", "phi_inf_tgt", "phi_c"]
+
+    def _create_family_data(
+        self,
+        pcs:    Float[Array, "ndat"],
+        masses: Float[Array, "ndat"],
+        radii:  Float[Array, "ndat"],
+        k2s:    Float[Array, "ndat"],
+        # STT extras — all already dimensionless Lambda quantities
+        lambdas_S:  Float[Array, "ndat"],
+        lambdas_ST: Float[Array, "ndat"],
+        qs:         Float[Array, "ndat"],
+
+        ndat:   int,
+    ) -> FamilyData:
+        """
+        Shared post-processing: unit conversion, compactness limits, interpolation.
+
+        Lambda_S and Lambda_ST are passed in already dimensionless (computed in
+        scalar_tensor.py as lambda * M^{-5} with the Jordan-frame prefactor applied),
+        so no additional rescaling is needed here — only the same MTOV truncation and
+        mass-grid interpolation applied to the tensor case.
+
+        Args:
+            pcs:        Central pressures [geometric units]
+            masses:     Masses [geometric units]
+            radii:      Radii [geometric units]
+            k2s:        Tensor Love numbers k2 [dimensionless]
+            ndat:       Number of output grid points
+            lambdas_S:  Jordan-frame scalar tidal deformability Lambda_S [dimensionless]
+            lambdas_ST: Jordan-frame mixed tidal deformability Lambda_ST [dimensionless]
+            qs:         Scalar charge per unit mass q = -Q/M [dimensionless]
+
+        Returns:
+            FamilyData with physical units and optional STT fields.
+        """
+        # Calculate compactness
+        compactness = masses / radii
+
+        # Convert to physical units
+        masses_solar = masses / utils.solar_mass_in_meter
+        radii_km = radii / 1e3
+
+        # Calculate standard (GR) tidal deformability
+        lambdas = 2.0 / 3.0 * k2s * jnp.power(compactness, -5.0)
+
+        # Limit all quantities consistently to stable branch (removes unstable branch)
+        # All six arrays are truncated and sorted together at MTOV
+        pcs_lim, masses_lim, radii_lim, lambdas_lim, lambdas_S_lim, lambdas_ST_lim, qs_lim = utils.limit_by_MTOV_extended(
+            pcs, masses_solar, radii_km, lambdas, lambdas_S, lambdas_ST, qs
+        )
+
+        # Get a mass grid and interpolate all quantities
+        mass_grid = jnp.linspace(jnp.min(masses_lim), jnp.max(masses_lim), ndat)
+        radii_interp = jnp.interp(mass_grid, masses_lim, radii_lim)
+        lambdas_interp = jnp.interp(mass_grid, masses_lim, lambdas_lim)
+        lambdas_S_interp = jnp.interp(mass_grid, masses_lim, lambdas_S_lim)
+        lambdas_ST_interp = jnp.interp(mass_grid, masses_lim, lambdas_ST_lim)
+        qs_interp = jnp.interp(mass_grid, masses_lim, qs_lim)
+        pcs_interp = jnp.interp(mass_grid, masses_lim, pcs_lim)
+        log10pcs = jnp.log10(pcs_interp)
+
+        return FamilyData(
+            log10pcs=log10pcs,
+            masses=mass_grid,
+            radii=radii_interp,
+            lambdas=lambdas_interp,
+            lambdas_S=lambdas_S_interp,
+            lambdas_ST=lambdas_ST_interp,
+            qs=qs_interp,
+        )
+
+    
+    def construct_family(
+        self,
+        eos_data: EOSData,
+        ndat: int,
+        min_nsat: float,
+        tov_params: dict[str, float] = {},
+    ) -> FamilyData:
+        r"""
+        Construct M-R-Λ curves by solving for multiple central pressures.
+
+        The central pressure grid spans from a minimum based on min_nsat to
+        the maximum pressure where the EOS remains causal (:math:`c_s^2 < 1`).
+
+        Args:
+            eos_data: EOS quantities in geometric units
+            ndat: Number of points in central pressure grid
+            min_nsat: Minimum central density in units of saturation density
+                        (assumed to be 0.16 :math:`\mathrm{fm}^{-3}`)
+            tov_params: Solver-specific parameters returned by :meth:`fetch_params`.
+                Defaults to ``{}`` for GR; populated dict for modified-gravity solvers, anisotropy, etc.
+
+        Returns:
+            FamilyData: Mass-radius-tidal curves in physical units
+        """
+        # Evaluate EOS validity once for the entire family
+        is_valid_eos = (
+            jnp.all(eos_data.ps > 0)
+            & jnp.all(eos_data.hs > 0)
+            & jnp.all(eos_data.es > 0)
+            & jnp.all(eos_data.cs2 >= 0)
+            & jnp.all(eos_data.cs2 <= 1)
+        )
+
+        # Poison the EOS data with NaNs if unphysical
+        eos_data = jax.tree_util.tree_map(
+            lambda x: jnp.where(is_valid_eos, x, jnp.nan), eos_data
+        )
+        # Create central pressure grid
+        pc_min = self._get_pc_min(eos_data, min_nsat)
+        pc_max = self._get_pc_max(eos_data)
+        pcs = jnp.logspace(jnp.log10(pc_min), jnp.log10(pc_max), num=ndat)
+
+        # Solve TOV for each pc using vmap
+        # NOTE: vmap batches TOVSolution fields into arrays
+        def solve_single_pc(pc):
+            return self.solve(eos_data, pc, tov_params)
+
+        solutions = jax.vmap(solve_single_pc)(pcs)
+
+        # Extract batched results (vmap converts scalar fields to arrays)
+        masses: Float[Array, "ndat"] = solutions.M  # type: ignore[assignment]
+        radii: Float[Array, "ndat"] = solutions.R  # type: ignore[assignment]
+        k2s: Float[Array, "ndat"] = solutions.k2  # type: ignore[assignment]
+        lambdas_S:  Float[Array, "ndat"] = solutions.extra["lambda_S"]
+        lambdas_ST: Float[Array, "ndat"] = solutions.extra["lambda_ST1"]
+        qs:         Float[Array, "ndat"] = solutions.extra["q"]
+
+
+
+        # Convert to physical units and compute tidal deformability
+        return self._create_family_data(pcs, masses, radii, k2s, lambdas_S, lambdas_ST, qs, ndat)
+
