@@ -43,6 +43,7 @@ class TOVSolution(NamedTuple):
     M: float  # Mass [geometric units]
     R: float  # Radius [geometric units]
     k2: float  # Second Love number (dimensionless)
+    extra: Optional[dict[str, float]] = None  # Solver-specific quantities
 
 
 class FamilyData(NamedTuple):
@@ -57,3 +58,9 @@ class FamilyData(NamedTuple):
     masses: Float[Array, "ndat"]  # Masses [M_sun]
     radii: Float[Array, "ndat"]  # Radii [km]
     lambdas: Float[Array, "ndat"]  # Dimensionless tidal deformability
+
+    # STT additions:
+    lambdas_S:  Optional[Float[Array, "ndat"]] = None  # Lambda_S
+    lambdas_ST: Optional[Float[Array, "ndat"]] = None  # Lambda_ST
+    qs:         Optional[Float[Array, "ndat"]] = None  # scalar charge q
+

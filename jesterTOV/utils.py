@@ -279,7 +279,93 @@ def limit_by_MTOV(
 
     return pc_new, m_new, r_new, l_new
 
+def limit_by_MTOV_extended(
+    pc: Array, m: Array, r: Array, *tracked_arrays: Array
+) -> tuple:
+    r"""
+    Truncate neutron star family at maximum TOV mass, handling arbitrary tracked quantities.
 
+    This function limits the mass-radius relation to the stable branch
+    by truncating at the maximum TOV mass (MTOV). Points beyond MTOV
+    correspond to unstable configurations and are replaced with duplicates
+    of the MTOV values to maintain array shape for JIT compilation.
+
+    All tracked arrays (e.g., tidal deformabilities, scalar charge) are
+    truncated and sorted identically, ensuring alignment across all outputs.
+
+    The maximum mass occurs when:
+
+    .. math::
+        \frac{dM}{dp_c} = 0
+
+    Parameters
+    ----------
+    pc : Array
+        Central pressure array
+    m : Array
+        Gravitational mass array
+    r : Array
+        Radius array
+    *tracked_arrays : Array
+        Additional arrays to track and truncate identically (e.g., lambdas, lambdas_S, qs)
+
+    Returns
+    -------
+    tuple
+        (pc, m, r, *tracked_arrays) all consistently truncated and sorted at MTOV.
+        Return order matches input order.
+
+    Notes
+    -----
+    This approach maintains static array shapes required for JAX JIT
+    compilation while effectively removing unstable configurations.
+    All tracked arrays must have the same length as pc, m, and r.
+
+    Examples
+    --------
+    >>> pc_lim, m_lim, r_lim, lambda_lim = limit_by_MTOV(pc, m, r, lambdas)
+    >>> pc_lim, m_lim, r_lim, l_lim, ls_lim, lst_lim, q_lim = limit_by_MTOV(
+    ...     pc, m, r, lambdas, lambdas_S, lambdas_ST, qs
+    ... )
+    """
+
+    # Identify maximum TOV mass and corresponding index
+    m_at_TOV = jnp.max(m)
+    idx_TOV = jnp.argmax(m)
+
+    # Extract values at maximum mass point
+    pc_at_TOV = pc[idx_TOV]
+    r_at_TOV = r[idx_TOV]
+
+    # Identify stable (mass-increasing) configurations
+    m_is_increasing = jnp.diff(m) > 0
+    m_is_increasing = jnp.insert(m_is_increasing, idx_TOV, True)
+
+    # Mask out configurations beyond maximum mass
+    m_is_increasing = jnp.where(jnp.arange(len(m)) > idx_TOV, False, m_is_increasing)
+
+    # Replace unstable configurations with MTOV values for base arrays
+    pc_new = jnp.where(m_is_increasing, pc, pc_at_TOV)
+    m_new = jnp.where(m_is_increasing, m, m_at_TOV)
+    r_new = jnp.where(m_is_increasing, r, r_at_TOV)
+
+    # Process tracked arrays: replace unstable values with their MTOV counterparts
+    tracked_new = []
+    for arr in tracked_arrays:
+        arr_at_TOV = arr[idx_TOV]
+        arr_new = jnp.where(m_is_increasing, arr, arr_at_TOV)
+        tracked_new.append(arr_new)
+
+    # Sort all arrays by increasing mass for consistency
+    sort_idx = jnp.argsort(m_new)
+    pc_new = pc_new[sort_idx]
+    m_new = m_new[sort_idx]
+    r_new = r_new[sort_idx]
+    tracked_new = [arr[sort_idx] for arr in tracked_new]
+
+    return (pc_new, m_new, r_new) + tuple(tracked_new)
+
+    
 ###################
 ### SPLINES etc ###
 ###################
