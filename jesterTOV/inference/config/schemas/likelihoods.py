@@ -883,6 +883,31 @@ class GRBEjectaLikelihoodConfig(BaseLikelihoodConfig):
     seed: int = Field(default=42, description="Seed of the fixed draws")
 
 
+class PostmergerLikelihoodConfig(BaseLikelihoodConfig):
+    """Collapse of the remnant of GW170817 to a black hole.
+
+    Examples
+    --------
+    .. code-block:: yaml
+
+        - type: "postmerger"
+          enabled: true
+          threshold: "tov"
+    """
+
+    type: Literal["postmerger"] = Field(
+        default="postmerger", description="Likelihood type identifier"
+    )
+
+    threshold: Literal["tov", "kepler"] = Field(
+        default="tov",
+        description="Collapse threshold: baryonic TOV mass or baryonic Kepler limit",
+    )
+    n_samples: int | None = Field(
+        default=None, gt=0, description="Number of binary samples, all by default"
+    )
+
+
 class MRTableLikelihoodConfig(BaseLikelihoodConfig):
     """M-R posterior tabulated on a grid, following Koehn et al. (2025).
 
@@ -1020,6 +1045,7 @@ LikelihoodConfig = Annotated[
         PQCDLikelihoodConfig,
         BlackWidowLikelihoodConfig,
         GRBEjectaLikelihoodConfig,
+        PostmergerLikelihoodConfig,
         MRTableLikelihoodConfig,
         ZeroLikelihoodConfig,
         MockMassRadiusLikelihoodConfig,

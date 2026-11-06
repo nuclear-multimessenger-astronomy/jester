@@ -22,6 +22,7 @@ from ..config.schema import (
     PQCDLikelihoodConfig,
     BlackWidowLikelihoodConfig,
     GRBEjectaLikelihoodConfig,
+    PostmergerLikelihoodConfig,
     MRTableLikelihoodConfig,
     ZeroLikelihoodConfig,
     MockMassRadiusLikelihoodConfig,
@@ -33,6 +34,7 @@ from .radio import BlackWidowLikelihood, RadioTimingLikelihood
 from .rex import REXLikelihood, load_rex_posterior
 from .hic import HICLikelihood
 from .grb import GRBEjectaLikelihood
+from .postmerger import PostmergerLikelihood
 from .pqcd import PQCDLikelihood, PQCDStarLikelihood
 from .mr_table import load_koehn2024_mr_likelihood
 from .chieft import ChiEFTLikelihood
@@ -177,6 +179,9 @@ def create_likelihood(
             if config.marginalise_extensions:
                 return PQCDStarLikelihood(data_file=config.data_file)
             return PQCDLikelihood(data_file=config.data_file)
+
+        case PostmergerLikelihoodConfig():
+            return PostmergerLikelihood(threshold=config.threshold, n_samples=config.n_samples)
 
         case GRBEjectaLikelihoodConfig():
             return GRBEjectaLikelihood(n_samples=config.n_samples, seed=config.seed)
