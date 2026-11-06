@@ -149,3 +149,42 @@ def test_grb_ejecta_fits_match_nmma():
     a, b = -1.725 - 2.337 * xi, -0.564 - 0.437 * xi
     expected_disk = max(a * (1 + b * np.tanh((0.958 - total / threshold) / 0.057)), -3.0)
     assert float(log10_disk_mass(total, q, mtov, r16)) == pytest.approx(expected_disk)
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        {"type": "rex", "experiment_name": "dipole"},
+        {"type": "hic"},
+        {"type": "pqcd"},
+        {"type": "pqcd", "marginalise_extensions": True},
+        {"type": "black_widow"},
+        {"type": "mr_table", "name": "J0740"},
+        {"type": "grb_ejecta", "n_samples": 100},
+    ],
+)
+def test_factory_builds_a_finite_likelihood(config):
+    from pydantic import TypeAdapter
+
+    from jesterTOV.inference.config.schema import LikelihoodConfig
+    from jesterTOV.inference.likelihoods.factory import create_likelihood
+
+    likelihood = create_likelihood(TypeAdapter(LikelihoodConfig).validate_python(config))
+    assert np.isfinite(float(likelihood.evaluate(ALL_PARAMS[0])))
+
+
+def test_postmerger_uses_tov_threshold_consistently():
+    from jesterTOV.inference.likelihoods.postmerger import masses_of_central_pressure
+
+    k = int(np.argmax(np.nanmax(DATA["M"], axis=1) > 2.0))
+    params = ALL_PARAMS[k]
+    table_p = params["p"]
+    e = params["e"]
+    h = utils.cumtrapz(table_p / (e + table_p), jnp.log(table_p))
+    loge, logp = jnp.log(e), jnp.log(table_p)
+    dlog = jnp.gradient(loge) / jnp.gradient(logp)
+    eos = {"n": params["n"], "p": table_p, "h": h, "e": e, "dloge_dlogp": dlog}
+    pc = jnp.power(10.0, params["logpc_EOS"][jnp.argmax(params["masses_EOS"])])
+    gravitational, baryonic = masses_of_central_pressure(pc, eos)
+    # Binding energy of a massive star is known to be between 5 and 25 percent of its gravitational mass.
+    assert 0.05 < float(baryonic - gravitational) / float(gravitational) < 0.25
