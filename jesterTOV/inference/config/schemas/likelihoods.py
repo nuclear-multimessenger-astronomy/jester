@@ -827,6 +827,14 @@ class PQCDLikelihoodConfig(BaseLikelihoodConfig):
         description="NPZ file with the draws. If None, uses data/koehn2024/pqcd_miho.npz",
     )
 
+    marginalise_extensions: bool = Field(
+        default=False,
+        description=(
+            "Use pQCD* of Koehn et al. (2025): marginalise over Gaussian-process extensions "
+            "above the TOV density instead of the conservative step function."
+        ),
+    )
+
 
 class BlackWidowLikelihoodConfig(BaseLikelihoodConfig):
     """Mass of PSR J0952-0607, integrated up to the maximum mass at 707 Hz.
@@ -852,6 +860,29 @@ class BlackWidowLikelihoodConfig(BaseLikelihoodConfig):
     )
 
 
+class GRBEjectaLikelihoodConfig(BaseLikelihoodConfig):
+    """Total ejecta mass of GRB211211A, assumed to come from a binary neutron star merger.
+
+    Examples
+    --------
+    .. code-block:: yaml
+
+        - type: "grb_ejecta"
+          enabled: true
+    """
+
+    type: Literal["grb_ejecta"] = Field(
+        default="grb_ejecta", description="Likelihood type identifier"
+    )
+
+    n_samples: int = Field(
+        default=4000,
+        gt=0,
+        description="Number of draws of (chirp mass, q, alpha, zeta) in the marginalisation",
+    )
+    seed: int = Field(default=42, description="Seed of the fixed draws")
+
+
 class MRTableLikelihoodConfig(BaseLikelihoodConfig):
     """M-R posterior tabulated on a grid, following Koehn et al. (2025).
 
@@ -870,9 +901,6 @@ class MRTableLikelihoodConfig(BaseLikelihoodConfig):
 
     name: Literal["4U_1702", "SAX", "J1731", "qLMXBs", "J0030", "J0740"] = Field(
         description="Measurement"
-    )
-    n_masses: int = Field(
-        default=200, gt=1, description="Number of masses in the integral along the M-R curve"
     )
 
 
@@ -991,6 +1019,7 @@ LikelihoodConfig = Annotated[
         HICLikelihoodConfig,
         PQCDLikelihoodConfig,
         BlackWidowLikelihoodConfig,
+        GRBEjectaLikelihoodConfig,
         MRTableLikelihoodConfig,
         ZeroLikelihoodConfig,
         MockMassRadiusLikelihoodConfig,

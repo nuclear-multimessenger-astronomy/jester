@@ -21,6 +21,7 @@ from ..config.schema import (
     HICLikelihoodConfig,
     PQCDLikelihoodConfig,
     BlackWidowLikelihoodConfig,
+    GRBEjectaLikelihoodConfig,
     MRTableLikelihoodConfig,
     ZeroLikelihoodConfig,
     MockMassRadiusLikelihoodConfig,
@@ -31,7 +32,8 @@ from .nicer import NICERLikelihood, NICERKDELikelihood
 from .radio import BlackWidowLikelihood, RadioTimingLikelihood
 from .rex import REXLikelihood, load_rex_posterior
 from .hic import HICLikelihood
-from .pqcd import PQCDLikelihood
+from .grb import GRBEjectaLikelihood
+from .pqcd import PQCDLikelihood, PQCDStarLikelihood
 from .mr_table import load_koehn2024_mr_likelihood
 from .chieft import ChiEFTLikelihood
 from .constraints import (
@@ -172,7 +174,12 @@ def create_likelihood(
             return HICLikelihood(data_file=config.data_file)
 
         case PQCDLikelihoodConfig():
+            if config.marginalise_extensions:
+                return PQCDStarLikelihood(data_file=config.data_file)
             return PQCDLikelihood(data_file=config.data_file)
+
+        case GRBEjectaLikelihoodConfig():
+            return GRBEjectaLikelihood(n_samples=config.n_samples, seed=config.seed)
 
         case BlackWidowLikelihoodConfig():
             return BlackWidowLikelihood(
@@ -182,7 +189,7 @@ def create_likelihood(
             )
 
         case MRTableLikelihoodConfig():
-            return load_koehn2024_mr_likelihood(config.name, n_masses=config.n_masses)
+            return load_koehn2024_mr_likelihood(config.name)
 
         case EOSConstraintsLikelihoodConfig():
             return ConstraintEOSLikelihood(

@@ -15,7 +15,7 @@ from jesterTOV import utils
 from jesterTOV.inference.likelihoods.chieft import ChiEFTLikelihood
 from jesterTOV.inference.likelihoods.hic import HICLikelihood
 from jesterTOV.inference.likelihoods.mr_table import load_koehn2024_mr_likelihood
-from jesterTOV.inference.likelihoods.pqcd import PQCDLikelihood
+from jesterTOV.inference.likelihoods.pqcd import PQCDLikelihood, PQCDStarLikelihood
 from jesterTOV.inference.likelihoods.radio import BlackWidowLikelihood, RadioTimingLikelihood
 from jesterTOV.inference.likelihoods.rex import REXLikelihood, load_rex_posterior
 
@@ -75,6 +75,10 @@ def test_pqcd_matches_koehn():
     assert deviation(PQCDLikelihood(), "pQCD").max() < 1e-6
 
 
+def test_pqcd_star_matches_koehn():
+    assert np.percentile(deviation(PQCDStarLikelihood(), "pQCD_star"), 95) < 0.05
+
+
 @pytest.mark.parametrize("name,mean,std", [("J0740", 2.08, 0.07), ("J1614", 1.94, 0.03), ("J0348", 2.01, 0.04)])
 def test_radio_matches_koehn(name, mean, std):
     likelihood = RadioTimingLikelihood(name, mean, std, m_min=0.0)
@@ -98,10 +102,20 @@ def test_chieft_default_is_unchanged():
 
 @pytest.mark.parametrize(
     "name,tol",
-    [("qLMXBs", 0.05), ("4U_1702", 0.05), ("SAX", 0.05), ("J1731", 0.05), ("J0030", 0.05), ("J0740", 0.05)],
+    [("qLMXBs", 0.05), ("SAX", 0.05), ("J1731", 0.05), ("J0030", 0.05), ("J0740", 0.05)],
 )
 def test_mr_tables_match_koehn(name, tol):
     assert np.percentile(deviation(load_koehn2024_mr_likelihood(name), name), 95) < tol
+
+
+def test_burster_matches_koehn_for_eos_with_weight():
+    # The grid of 4U 1702-429 ends abruptly at 0.807 Msun and Koehn integrates it with Simpson weights. EOS whose
+    # curve crosses that edge with tiny L differ by up to 1 in log L, also between scipy versions of his own formula.
+    dev = deviation(load_koehn2024_mr_likelihood("4U_1702"), "4U_1702")
+    assert np.median(dev) < 0.01
+    ref = DATA["logL_4U_1702"]
+    good = np.isfinite(ref) & (ref > ref[np.isfinite(ref)].max() + np.log(MARGIN))
+    assert dev[ref[good] > ref[good].max() - np.log(100)].max() < 0.05
 
 
 def test_black_widow_fit_close_to_koehn():
@@ -116,3 +130,22 @@ def test_black_widow_mass_limit_is_above_mtov():
     params = ALL_PARAMS[np.argmax(DATA["logL_J0952"])]
     mtov = float(jnp.max(params["masses_EOS"]))
     assert mtov < float(likelihood.rotating_mass_limit(params)) < 1.2 * mtov
+
+
+def test_grb_ejecta_fits_match_nmma():
+    """Reference values computed with the formulas in nmma/core/conversion.py (BNSEjectaFitting)."""
+    from jesterTOV.inference.likelihoods.grb import dynamical_ejecta_mass, log10_disk_mass
+
+    m1, m2, c1, c2 = 1.5, 1.3, 0.18, 0.16
+    expected_dyn = 1e-3 * (
+        m1 * (-9.3335 / c1 + 114.17 * (m2 / m1) ** 1.5465 - 337.56 * c1)
+        + m2 * (-9.3335 / c2 + 114.17 * (m1 / m2) ** 1.5465 - 337.56 * c2)
+    )
+    assert float(dynamical_ejecta_mass(m1, m2, c1, c2)) == pytest.approx(max(expected_dyn, 0.0))
+
+    mtov, r16, total, q = 2.2, 12.0 / 1.476625038050125, 2.8, 1.3 / 1.5
+    threshold = (-3.606 * mtov / r16 + 2.38) * mtov
+    xi = 0.5 * np.tanh(5.879 * (q - 0.886))
+    a, b = -1.725 - 2.337 * xi, -0.564 - 0.437 * xi
+    expected_disk = max(a * (1 + b * np.tanh((0.958 - total / threshold) / 0.057)), -3.0)
+    assert float(log10_disk_mass(total, q, mtov, r16)) == pytest.approx(expected_disk)

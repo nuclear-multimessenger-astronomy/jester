@@ -36,6 +36,7 @@ from jesterTOV.inference.base import LikelihoodBase
 DATA_DIR = Path(__file__).parent.parent / "data" / "koehn2024"
 MIN_LOG_LIKELIHOOD = -1000.0
 LOG_ZERO = -1e5
+MAX_MASS = 5.0
 
 
 @dataclass(frozen=True)
@@ -112,8 +113,11 @@ class MRTableLikelihood(LikelihoodBase):
         Mixture weights, equal by default.
     divide_by_mtov : bool, optional
         Whether to include the flat mass prior :math:`1/M_\mathrm{TOV}`.
-    n_masses : int, optional
-        Number of equally spaced masses in :math:`[0, M_\mathrm{TOV}]`.
+    mass_step : float, optional
+        Spacing of the fixed mass grid in solar masses. Only the nodes below :math:`M_\mathrm{TOV}` count,
+        as in the original analysis. For narrow posteriors near the TOV mass this choice matters.
+    upper_pad : float, optional
+        Masses up to :math:`M_\mathrm{TOV}` plus this value enter the integral, at the radius of the TOV star.
     """
 
     def __init__(
@@ -123,14 +127,17 @@ class MRTableLikelihood(LikelihoodBase):
         combine: Literal["mixture", "product", "joint_integrand"] = "mixture",
         weights: list[float] | None = None,
         divide_by_mtov: bool = True,
-        n_masses: int = 200,
+        mass_step: float = 0.02,
+        upper_pad: float = 0.0,
     ) -> None:
         super().__init__()
         self.name = name
         self.tables = tables
         self.combine = combine
         self.divide_by_mtov = divide_by_mtov
-        self.n_masses = n_masses
+        self.upper_pad = upper_pad
+        self.mass_step = mass_step
+        self.mass_grid = mass_step * jnp.arange(int(np.ceil(MAX_MASS / mass_step)))
         n_tables = len(tables)
         self.log_weights = jnp.log(jnp.ones(n_tables) / n_tables if weights is None else jnp.array(weights))
 
@@ -149,17 +156,20 @@ class MRTableLikelihood(LikelihoodBase):
         """
         masses_eos = params["masses_EOS"]
         mtov = jnp.max(masses_eos)
-        masses = jnp.linspace(0.0, mtov, self.n_masses)
-        radii = jnp.interp(masses, masses_eos, params["radii_EOS"])
-        logps = jnp.stack([table.log_prob(radii, masses) for table in self.tables])
+        radii = jnp.interp(self.mass_grid, masses_eos, params["radii_EOS"])
+        counted = self.mass_grid < mtov + self.upper_pad
+        logps = jnp.stack([table.log_prob(radii, self.mass_grid) for table in self.tables])
+        logps = jnp.where(counted, logps, LOG_ZERO)
 
-        # Mean over an equally spaced grid equals the mass integral divided by M_TOV. The endpoints
-        # carry negligible weight for all measurements considered.
-        log_step_term = 0.0 if self.divide_by_mtov else jnp.log(jnp.maximum(mtov, 1e-3))
-        if self.combine == "joint_integrand":
-            log_likelihood = logsumexp(jnp.sum(logps, axis=0)) - jnp.log(self.n_masses) + log_step_term
+        # With 1/M_TOV the integral is the mean over the counted nodes, otherwise their sum times the spacing.
+        if self.divide_by_mtov:
+            log_norm = -jnp.log(jnp.maximum(jnp.sum(counted), 1))
         else:
-            per_table = logsumexp(logps, axis=1) - jnp.log(self.n_masses) + log_step_term
+            log_norm = jnp.log(self.mass_step)
+        if self.combine == "joint_integrand":
+            log_likelihood = logsumexp(jnp.sum(logps, axis=0)) + log_norm
+        else:
+            per_table = logsumexp(logps, axis=1) + log_norm
             if self.combine == "product":
                 log_likelihood = jnp.sum(per_table)
             else:
@@ -168,15 +178,13 @@ class MRTableLikelihood(LikelihoodBase):
         return jnp.maximum(log_likelihood, MIN_LOG_LIKELIHOOD)
 
 
-def load_koehn2024_mr_likelihood(name: str, n_masses: int = 200) -> MRTableLikelihood:
+def load_koehn2024_mr_likelihood(name: str) -> MRTableLikelihood:
     """Create an M-R likelihood reproducing the stored per-EOS files of Koehn et al. (2025).
 
     Parameters
     ----------
     name : str
         One of ``4U_1702``, ``SAX``, ``J1731``, ``qLMXBs``, ``J0030``, ``J0740``.
-    n_masses : int, optional
-        Number of masses in the integral along the M-R curve.
 
     Returns
     -------
@@ -193,17 +201,15 @@ def load_koehn2024_mr_likelihood(name: str, n_masses: int = 200) -> MRTableLikel
 
     match name:
         case "4U_1702":
-            return MRTableLikelihood(name, [table(name)], divide_by_mtov=False, n_masses=n_masses)
+            return MRTableLikelihood(name, [table(name)], divide_by_mtov=False, mass_step=0.01)
         case "SAX" | "J1731":
-            return MRTableLikelihood(name, [table(name)], n_masses=n_masses)
+            return MRTableLikelihood(name, [table(name)])
         case "qLMXBs":
             return MRTableLikelihood(
-                name, [table("wCen"), table("X5")], combine="joint_integrand", divide_by_mtov=False, n_masses=n_masses
+                name, [table("wCen"), table("X5")], combine="joint_integrand", divide_by_mtov=False, upper_pad=0.01
             )
         case "J0030" | "J0740":
             stems = [f"{name}_amsterdam", f"{name}_maryland"]
-            return MRTableLikelihood(
-                name, [table(stem) for stem in stems], weights=mixture_weights(stems), n_masses=n_masses
-            )
+            return MRTableLikelihood(name, [table(stem) for stem in stems], weights=mixture_weights(stems))
         case _:
             raise ValueError(f"Unknown M-R measurement '{name}'.")
