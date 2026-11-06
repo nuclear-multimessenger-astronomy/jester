@@ -455,30 +455,106 @@ Constrains the EOS at densities below ~2 $n_\text{sat}$ using chiral effective f
 
 ::::
 
-#### REX likelihood
+#### Nuclear experiments on the symmetry energy
 
 ::::{dropdown} **REX Likelihood**
-
-```{warning}
-This is not fully implemented yet.
-```
 
 ```yaml
 - type: "rex"
   enabled: true
-  experiment_name: "PREX"  # Experiment: "PREX" or "CREX" (default: "PREX")
+  experiment_name: "PREX"  # "PREX", "CREX" or "dipole" (default: "PREX")
 ```
 
 **Field Details:**
 
-- **`experiment_name`** (`str`) - Nuclear experiment identifier: `"PREX"` or `"CREX"`
+- **`experiment_name`** (`str`) - Measurement: PREX-II, CREX or the electric dipole polarizability of ²⁰⁸Pb
 
 **Description:**
 
-Constrains nuclear symmetry energy parameters using neutron skin thickness measurements from electron scattering experiments. The Python class is {class}`~jesterTOV.inference.likelihoods.rex.REXLikelihood`.
+The posterior on $(E_\mathrm{sym}, L_\mathrm{sym})$ of Koehn et al. (2025) acts directly as the likelihood. It is stored as a tabulated log density in `jesterTOV/inference/data/koehn2024`. The Python class is {class}`~jesterTOV.inference.likelihoods.rex.REXLikelihood`.
 
-- **PREX** — Lead Radius Experiment (²⁰⁸Pb)
-- **CREX** — Calcium Radius Experiment (⁴⁸Ca)
+::::
+
+#### Heavy-ion collisions
+
+::::{dropdown} **HIC Likelihood**
+
+```yaml
+- type: "hic"
+  enabled: true
+```
+
+**Description:**
+
+The ASY-EOS constraint on the pressure between 0.5 and 2.5 $n_\mathrm{sat}$, weighted by the sensitivity of the experiment. The Python class is {class}`~jesterTOV.inference.likelihoods.hic.HICLikelihood`.
+
+::::
+
+#### Perturbative QCD
+
+::::{dropdown} **pQCD Likelihood**
+
+```yaml
+- type: "pqcd"
+  enabled: true
+  marginalise_extensions: false  # true selects pQCD* of Koehn et al. (2025)
+```
+
+**Description:**
+
+Matches the EOS at its TOV density to pQCD at $\mu_H = 2.6$ GeV, marginalised over missing higher orders and the renormalisation scale. The Python classes are {class}`~jesterTOV.inference.likelihoods.pqcd.PQCDLikelihood` and {class}`~jesterTOV.inference.likelihoods.pqcd.PQCDStarLikelihood`.
+
+::::
+
+#### Black widow pulsar
+
+::::{dropdown} **Black Widow Likelihood**
+
+```yaml
+- type: "black_widow"
+  enabled: true
+  mass_mean: 2.35
+  mass_std: 0.17
+```
+
+**Description:**
+
+Mass of PSR J0952-0607, integrated up to the maximum mass at its spin of 707 Hz from a fit in terms of $M_\mathrm{TOV}$ and $R_\mathrm{TOV}$. The Python class is {class}`~jesterTOV.inference.likelihoods.radio.BlackWidowLikelihood`.
+
+::::
+
+#### Tabulated mass-radius posteriors
+
+::::{dropdown} **M-R Table Likelihood**
+
+```yaml
+- type: "mr_table"
+  enabled: true
+  name: "4U_1702"  # "4U_1702", "SAX", "J1731", "qLMXBs", "J0030" or "J0740"
+```
+
+**Description:**
+
+Integrates a tabulated M-R posterior along the M-R curve, with the conventions of the likelihood files of Koehn et al. (2025). These differ from the equations in the paper for the qLMXBs and in the factor $1/M_\mathrm{TOV}$, see {mod}`~jesterTOV.inference.likelihoods.mr_table`.
+
+::::
+
+#### Binary neutron star ejecta and remnants
+
+::::{dropdown} **GRB211211A and postmerger likelihoods**
+
+```yaml
+- type: "grb_ejecta"
+  enabled: true
+  n_samples: 4000
+- type: "postmerger"
+  enabled: true
+  threshold: "tov"  # "tov" or "kepler"
+```
+
+**Description:**
+
+`grb_ejecta` compares the total ejecta mass from GRB211211A with the fits for a binary neutron star merger, marginalised over the unknown binary. `postmerger` requires the remnant of GW170817 to exceed the collapse threshold, marginalised over binary and ejecta samples of the joint inference. The Python classes are {class}`~jesterTOV.inference.likelihoods.grb.GRBEjectaLikelihood` and {class}`~jesterTOV.inference.likelihoods.postmerger.PostmergerLikelihood`.
 
 ::::
 

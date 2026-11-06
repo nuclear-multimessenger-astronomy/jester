@@ -105,7 +105,12 @@ jesterTOV/inference/
 │   ├── nicer.py         # X-ray timing (J0030, J0437, J0614, J0740, J1614)
 │   ├── radio.py         # Radio pulsar timing (FIDUCEO/FIDUCEO2)
 │   ├── chieft.py        # Chiral EFT low-density constraints
-│   ├── rex.py           # PREX/CREX neutron skin experiments
+│   ├── rex.py           # PREX, CREX, 208Pb dipole: tabulated posterior on (E_sym, L_sym)
+│   ├── hic.py           # Heavy-ion collisions (ASY-EOS)
+│   ├── pqcd.py          # pQCD and pQCD* matched at the TOV density
+│   ├── mr_table.py      # Tabulated M-R posteriors (4U 1702, SAX, HESS, qLMXBs, NICER as in Koehn et al.)
+│   ├── grb.py           # GRB211211A total ejecta mass
+│   ├── postmerger.py    # Collapse of the remnant of GW170817
 │   ├── constraints.py   # Physical constraints (EOS/TOV/Gamma)
 │   ├── combined.py      # CombinedLikelihood wrapper
 │   └── factory.py       # Likelihood creation from config
