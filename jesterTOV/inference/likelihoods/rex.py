@@ -1,156 +1,133 @@
-# TODO: still needs to be implemented. For now, raises NotImplementedError
+r"""Symmetry energy constraints from atomic nuclei: PREX-II, CREX and the :math:`^{208}` Pb dipole.
 
-r"""
-PREX and CREX neutron skin measurement constraints.
+Neutron-skin thicknesses from parity-violating electron scattering (PREX-II on :math:`^{208}` Pb, CREX
+on :math:`^{48}` Ca) and the electric dipole polarizability of :math:`^{208}` Pb are mapped through a
+collection of energy density functionals to a posterior on the symmetry energy :math:`E_\mathrm{sym}` and
+its slope :math:`L_\mathrm{sym}`. As in Koehn et al. (2025), this posterior directly acts as the
+likelihood of an EOS with these nuclear empirical parameters,
 
-This module implements likelihood functions based on the PREX (Lead Radius
-Experiment) and CREX (Calcium Radius Experiment) measurements of neutron skin
-thickness in heavy nuclei. These experiments use parity-violating electron
-scattering to measure the weak charge distribution, which is sensitive to the
-neutron skin and thus constrains the symmetry energy parameters of the nuclear
-equation of state.
+.. math::
+    \mathcal{L}(\mathrm{EOS}|\mathrm{PREX}) = P(E_\mathrm{sym}, L_\mathrm{sym}|\mathrm{PREX}).
 
-The measurements are particularly sensitive to the symmetry energy E_sym and
-its density slope L_sym, providing independent constraints that complement
-astrophysical observations of neutron stars. The likelihood is implemented
-using a kernel density estimate (KDE) of the experimental posterior in
-(E_sym, L_sym) space.
+The posterior is stored as the logarithm of a kernel density estimate tabulated on a grid.
 
 References
 ----------
-.. [1] Adhikari et al., "Precision Determination of the Neutral Weak Form Factor
-   of Pb-208," Phys. Rev. Lett. 126, 172502 (2021).
-.. [2] Adhikari et al., "Accurate Determination of the Neutron Skin Thickness of
-   Ca-48 through Parity-Violation in Electron Scattering," Phys. Rev. Lett. 129,
-   042501 (2022).
+.. [rex1] Adhikari et al., Phys. Rev. Lett. 126, 172502 (2021).
+.. [rex2] Adhikari et al., Phys. Rev. Lett. 129, 042501 (2022).
+.. [rex3] Koehn et al., Phys. Rev. X 15, 021014 (2025).
 """
 
+from pathlib import Path
 from typing import Any
 
 import jax.numpy as jnp
+import numpy as np
 from jaxtyping import Array, Float
 
 from jesterTOV.inference.base import LikelihoodBase
 
+DATA_DIR = Path(__file__).parent.parent / "data" / "koehn2024"
+REX_EXPERIMENTS = ("PREX", "CREX", "dipole")
 
-class REXLikelihood(LikelihoodBase):
-    """Likelihood function for PREX or CREX neutron skin measurements.
 
-    This likelihood constrains the symmetry energy parameters (E_sym, L_sym)
-    using experimental measurements of neutron skin thickness from parity-violating
-    electron scattering. The experimental data is represented as a kernel density
-    estimate (KDE) of the posterior distribution in (E_sym, L_sym) parameter space,
-    which is then evaluated for each candidate EOS.
+class TabulatedPosterior2D:
+    """Bilinear interpolation of a log density tabulated on a rectilinear grid, with clamping at the edges.
 
-    The neutron skin thickness is primarily sensitive to the pressure of neutron
-    matter at subsaturation densities, which is controlled by E_sym (symmetry
-    energy at saturation) and L_sym (its density slope). These experiments provide
-    complementary information to astrophysical mass-radius measurements, as they
-    probe different density regimes and physical processes.
+    Parameters
+    ----------
+    x : Float[Array, " n_x"]
+        Nodes of the first parameter.
+    y : Float[Array, " n_y"]
+        Nodes of the second parameter.
+    log_density : Float[Array, "n_x n_y"]
+        Log density on the nodes.
+    """
+
+    def __init__(
+        self,
+        x: Float[Array, " n_x"],
+        y: Float[Array, " n_y"],
+        log_density: Float[Array, "n_x n_y"],
+    ) -> None:
+        self.x = x
+        self.y = y
+        self.log_density = log_density
+
+    def logpdf(self, x: Float, y: Float) -> Float:
+        """Return the interpolated log density at a point."""
+        i = jnp.clip(jnp.searchsorted(self.x, x, side="right") - 1, 0, self.x.size - 2)
+        j = jnp.clip(jnp.searchsorted(self.y, y, side="right") - 1, 0, self.y.size - 2)
+        t = jnp.clip((x - self.x[i]) / (self.x[i + 1] - self.x[i]), 0.0, 1.0)
+        u = jnp.clip((y - self.y[j]) / (self.y[j + 1] - self.y[j]), 0.0, 1.0)
+        return (
+            (1 - t) * (1 - u) * self.log_density[i, j]
+            + t * (1 - u) * self.log_density[i + 1, j]
+            + (1 - t) * u * self.log_density[i, j + 1]
+            + t * u * self.log_density[i + 1, j + 1]
+        )
+
+
+def load_rex_posterior(experiment_name: str) -> TabulatedPosterior2D:
+    """Load the tabulated posterior of an experiment.
 
     Parameters
     ----------
     experiment_name : str
-        Name of the experiment providing the constraint. Must be either "PREX"
-        (Lead Radius Experiment, Pb-208) or "CREX" (Calcium Radius Experiment,
-        Ca-48). The two experiments probe different mass regions and have
-        different systematic uncertainties.
-    posterior : Any
-        Kernel density estimate of the experimental posterior distribution in
-        (E_sym, L_sym) parameter space. This should be a callable object with
-        a `logpdf` method that accepts a 2D array of shape (2, n_samples) and
-        returns log-probability values. Typically constructed using
-        scipy.stats.gaussian_kde or similar.
+        One of ``PREX``, ``CREX`` or ``dipole``.
 
-    Attributes
+    Returns
+    -------
+    TabulatedPosterior2D
+        Posterior on (E_sym, L_sym).
+    """
+    if experiment_name not in REX_EXPERIMENTS:
+        raise ValueError(f"Unknown experiment '{experiment_name}', must be one of {REX_EXPERIMENTS}.")
+    data = np.load(DATA_DIR / f"rex_{experiment_name}.npz")
+    return TabulatedPosterior2D(
+        jnp.array(data["E_sym"], dtype=jnp.float64),
+        jnp.array(data["L_sym"], dtype=jnp.float64),
+        jnp.array(data["log_density"], dtype=jnp.float64),
+    )
+
+
+class REXLikelihood(LikelihoodBase):
+    """Likelihood of a measurement that constrains (E_sym, L_sym).
+
+    Parameters
     ----------
     experiment_name : str
-        The experiment name ("PREX" or "CREX")
-    counter : int
-        Internal counter tracking the number of likelihood evaluations.
-        Used for debugging and performance monitoring.
+        Name of the experiment: ``PREX``, ``CREX`` or ``dipole``.
     posterior : Any
-        The KDE object representing the experimental posterior
+        Object with a method ``logpdf(E_sym, L_sym)``, such as :class:`TabulatedPosterior2D`.
 
     Raises
     ------
-    AssertionError
-        If experiment_name is not "PREX" or "CREX"
-
-    Notes
-    -----
-    The likelihood evaluation extracts only the E_sym and L_sym parameters from
-    the full parameter dictionary and evaluates the KDE at that point. Other
-    nuclear parameters (K_sat, Q_sat, etc.) do not directly enter this likelihood,
-    though they affect the overall EOS and may have indirect correlations.
-
-    The KDE is evaluated in log-space to avoid numerical underflow for low-probability
-    regions and to match the log-likelihood framework used throughout the inference.
-
-    See Also
-    --------
-    ChiEFTLikelihood : Low-density constraints from chiral effective field theory
-
-    Examples
-    --------
-    Create a PREX likelihood with a pre-computed KDE:
-
-    >>> from scipy.stats import gaussian_kde
-    >>> import numpy as np
-    >>> # Load PREX posterior samples (example)
-    >>> samples = np.load("prex_samples.npy")  # shape: (2, n_samples) for (E_sym, L_sym)
-    >>> kde = gaussian_kde(samples)
-    >>> from jesterTOV.inference.likelihoods import REXLikelihood
-    >>> likelihood = REXLikelihood("PREX", kde)
-    >>> params = {"E_sym": 32.0, "L_sym": 60.0}
-    >>> log_like = likelihood.evaluate(params, data={})
+    ValueError
+        If ``experiment_name`` is not known.
     """
 
     experiment_name: str
-    counter: int
-    posterior: Any  # gaussian_kde type
+    posterior: Any
 
-    def __init__(
-        self,
-        experiment_name: str,
-        posterior: Any,
-    ) -> None:
+    def __init__(self, experiment_name: str, posterior: Any) -> None:
         super().__init__()
-        assert experiment_name in [
-            "PREX",
-            "CREX",
-        ], "Only PREX and CREX are supported as experiment name arguments."
+        if experiment_name not in REX_EXPERIMENTS:
+            raise ValueError(f"Unknown experiment '{experiment_name}', must be one of {REX_EXPERIMENTS}.")
         self.experiment_name = experiment_name
-        self.counter = 0
         self.posterior = posterior
 
     def evaluate(self, params: dict[str, Float | Array]) -> Float:
-        """Evaluate the log-likelihood for PREX/CREX constraints.
+        """Evaluate the log-likelihood.
 
         Parameters
         ----------
         params : dict[str, Float | Array]
-            Dictionary containing EOS parameters. Required keys:
-            - "E_sym" : Symmetry energy at saturation density (MeV)
-            - "L_sym" : Slope of symmetry energy (MeV)
-            Other parameters in the dict are ignored.
+            Must contain ``E_sym`` and ``L_sym`` in MeV.
 
         Returns
         -------
         Float
-            Natural logarithm of the likelihood. This is the log-probability
-            density of the (E_sym, L_sym) point under the experimental posterior
-            KDE.
-
-        Notes
-        -----
-        The method extracts E_sym and L_sym from the parameter dictionary,
-        constructs a 2D array [E_sym, L_sym], and evaluates the KDE's logpdf
-        method. The result is a scalar log-probability suitable for combination
-        with other log-likelihoods in the inference pipeline.
+            Log density of the posterior at (E_sym, L_sym).
         """
-        log_likelihood_array = self.posterior.logpdf(
-            jnp.array([params["E_sym"], params["L_sym"]])
-        )
-        log_likelihood = log_likelihood_array.at[0].get()
-        return log_likelihood
+        return self.posterior.logpdf(params["E_sym"], params["L_sym"])

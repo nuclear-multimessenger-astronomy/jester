@@ -18,13 +18,21 @@ from ..config.schema import (
     GammaConstraintsLikelihoodConfig,
     DeprecatedConstraintsLikelihoodConfig,
     REXLikelihoodConfig,
+    HICLikelihoodConfig,
+    PQCDLikelihoodConfig,
+    BlackWidowLikelihoodConfig,
+    MRTableLikelihoodConfig,
     ZeroLikelihoodConfig,
     MockMassRadiusLikelihoodConfig,
 )
 from .combined import CombinedLikelihood, ZeroLikelihood
 from .gw import GWLikelihood, GWLikelihoodResampled
 from .nicer import NICERLikelihood, NICERKDELikelihood
-from .radio import RadioTimingLikelihood
+from .radio import BlackWidowLikelihood, RadioTimingLikelihood
+from .rex import REXLikelihood, load_rex_posterior
+from .hic import HICLikelihood
+from .pqcd import PQCDLikelihood
+from .mr_table import load_koehn2024_mr_likelihood
 from .chieft import ChiEFTLikelihood
 from .constraints import (
     ConstraintEOSLikelihood,
@@ -152,16 +160,29 @@ def create_likelihood(
                 low_filename=config.low_filename,
                 high_filename=config.high_filename,
                 nb_n=config.nb_n,
+                log_f_in_band=config.log_f_in_band,
             )
 
         case REXLikelihoodConfig():
-            # FIXME: Implement load_rex_posterior(experiment_name) -> gaussian_kde
-            # This should load PREX/CREX posterior KDE from data files
-            # For now, raise NotImplementedError
-            raise NotImplementedError(
-                f"REX likelihood data loading not implemented. "
-                f"Need to implement load_rex_posterior('{config.experiment_name}') -> gaussian_kde"
+            return REXLikelihood(
+                config.experiment_name, load_rex_posterior(config.experiment_name)
             )
+
+        case HICLikelihoodConfig():
+            return HICLikelihood(data_file=config.data_file)
+
+        case PQCDLikelihoodConfig():
+            return PQCDLikelihood(data_file=config.data_file)
+
+        case BlackWidowLikelihoodConfig():
+            return BlackWidowLikelihood(
+                mean=config.mass_mean,
+                std=config.mass_std,
+                penalty_value=config.penalty_value,
+            )
+
+        case MRTableLikelihoodConfig():
+            return load_koehn2024_mr_likelihood(config.name, n_masses=config.n_masses)
 
         case EOSConstraintsLikelihoodConfig():
             return ConstraintEOSLikelihood(
@@ -324,6 +345,7 @@ def create_combined_likelihood(
                         psr_name=psr_name,
                         mean=float(mass_mean),
                         std=float(mass_std),
+                        m_min=config.m_min,
                         penalty_value=config.penalty_value,
                     )
                     likelihoods.append(radio_likelihood)

@@ -98,6 +98,17 @@ def determine_keep_names(
                 "ChiEFT likelihood enabled: 'nbreak' is fixed, will appear in transform output via fixed_params"
             )
 
+    # REX likelihoods read the symmetry energy parameters directly.
+    if any(lk.enabled and lk.type == "rex" for lk in config.likelihoods):
+        for name in ["E_sym", "L_sym"]:
+            if name not in prior.parameter_names and name not in _fixed:
+                raise ValueError(
+                    f"REX likelihood is enabled but '{name}' is not in the prior. "
+                    f"Current prior parameters: {prior.parameter_names}"
+                )
+            if name in prior.parameter_names:
+                keep_names.append(name)
+
     return keep_names if keep_names else None
 
 

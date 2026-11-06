@@ -212,3 +212,70 @@ class RadioTimingLikelihood(LikelihoodBase):
         )
 
         return log_likelihood
+
+
+class BlackWidowLikelihood(LikelihoodBase):
+    r"""Mass measurement of the rapidly spinning black widow pulsar PSR J0952-0607.
+
+    The mass of this pulsar may exceed the TOV mass because of its spin of 707 Hz, so the integral over the
+    measured mass extends up to :math:`M_\mathrm{rot}(707\,\mathrm{Hz})`,
+
+    .. math::
+        \mathcal{L} = \frac{1}{M_\mathrm{rot}} \int_0^{M_\mathrm{rot}} \mathrm{d}M\, P(M|d).
+
+    Koehn et al. (2025) computed :math:`M_\mathrm{rot}` with the RNS code for EOSs with
+    :math:`M_\mathrm{TOV} \geq 1.5\,M_\odot`, and set it to :math:`1.1\,M_\mathrm{TOV}` below that. A
+    sampler cannot run RNS, so this class uses the fit of Eq. (10) of that paper,
+
+    .. math::
+        M_\mathrm{rot} = (1 + a x + b x^2 + c x^3)\, M_\mathrm{TOV},
+        \qquad x = R_\mathrm{TOV} / (1.48\, M_\mathrm{TOV}),
+
+    which reproduces the RNS values with a scatter of about :math:`0.03\,M_\odot`.
+
+    Parameters
+    ----------
+    mean : float, optional
+        Measured mass in solar masses (default 2.35, Romani et al. 2022).
+    std : float, optional
+        Measurement uncertainty in solar masses (default 0.17).
+    penalty_value : float, optional
+        Log-likelihood value for failed TOV solutions.
+    """
+
+    FIT_COEFFICIENTS = (0.04869314, -0.02028204, 0.00262573)
+
+    def __init__(self, mean: float = 2.35, std: float = 0.17, penalty_value: float = 0.0) -> None:
+        super().__init__()
+        self.mean = mean
+        self.std = std
+        self.penalty_value = penalty_value
+
+    def rotating_mass_limit(self, params: dict[str, Float | Array]) -> Float:
+        r"""Return :math:`M_\mathrm{rot}(707\,\mathrm{Hz})` in solar masses."""
+        masses: Float[Array, " n_points"] = params["masses_EOS"]
+        index = jnp.argmax(masses)
+        mtov = masses[index]
+        x = params["radii_EOS"][index] / (1.48 * jnp.maximum(mtov, 1e-3))
+        a, b, c = self.FIT_COEFFICIENTS
+        fit = mtov * (1.0 + a * x + b * x**2 + c * x**3)
+        return jnp.where(mtov < 1.5, 1.1 * mtov, fit)
+
+    def evaluate(self, params: dict[str, Float | Array]) -> Float:
+        """Evaluate the log-likelihood.
+
+        Parameters
+        ----------
+        params : dict[str, Float | Array]
+            Must contain ``masses_EOS`` in solar masses and ``radii_EOS`` in km.
+
+        Returns
+        -------
+        Float
+            Log-likelihood.
+        """
+        limit = self.rotating_mass_limit(params)
+        invalid = limit <= 0.0
+        safe_limit = jnp.where(invalid, 1.0, limit)
+        log_likelihood = norm.logcdf((safe_limit - self.mean) / self.std) - jnp.log(safe_limit)
+        return jnp.where(invalid, self.penalty_value, log_likelihood)

@@ -64,6 +64,10 @@ class ChiEFTLikelihood(LikelihoodBase):
         Number of density points for numerical integration of the penalty function.
         More points provide better accuracy but increase computation time.
         Default is 100, which provides good balance for typical applications.
+    log_f_in_band : float, optional
+        Value of :math:`\\log f` inside the band. Default is 0, i.e. :math:`f = 1` as in Eq. (5) of
+        Koehn et al. (2025). The likelihood files behind the published numbers of that paper however
+        add 1 in the band, so use 1.0 to reproduce them.
 
     Attributes
     ----------
@@ -125,6 +129,7 @@ class ChiEFTLikelihood(LikelihoodBase):
         low_filename: str | Path | None = None,
         high_filename: str | Path | None = None,
         nb_n: int = 100,
+        log_f_in_band: float = 0.0,
     ) -> None:
         super().__init__()
 
@@ -160,6 +165,7 @@ class ChiEFTLikelihood(LikelihoodBase):
         self.EFT_high = lambda x: jnp.interp(x, n_high, p_high)
 
         self.nb_n = nb_n
+        self.log_f_in_band = log_f_in_band
         # Maximum density covered by the chiEFT data (in nsat units).
         # Integration must not exceed this to avoid unphysical flat-line extrapolation.
         self.n_max_nsat = float(jnp.minimum(n_low[-1], n_high[-1]))
@@ -236,7 +242,8 @@ class ChiEFTLikelihood(LikelihoodBase):
             return_value = -beta * (sample_p - high_p) * jnp.heaviside(
                 sample_p - high_p, 0
             ) + -beta * (low_p - sample_p) * jnp.heaviside(low_p - sample_p, 0)
-            return return_value
+            in_band = (sample_p >= low_p) & (sample_p <= high_p)
+            return return_value + self.log_f_in_band * in_band
 
         f_array = f(sample_p, low_p, high_p)
         # Normalise by the integration width (in n_sat units).

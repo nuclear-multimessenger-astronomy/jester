@@ -514,6 +514,15 @@ class RadioLikelihoodConfig(BaseLikelihoodConfig):
         description="Log-likelihood penalty for invalid TOV solutions (M_TOV ≤ m_min)",
     )
 
+    m_min: float = Field(
+        default=0.1,
+        ge=0.0,
+        description=(
+            "Lower bound of the flat mass prior in solar masses. "
+            "Koehn et al. (2025) use 0, the upper bound is always M_TOV."
+        ),
+    )
+
     @field_validator("pulsars")
     @classmethod
     def _validate_pulsars(
@@ -575,6 +584,14 @@ class ChiEFTLikelihoodConfig(BaseLikelihoodConfig):
         default=100,
         gt=0,
         description="Number of density points to evaluate against ChiEFT bands",
+    )
+
+    log_f_in_band: float = Field(
+        default=0.0,
+        description=(
+            "Value of log f inside the band. Use 1.0 to reproduce the likelihood files "
+            "of Koehn et al. (2025); their paper states f = 1, i.e. 0 here."
+        ),
     )
 
 
@@ -748,9 +765,7 @@ class DeprecatedConstraintsLikelihoodConfig(BaseLikelihoodConfig):
 
 
 class REXLikelihoodConfig(BaseLikelihoodConfig):
-    """REX (PREX/CREX) likelihood configuration.
-
-    NOT IMPLEMENTED YET - placeholder for future development.
+    """Posterior on (E_sym, L_sym) from an atomic nucleus measurement.
 
     Examples
     --------
@@ -765,13 +780,100 @@ class REXLikelihoodConfig(BaseLikelihoodConfig):
         default="rex", description="Likelihood type identifier"
     )
 
-    experiment_name: str = Field(
+    experiment_name: Literal["PREX", "CREX", "dipole"] = Field(
         default="PREX",
-        description="Name of REX experiment (PREX or CREX)",
+        description="Measurement: PREX, CREX or dipole (208Pb electric dipole polarizability)",
     )
 
-    def model_post_init(self, __context: object) -> None:
-        raise NotImplementedError("REX likelihood is not implemented")
+
+class HICLikelihoodConfig(BaseLikelihoodConfig):
+    """Heavy-ion collision (ASY-EOS) likelihood.
+
+    Examples
+    --------
+    .. code-block:: yaml
+
+        - type: "hic"
+          enabled: true
+    """
+
+    type: Literal["hic"] = Field(
+        default="hic", description="Likelihood type identifier"
+    )
+
+    data_file: str | None = Field(
+        default=None,
+        description="NPZ file with the tables. If None, uses data/koehn2024/hic.npz",
+    )
+
+
+class PQCDLikelihoodConfig(BaseLikelihoodConfig):
+    """Perturbative QCD matching at the TOV density.
+
+    Examples
+    --------
+    .. code-block:: yaml
+
+        - type: "pqcd"
+          enabled: true
+    """
+
+    type: Literal["pqcd"] = Field(
+        default="pqcd", description="Likelihood type identifier"
+    )
+
+    data_file: str | None = Field(
+        default=None,
+        description="NPZ file with the draws. If None, uses data/koehn2024/pqcd_miho.npz",
+    )
+
+
+class BlackWidowLikelihoodConfig(BaseLikelihoodConfig):
+    """Mass of PSR J0952-0607, integrated up to the maximum mass at 707 Hz.
+
+    Examples
+    --------
+    .. code-block:: yaml
+
+        - type: "black_widow"
+          enabled: true
+    """
+
+    type: Literal["black_widow"] = Field(
+        default="black_widow", description="Likelihood type identifier"
+    )
+
+    mass_mean: float = Field(default=2.35, description="Measured mass in solar masses")
+    mass_std: float = Field(
+        default=0.17, gt=0.0, description="Mass uncertainty in solar masses"
+    )
+    penalty_value: float = Field(
+        default=0.0, description="Log-likelihood value for failed TOV solutions"
+    )
+
+
+class MRTableLikelihoodConfig(BaseLikelihoodConfig):
+    """M-R posterior tabulated on a grid, following Koehn et al. (2025).
+
+    Examples
+    --------
+    .. code-block:: yaml
+
+        - type: "mr_table"
+          enabled: true
+          name: "4U_1702"
+    """
+
+    type: Literal["mr_table"] = Field(
+        default="mr_table", description="Likelihood type identifier"
+    )
+
+    name: Literal["4U_1702", "SAX", "J1731", "qLMXBs", "J0030", "J0740"] = Field(
+        description="Measurement"
+    )
+    n_masses: int = Field(
+        default=200, gt=1, description="Number of masses in the integral along the M-R curve"
+    )
 
 
 class ZeroLikelihoodConfig(BaseLikelihoodConfig):
@@ -886,6 +988,10 @@ LikelihoodConfig = Annotated[
         GammaConstraintsLikelihoodConfig,
         DeprecatedConstraintsLikelihoodConfig,
         REXLikelihoodConfig,
+        HICLikelihoodConfig,
+        PQCDLikelihoodConfig,
+        BlackWidowLikelihoodConfig,
+        MRTableLikelihoodConfig,
         ZeroLikelihoodConfig,
         MockMassRadiusLikelihoodConfig,
     ],
