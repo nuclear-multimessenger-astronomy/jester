@@ -3,7 +3,7 @@
 # log likelihood of SMC-RW. On a Quadro GV100: 1.2 s per SMC step against 30.8 s for ../GW170817,
 # 18 s of sampling against 354 s (warm compile caches), posteriors and logZ within the seed scatter of
 # the default run.
-# Needs a modax build with params_group_size (modax branch grouped-params).
+# Needs modax with params_group_size: github.com/ThibeauWouters/modax, branch kernel-cache.
 seed: 43
 dry_run: false
 validate_only: false
