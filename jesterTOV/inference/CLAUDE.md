@@ -102,6 +102,14 @@ only raise these for faster standalone (non-vmapped) evaluations. The true
 concurrent width of flow evaluations during sampling is roughly
 `n_particles * event_batch_size * N_masses_batch_size`.
 
+**Batched flow evaluation:** for masked autoregressive flows with a rational-quadratic-spline transformer (all shipped
+GW flows), `StackedGWLikelihood` evaluates each batch of `N_masses_batch_size` mass samples with one call to
+`flows/batched.py::batched_log_prob` instead of flowjax's per-point `log_prob` under `lax.map` (`use_batched_flow`,
+default: whenever `supports_batched_log_prob` accepts the flow). Intermediates are `[features, points]`, so the MLP is
+plain `W @ H` GEMMs and the spline bin is found by counting knots and a one-hot sum (no searchsorted/gather). Same
+log L to round-off (tests: `tests/test_inference/test_batched_flow.py`, against flowjax on every shipped flow); 1.7x
+faster GW likelihood on a GV100 (5000 particles, float32, batch 100).
+
 If events genuinely need different flow architectures, they cannot go
 through `StackedGWLikelihood` together — no automatic fallback to per-event
 `GWLikelihood` exists (this would need to be added, e.g. grouping by
@@ -110,6 +118,21 @@ with jester currently uses the same architecture, since `train_flow.py`
 always trains with the same defaults). `GWLikelihood` itself is unchanged
 and still directly usable/importable for a single event or outside the
 config system.
+
+### Evaluations outside and inside the SMC loop
+
+- `JesterSampler.evaluate_in_batches(samples, batch_size)` is one `jit(vmap)` of log prior + likelihood that also
+  returns log L and the EOS outputs (`EOS_OUTPUT_KEYS`), on fixed-size padded batches so it compiles once. The startup
+  check in `run_inference.py`, the initial log L of SMC particles, the final `get_log_prob` and the EOS outputs saved in
+  the result (`add_eos_from_transform(precomputed=...)`) all use it, so they share one compilation.
+- SMC-RW `cache_loglikelihood` (default True): each particle is `[parameters, log L]`. blackjax gets a log likelihood
+  that reads the last coordinate, and the random-walk move (`random_walk.py::cached_mcmc_step_fn`, blackjax `build_rmh`)
+  evaluates the true likelihood once per proposal and stores it there. Without it, blackjax's tempered SMC evaluates the
+  likelihood in the ESS solver, the MCMC init and the reweighting as well (13 instead of 10 calls per step with 10 moves,
+  and four copies of the likelihood in the compiled loop). Results are identical either way.
+- blackjax is upstream `blackjax-devs/blackjax` (needs Python >= 3.13, jax >= 0.9). Its nested-sampling kernel passes one
+  key and the whole state to the inner kernel, which picks its own start points
+  (`nested_sampling/kernels/acceptance_walk_kernel.py::inner_kernel_wrapper`).
 
 ### Inference Documentation
 - `docs/inference_index.md` - Navigation hub

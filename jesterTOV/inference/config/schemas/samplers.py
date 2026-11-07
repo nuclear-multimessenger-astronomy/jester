@@ -119,6 +119,12 @@ class SMCRandomWalkSamplerConfig(BaseSamplerConfig):
         starts, to calibrate a good initial step size regardless of how `random_walk_sigma` was
         set (default: 20). Only used when `adaptive_step_size` is True. Set to 0 to disable
         pretuning and start annealing directly from `random_walk_sigma`.
+    cache_loglikelihood : bool
+        Carry each particle's log likelihood through the SMC step (default: True). The likelihood
+        is then evaluated once per random-walk move and nowhere else: without the cache, the ESS
+        solver, the MCMC initialisation and the reweighting each evaluate it again, which costs
+        three extra evaluations per tempering step and three more copies of the likelihood in the
+        compiled loop. The tempered target is the same either way.
     """
 
     type: Literal["smc-rw"] = "smc-rw"
@@ -129,6 +135,7 @@ class SMCRandomWalkSamplerConfig(BaseSamplerConfig):
     adaptive_step_size: bool = False
     target_acceptance_rate: float = 0.234
     n_pretune_steps: int = 20
+    cache_loglikelihood: bool = True
 
     @field_validator("n_particles", "n_mcmc_steps")
     @classmethod

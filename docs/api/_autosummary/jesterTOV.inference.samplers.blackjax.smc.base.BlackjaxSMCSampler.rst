@@ -15,6 +15,7 @@
    
       ~BlackjaxSMCSampler.__init__
       ~BlackjaxSMCSampler.add_name
+      ~BlackjaxSMCSampler.evaluate_in_batches
       ~BlackjaxSMCSampler.get_log_prob
       ~BlackjaxSMCSampler.get_n_samples
       ~BlackjaxSMCSampler.get_sampler_output

@@ -15,6 +15,7 @@
    
       ~JesterSampler.__init__
       ~JesterSampler.add_name
+      ~JesterSampler.evaluate_in_batches
       ~JesterSampler.get_log_prob
       ~JesterSampler.get_n_samples
       ~JesterSampler.get_sampler_output

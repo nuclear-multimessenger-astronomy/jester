@@ -107,7 +107,7 @@ class TestLogisticDistribution:
         assert jnp.isfinite(log_prob)
 
         # Log prob at x=0: -0 - 2*log(1 + exp(0)) = -2*log(2) ≈ -1.386
-        assert log_prob == pytest.approx(-2 * jnp.log(2.0), abs=1e-6)
+        assert log_prob == pytest.approx(float(-2 * jnp.log(2.0)), abs=1e-6)
 
 
 class TestTransformBase:
@@ -179,7 +179,7 @@ class TestScaleTransform:
         assert "y" not in result  # Transformed param removed
 
         # Jacobian for scale transform: log|1/scale|
-        assert log_jacobian == pytest.approx(jnp.log(1.0 / scale), abs=1e-6)
+        assert log_jacobian == pytest.approx(float(jnp.log(1.0 / scale)), abs=1e-6)
 
     def test_scale_transform_roundtrip(self):
         """Test that forward + inverse gives original value."""

@@ -3,6 +3,7 @@
 import pytest
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 from jesterTOV.inference.samplers.jester_sampler import JesterSampler
 from jesterTOV.inference.base import (
@@ -199,8 +200,186 @@ class TestSamplerIntegration:
         assert sampler.config is config
 
 
+class _QuadraticLikelihood(LikelihoodBase):
+    """log L = -(y - 1)^2 with y = 2x from the transform below."""
+
+    def evaluate(self, params):
+        return -((params["y"] - 1.0) ** 2)
+
+
+class _EOSLikeTransform(NtoMTransform):
+    """x -> y = 2x, plus an EOS-style output masses_EOS = 3x."""
+
+    def __init__(self):
+        super().__init__((["x"], ["y", "masses_EOS"]))
+        self.transform_func = lambda p: {"y": 2.0 * p["x"], "masses_EOS": 3.0 * p["x"]}
+
+
+class TestBatchedPosteriorEvaluation:
+    """One compiled function evaluates the posterior and the EOS outputs in fixed-size batches."""
+
+    def _sampler(self):
+        prior = UniformPrior(0.0, 1.0, parameter_names=["x"])
+        return JesterSampler(
+            _QuadraticLikelihood(), prior, likelihood_transforms=[_EOSLikeTransform()]
+        )
+
+    def test_matches_posterior_and_transform(self):
+        sampler = self._sampler()
+        x = jnp.linspace(0.05, 0.95, 7)
+        log_prob, log_likelihood, outputs = sampler.evaluate_in_batches(
+            {"x": x}, batch_size=3
+        )
+        expected = jnp.array([sampler.posterior_from_dict({"x": xi}, {}) for xi in x])
+        assert log_prob.shape == log_likelihood.shape == (7,)
+        assert jnp.allclose(log_prob, expected, rtol=1e-12, atol=1e-12)
+        assert jnp.allclose(log_prob - log_prob[0], -((2 * x - 1) ** 2) + (2 * x[0] - 1) ** 2)
+        # the likelihood on its own: -(y - 1)^2 with y = 2x
+        assert jnp.allclose(log_likelihood, -((2 * x - 1) ** 2), rtol=1e-12, atol=1e-12)
+        assert jnp.allclose(outputs["masses_EOS"], 3.0 * x)
+        assert "y" not in outputs  # only EOS quantities are kept
+
+    def test_compiles_once_for_any_number_of_samples(self):
+        sampler = self._sampler()
+        sampler.evaluate_in_batches({"x": jnp.full(3, 0.5)}, batch_size=4)
+        sampler.evaluate_in_batches({"x": jnp.full(10, 0.5)}, batch_size=4)
+        assert sampler._batch_eval._cache_size() == 1
+
+
+class _CountingGaussianLikelihood(LikelihoodBase):
+    """log L = -0.5 ((x - mu) / sigma)^2 summed over x, y, counting evaluation events on the host.
+
+    The count goes through a ``pure_callback`` with ``vmap_method="broadcast_all"``, so a batched evaluation of all
+    particles is one event: the count is the number of places the likelihood is evaluated, not the number of particles.
+    """
+
+    MU, SIGMA = 0.3, 0.05
+
+    def __init__(self):
+        super().__init__()
+        self.events = 0
+
+    def _count(self, x):
+        self.events += 1
+        return np.zeros_like(x)
+
+    def evaluate(self, params):
+        x = jnp.stack([params["x"], params["y"]])
+        zero = jax.pure_callback(
+            self._count, jax.ShapeDtypeStruct((), x.dtype), x[0], vmap_method="broadcast_all"
+        )
+        return -0.5 * jnp.sum(((x - self.MU) / self.SIGMA) ** 2) + zero
+
+
+def _gaussian_smc(cache_loglikelihood, n_mcmc_steps=3, seed=0):
+    from jesterTOV.inference.samplers.blackjax.smc.random_walk import (
+        BlackJAXSMCRandomWalkSampler,
+    )
+    from jesterTOV.inference.config.schema import SMCRandomWalkSamplerConfig
+
+    config = SMCRandomWalkSamplerConfig(
+        n_particles=2000,
+        n_mcmc_steps=n_mcmc_steps,
+        target_ess=0.9,
+        random_walk_sigma=0.5,
+        log_prob_batch_size=500,
+        n_eos_samples=2000,
+        cache_loglikelihood=cache_loglikelihood,
+        output_dir="./test_output/",
+    )
+    likelihood = _CountingGaussianLikelihood()
+    prior = CombinePrior(
+        [
+            UniformPrior(0.0, 1.0, parameter_names=["x"]),
+            UniformPrior(0.0, 1.0, parameter_names=["y"]),
+        ]
+    )
+    sampler = BlackJAXSMCRandomWalkSampler(
+        likelihood=likelihood,
+        prior=prior,
+        sample_transforms=[],
+        likelihood_transforms=[],
+        config=config,
+    )
+    sampler.sample(jax.random.PRNGKey(seed))
+    return sampler, likelihood
+
+
+class TestCachedLogLikelihood:
+    """SMC-RW carries each particle's log L, so the likelihood is evaluated only in the random-walk moves."""
+
+    def test_evaluations_per_step(self):
+        n_mcmc = 3
+        for cache, extra_per_step in [(True, 0), (False, 3)]:
+            sampler, likelihood = _gaussian_smc(cache, n_mcmc_steps=n_mcmc)
+            steps = sampler.metadata["annealing_steps"]
+            # cached: the initial log L of all particles (one event per batch of the shared evaluator,
+            # 2000 / 500), then n_mcmc moves per step.
+            # not cached: ESS solver, MCMC init and reweighting add three evaluations per step
+            initial = 2000 // 500 if cache else 0
+            expected = initial + steps * (n_mcmc + extra_per_step)
+            assert likelihood.events == expected, (cache, steps, likelihood.events)
+
+    @pytest.mark.parametrize("cache", [True, False])
+    def test_gaussian_posterior_and_evidence(self, cache):
+        """Posterior N(0.3, 0.05) per dimension, well inside the unit prior: logZ = 2 log(sigma sqrt(2 pi))."""
+        sampler, _ = _gaussian_smc(cache, n_mcmc_steps=5)
+        samples = sampler.get_samples()
+        for name in ["x", "y"]:
+            assert float(jnp.mean(samples[name])) == pytest.approx(0.3, abs=0.006)
+            assert float(jnp.std(samples[name])) == pytest.approx(0.05, rel=0.08)
+        expected_logz = 2 * float(jnp.log(0.05 * jnp.sqrt(2 * jnp.pi)))
+        assert sampler.metadata["logZ"] == pytest.approx(expected_logz, abs=0.15)
+
+    def test_annealing_step_compiles_once(self):
+        """The Python-driven loop must not recompile the step after the first call (a weakly typed initial
+        carry did, costing a second full compile of the likelihood)."""
+        sampler, _ = _gaussian_smc(True)
+        assert sampler.metadata["annealing_steps"] > 1
+        assert sampler._step_fn._cache_size() == 1
+
+    def test_final_log_prob_matches_posterior(self):
+        sampler, _ = _gaussian_smc(True)
+        output = sampler.get_sampler_output()
+        xs, ys = output.samples["x"], output.samples["y"]
+        expected = jnp.array(
+            [sampler.posterior_from_dict({"x": a, "y": b}, {}) for a, b in zip(xs[:50], ys[:50])]
+        )
+        assert jnp.allclose(output.log_prob[:50], expected, rtol=1e-10, atol=1e-10)
+
+
 class TestBlackJAXSMCRandomWalkSampler:
     """Test BlackJAX SMC sampler with Random Walk kernel."""
+
+    def test_final_log_prob_keeps_eos_outputs_of_the_particles(self):
+        """get_log_prob evaluates the final particles once and keeps their EOS outputs in the same order."""
+        from jesterTOV.inference.samplers.blackjax.smc.random_walk import (
+            BlackJAXSMCRandomWalkSampler,
+        )
+        from jesterTOV.inference.config.schema import SMCRandomWalkSamplerConfig
+
+        config = SMCRandomWalkSamplerConfig(
+            n_particles=50,
+            n_mcmc_steps=2,
+            target_ess=0.9,
+            random_walk_sigma=0.1,
+            log_prob_batch_size=16,
+            n_eos_samples=50,
+            output_dir="./test_output/",
+        )
+        sampler = BlackJAXSMCRandomWalkSampler(
+            likelihood=_QuadraticLikelihood(),
+            prior=UniformPrior(0.0, 1.0, parameter_names=["x"]),
+            sample_transforms=[],
+            likelihood_transforms=[_EOSLikeTransform()],
+            config=config,
+        )
+        sampler.sample(jax.random.PRNGKey(0))
+        output = sampler.get_sampler_output()
+        x = output.samples["x"]
+        expected = jnp.array([sampler.posterior_from_dict({"x": xi}, {}) for xi in x])
+        assert jnp.allclose(output.log_prob, expected, rtol=1e-12, atol=1e-12)
+        assert jnp.allclose(sampler.eos_outputs["masses_EOS"], 3.0 * x)
 
     def test_smc_rw_sampler_initialization(self):
         """Test SMC Random Walk sampler initializes correctly."""

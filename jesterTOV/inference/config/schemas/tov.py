@@ -51,9 +51,12 @@ class GRTOVConfig(BaseTOVConfig):
     ----------
     type : Literal["gr"]
         TOV solver type identifier
+    backend : Literal["diffrax", "modax"]
+        ODE backend. ``"modax"`` needs a CUDA GPU and the modax-solvers package, and has no gradients.
     """
 
     type: Literal["gr"] = "gr"  # type: ignore[override]  # Literal["gr"] ⊂ str
+    backend: Literal["diffrax", "modax"] = "diffrax"
 
 
 class AnisotropyTOVConfig(BaseTOVConfig):

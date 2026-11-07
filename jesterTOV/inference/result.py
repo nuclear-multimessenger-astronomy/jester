@@ -7,7 +7,7 @@ inference results from all sampler types (BlackJAX SMC, BlackJAX NS-AW).
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Literal
+from typing import Any, Dict, Literal, Mapping
 
 import h5py
 import numpy as np
@@ -307,7 +307,7 @@ class InferenceResult:
             metadata=metadata,
         )
 
-    def add_derived_eos(self, eos_dict: Dict[str, Array]) -> None:
+    def add_derived_eos(self, eos_dict: Mapping[str, Array | np.ndarray]) -> None:
         """Add derived EOS quantities to posterior.
 
         This should be called after TOV solver generates M-R-Lambda curves.
@@ -330,6 +330,7 @@ class InferenceResult:
         transform,
         n_eos_samples: int | None = None,
         batch_size: int = 1000,
+        precomputed: Dict[str, Array] | None = None,
     ) -> None:
         """Apply transform to posterior samples to add EOS quantities.
 
@@ -343,6 +344,9 @@ class InferenceResult:
             a subset and filters log_prob/sampler fields to match.
         batch_size : int, optional
             Batch size for JAX computation, by default 1000
+        precomputed : Dict[str, Array] | None, optional
+            EOS outputs of all posterior samples, in posterior order, already computed by the sampler.
+            If given, the transform is not evaluated.
 
         Notes
         -----
@@ -410,6 +414,28 @@ class InferenceResult:
         else:
             chosen_samples = param_samples
 
+        eos_keys = {
+            "masses_EOS",
+            "radii_EOS",
+            "Lambdas_EOS",
+            "n",
+            "p",
+            "e",
+            "cs2",
+            "n_TOV",
+        }
+        if precomputed is not None:
+            logger.info("Using the EOS outputs computed by the sampler")
+            eos_only = {
+                k: (np.asarray(v) if idx is None else np.asarray(v)[idx])
+                for k, v in precomputed.items()
+                if k in eos_keys
+            }
+            self.add_derived_eos(eos_only)
+            if idx is not None:
+                self._filter_to_indices(idx, param_samples.keys(), n_available, n_eos_samples)
+            return
+
         # Apply transform with batched processing
         logger.info(f"Applying transform to {n_eos_samples} samples...")
         if n_eos_samples == 0:
@@ -441,57 +467,51 @@ class InferenceResult:
 
         # Add transformed outputs to posterior (EOS quantities only, not input parameters)
         # Filter out input parameters from transformed_samples to avoid overwriting full posterior arrays
-        eos_keys = {
-            "masses_EOS",
-            "radii_EOS",
-            "Lambdas_EOS",
-            "n",
-            "p",
-            "e",
-            "cs2",
-            "n_TOV",
-        }
         eos_only = {k: v for k, v in transformed_samples.items() if k in eos_keys}
         self.add_derived_eos(eos_only)
 
         # If we selected a subset, filter log_prob and sampler fields to match
         if idx is not None:
-            logger.info(
-                "Filtering log_prob, sampler fields, and parameters to match EOS samples..."
-            )
-
-            # Filter log_prob
-            self.posterior["log_prob_full"] = self.posterior["log_prob"].copy()
-            self.posterior["log_prob"] = self.posterior["log_prob"][idx]
-
-            # Filter other sampler-specific fields if present
-            sampler_fields = ["weights", "ess", "logL", "logL_birth"]
-            for field in sampler_fields:
-                if field in self.posterior:
-                    self.posterior[f"{field}_full"] = self.posterior[field].copy()
-                    self.posterior[field] = self.posterior[field][idx]
-
-            # CRITICAL: Also filter NEP/CSE parameter arrays to match selected samples
-            # These must have the same length as log_prob for cornerplot and other analyses
-            for param_key in param_samples.keys():
-                if param_key in self.posterior:
-                    self.posterior[f"{param_key}_full"] = self.posterior[
-                        param_key
-                    ].copy()
-                    self.posterior[param_key] = self.posterior[param_key][idx]
-
-            logger.info(f"Filtered from {n_available} to {n_eos_samples} samples")
-
-            # Validate array consistency (all non-_full arrays should have n_eos_samples length)
-            for key, value in self.posterior.items():
-                if not key.endswith("_full") and hasattr(value, "__len__"):
-                    if len(value) != n_eos_samples:
-                        logger.warning(
-                            f"Array length mismatch: {key} has {len(value)} samples, expected {n_eos_samples}"
-                        )
+            self._filter_to_indices(idx, param_samples.keys(), n_available, n_eos_samples)
 
         logger.info("EOS generation complete!")
         logger.info("=" * 60)
+
+    def _filter_to_indices(
+        self, idx: np.ndarray, param_keys: Any, n_available: int, n_eos_samples: int
+    ) -> None:
+        """Keep the samples ``idx`` of log_prob, sampler fields and parameters, backing up the full arrays as ``*_full``."""
+        logger.info(
+            "Filtering log_prob, sampler fields, and parameters to match EOS samples..."
+        )
+
+        # Filter log_prob
+        self.posterior["log_prob_full"] = self.posterior["log_prob"].copy()
+        self.posterior["log_prob"] = self.posterior["log_prob"][idx]
+
+        # Filter other sampler-specific fields if present
+        sampler_fields = ["weights", "ess", "logL", "logL_birth"]
+        for field in sampler_fields:
+            if field in self.posterior:
+                self.posterior[f"{field}_full"] = self.posterior[field].copy()
+                self.posterior[field] = self.posterior[field][idx]
+
+        # CRITICAL: Also filter NEP/CSE parameter arrays to match selected samples
+        # These must have the same length as log_prob for cornerplot and other analyses
+        for param_key in param_keys:
+            if param_key in self.posterior:
+                self.posterior[f"{param_key}_full"] = self.posterior[param_key].copy()
+                self.posterior[param_key] = self.posterior[param_key][idx]
+
+        logger.info(f"Filtered from {n_available} to {n_eos_samples} samples")
+
+        # Validate array consistency (all non-_full arrays should have n_eos_samples length)
+        for key, value in self.posterior.items():
+            if not key.endswith("_full") and hasattr(value, "__len__"):
+                if len(value) != n_eos_samples:
+                    logger.warning(
+                        f"Array length mismatch: {key} has {len(value)} samples, expected {n_eos_samples}"
+                    )
 
     def save(self, filepath: str | Path) -> None:
         """Save to HDF5 file.

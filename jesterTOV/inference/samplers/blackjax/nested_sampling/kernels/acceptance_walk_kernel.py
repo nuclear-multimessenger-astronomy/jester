@@ -432,9 +432,25 @@ def bilby_adaptive_de_sampler_unit_cube(
     # Then call: partial_kernel(rng_keys, states, loglikelihood_0)
     # But we need to avoid vmapping params, so we use a different approach:
     # Return a function that extracts params from kwargs and creates the vmapped kernel on-the-fly
-    def inner_kernel_wrapper(rng_keys, states, loglikelihood_0, *, params):
+    def inner_kernel_wrapper(rng_key, state, loglikelihood_0, *, params):
+        # blackjax's NS kernel passes one key and the full NS state; the inner kernel picks its own
+        # start points: uniformly among the survivors above the deletion threshold, as the
+        # handley-lab fork's delete_fn did (all live points if none survive).
+        loglikelihood = state.particles.loglikelihood
+        weights = (loglikelihood > loglikelihood_0).astype(jnp.float64)
+        weights = jnp.where(weights.sum() > 0.0, weights, jnp.ones_like(weights))
+        choice_key, sample_key = jax.random.split(rng_key)
+        start_idx = jax.random.choice(
+            choice_key,
+            weights.shape[0],
+            shape=(num_delete,),
+            p=weights / weights.sum(),
+            replace=True,
+        )
+        start_states = jax.tree_util.tree_map(lambda x: x[start_idx], state.particles)
+        sample_keys = jax.random.split(sample_key, num_delete)
         vmapped_kernel = make_vmapped_kernel(params)
-        return vmapped_kernel(rng_keys, states, loglikelihood_0)
+        return vmapped_kernel(sample_keys, start_states, loglikelihood_0)
 
     base_kernel_step = build_adaptive_kernel(
         delete_fn,

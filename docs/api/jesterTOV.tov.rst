@@ -14,5 +14,6 @@ Submodules
    jesterTOV.tov.data_classes
    jesterTOV.tov.base
    jesterTOV.tov.gr
+   jesterTOV.tov.gr_modax
    jesterTOV.tov.anisotropy
    jesterTOV.tov.scalar_tensor

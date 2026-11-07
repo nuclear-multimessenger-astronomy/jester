@@ -15,6 +15,7 @@
    
       ~BlackjaxSampler.__init__
       ~BlackjaxSampler.add_name
+      ~BlackjaxSampler.evaluate_in_batches
       ~BlackjaxSampler.get_log_prob
       ~BlackjaxSampler.get_n_samples
       ~BlackjaxSampler.get_sampler_output

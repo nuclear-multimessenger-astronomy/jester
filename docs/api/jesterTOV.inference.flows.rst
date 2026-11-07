@@ -20,6 +20,22 @@ interface that handles data standardization automatically.
    flow.Flow
    flow.load_model
 
+Batched evaluation
+------------------
+
+The GW likelihood evaluates its flow for many mass samples at once. For masked autoregressive flows with a
+rational-quadratic-spline transformer (every flow jester trains with that transformer),
+:func:`~jesterTOV.inference.flows.batched.batched_log_prob` computes the same log density as flowjax for a whole batch,
+laid out so that the network is a set of plain matrix products. It agrees with flowjax to round-off and is used
+automatically by :class:`~jesterTOV.inference.likelihoods.gw.StackedGWLikelihood`.
+
+.. autosummary::
+   :toctree: _autosummary/
+
+   batched.batched_log_prob
+   batched.supports_batched_log_prob
+   batched.rqs_transform_and_log_det
+
 Training
 --------
 

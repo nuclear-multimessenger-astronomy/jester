@@ -151,6 +151,47 @@ def _calc_k2(R, M, H, b):
     return num / den
 
 
+def _initial_conditions(eos_data: EOSData, pc):
+    r"""
+    Starting point of the integration, slightly off-center, from a series expansion.
+
+    Parameters
+    ----------
+    eos_data : EOSData
+        EOS quantities in geometric units
+    pc : float
+        Central pressure [geometric units]
+
+    Returns
+    -------
+    tuple
+        Starting enthalpy, the first step in enthalpy, and the state (r, m, H, β)
+    """
+    ps = eos_data.ps
+    hs = eos_data.hs
+    es = eos_data.es
+    dloge_dlogps = eos_data.dloge_dlogps
+
+    # Central values and initial conditions
+    hc = utils.interp_in_logspace(pc, ps, hs)
+    ec = utils.interp_in_logspace(hc, hs, es)
+    dedp_c = ec / pc * jnp.interp(hc, hs, dloge_dlogps)
+    dhdp_c = 1.0 / (ec + pc)
+    dedh_c = dedp_c / dhdp_c
+
+    # Initial values using series expansion near center
+    dh = -1e-3 * hc
+    h0 = hc + dh
+    r0 = jnp.sqrt(3.0 * (-dh) / 2.0 / jnp.pi / (ec + 3.0 * pc))
+    r0 *= 1.0 - 0.25 * (ec - 3.0 * pc - 0.6 * dedh_c) * (-dh) / (ec + 3.0 * pc)
+    m0 = 4.0 * jnp.pi * ec * jnp.power(r0, 3.0) / 3.0
+    m0 *= 1.0 - 0.6 * dedh_c * (-dh) / ec
+    H0 = r0 * r0
+    b0 = 2.0 * r0
+
+    return h0, dh, (r0, m0, H0, b0)
+
+
 class GRTOVSolver(TOVSolverBase):
     """
     Standard General Relativity TOV solver.
@@ -200,30 +241,7 @@ class GRTOVSolver(TOVSolverBase):
             "dloge_dlogp": eos_data.dloge_dlogps,
         }
 
-        # Extract EOS arrays
-        ps = eos_data.ps
-        hs = eos_data.hs
-        es = eos_data.es
-        dloge_dlogps = eos_data.dloge_dlogps
-
-        # Central values and initial conditions
-        hc = utils.interp_in_logspace(pc, ps, hs)
-        ec = utils.interp_in_logspace(hc, hs, es)
-        dedp_c = ec / pc * jnp.interp(hc, hs, dloge_dlogps)
-        dhdp_c = 1.0 / (ec + pc)
-        dedh_c = dedp_c / dhdp_c
-
-        # Initial values using series expansion near center
-        dh = -1e-3 * hc
-        h0 = hc + dh
-        r0 = jnp.sqrt(3.0 * (-dh) / 2.0 / jnp.pi / (ec + 3.0 * pc))
-        r0 *= 1.0 - 0.25 * (ec - 3.0 * pc - 0.6 * dedh_c) * (-dh) / (ec + 3.0 * pc)
-        m0 = 4.0 * jnp.pi * ec * jnp.power(r0, 3.0) / 3.0
-        m0 *= 1.0 - 0.6 * dedh_c * (-dh) / ec
-        H0 = r0 * r0
-        b0 = 2.0 * r0
-
-        y0 = (r0, m0, H0, b0)
+        h0, dh, y0 = _initial_conditions(eos_data, pc)
 
         sol = diffeqsolve(
             ODETerm(_tov_ode),

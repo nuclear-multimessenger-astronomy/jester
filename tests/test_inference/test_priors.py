@@ -568,7 +568,7 @@ class TestUniformPrior:
         in_bounds = {"test_param": 5.0}
         log_prob = prior.log_prob(in_bounds)
         assert jnp.isfinite(log_prob)
-        assert log_prob == pytest.approx(-jnp.log(10.0), abs=1e-6)
+        assert log_prob == pytest.approx(float(-jnp.log(10.0)), abs=1e-6)
 
         # Out of bounds - returns NaN in current implementation
         out_of_bounds_low = {"test_param": -1.0}

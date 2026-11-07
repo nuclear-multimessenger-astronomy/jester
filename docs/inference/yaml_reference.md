@@ -168,6 +168,7 @@ The standard GR TOV solver integrates the Tolman–Oppenheimer–Volkoff equatio
 ```yaml
 tov:
   type: "gr"          # TOV solver type
+  backend: "diffrax"  # ODE backend: "diffrax" (default) or "modax" (CUDA GPU only)
   min_nsat_TOV: 0.75  # Minimum central density for TOV integration (in units of n_sat)
   ndat_TOV: 100       # Number of data points for TOV integration
   nb_masses: 100      # Number of masses for M-R-Λ family construction
@@ -176,6 +177,7 @@ tov:
 **Field Details:**
 
 - **`type`** (`str`) - Must be `"gr"` for this solver
+- **`backend`** (`str`, default: `"diffrax"`) - ODE backend. `"modax"` integrates all stars of a batch in one modax Tsit5 GPU kernel with per-star step control and one EOS table per EOS (see {class}`~jesterTOV.tov.gr_modax.GRTOVModaxSolver`). Same equations and tolerances as diffrax; needs a CUDA GPU and a modax build with `params_group_size`, and has no gradients, so use it with gradient-free samplers such as `smc-rw`.
 - **`min_nsat_TOV`** (`float`, default: `0.75`) - Minimum central density for TOV integration in units of saturation density
 - **`ndat_TOV`** (`int`, default: `100`) - Number of data points for TOV integration
 - **`nb_masses`** (`int`, default: `100`) - Number of masses to sample when constructing the M-R-Λ family (see {class}`~jesterTOV.tov.data_classes.FamilyData`)
@@ -608,6 +610,7 @@ sampler:
   adaptive_step_size: false      # Adapt step size toward target_acceptance_rate (recommended for high-SNR signals)
   target_acceptance_rate: 0.234  # Target acceptance rate (Roberts-Rosenthal optimal for random-walk Metropolis)
   n_pretune_steps: 20            # Pilot steps to calibrate the initial step size before annealing starts
+  cache_loglikelihood: true      # Carry each particle's log likelihood through the SMC step
 ```
 
 **Field Details:**
@@ -619,6 +622,7 @@ sampler:
 - **`adaptive_step_size`** (`bool`, default: `False`) - Adapt the step size per particle toward `target_acceptance_rate` instead of using a fixed `random_walk_sigma` throughout. Recommended for high-SNR signals (e.g. ET), where the posterior narrows quickly during annealing and a fixed sigma causes the acceptance rate to collapse. Uses BlackJAX's `update_scale_from_acceptance_rate`, the standard Roberts-Rosenthal optimal-scaling update for random-walk Metropolis.
 - **`target_acceptance_rate`** (`float`, default: `0.234`) - Target acceptance rate for adaptive step size. Only used when `adaptive_step_size` is `True`.
 - **`n_pretune_steps`** (`int`, default: `20`) - Number of pilot Metropolis steps run on the initial (prior) particles before annealing starts, to calibrate a good initial step size regardless of the chosen `random_walk_sigma`. Only used when `adaptive_step_size` is `True`; set to `0` to disable and start annealing directly from `random_walk_sigma`.
+- **`cache_loglikelihood`** (`bool`, default: `True`) - Carry each particle's log likelihood through the SMC step, so the likelihood is evaluated once per random-walk move and nowhere else. Without it, the tempering (ESS) solver, the MCMC initialisation and the reweighting each evaluate the likelihood again: three extra evaluations per annealing step and three more copies of the likelihood in the compiled loop. The target distribution and the results are the same either way.
 
 ::::
 

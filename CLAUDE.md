@@ -174,6 +174,10 @@ value = array.item()  # type: ignore[union-attr]
   - `construct_family(eos_data, ndat, min_nsat, **kwargs) -> FamilyData` - M-R-Λ family curves
   - `get_required_parameters() -> list[str]` - List additional parameters
 - Uses Diffrax library with Dormand-Prince 5th order integrator (Dopri5)
+- GR also has a GPU backend, `tov: {type: gr, backend: modax}` (`tov/gr_modax.py`, `GRTOVModaxSolver`): one modax
+  Tsit5 kernel for all stars with per-star step control, one EOS table row per EOS (`params_group_size`, needs our
+  modax fork), state (r, m, H, b, h0) with zero error weight on h0. Same tolerances as diffrax; CUDA only, no gradients.
+  A custom_vmap rule flattens any vmap over EOS into one launch. Tests: `tests/test_tov_modax.py` (GPU parts skip on CPU).
 - Computes Love number k2 for tidal deformability
 
 **jesterTOV/tov/data_classes.py** - JAX Dataclasses

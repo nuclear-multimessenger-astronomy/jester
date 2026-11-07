@@ -882,8 +882,11 @@ def main(config_path: str) -> None:
     # Test likelihood evaluation # FIXME: this should throw an error if a Nan is found
     logger.info("Testing likelihood evaluation...")
     test_samples = prior.sample(jax.random.PRNGKey(0), 3)
-    test_samples_transformed = jax.vmap(transform.forward)(test_samples)
-    test_log_prob = jax.vmap(likelihood.evaluate)(test_samples_transformed)
+    # The sampler's batched evaluator is compiled once here and reused for the final log_prob and EOS
+    # outputs. Run eagerly instead, the vmap compiled every primitive on its own (~40 s).
+    test_log_prob, _, _ = sampler.evaluate_in_batches(
+        test_samples, config.sampler.log_prob_batch_size
+    )
     logger.info(f"Test log probabilities: {test_log_prob}")
 
     # Run inference
@@ -898,6 +901,7 @@ def main(config_path: str) -> None:
         transform=transform,  # Use the same transform from sampling
         n_eos_samples=config.sampler.n_eos_samples,
         batch_size=config.sampler.log_prob_batch_size,
+        precomputed=getattr(sampler, "eos_outputs", None),
     )
 
     # Save unified HDF5 file

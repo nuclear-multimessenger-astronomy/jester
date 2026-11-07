@@ -295,6 +295,10 @@ class JesterTransform(NtoMTransform):
             If TOV solver config class is not implemented yet
         """
         if isinstance(config, GRTOVConfig):
+            if config.backend == "modax":
+                from jesterTOV.tov.gr_modax import GRTOVModaxSolver
+
+                return GRTOVModaxSolver()
             return GRTOVSolver()
 
         elif isinstance(config, AnisotropyTOVConfig):

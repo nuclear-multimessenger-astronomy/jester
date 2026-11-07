@@ -132,6 +132,34 @@ class BlackJAXSMCRandomWalkSampler(BlackjaxSMCSampler):
 
             return kernel(rng_key, state, logdensity_fn, proposal_distribution)
 
+        # With cached log L (see BlackjaxSMCSampler.sample), each particle is [parameters, log L].
+        # The proposal moves the parameters only, evaluates the true likelihood once at the new
+        # point and stores it in the last slot; blackjax's RMH kernel then evaluates the tempered
+        # density, prior + lambda * cached log L, and accepts or rejects as usual. The likelihood is
+        # thus evaluated once per move and nowhere else in the SMC step.
+        cache = self._cache_loglikelihood
+        n_dim = initial_particles.shape[1]
+        rmh_kernel = random_walk.build_rmh()
+
+        def cached_mcmc_step_fn(rng_key, state, logdensity_fn, **params):
+            cov = params.get("cov", init_cov)
+            scale = params.get("scale", 1.0)
+            proposal_cov = (scale**2) * cov
+
+            def propose(key, position):
+                x = position[:n_dim]
+                x_new = x + jax.random.multivariate_normal(
+                    key, jnp.zeros_like(x), proposal_cov
+                )
+                return jnp.append(x_new, loglikelihood_fn(x_new))
+
+            return rmh_kernel(rng_key, state, logdensity_fn, propose)
+
+        smc_step_fn = cached_mcmc_step_fn if cache else mcmc_step_fn
+
+        def parameters_of(particles: Array) -> Array:
+            return particles[:, :n_dim] if cache else particles
+
         # Init function for random walk
         mcmc_init_fn = random_walk.init
 
@@ -146,12 +174,12 @@ class BlackJAXSMCRandomWalkSampler(BlackjaxSMCSampler):
                 the fixed sigma^2 parameter. No scale adaptation is performed.
                 """
                 # Note: state here is TemperedSMCState, particles are at state.particles
-                cov = particles_covariance_matrix(state.particles)
+                cov = particles_covariance_matrix(parameters_of(state.particles))
                 cov = jnp.atleast_2d(cov)
                 scaled_cov = cov * (config.random_walk_sigma**2)
                 return extend_params({"cov": scaled_cov})  # type: ignore[arg-type]
 
-            return mcmc_step_fn, mcmc_init_fn, init_params, fixed_sigma_update_fn  # type: ignore[return-value]
+            return smc_step_fn, mcmc_init_fn, init_params, fixed_sigma_update_fn  # type: ignore[return-value]
 
         # --- Adaptive step size path ---
         logger.info(
@@ -197,7 +225,7 @@ class BlackJAXSMCRandomWalkSampler(BlackjaxSMCSampler):
             (threaded through by `persistent_inner_kernel_tuning`) and this step's realized
             acceptance rate, to hone in on `target_acceptance_rate`.
             """
-            cov = particles_covariance_matrix(state.particles)
+            cov = particles_covariance_matrix(parameters_of(state.particles))
             cov = jnp.atleast_2d(cov)
             scaled_cov = cov * (config.random_walk_sigma**2)
 
@@ -219,7 +247,7 @@ class BlackJAXSMCRandomWalkSampler(BlackjaxSMCSampler):
                 "scale": new_scale,
             }
 
-        return mcmc_step_fn, mcmc_init_fn, init_params, adaptive_scale_update_fn
+        return smc_step_fn, mcmc_init_fn, init_params, adaptive_scale_update_fn
 
     @staticmethod
     def _pretune_scale(

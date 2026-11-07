@@ -7,8 +7,10 @@ inherit from JesterSampler and implement the sampler initialization.
 """
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, NamedTuple
 
+import jax
+import jax.numpy as jnp
 from jaxtyping import Array, Float, PRNGKeyArray
 
 from jesterTOV.inference.base import (
@@ -20,6 +22,26 @@ from jesterTOV.inference.base import (
 from jesterTOV.logging_config import get_logger
 
 logger = get_logger("jester")
+
+EOS_OUTPUT_KEYS = (
+    "masses_EOS",
+    "radii_EOS",
+    "Lambdas_EOS",
+    "n",
+    "p",
+    "e",
+    "cs2",
+    "n_TOV",
+)
+"""Outputs of the likelihood transforms that are stored with the posterior."""
+
+
+class BatchEvaluation(NamedTuple):
+    """Result of :meth:`JesterSampler.evaluate_in_batches`."""
+
+    log_prob: Array
+    log_likelihood: Array
+    eos: dict[str, Array]
 
 
 @dataclass
@@ -154,6 +176,61 @@ class JesterSampler:
 
         # Backend sampler instance - must be created by subclasses
         self.sampler = None
+
+        # One compiled function for every batched evaluation outside the sampling loop, so the
+        # startup check, the final log_prob and the EOS outputs share a single compilation.
+        self._batch_eval = jax.jit(jax.vmap(self._prior_space_posterior_and_eos))
+
+    def _prior_space_posterior_and_eos(
+        self, named_params: dict[str, Float]
+    ) -> tuple[Float, Float, dict[str, Array]]:
+        """Log posterior and log likelihood of a point in prior space, and the EOS outputs of the likelihood transforms."""
+        log_prior = self.prior.log_prob(named_params)
+        for transform in self.likelihood_transforms:
+            named_params = transform.forward(named_params)
+        eos = {key: named_params[key] for key in EOS_OUTPUT_KEYS if key in named_params}
+        log_likelihood = self.likelihood.evaluate(named_params)
+        return log_likelihood + log_prior, log_likelihood, eos
+
+    def evaluate_in_batches(
+        self, samples: dict[str, Array], batch_size: int
+    ) -> BatchEvaluation:
+        """Evaluate the log posterior, log likelihood and EOS outputs of samples in prior space.
+
+        Every batch has exactly ``batch_size`` samples, the last one padded with repeats of the first
+        sample, so the function compiles once for any number of samples.
+
+        Parameters
+        ----------
+        samples : dict[str, Array]
+            Samples in prior space (no sample transforms), one array of length N per parameter.
+        batch_size : int
+            Number of samples per compiled call.
+
+        Returns
+        -------
+        BatchEvaluation
+            Log posterior and log likelihood, each of shape (N,), and the EOS outputs listed in
+            ``EOS_OUTPUT_KEYS``.
+        """
+        n = len(next(iter(samples.values())))
+        n_batches = -(-n // batch_size)
+        pad = n_batches * batch_size - n
+        padded = {
+            k: jnp.concatenate([jnp.asarray(v), jnp.broadcast_to(jnp.asarray(v)[:1], (pad,))])
+            for k, v in samples.items()
+        }
+        log_probs, log_likelihoods, eos_batches = [], [], []
+        for b in range(n_batches):
+            batch = {k: v[b * batch_size : (b + 1) * batch_size] for k, v in padded.items()}
+            log_prob, log_likelihood, eos = self._batch_eval(batch)
+            log_probs.append(log_prob)
+            log_likelihoods.append(log_likelihood)
+            eos_batches.append(eos)
+        eos = {k: jnp.concatenate([e[k] for e in eos_batches])[:n] for k in eos_batches[0]}
+        return BatchEvaluation(
+            jnp.concatenate(log_probs)[:n], jnp.concatenate(log_likelihoods)[:n], eos
+        )
 
     def add_name(self, x: Float[Array, " n_dim"]) -> dict[str, Float]:
         """

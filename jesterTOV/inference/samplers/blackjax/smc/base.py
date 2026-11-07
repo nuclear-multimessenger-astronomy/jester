@@ -16,7 +16,6 @@ import jax.numpy as jnp
 import jax.random
 from jax import flatten_util
 from jax.tree_util import tree_map
-from jax.experimental import io_callback
 from jaxtyping import Array, PRNGKeyArray
 
 from jesterTOV.inference.base import (
@@ -114,12 +113,15 @@ class BlackjaxSMCSampler(BlackjaxSampler):
 
         self.config = config
         self.final_state = None
+        # EOS outputs of the final particles, filled by get_log_prob when there are no sample transforms
+        self.eos_outputs: dict[str, Array] | None = None
         self.metadata = {}
         self._unflatten_fn = None
         self._flatten_fn = None
         self._particles_flat = None
         self._weights = None
         self._seed = seed
+        self._cache_loglikelihood = False
 
         # Validate that we don't have sample transforms (SMC works in prior space)
         if len(sample_transforms) > 0:
@@ -299,12 +301,38 @@ class BlackjaxSMCSampler(BlackjaxSampler):
         # Create posterior for kernel setup
         logposterior_fn = lambda x: logprior_fn(x) + loglikelihood_fn(x)
 
+        # Cached log L: each particle carries its log likelihood as one extra coordinate, written
+        # by the MCMC move that produced it. blackjax's tempered SMC then reads it in the ESS
+        # solver, the MCMC init and the reweighting instead of evaluating the likelihood three more
+        # times per step (and compiling three more copies of it). Needs prior-space particles.
+        self._cache_loglikelihood = bool(
+            getattr(self.config, "cache_loglikelihood", False)
+        ) and not self.sample_transforms
+
         # Setup kernel-specific components
         mcmc_step_fn, mcmc_init_fn, init_params, mcmc_parameter_update_fn = (
             self._setup_mcmc_kernel(
                 logprior_fn, loglikelihood_fn, logposterior_fn, initial_position_flat
             )
         )
+
+        if self._cache_loglikelihood:
+            n_dim = initial_position_flat.shape[1]
+            # The shared evaluator is compiled already for the startup check, so this costs no
+            # extra compilation.
+            initial_loglikelihood = self.evaluate_in_batches(
+                jax.vmap(self._unflatten_fn)(initial_position_flat),
+                self.config.log_prob_batch_size,
+            ).log_likelihood
+            smc_particles = jnp.concatenate(
+                [initial_position_flat, initial_loglikelihood[:, None]], axis=1
+            )
+            smc_logprior_fn = lambda x: logprior_fn(x[:n_dim])  # noqa: E731
+            smc_loglikelihood_fn = lambda x: x[n_dim]  # noqa: E731
+        else:
+            smc_particles = initial_position_flat
+            smc_logprior_fn = logprior_fn
+            smc_loglikelihood_fn = loglikelihood_fn
 
         # Initialize SMC algorithm with kernel. init_params must already be shaped correctly
         # by _setup_mcmc_kernel (see its docstring) -- unlike plain blackjax.inner_kernel_tuning,
@@ -313,8 +341,8 @@ class BlackjaxSMCSampler(BlackjaxSampler):
         # per-particle array collapsed into a single shared row.
         smc_alg = persistent_inner_kernel_tuning(
             smc_algorithm=adaptive_tempered_smc,
-            logprior_fn=logprior_fn,
-            loglikelihood_fn=loglikelihood_fn,
+            logprior_fn=smc_logprior_fn,
+            loglikelihood_fn=smc_loglikelihood_fn,
             mcmc_step_fn=mcmc_step_fn,
             mcmc_init_fn=mcmc_init_fn,
             resampling_fn=systematic,
@@ -326,7 +354,7 @@ class BlackjaxSMCSampler(BlackjaxSampler):
 
         # Initialize SMC state
         key, subkey = jax.random.split(key)
-        state = smc_alg.init(initial_position_flat, subkey)
+        state = smc_alg.init(smc_particles, subkey)
 
         # Progress callback for live updates during sampling
         def progress_callback(
@@ -336,7 +364,7 @@ class BlackjaxSMCSampler(BlackjaxSampler):
             acceptance: float,
             log_evidence: float,
         ) -> None:
-            """Print progress update during sampling (called via io_callback)."""
+            """Print progress update after each annealing step (from the Python loop below)."""
             # Create progress bar
             bar_length = 30
             filled = int(tempering_param * bar_length)
@@ -426,17 +454,6 @@ class BlackjaxSMCSampler(BlackjaxSampler):
             acceptance_history = acceptance_history.at[step_count].set(acceptance_rate)
             log_evidence_history = log_evidence_history.at[step_count].set(log_evidence)
 
-            # Print progress update using io_callback
-            io_callback(
-                progress_callback,
-                None,  # No return value
-                step_count,
-                sampler_state.tempering_param,
-                ess_value,
-                acceptance_rate,
-                log_evidence,
-            )
-
             return (
                 state,
                 key,
@@ -481,6 +498,27 @@ class BlackjaxSMCSampler(BlackjaxSampler):
         logger.info("Running SMC loop (this may take several minutes)...")
         loop_start_time = time.time()
 
+        # One jitted annealing step, driven from Python. A host callback inside a lax.while_loop
+        # (the progress printing) would keep JAX from storing the compiled loop in its persistent
+        # cache; with seconds per step the host round trip per step costs nothing. The carry is
+        # made of arrays from the start, so the step compiles once.
+        step_fn = jax.jit(body_fn)
+        self._step_fn = step_fn
+        # jnp.array with an explicit dtype also drops weak types: a Python 0.0 for the log evidence is a weak
+        # float64 that the step returns as a strong one, which made the second call recompile.
+        carry = jax.tree_util.tree_map(
+            lambda x: jnp.array(x, dtype=jnp.asarray(x).dtype), init_carry
+        )
+        while bool(cond_fn(carry)) and int(carry[2]) < max_steps:  # type: ignore[arg-type]
+            carry = step_fn(carry)
+            done = int(carry[2]) - 1
+            progress_callback(
+                done,
+                float(cast(TemperedSMCState, carry[0].sampler_state).tempering_param),
+                float(carry[4][done]),
+                float(carry[5][done]),
+                float(carry[6]),
+            )
         (
             state,
             key,
@@ -490,9 +528,7 @@ class BlackjaxSMCSampler(BlackjaxSampler):
             acceptance_history,
             log_evidence,
             log_evidence_history,
-        ) = jax.lax.while_loop(  # type: ignore[misc]
-            cond_fn, body_fn, init_carry  # type: ignore[arg-type]
-        )
+        ) = carry
 
         loop_end_time = time.time()
         steps = int(steps)
@@ -502,6 +538,9 @@ class BlackjaxSMCSampler(BlackjaxSampler):
         # Cast to proper type for type checker (runtime type is correct)
         final_sampler_state = cast(TemperedSMCState, state.sampler_state)
         self._particles_flat = cast(Array, final_sampler_state.particles)
+        if self._cache_loglikelihood:
+            # Drop the cached log L column; the result holds the parameters only.
+            self._particles_flat = self._particles_flat[:, :-1]
         self._weights = final_sampler_state.weights
         self.final_state = state
 
@@ -695,18 +734,19 @@ class BlackjaxSMCSampler(BlackjaxSampler):
 
         assert self._particles_flat is not None
 
-        def compute_log_prob(particle_flat):
-            # Convert from flat array (alphabetical order) to dict using _unflatten_fn
-            x_dict = self._unflatten_fn(particle_flat)
-            # Use base class method to compute posterior from dict
-            return self.posterior_from_dict(x_dict, {})
-
-        # Use batched processing for efficiency
-        log_probs = jax.lax.map(
-            compute_log_prob,
-            self._particles_flat,
-            batch_size=self.config.log_prob_batch_size,
-        )
+        particles = jax.vmap(self._unflatten_fn)(self._particles_flat)
+        if self.sample_transforms:
+            # The shared evaluator works in prior space; with sample transforms fall back to the posterior.
+            log_probs = jax.lax.map(
+                lambda p: self.posterior_from_dict(self._unflatten_fn(p), {}),
+                self._particles_flat,
+                batch_size=self.config.log_prob_batch_size,
+            )
+        else:
+            # Same pass gives the EOS outputs of the particles, kept for the result instead of a second solve.
+            log_probs, _, self.eos_outputs = self.evaluate_in_batches(
+                particles, self.config.log_prob_batch_size
+            )
         logger.info(f"Computed {len(log_probs)} log probability values")
 
         return log_probs

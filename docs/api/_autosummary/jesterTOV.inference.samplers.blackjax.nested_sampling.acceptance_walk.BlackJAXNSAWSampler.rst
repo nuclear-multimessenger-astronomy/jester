@@ -15,6 +15,7 @@
    
       ~BlackJAXNSAWSampler.__init__
       ~BlackJAXNSAWSampler.add_name
+      ~BlackJAXNSAWSampler.evaluate_in_batches
       ~BlackJAXNSAWSampler.get_log_prob
       ~BlackJAXNSAWSampler.get_n_samples
       ~BlackJAXNSAWSampler.get_sampler_output

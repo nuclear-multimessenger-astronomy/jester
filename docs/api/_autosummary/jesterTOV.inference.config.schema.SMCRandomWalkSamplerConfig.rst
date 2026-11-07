@@ -59,6 +59,7 @@
       ~SMCRandomWalkSamplerConfig.adaptive_step_size
       ~SMCRandomWalkSamplerConfig.target_acceptance_rate
       ~SMCRandomWalkSamplerConfig.n_pretune_steps
+      ~SMCRandomWalkSamplerConfig.cache_loglikelihood
       ~SMCRandomWalkSamplerConfig.output_dir
       ~SMCRandomWalkSamplerConfig.n_eos_samples
       ~SMCRandomWalkSamplerConfig.log_prob_batch_size

@@ -1,0 +1,56 @@
+# GW170817 example tuned for a CUDA GPU. Same physics and sampler settings as ../GW170817, with:
+# the modax TOV backend, float32 evaluation of the GW flow, larger GW mass batches, and the cached
+# log likelihood of SMC-RW. On a Quadro GV100: 1.2 s per SMC step against 30.8 s for ../GW170817,
+# 18 s of sampling against 354 s (warm compile caches), posteriors and logZ within the seed scatter of
+# the default run.
+# Needs a modax build with params_group_size (modax branch grouped-params).
+seed: 43
+dry_run: false
+validate_only: false
+eos:
+  type: metamodel_cse
+  ndat_metamodel: 100
+  nmax_nsat: 25.0
+  nb_CSE: 8
+  crust_name: DH
+tov:
+  min_nsat_TOV: 0.75
+  ndat_TOV: 100
+  nb_masses: 100
+  type: gr
+  backend: modax  # GPU TOV solver: one kernel for all stars, one EOS table per EOS
+prior:
+  specification_file: prior.prior
+likelihoods:
+- type: constraints_eos
+  enabled: true
+- type: gw
+  enabled: true
+  events:
+  - name: GW170817
+  seed: 42
+  N_masses_batch_size: 100  # mass samples per vectorised flow call: speed and memory only
+  use_float32: true  # flow in float32; changes log L by ~0.01
+- type: radio
+  enabled: true
+  pulsars:
+  - name: J1614-2230
+    mass_mean: 1.937
+    mass_std: 0.014
+  - name: J0740+6620
+    mass_mean: 2.08
+    mass_std: 0.07
+sampler:
+  type: smc-rw
+  cache_loglikelihood: true  # default; listed for clarity
+  n_particles: 5000
+  n_mcmc_steps: 10
+  target_ess: 0.9
+  random_walk_sigma: 0.05
+  n_eos_samples: 5000
+  output_dir: ./outdir/
+postprocessing:
+  enabled: true
+  make_cornerplot: true
+  make_massradius: true
+  make_pressuredensity: true

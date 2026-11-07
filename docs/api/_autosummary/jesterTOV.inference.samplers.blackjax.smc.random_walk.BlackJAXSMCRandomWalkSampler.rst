@@ -15,6 +15,7 @@
    
       ~BlackJAXSMCRandomWalkSampler.__init__
       ~BlackJAXSMCRandomWalkSampler.add_name
+      ~BlackJAXSMCRandomWalkSampler.evaluate_in_batches
       ~BlackJAXSMCRandomWalkSampler.get_log_prob
       ~BlackJAXSMCRandomWalkSampler.get_n_samples
       ~BlackJAXSMCRandomWalkSampler.get_sampler_output

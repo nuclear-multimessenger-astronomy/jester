@@ -685,3 +685,37 @@ class TestEOSSampleGeneration:
         # EOS quantities should still be generated correctly
         assert "masses_EOS" in result.posterior
         assert len(result.posterior["masses_EOS"]) == 10
+
+    @pytest.mark.parametrize("n_eos_samples", [None, 4])
+    def test_precomputed_eos_outputs_are_used_without_a_transform(
+        self, n_eos_samples
+    ):
+        """EOS outputs the sampler already computed are taken over, subset with the same indices as the posterior."""
+        import numpy as np
+
+        from jesterTOV.inference.result import InferenceResult
+
+        n = 10
+        x = np.arange(n, dtype=float)
+        result = InferenceResult(
+            sampler_type="blackjax_smc_rw",
+            posterior={"x": x.copy(), "log_prob": -x},
+            metadata={"sampler": "blackjax_smc_rw", "n_samples": n, "seed": 0},
+        )
+
+        class NoTransform:
+            def forward(self, params):
+                raise AssertionError("the transform must not be evaluated")
+
+        precomputed = {"masses_EOS": np.stack([x, 2 * x], axis=1), "n_TOV": 3 * x}
+        result.add_eos_from_transform(
+            transform=NoTransform(),
+            n_eos_samples=n_eos_samples,
+            batch_size=4,
+            precomputed=precomputed,
+        )
+        kept = result.posterior["x"]
+        assert len(kept) == (n if n_eos_samples is None else n_eos_samples)
+        np.testing.assert_array_equal(result.posterior["masses_EOS"][:, 0], kept)
+        np.testing.assert_array_equal(result.posterior["n_TOV"], 3 * kept)
+        np.testing.assert_array_equal(result.posterior["log_prob"], -kept)

@@ -17,6 +17,7 @@
       ~EOSReweightingSampler.add_name
       ~EOSReweightingSampler.compute_evidence
       ~EOSReweightingSampler.evaluate_batch
+      ~EOSReweightingSampler.evaluate_in_batches
       ~EOSReweightingSampler.get_log_prob
       ~EOSReweightingSampler.get_n_samples
       ~EOSReweightingSampler.get_sampler_output
