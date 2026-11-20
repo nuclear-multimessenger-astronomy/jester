@@ -1548,7 +1548,7 @@ wheels = [
 
 [[package]]
 name = "jestertov"
-version = "0.2.2"
+version = "0.2.3"
 source = { editable = "." }
 dependencies = [
     { name = "anesthetic" },
@@ -2417,6 +2417,7 @@ dependencies = [
     { name = "nvidia-cublas-cu12", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
 wheels = [
+    { url = "https://files.pythonhosted.org/packages/d6/a2/22732bccd338398ced3d02cdee97c351f0ff62f2717d677fce519479ee0c/nvidia_cudnn_cu12-9.28.1.4-py3-none-manylinux_2_27_aarch64.whl", hash = "sha256:ef24078b4d2f45e80b5ce425f9e4a190bc48806e8c9ea1467496f85ed9b0a1fe", size = 723285364, upload-time = "2026-11-09T07:59:55.695Z" },
     { url = "https://files.pythonhosted.org/packages/2a/16/be895437624ae0400bda2b4bb69336cdb43346545e54edb15389d193a3b3/nvidia_cudnn_cu12-9.28.1.4-py3-none-manylinux_2_27_x86_64.whl", hash = "sha256:cbcf6f33c77fef3aa61d3fec36f2e89b07eb27d65b9f369c1adf3cfee08c2c21", size = 716579350, upload-time = "2026-11-06T21:51:22.24Z" },
 ]
 
@@ -2628,7 +2629,7 @@ name = "pexpect"
 version = "4.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "ptyprocess" },
+    { name = "ptyprocess", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/42/92/cc564bf6381ff43ce1f4d06852fc19a2f11d180f23dc32d9588bee2f149d/pexpect-4.9.0.tar.gz", hash = "sha256:ee7d41123f3c9911050ea2c2dac107568dc43b2d3b0c7557a33212c398ead30f", size = 166450, upload-time = "2023-11-25T09:07:26.339Z" }
 wheels = [

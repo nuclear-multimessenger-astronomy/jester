@@ -75,18 +75,46 @@ Please consider citing the following papers as well:
 Here, we showcase papers that made use of ``jester`` in their methodology. 
 Did you write a paper using jester and would you like to show your work here? Open an issue or pull request!
 
+Introducing a data-tempering sequential Monte Carlo for sequential hierarchical inference, applied to EOS inference with Einstein Telescope mock data:
 ```bibtex
-@article{Wouters:2025ull,
-    author = "Wouters, Thibeau and Puecher, Anna and Pang, Peter T. H. and Dietrich, Tim",
-    title = "{Analyzing GW231109{\_}235456 and understanding its potential implications for population studies, nuclear physics, and multi-messenger astronomy}",
-    eprint = "2510.22290",
+@article{Wouters:2026nbh,
+    author = "Wouters, Thibeau and Ng, Thomas C. K. and Koehn, Hauke and Gittins, Fabian and Pang, Peter T. H. and Dietrich, Tim and Van Den Broeck, Chris",
+    title = "{Scalable and sequential inference of the neutron star equation of state with the Einstein Telescope}",
+    eprint = "2610.07975",
     archivePrefix = "arXiv",
     primaryClass = "astro-ph.HE",
     month = "10",
-    year = "2025"
+    year = "2026"
 }
 ```
 
+Constraining the EOS through direct-Urca cooling processes:
+```bibtex
+@article{Danarianto:2026ukh,
+    author = "Danarianto, M. Dio and Grams, Guilherme and Wouters, Thibeau and Dietrich, Tim",
+    title = "{Extending multi-messenger constraints on neutron star matter through the inclusion of direct Urca cooling}",
+    eprint = "2609.30112",
+    archivePrefix = "arXiv",
+    primaryClass = "nucl-th",
+    month = "9",
+    year = "2026"
+}]
+```
+
+Joint hierarchical inference on the EOS, the neutron star population, and cosmology with one year of multimessenger detections with the Einstein Telescope:
+```bibtex
+@article{Koehn:2026nin,
+    author = "Koehn, Hauke and Wouters, Thibeau and Sadeh, Gilad and Pang, Peter T. H. and Bulla, Mattia and Van Den Broeck, Chris and Coughlin, Michael W. and Dietrich, Tim",
+    title = "{Binary neutron stars in the next-generation era: Multi-messenger detection prospects and constraints on the equation of state, mass distribution, and cosmology}",
+    eprint = "2607.28438",
+    archivePrefix = "arXiv",
+    primaryClass = "astro-ph.HE",
+    month = "7",
+    year = "2026"
+}
+```
+
+EOS posteriors from ``jester`` are used to build EOS-informed priors for GW data analysis:
 ```bibtex
 @article{Wouters:2025csq,
     author = "Wouters, Thibeau and Pang, Peter T. H. and Dietrich, Tim and Van Den Broeck, Chris",
@@ -95,6 +123,19 @@ Did you write a paper using jester and would you like to show your work here? Op
     archivePrefix = "arXiv",
     primaryClass = "astro-ph.HE",
     month = "11",
+    year = "2025"
+}
+```
+
+Using ``jester`` to analyze potential implications for the EOS from a subthreshold BNS candidate, and simulating constraints derived from a similar event detected by third-generation instruments:
+```bibtex
+@article{Wouters:2025ull,
+    author = "Wouters, Thibeau and Puecher, Anna and Pang, Peter T. H. and Dietrich, Tim",
+    title = "{Analyzing GW231109{\_}235456 and understanding its potential implications for population studies, nuclear physics, and multi-messenger astronomy}",
+    eprint = "2510.22290",
+    archivePrefix = "arXiv",
+    primaryClass = "astro-ph.HE",
+    month = "10",
     year = "2025"
 }
 ```

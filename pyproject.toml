@@ -5,19 +5,25 @@ build-backend = "hatchling.build"
 [tool.hatch.metadata]
 allow-direct-references = true
 
-[tool.hatch.build.targets.wheel]
-packages = ["jesterTOV"]
-
-[tool.hatch.build.targets.sdist]
+[tool.hatch.build]
 exclude = [
     "examples/*/outdir/",
     "examples/**/outdir/",
+    "jesterTOV/inference/data/NICER/zenodo_data/",
+    "jesterTOV/inference/logs/",
+    "jesterTOV/inference/flows/logs/",
     "*.h5",
     "*.hdf5",
     "*.npz",
     "*.npy",
+    "*.dat.gz",
     "dist/",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["jesterTOV"]
+
+[tool.hatch.build.targets.sdist]
 
 [project]
 name = "jesterTOV"
@@ -25,7 +31,7 @@ authors = [
   {name = "Thibeau Wouters", email = "thibeauwouters@gmail.com"},
   {name = "Peter T. H. Pang", email = "tsunhopang@gmail.com"}
 ]
-version = "0.2.2"
+version = "0.2.3"
 description = "JAX-accelerated nuclear equation of state code and TOV solver with automatic differentiation"
 keywords = ["neutron-stars", "eos", "tov", "jax", "physics", "astronomy", "automatic-differentiation"]
 readme = "README.md"
