@@ -14,8 +14,9 @@ Pipeline (all controlled by constants below):
           Kini, Mauviard, Salmi et al. 2026 J0030 (PDT-U) equal-weight file,
           the Riley et al. 2021 J0740 (ST-U) MultiNest run archive, and the
           Vinciguerra et al. 2023 J0030 (ST-U/ST+PST/ST+PDT/PDT-U) reference
-          runs from the full reproduction-package archive, and the Mauviard
-          et al. 2026 J1614-2230 (ST-U) headline run.
+          runs from the full reproduction-package archive, the Mauviard
+          et al. 2026 J1614-2230 (ST-U) headline run, and the Stammler et al.
+          2026 J0437-4715 (ST+PDT+EL+PL) multi-wavelength headline run.
   Step 4  Downsample all .npz files to MAX_SAMPLES.
 
 Outputs are written to the same directory as this script (NICER/).
@@ -122,6 +123,11 @@ def download_zenodo_data() -> None:
             "J1614/amsterdam/original",
             "MR_samples_and_contours_J1614.tar.gz",
             "https://zenodo.org/records/22163155/files/MR_samples_and_contours_J1614.tar.gz",
+        ),
+        (
+            "J0437/amsterdam/recent",
+            "J0437_MR_headline_samples_and_contours.tar.gz",
+            "https://zenodo.org/records/23041300/files/J0437_MR_headline_samples_and_contours.tar.gz",
         ),
         (
             "J0740/amsterdam/original",
@@ -912,6 +918,69 @@ def process_j1614_amsterdam_data() -> list[Path]:
         return []
 
 
+def process_j0437_amsterdam_recent_data() -> list[Path]:
+    """Extract Stammler et al. 2026 J0437-4715 ST+PDT+EL+PL headline samples to .npz."""
+    archive = (
+        ZENODO_DIR
+        / "J0437/amsterdam/recent/J0437_MR_headline_samples_and_contours.tar.gz"
+    )
+    member_name = (
+        "J0437_MR_headline_samples_and_contours/J0437_MR_post_equal_weights.dat"
+    )
+    out_name = "J04374715_amsterdam_ST_PDT_EL_PL_multiwavelength_Stammler2026.npz"
+    out_path = OUTPUT_DIR / out_name
+    if not archive.exists():
+        print(f"\n  Not found (download Zenodo first): {archive.name}")
+        return []
+    if out_path.exists() and not IGNORE_CACHE:
+        print(f"  Cached: {out_name}")
+        return [out_path]
+
+    print(f"\nStammler et al. 2026 — {archive.name}")
+    try:
+        with tarfile.open(archive, "r:gz") as tar:
+            raw = tar.extractfile(tar.getmember(member_name))
+            if raw is None:
+                raise ValueError(f"Could not read {member_name}")
+            with tempfile.NamedTemporaryFile(
+                mode="wb", delete=False, suffix=".dat"
+            ) as tmp:
+                tmp.write(raw.read())
+                tmp_path = Path(tmp.name)
+
+        # Column 0 is mass (Msun), column 1 is equatorial radius (km); this was
+        # confirmed against the paper's headline result (M = 1.377 +0.038/-0.034
+        # Msun, R_eq = 11.35 +0.40/-0.39 km).
+        data = np.loadtxt(tmp_path, comments="#")
+        tmp_path.unlink()
+        mass = data[:, 0]
+        radius = data[:, 1]
+
+        meta: Dict = {
+            "psr": "J0437-4715",
+            "group": "amsterdam",
+            "analysis": "Stammler et al. 2026",
+            "hotspot_model": "ST+PDT+EL+PL",
+            "data_used": "NICER+XMM+NuSTAR+HST",
+            "n_samples": len(mass),
+            "weighted": False,
+            "source_file": member_name,
+            "zenodo_record": "https://zenodo.org/records/23041300",
+            "paper": (
+                "Stammler et al. 2026 (A multi-wavelength view of PSR J0437-4715 "
+                "with NICER and other missions, arXiv:2610.41846)"
+            ),
+        }
+        np.savez(out_path, radius=radius, mass=mass, metadata=meta)  # type: ignore[arg-type]
+        print(
+            f"  Saved: {out_name} ({out_path.stat().st_size / 1024:.1f} KB, {len(radius):,} samples)"
+        )
+        return [out_path]
+    except Exception as e:
+        print(f"  Error: {e}")
+        return []
+
+
 def extract_amsterdam_data() -> list[Path]:
     """Extract Amsterdam M-R samples from tar.gz archives."""
     print("\n" + "=" * 70)
@@ -1152,6 +1221,9 @@ def extract_amsterdam_data() -> list[Path]:
 
     # 8. Mauviard et al. 2026 (J1614-2230 — ST-U headline run)
     results.extend(process_j1614_amsterdam_data())
+
+    # 9. Stammler et al. 2026 (J0437-4715 — ST+PDT+EL+PL multi-wavelength headline run)
+    results.extend(process_j0437_amsterdam_recent_data())
 
     return results
 
