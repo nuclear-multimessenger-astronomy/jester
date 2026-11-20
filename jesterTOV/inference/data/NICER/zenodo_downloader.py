@@ -15,6 +15,15 @@ from typing import Optional
 ZENODO_DATASETS: dict = {
     "J0437": {
         "amsterdam": {
+            "recent": {
+                "name": "Stammler et al. 2026",
+                "zenodo_id": "23041300",
+                "url": "https://zenodo.org/records/23041300",
+                "description": (
+                    "Multi-wavelength Amsterdam analysis of PSR J0437-4715 "
+                    "(NICER, XMM-Newton, NuSTAR and HST), ST+PDT+EL+PL headline run"
+                ),
+            },
             "original": {
                 "name": "Choudhury et al. 2024",
                 "zenodo_id": "13766753",

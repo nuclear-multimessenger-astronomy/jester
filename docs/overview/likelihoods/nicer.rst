@@ -131,14 +131,21 @@ Intermediate Amsterdam analysis (between Riley et al. 2019 and Kini et al. 2026)
 PSR J0437-4715
 ^^^^^^^^^^^^^^
 
-The nearest and brightest millisecond pulsar, observed with NICER only. Two
-independent analyses are available and both are shown in the overview figure above.
+The nearest and brightest millisecond pulsar. Both groups have published an independent analysis, and both are shown in the overview figure above (for the Amsterdam group, the Stammler et al. 2026 result).
+
+**Amsterdam group — Stammler et al. 2026** (`arXiv:2610.41846 <https://arxiv.org/abs/2610.41846>`_; `Zenodo 23041300 <https://zenodo.org/records/23041300>`_)
+
+Most recent Amsterdam analysis, modelling the pulse profile from the far-ultraviolet to hard X-rays with NICER, XMM-Newton, NuSTAR and HST data. Headline result using the ST+PDT hotspot model with emission from the rest of the surface and a pulsed power-law component (ST+PDT+EL+PL), with :math:`M = 1.377^{+0.038}_{-0.034}\,M_\odot` and :math:`R_\mathrm{eq} = 11.35^{+0.40}_{-0.39}` km:
+
+* ``J04374715_amsterdam_ST_PDT_EL_PL_multiwavelength_Stammler2026.npz`` (recommended as default Amsterdam flow for J0437-4715)
 
 **Amsterdam group — Choudhury et al. 2024** (`ApJL 971, L20 <https://inspirehep.net/literature/2806113>`_; `Zenodo 13766753 <https://zenodo.org/records/13766753>`_)
 
-Headline result using CST+PDT hotspot model with 3C50 background:
+Headline result using CST+PDT hotspot model with 3C50 background, NICER-only:
 
 * ``J04374715_amsterdam_CST_PDT_NICER_only_Choudhury2024.npz``
+
+Note: superseded by the Stammler et al. 2026 dataset above.
 
 **Maryland group — Miller, Dittmann, Holt et al. 2026** (`ApJL 1000, L48 <https://inspirehep.net/literature/3091115>`_; `Zenodo 17833896 <https://zenodo.org/records/17833896>`_)
 

@@ -47,6 +47,17 @@ meta   = data['metadata'].item()
 
 ## PSR J0437−4715
 
+### Amsterdam group — Stammler et al. 2026, "A multi-wavelength view of PSR J0437-4715 with NICER and other missions" ([arXiv:2610.41846](https://arxiv.org/abs/2610.41846))
+**Zenodo:** https://zenodo.org/records/23041300
+**Data:** NICER + XMM-Newton + NuSTAR + HST
+**Hotspot model:** ST+PDT+EL+PL (headline result: ST+PDT hot spots, emission from elsewhere on the surface, and a pulsed power-law)
+**Source file:** `J0437_MR_headline_samples_and_contours.tar.gz` → `J0437_MR_post_equal_weights.dat`, already equal-weight (mass in Msun, then radius in km)
+
+Files:
+- `J04374715_amsterdam_ST_PDT_EL_PL_multiwavelength_Stammler2026.npz`
+
+Column order was checked against the paper's headline result (M = 1.377 +0.038/−0.034 Msun, R_eq = 11.35 +0.40/−0.39 km). This is the **recommended/default Amsterdam dataset** for J0437−4715, used by the pretrained `amsterdam_st_pdt_el_pl` flow (see `jesterTOV/inference/flows/models/nicer_maf/J04374715/amsterdam_st_pdt_el_pl/`).
+
 ### Amsterdam group — Choudhury et al. 2024 ([ApJL 971, L20](https://inspirehep.net/literature/2806113))
 **Zenodo:** https://zenodo.org/records/13766753
 **Data:** NICER-only
@@ -55,6 +66,8 @@ meta   = data['metadata'].item()
 
 Files:
 - `J04374715_amsterdam_CST_PDT_NICER_only_Choudhury2024.npz`
+
+Superseded by the Stammler et al. 2026 dataset above.
 
 ### Maryland group — Miller, Dittmann, Holt et al. 2026 ([ApJL 1000, L48](https://inspirehep.net/literature/3091115))
 **Zenodo:** https://zenodo.org/records/17833896

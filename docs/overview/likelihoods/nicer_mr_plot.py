@@ -11,7 +11,8 @@ that pulsar: Amsterdam as a solid contour, Maryland as a dashed contour. The
 preferred/headline analysis is used for each group:
   - PSR J0030+0451  — Amsterdam PDT-U, NICER+XMM (Kini, Mauviard, Salmi,
     et al. 2026); Maryland 3-spot, full prior (Miller et al. 2019)
-  - PSR J0437-4715  — Amsterdam CST+PDT (Choudhury et al. 2024);
+  - PSR J0437-4715  — Amsterdam ST+PDT+EL+PL, multi-wavelength (Stammler
+    et al. 2026);
     Maryland 3-spot+GPL (Miller, Dittmann, Holt et al. 2026)
   - PSR J0614-3329  — Amsterdam ST+PDT (Mauviard et al. 2025);
     Maryland 3-circle (Miller, Dittmann, Holt et al. 2026)
@@ -79,7 +80,7 @@ PSR_CONFIGS = [
         "groups": [
             {
                 "name": "Amsterdam",
-                "flow_dir": FLOWS_DIR / "J04374715" / "amsterdam_cst_pdt",
+                "flow_dir": FLOWS_DIR / "J04374715" / "amsterdam_st_pdt_el_pl",
                 "linestyle": "-",
             },
             {
