@@ -135,6 +135,26 @@ class MetamodelPeakCSEEOSConfig(BaseMetamodelEOSConfig):
     max_nbreak_nsat: float | None = None
 
 
+class LECMetamodelCSEEOSConfig(BaseMetamodelEOSConfig):
+    """Configuration for LEC-driven MetaModel with CSE extension.
+
+    TODO: docstring.
+    """
+
+    type: Literal["lec_metamodel_cse"] = "lec_metamodel_cse"
+    nb_CSE: int = 8
+    ndat_CSE: int = 100
+    max_nbreak_nsat: float | None = None
+    mbpt: bool = False
+
+    @field_validator("nb_CSE")
+    @classmethod
+    def _validate_nb_cse(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("nb_CSE must be > 0 for type='lec_metamodel_cse'.")
+        return v
+
+
 class SpectralEOSConfig(BaseEOSConfig):
     r"""Configuration for Spectral Decomposition EOS.
 
@@ -185,6 +205,7 @@ EOSConfig = Annotated[
         MetamodelEOSConfig,
         MetamodelCSEEOSConfig,
         MetamodelPeakCSEEOSConfig,
+        LECMetamodelCSEEOSConfig,
         SpectralEOSConfig,
     ],
     Discriminator("type"),
